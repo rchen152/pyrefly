@@ -1,0 +1,22 @@
+name: Publish to PyPI
+
+on:
+  push:
+    paths:
+      - pyre2/version.bzl
+    branches: [ pypi ]
+
+jobs:
+  pypi-publish:
+    name: Upload to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/pyrefly
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+    steps:
+      - name: Build binaries
+        uses: ./.github/workflows/build_binaries.yml
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
