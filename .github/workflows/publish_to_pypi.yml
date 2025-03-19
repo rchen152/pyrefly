@@ -33,6 +33,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: build-binaries  # Don't push a tag unless the publish job succeeds
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
       - name: Get version
         run: echo "PYREFLY_VERSION=$(grep -oP "\d+\.\d+\.\d+" pyre2/version.bzl)" >> $GITHUB_ENV
       - name: Push tag
