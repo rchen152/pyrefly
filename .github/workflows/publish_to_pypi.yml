@@ -25,5 +25,7 @@ jobs:
         with:
           name: dist
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: List shit
+        run: ls
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
