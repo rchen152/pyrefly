@@ -16,6 +16,8 @@ jobs:
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
       - name: Build binaries
         uses: ./.github/workflows/build_binaries.yml
       - name: Publish to PyPI
