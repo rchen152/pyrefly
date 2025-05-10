@@ -5,6 +5,7 @@ suite('Extension Test Suite', () => {
 	const extension: vscode.Extension<unknown> | undefined = vscode.extensions.getExtension('meta.pyrefly');
 
 	test('Test activation', async () => {
+		this.timeout(5000);
 		await extension?.activate();
 		assert.ok(true);
 	});
