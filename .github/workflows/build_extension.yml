@@ -1,3 +1,4 @@
+# This should not make pyrefly.yml run.
 name: build_extension
 on:
   workflow_dispatch:
