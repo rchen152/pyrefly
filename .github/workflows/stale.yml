@@ -92,7 +92,7 @@ jobs:
             // 3. Do not have a review
             const oldPRs = prs.filter(prs => {
               const createdAt = new Date(pr.created_at);
-              if createdAt >= twoDaysAgo || pr.requested_reviewers {
+              if (createdAt >= twoDaysAgo || pr.requested_reviewers) {
                 return false;
               }
               const { data: reviews } = await github.rest.pulls.listReviews({
