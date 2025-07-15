@@ -108,7 +108,7 @@ jobs:
                 pull_number: pr.number
               });
               console.log(`reviews ${reviews}`);
-              if (!reviews) {
+              if (!reviews.length) {
                 oldPRs.push(pr);
               }
             }
