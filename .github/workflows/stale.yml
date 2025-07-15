@@ -86,7 +86,6 @@ jobs:
               sort: 'created',
               direction: 'asc'
             });
-            console.log(`Found ${prs.length} PRs`);
 
             // Select pull requests that:
             // 1. Were created before the cutoff date
@@ -95,12 +94,7 @@ jobs:
             var oldPRs = [];
             for (const pr of prs) {
               const createdAt = new Date(pr.created_at);
-              if (createdAt >= twoDaysAgo) {
-                console.log(`No good1!`);
-                continue;
-              }
-              if (Array.isArray(pr.requested_reviewers) && pr.requested_reviewers.length) {
-                console.log(`No good2!`);
+              if (createdAt >= twoDaysAgo || (Array.isArray(pr.requested_reviewers) && pr.requested_reviewers.length)) {
                 continue;
               }
               const { data: reviews } = await github.rest.pulls.listReviews({
@@ -108,7 +102,6 @@ jobs:
                 repo: context.repo.repo,
                 pull_number: pr.number
               });
-              console.log(`reviews ${reviews}`);
               if (!reviews.length) {
                 oldPRs.push(pr);
               }
