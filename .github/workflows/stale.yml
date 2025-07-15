@@ -94,9 +94,12 @@ jobs:
             var oldPRs = [];
             for (const pr of prs) {
               const createdAt = new Date(pr.created_at);
-              console.log(`${createdAt >= twoDaysAgo}, ${pr.requested_reviewers}`);
-              if (createdAt >= twoDaysAgo || pr.requested_reviewers) {
-                console.log(`No good!`);
+              if (createdAt >= twoDaysAgo) {
+                console.log(`No good1!`);
+                continue;
+              }
+              if (pr.requested_reviewers) {
+                console.log(`No good2!`);
                 continue;
               }
               const { data: reviews } = await github.rest.pulls.listReviews({
