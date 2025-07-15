@@ -21,10 +21,9 @@ jobs:
             // Get current date and calculate the date 48 hours ago
             const now = new Date();
             const twoDaysAgo = new Date(now);
-            twoDaysAgo.setHours(now.getHours() - 48);
-            const formattedDate = twoDaysAgo.toISOString().split('T')[0];
+            twoDaysAgo.setHours(now.getHours() - 1);
 
-            console.log(`Finding untriaged issues created before ${formattedDate}...`);
+            console.log(`Finding untriaged issues created before ${twoDaysAgo.toISOString()}...`);
 
             // Get 100 oldest issues without a Bug/Feature/Task type
             const { data: issues } = await github.rest.issues.listForRepo({
