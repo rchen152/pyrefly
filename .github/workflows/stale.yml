@@ -98,7 +98,7 @@ jobs:
                 console.log(`No good1!`);
                 continue;
               }
-              if (pr.requested_reviewers) {
+              if (Array.isArray(pr.requested_reviewers) && pr.requested_reviewers.length) {
                 console.log(`No good2!`);
                 continue;
               }
