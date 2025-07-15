@@ -10,7 +10,7 @@ permissions:
   issues: write
 
 jobs:
-  label-untriaged:
+  label-untriaged-issues:
     runs-on: ubuntu-latest
     steps:
       - name: Label untriaged issues
@@ -36,13 +36,13 @@ jobs:
             });
 
             // Select issues that:
-            // 1. Do not have the 'question' label
-            // 2. Were created before the cutoff date
+            // 1. Were created before the cutoff date
+            // 2. Do not have the 'question' label
             // 3. Are not pull requests
             const oldIssues = issues.filter(issue => {
               const createdAt = new Date(issue.created_at);
-              return !issue.labels.includes('question') &&
-                     createdAt < twoDaysAgo &&
+              return createdAt < twoDaysAgo &&
+                     !issue.labels.includes('question') &&
                      !issue.pull_request;
             });
 
@@ -61,3 +61,60 @@ jobs:
             }
 
             console.log('Finished labeling untriaged issues');
+  label-untriaged-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label untriaged pull requests
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // Get current date and calculate the date 48 hours ago
+            const now = new Date();
+            const twoDaysAgo = new Date(now);
+            twoDaysAgo.setHours(now.getHours() - 1);
+
+            console.log(`Finding untriaged pull requests created before ${twoDaysAgo.toISOString()}...`);
+
+            // Get 100 oldest pull requests
+            const { data: prs } = await github.rest.pulls.list({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              per_page: 100,
+              sort: 'created',
+              direction: 'asc'
+            });
+
+            // Select pull requests that:
+            // 1. Were created before the cutoff date
+            // 2. Do not have a requested reviewer
+            // 3. Do not have a review
+            const oldPRs = prs.filter(prs => {
+              const createdAt = new Date(pr.created_at);
+              if createdAt >= twoDaysAgo || pr.requested_reviewers {
+                return false;
+              }
+              const { data: reviews } = await github.rest.pulls.listReviews({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                pull_number: pr.number
+              });
+              return !reviews;
+            });
+
+            console.log(`Found ${oldPRs.length} old untriaged pull requests`);
+
+            // Add 'needs-triage' label to each PR
+            for (const pr of oldPRs) {
+              console.log(`Adding 'needs-triage' label to PR #${pr.number}: ${pr.title}`);
+
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: pr.number,
+                labels: ['needs-triage']
+              });
+            }
+
+            console.log('Finished labeling untriaged pull requests');
