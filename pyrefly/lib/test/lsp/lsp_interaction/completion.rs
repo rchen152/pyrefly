@@ -576,3 +576,129 @@ fn test_relative_module_completion() {
 
     interaction.shutdown();
 }
+
+#[test]
+fn test_stdlib_submodule_completion() {
+    let root = get_test_files_root();
+    let root_path = root.path().to_path_buf();
+
+    let mut interaction =
+        LspInteraction::new_with_indexing_mode(crate::commands::lsp::IndexingMode::LazyBlocking);
+
+    interaction.set_root(root_path.clone());
+    interaction.initialize(InitializeSettings::default());
+
+    let file = root_path.join("foo.py");
+    interaction.server.did_open("foo.py");
+
+    interaction
+        .server
+        .send_message(Message::Notification(Notification {
+            method: "textDocument/didChange".to_owned(),
+            params: serde_json::json!({
+                "textDocument": {
+                    "uri": Url::from_file_path(&file).unwrap().to_string(),
+                    "languageId": "python",
+                    "version": 2
+                },
+                "contentChanges": [{
+                    "text": "import email.".to_owned()
+                }],
+            }),
+        }));
+
+    interaction.server.completion("foo.py", 0, 13);
+
+    interaction.client.expect_response_with(
+        |response| {
+            if response.id != RequestId::from(2) {
+                return false;
+            }
+            if let Some(result) = &response.result
+                && let Some(items) = result.get("items")
+                && let Some(items_array) = items.as_array()
+            {
+                return items_array.iter().any(|item| {
+                    if let Some(label) = item.get("label")
+                        && let Some(label_str) = label.as_str()
+                        && let Some(detail) = item.get("detail")
+                        && let Some(detail_str) = detail.as_str()
+                    {
+                        label_str == "errors" && detail_str == "email.errors"
+                    } else {
+                        false
+                    }
+                });
+            }
+            false
+        },
+        "Expected completion response with submodule suggestion",
+    );
+
+    interaction.shutdown();
+}
+
+#[test]
+fn test_stdlib_class_completion() {
+    let root = get_test_files_root();
+    let root_path = root.path().to_path_buf();
+
+    let mut interaction =
+        LspInteraction::new_with_indexing_mode(crate::commands::lsp::IndexingMode::LazyBlocking);
+
+    interaction.set_root(root_path.clone());
+    interaction.initialize(InitializeSettings::default());
+
+    let file = root_path.join("foo.py");
+    interaction.server.did_open("foo.py");
+
+    interaction
+        .server
+        .send_message(Message::Notification(Notification {
+            method: "textDocument/didChange".to_owned(),
+            params: serde_json::json!({
+                "textDocument": {
+                    "uri": Url::from_file_path(&file).unwrap().to_string(),
+                    "languageId": "python",
+                    "version": 2
+                },
+                "contentChanges": [{
+                    "text": "FirstHeader".to_owned()
+                }],
+            }),
+        }));
+
+    interaction.server.completion("foo.py", 0, 11);
+
+    interaction.client.expect_response_with(
+        |response| {
+            if response.id != RequestId::from(2) {
+                return false;
+            }
+            if let Some(result) = &response.result
+                && let Some(items) = result.get("items")
+                && let Some(items_array) = items.as_array()
+            {
+                return items_array.iter().any(|item| {
+                    if let Some(label) = item.get("label")
+                        && let Some(label_str) = label.as_str()
+                        && let Some(detail) = item.get("detail")
+                        && let Some(detail_str) = detail.as_str()
+                        && let Some(additional_text_edits) = item.get("additionalTextEdits")
+                        && let Some(edits_array) = additional_text_edits.as_array()
+                    {
+                        label_str == "FirstHeaderLineIsContinuationDefect"
+                            && detail_str.contains("from email.errors import")
+                            && !edits_array.is_empty()
+                    } else {
+                        false
+                    }
+                });
+            }
+            false
+        },
+        "Expected completion response with autoimport suggestion",
+    );
+
+    interaction.shutdown();
+}
