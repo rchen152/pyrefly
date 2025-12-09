@@ -3235,6 +3235,40 @@ impl<'a> CancellableTransaction<'a> {
         }
         None
     }
+
+    /// Helper: Creates call hierarchy information for the function containing a call site.
+    ///
+    /// Given a call site position, finds the enclosing function and returns
+    /// information needed to represent it in the call hierarchy.
+    #[cfg_attr(not(test), expect(dead_code))]
+    fn find_containing_function_for_call(
+        handle: &Handle,
+        ast: &ModModule,
+        position: TextSize,
+    ) -> Option<(String, TextRange)> {
+        let covering_nodes = Ast::locate_node(ast, position);
+
+        // Look through the node chain for the containing function
+        for (i, node) in covering_nodes.iter().enumerate() {
+            if let AnyNodeRef::StmtFunctionDef(func_def) = node {
+                // Check if this is a method (next node is a ClassDef)
+                if let Some(AnyNodeRef::StmtClassDef(class_def)) = covering_nodes.get(i + 1) {
+                    let name = format!(
+                        "{}.{}.{}",
+                        handle.module(),
+                        class_def.name.id,
+                        func_def.name.id
+                    );
+                    return Some((name, func_def.name.range()));
+                } else {
+                    // Top-level function
+                    let name = format!("{}.{}", handle.module(), func_def.name.id);
+                    return Some((name, func_def.name.range()));
+                }
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
@@ -3340,5 +3374,47 @@ class MyClass:
         let pos_outside = TextSize::from(0);
         let result = CancellableTransaction::find_function_at_position_in_ast(&ast, pos_outside);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_find_containing_function_for_call() {
+        use std::path::PathBuf;
+
+        use pyrefly_build::handle::Handle;
+        use pyrefly_python::ast::Ast;
+        use pyrefly_python::module_name::ModuleName;
+        use pyrefly_python::module_path::ModulePath;
+        use pyrefly_python::sys_info::SysInfo;
+        use ruff_python_ast::PySourceType;
+        use ruff_text_size::TextSize;
+
+        let source = r#"
+def my_function():
+    x = call()
+
+class MyClass:
+    def method(self):
+        y = call()
+"#;
+        let (ast, _, _) = Ast::parse(source, PySourceType::Python);
+        let handle = Handle::new(
+            ModuleName::from_str("test"),
+            ModulePath::memory(PathBuf::from("test.py")),
+            SysInfo::default(),
+        );
+
+        // Returns qualified name for top-level function
+        let pos_in_func = TextSize::from(30);
+        let (name, _) =
+            CancellableTransaction::find_containing_function_for_call(&handle, &ast, pos_in_func)
+                .unwrap();
+        assert_eq!(name, "test.my_function");
+
+        // Returns qualified name for class method
+        let pos_in_method = TextSize::from(85);
+        let (name, _) =
+            CancellableTransaction::find_containing_function_for_call(&handle, &ast, pos_in_method)
+                .unwrap();
+        assert_eq!(name, "test.MyClass.method");
     }
 }
