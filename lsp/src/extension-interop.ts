@@ -64,3 +64,18 @@ export async function disableBasedPyrightIfInstalled() {
     await config.update(setting, true, vscode.ConfigurationTarget.Global);
   }
 }
+
+/**
+ * This function checks if the Cursor Pyright extension is installed, and if so,
+ * disables its language services to avoid conflicts with Pyrefly.
+ */
+export async function disableCursorPyrightIfInstalled() {
+  const cursorPyrightExtension = vscode.extensions.getExtension(
+    'anysphere.cursorpyright',
+  );
+  if (cursorPyrightExtension) {
+    const config = vscode.workspace.getConfiguration('cursorpyright');
+    const setting = 'disableLanguageServices';
+    await config.update(setting, true, vscode.ConfigurationTarget.Global);
+  }
+}

@@ -28,6 +28,7 @@ import {
   triggerMsPythonRefreshLanguageServers,
   disableWindsurfPyrightIfInstalled,
   disableBasedPyrightIfInstalled,
+  disableCursorPyrightIfInstalled,
 } from './extension-interop';
 
 let client: LanguageClient;
@@ -235,6 +236,9 @@ export async function activate(context: ExtensionContext) {
 
   // Disable Windsurf Pyright language services if the extension is installed
   await disableWindsurfPyrightIfInstalled();
+
+  // Disable Cursor Pyright language services if the extension is installed
+  await disableCursorPyrightIfInstalled();
 
   // Disable Based Pyright language services if the extension is installed and Pyrefly is enabled
   const pyreflyDisabled = vscode.workspace
