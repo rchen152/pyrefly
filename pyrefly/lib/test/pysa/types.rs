@@ -19,6 +19,7 @@ use crate::report::pysa::context::ModuleContext;
 use crate::report::pysa::module::ModuleIds;
 use crate::report::pysa::types::ClassNamesFromType;
 use crate::report::pysa::types::PysaType;
+use crate::report::pysa::types::TypeModifier;
 use crate::test::pysa::utils::create_state;
 use crate::test::pysa::utils::get_class;
 use crate::test::pysa::utils::get_class_ref;
@@ -375,6 +376,60 @@ class C:
                     Default::default()
                 )),
             ]))),
+            &context
+        ),
+    );
+
+    // Handle type[A]
+    assert_eq!(
+        PysaType::new(
+            "type[test.MyClass]".to_owned(),
+            ClassNamesFromType::from_class(&get_class("test", "MyClass", &context), &context)
+                .prepend_modifier(TypeModifier::Type),
+        ),
+        PysaType::from_type(
+            &Type::ClassDef(get_class("test", "MyClass", &context),),
+            &context
+        ),
+    );
+    assert_eq!(
+        PysaType::new(
+            "type[test.MyClass]".to_owned(),
+            ClassNamesFromType::from_class(&get_class("test", "MyClass", &context), &context)
+                .prepend_modifier(TypeModifier::Type),
+        ),
+        PysaType::from_type(
+            &Type::Type(Box::new(Type::ClassType(ClassType::new(
+                get_class("test", "MyClass", &context),
+                Default::default()
+            )))),
+            &context
+        ),
+    );
+
+    assert_eq!(
+        PysaType::new(
+            "type[test.A] | type[test.B]".to_owned(),
+            ClassNamesFromType::from_classes(
+                vec![
+                    get_class_ref("test", "A", &context),
+                    get_class_ref("test", "B", &context),
+                ],
+                /* is_exhaustive */ true
+            )
+            .prepend_modifier(TypeModifier::Type),
+        ),
+        PysaType::from_type(
+            &unions(vec![
+                Type::Type(Box::new(Type::ClassType(ClassType::new(
+                    get_class("test", "A", &context),
+                    Default::default()
+                )))),
+                Type::Type(Box::new(Type::ClassType(ClassType::new(
+                    get_class("test", "B", &context),
+                    Default::default()
+                )))),
+            ]),
             &context
         ),
     );

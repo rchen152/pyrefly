@@ -24,10 +24,11 @@ use crate::types::display::TypeDisplayContext;
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[allow(dead_code)]
 pub enum TypeModifier {
-    Optional,
-    Coroutine,
-    Awaitable,
-    TypeVariableBound,
+    Optional,          // Optional[T]
+    Coroutine,         // Coroutine[<...>]
+    Awaitable,         // Awaitable[T]
+    TypeVariableBound, // TypeVar(.., bound=T)
+    Type,              // type[T]
 }
 
 /// A class reference along with the modifiers that were stripped to extract it.
@@ -115,7 +116,7 @@ impl ClassNamesFromType {
         self.prepend_modifier(TypeModifier::Coroutine)
     }
 
-    fn prepend_modifier(mut self, modifier: TypeModifier) -> ClassNamesFromType {
+    pub fn prepend_modifier(mut self, modifier: TypeModifier) -> ClassNamesFromType {
         for class in &mut self.classes {
             class.modifiers.insert(0, modifier);
         }
@@ -226,6 +227,13 @@ fn get_classes_of_type(type_: &Type, context: &ModuleContext) -> ClassNamesFromT
     match type_ {
         Type::ClassType(class_type) => {
             ClassNamesFromType::from_class(class_type.class_object(), context)
+        }
+        Type::ClassDef(class) => {
+            ClassNamesFromType::from_class(class, context).prepend_modifier(TypeModifier::Type)
+        }
+        Type::Type(box Type::ClassType(class_type)) => {
+            ClassNamesFromType::from_class(class_type.class_object(), context)
+                .prepend_modifier(TypeModifier::Type)
         }
         Type::Tuple(_) => ClassNamesFromType::from_class(context.stdlib.tuple_object(), context),
         Type::Union(box Union {
