@@ -1095,7 +1095,10 @@ impl Type {
 
     /// Calls a `check` function on this type's function metadata if it is a function. Note that we
     /// do *not* recurse into the type to find nested function types.
-    fn check_toplevel_func_metadata<T: Default>(&self, check: &dyn Fn(&FuncMetadata) -> T) -> T {
+    pub fn check_toplevel_func_metadata<T: Default>(
+        &self,
+        check: &dyn Fn(&FuncMetadata) -> T,
+    ) -> T {
         match self {
             Type::Function(box func)
             | Type::Forall(box Forall {

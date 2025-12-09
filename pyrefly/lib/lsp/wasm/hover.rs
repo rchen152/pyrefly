@@ -18,16 +18,12 @@ use pyrefly_python::docstring::parse_parameter_documentation;
 use pyrefly_python::ignore::Ignore;
 use pyrefly_python::ignore::Tool;
 use pyrefly_python::ignore::find_comment_start_in_line;
-#[cfg(test)]
-use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::symbol_kind::SymbolKind;
 use pyrefly_types::callable::Callable;
 use pyrefly_types::callable::Param;
 use pyrefly_types::callable::ParamList;
 use pyrefly_types::callable::Params;
 use pyrefly_types::callable::Required;
-use pyrefly_types::types::BoundMethodType;
-use pyrefly_types::types::Forallable;
 use pyrefly_types::types::Type;
 use pyrefly_util::lined_buffer::LineNumber;
 use ruff_python_ast::Stmt;
@@ -308,92 +304,29 @@ fn expand_callable_kwargs_for_hover<'a>(
 /// type metadata knows about the callable. This primarily handles third-party stubs
 /// where we only have typeshed information.
 fn fallback_hover_name_from_type(type_: &Type) -> Option<String> {
-    match type_ {
-        Type::Function(function) => Some(
-            function
-                .metadata
-                .kind
-                .function_name()
-                .into_owned()
-                .to_string(),
-        ),
-        Type::BoundMethod(bound_method) => match &bound_method.func {
-            BoundMethodType::Function(function) => Some(
-                function
-                    .metadata
-                    .kind
-                    .function_name()
-                    .into_owned()
-                    .to_string(),
-            ),
-            BoundMethodType::Forall(forall) => Some(
-                forall
-                    .body
-                    .metadata
-                    .kind
-                    .function_name()
-                    .into_owned()
-                    .to_string(),
-            ),
-            BoundMethodType::Overload(overload) => Some(
-                overload
-                    .metadata
-                    .kind
-                    .function_name()
-                    .into_owned()
-                    .to_string(),
-            ),
-        },
-        Type::Overload(overload) => Some(
-            overload
-                .metadata
-                .kind
-                .function_name()
-                .into_owned()
-                .to_string(),
-        ),
-        Type::Forall(forall) => match &forall.body {
-            Forallable::Function(function) => Some(
-                function
-                    .metadata
-                    .kind
-                    .function_name()
-                    .into_owned()
-                    .to_string(),
-            ),
-            Forallable::Callable(_) | Forallable::TypeAlias(_) => None,
-        },
-        Type::Type(inner) => fallback_hover_name_from_type(inner),
-        _ => None,
+    let name = type_.check_toplevel_func_metadata(&|meta| {
+        Some(meta.kind.function_name().into_owned().to_string())
+    });
+    if name.is_some() {
+        return name;
     }
+    // Recurse through Type wrapper
+    if let Type::Type(inner) = type_ {
+        return fallback_hover_name_from_type(inner);
+    }
+    None
 }
 
-/// Extract the identifier under the cursor directly from the file contents so we can
-/// label hover results even when go-to-definition fails.
+/// Extract the identifier under the cursor so we can label hover results
+/// even when go-to-definition fails.
 fn identifier_text_at(
     transaction: &Transaction<'_>,
     handle: &Handle,
     position: TextSize,
 ) -> Option<String> {
-    let module = transaction.get_module_info(handle)?;
-    let contents = module.contents();
-    let bytes = contents.as_bytes();
-    let len = bytes.len();
-    let pos = position.to_usize().min(len);
-    let is_ident_char = |b: u8| b == b'_' || b.is_ascii_alphanumeric();
-    let mut start = pos;
-    while start > 0 && is_ident_char(bytes[start - 1]) {
-        start -= 1;
-    }
-    let mut end = pos;
-    while end < len && is_ident_char(bytes[end]) {
-        end += 1;
-    }
-    if start == end {
-        return None;
-    }
-    let range = TextRange::new(TextSize::new(start as u32), TextSize::new(end as u32));
-    Some(module.code_at(range).to_owned())
+    transaction
+        .identifier_at(handle, position)
+        .map(|id| id.identifier.id.to_string())
 }
 
 pub fn get_hover(
@@ -610,6 +543,7 @@ mod tests {
     use std::sync::Arc;
 
     use pyrefly_python::module::Module;
+    use pyrefly_python::module_name::ModuleName;
     use pyrefly_python::module_path::ModulePath;
     use pyrefly_types::callable::Callable;
     use pyrefly_types::callable::FuncFlags;
