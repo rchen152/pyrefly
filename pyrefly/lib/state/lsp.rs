@@ -52,6 +52,7 @@ use ruff_python_ast::Identifier;
 use ruff_python_ast::Keyword;
 use ruff_python_ast::ModModule;
 use ruff_python_ast::Number;
+use ruff_python_ast::StmtFunctionDef;
 use ruff_python_ast::StmtImportFrom;
 use ruff_python_ast::UnaryOp;
 use ruff_python_ast::name::Name;
@@ -3213,12 +3214,34 @@ impl<'a> CancellableTransaction<'a> {
 
         Ok(all_implementations)
     }
+
+    /// Helper: Finds a function definition at a specific position in an AST.
+    ///
+    /// This is used by call hierarchy to identify the function being queried.
+    /// Returns None if no function is found at the position.
+    #[cfg_attr(not(test), expect(dead_code))]
+    pub(crate) fn find_function_at_position_in_ast(
+        ast: &ModModule,
+        position: TextSize,
+    ) -> Option<&StmtFunctionDef> {
+        let covering_nodes = Ast::locate_node(ast, position);
+
+        // Find the first StmtFunctionDef in the covering nodes
+        // This returns the innermost function containing the position
+        for node in covering_nodes.iter() {
+            if let AnyNodeRef::StmtFunctionDef(func_def) = node {
+                return Some(func_def);
+            }
+        }
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use ruff_python_ast::name::Name;
 
+    use super::CancellableTransaction;
     use super::Transaction;
     use crate::types::callable::Param;
     use crate::types::callable::Required;
@@ -3276,5 +3299,46 @@ mod tests {
     fn match_summary(params: &[Param], idx: usize) -> Option<(&str, bool)> {
         Transaction::<'static>::param_name_for_positional_argument(params, idx)
             .map(|match_| (match_.name.as_str(), match_.is_vararg_repeat))
+    }
+
+    #[test]
+    fn test_find_function_at_position_in_ast() {
+        use pyrefly_python::ast::Ast;
+        use ruff_python_ast::PySourceType;
+        use ruff_text_size::TextSize;
+
+        let source = r#"
+def top_level():
+    pass
+
+class MyClass:
+    def method(self):
+        pass
+"#;
+        let (ast, _, _) = Ast::parse(source, PySourceType::Python);
+
+        // Finds top-level function
+        let pos_in_func = TextSize::from(5);
+        let result = CancellableTransaction::find_function_at_position_in_ast(&ast, pos_in_func);
+        assert_eq!(result.unwrap().name.id.as_str(), "top_level");
+
+        // Finds class method
+        let pos_in_method = TextSize::from(50);
+        let result = CancellableTransaction::find_function_at_position_in_ast(&ast, pos_in_method);
+        assert_eq!(result.unwrap().name.id.as_str(), "method");
+    }
+
+    #[test]
+    fn test_find_function_at_position_in_ast_returns_none_outside_functions() {
+        use pyrefly_python::ast::Ast;
+        use ruff_python_ast::PySourceType;
+        use ruff_text_size::TextSize;
+
+        let source = "x = 10\n";
+        let (ast, _, _) = Ast::parse(source, PySourceType::Python);
+
+        let pos_outside = TextSize::from(0);
+        let result = CancellableTransaction::find_function_at_position_in_ast(&ast, pos_outside);
+        assert!(result.is_none());
     }
 }
