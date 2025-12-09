@@ -172,7 +172,8 @@ from pydantic import BaseModel
 class Model(BaseModel):
     x: List[int] = [0, 1]
 
-reveal_type(Model.__init__) # E: revealed type: (self: Model, *, x: list[LaxInt] = ..., **Unknown) -> None
+# list[int] is converted to Iterable[LaxInt] to handle invariance
+reveal_type(Model.__init__) # E: revealed type: (self: Model, *, x: Iterable[LaxInt] = ..., **Unknown) -> None
 
 class Model2(BaseModel):
     q: deque[int]
@@ -182,12 +183,18 @@ reveal_type(Model2.__init__) # E: revealed type: (self: Model2, *, q: deque[LaxI
 class Model3(BaseModel):
     d: dict[str, int]
 
-reveal_type(Model3.__init__) # E: revealed type: (self: Model3, *, d: Mapping[LaxStr, LaxInt] | dict[LaxStr, LaxInt], **Unknown) -> None
+reveal_type(Model3.__init__) # E: revealed type: (self: Model3, *, d: Mapping[str, LaxInt], **Unknown) -> None
 
 class Model4(BaseModel):
     f: frozenset[int]
 
 reveal_type(Model4.__init__) # E: revealed type: (self: Model4, *, f: deque[LaxInt] | dict_keys[LaxInt, LaxInt] | dict_values[LaxInt, LaxInt] | frozenset[LaxInt] | list[LaxInt] | set[LaxInt] | tuple[Decimal | bool | bytes | float | int | str, ...], **Unknown) -> None
+
+class Model5(BaseModel):
+    s: set[int]
+
+# set[int] is converted to Iterable[LaxInt] to handle invariance
+reveal_type(Model5.__init__) # E: revealed type: (self: Model5, *, s: Iterable[LaxInt], **Unknown) -> None
     "#,
 );
 
@@ -203,5 +210,45 @@ class Model(BaseModel):
     y: int | bool
 
 reveal_type(Model.__init__)  # E: revealed type: (self: Model, *, y: Decimal | bool | bytes | float | int | str, **Unknown) -> None
+    "#,
+);
+
+pydantic_testcase!(
+    test_lax_mode_list_and_set_invariance,
+    r#"
+from pydantic import BaseModel
+from collections import deque
+from typing import reveal_type
+
+class TestModel(BaseModel):
+    name: str
+    things: list[str]
+    tags: set[str]
+
+list_of_things = ["thing1", "thing2"]
+set_of_tags = {"tag1", "tag2"}
+a = TestModel(name="test", things=list_of_things, tags=set_of_tags)
+
+deque_of_bytes: deque[bytes] = deque([b"thing1", b"thing2"])
+b = TestModel(name="test", things=deque_of_bytes, tags=set_of_tags)
+
+# When reading the field back, you get the original declared type (list[str]), not Iterable[LaxStr]
+reveal_type(a.things)  # E: revealed type: list[str]
+reveal_type(a.tags)    # E: revealed type: set[str]
+    "#,
+);
+
+pydantic_testcase!(
+    test_lax_mode_dict_invariance,
+    r#"
+from pydantic import BaseModel
+from typing import reveal_type
+
+class TestModel(BaseModel):
+    name: str
+    metadata: dict[str, str]
+
+my_dict = {"key1": "value1", "key2": "value2"}
+a = TestModel(name="test", metadata=my_dict)
     "#,
 );

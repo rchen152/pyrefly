@@ -370,6 +370,10 @@ impl Stdlib {
         Self::apply(&self.list, vec![x])
     }
 
+    pub fn list_object(&self) -> &Class {
+        &Self::unwrap(&self.list).0
+    }
+
     pub fn deque(&self, x: Type) -> ClassType {
         Self::apply(&self.deque, vec![x])
     }
@@ -408,6 +412,10 @@ impl Stdlib {
 
     pub fn set(&self, x: Type) -> ClassType {
         Self::apply(&self.set, vec![x])
+    }
+
+    pub fn set_object(&self) -> &Class {
+        &Self::unwrap(&self.set).0
     }
 
     pub fn iterable(&self, x: Type) -> ClassType {

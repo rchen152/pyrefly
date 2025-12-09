@@ -137,11 +137,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         class_obj: &Class,
         expanded_targs: &[Type],
     ) -> Option<Type> {
-        // Extract first type argument (element type for most containers, key type for dict)
+        // Extract first type argument
         let first_ty = expanded_targs
             .first()
             .cloned()
             .unwrap_or_else(Type::any_implicit);
+
+        // Invariant single-element containers: use Iterable to allow covariance
+        if class_obj == self.stdlib.list_object() || class_obj == self.stdlib.set_object() {
+            return Some(self.stdlib.iterable(first_ty).to_type());
+        }
 
         // Single-element containers
         if class_obj.has_toplevel_qname(ModuleName::collections().as_str(), "deque") {
@@ -165,19 +170,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.stdlib.tuple(first_ty),
             ]));
         }
-
-        // Two-element containers
-        if class_obj == self.stdlib.dict_object() {
-            let val_ty = expanded_targs
-                .get(1)
-                .cloned()
-                .unwrap_or_else(Type::any_implicit);
-            return Some(self.class_types_to_union(vec![
-                self.stdlib.dict(first_ty.clone(), val_ty.clone()),
-                self.stdlib.mapping(first_ty, val_ty),
-            ]));
-        }
-
         None
     }
 
@@ -187,6 +179,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::ClassType(cls) if !cls.targs().as_slice().is_empty() => {
                 let class_obj = cls.class_object();
                 let targs = cls.targs().as_slice();
+
+                // Special handling for dict: don't expand key type (Mapping is invariant in key)
+                if class_obj == self.stdlib.dict_object() {
+                    let key_ty = targs.first().cloned().unwrap_or_else(Type::any_implicit);
+                    let val_ty = targs.get(1).cloned().unwrap_or_else(Type::any_implicit);
+                    let expanded_val = self.expand_type_for_lax_mode(&val_ty);
+                    return self.stdlib.mapping(key_ty, expanded_val).to_type();
+                }
+
                 let expanded_targs = self.expand_types(targs);
 
                 // Check for container type conversions
