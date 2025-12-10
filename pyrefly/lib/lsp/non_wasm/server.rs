@@ -134,6 +134,7 @@ use lsp_types::notification::DidSaveTextDocument;
 use lsp_types::notification::Exit;
 use lsp_types::notification::Notification as _;
 use lsp_types::notification::PublishDiagnostics;
+use lsp_types::request::CallHierarchyPrepare;
 use lsp_types::request::CodeActionRequest;
 use lsp_types::request::Completion;
 use lsp_types::request::DocumentDiagnosticRequest;
@@ -1116,6 +1117,17 @@ impl Server {
                             .folding_ranges(&transaction, params)
                             .unwrap_or_default();
                         self.send_response(new_response(x.id, Ok(result)));
+                    }
+                } else if let Some(params) = as_request::<CallHierarchyPrepare>(&x) {
+                    if let Some(params) = self
+                        .extract_request_params_or_send_err_response::<CallHierarchyPrepare>(
+                            params, &x.id,
+                        )
+                    {
+                        self.send_response(new_response(
+                            x.id,
+                            Ok(self.prepare_call_hierarchy(&transaction, params)),
+                        ));
                     }
                 } else if &x.method == "pyrefly/textDocument/docstringRanges" {
                     let text_document: TextDocumentIdentifier = serde_json::from_value(x.params)?;
@@ -3180,6 +3192,76 @@ impl Server {
     pub fn from_lsp_range(&self, uri: &Url, module: &ModuleInfo, position: Range) -> TextRange {
         let notebook_cell = self.maybe_get_cell_index(uri);
         module.from_lsp_range(position, notebook_cell)
+    }
+
+    /// Prepares the call hierarchy by validating that the symbol at the cursor is a function/method.
+    /// This can be called from anywhere within the function definition, or also on a call site of the function.
+    ///
+    /// This is the entry point for LSP Call Hierarchy. It checks if the symbol at the given
+    /// position is a callable (function or method) and returns a CallHierarchyItem if valid,
+    /// or None if the symbol is not callable.
+    fn prepare_call_hierarchy(
+        &self,
+        transaction: &Transaction<'_>,
+        params: lsp_types::CallHierarchyPrepareParams,
+    ) -> Option<Vec<lsp_types::CallHierarchyItem>> {
+        use lsp_types::CallHierarchyItem;
+        use lsp_types::SymbolKind;
+        use ruff_text_size::Ranged;
+
+        let uri = &params.text_document_position_params.text_document.uri;
+        let handle = self.make_handle_if_enabled(uri, None)?;
+        let module_info = transaction.get_module_info(&handle)?;
+        let position = self.from_lsp_position(
+            uri,
+            &module_info,
+            params.text_document_position_params.position,
+        );
+
+        let definitions = transaction.find_definition(&handle, position, FindPreference::default());
+
+        for def in definitions {
+            // Get the URI for the definition's module
+            let Some(def_uri) = module_info_to_uri(&def.module) else {
+                continue;
+            };
+
+            // Get the handle for the definition's module (could be different from the current file)
+            let Some(def_handle) = self.make_handle_if_enabled(&def_uri, None) else {
+                continue;
+            };
+
+            let Some(ast) = transaction.get_ast(&def_handle) else {
+                continue;
+            };
+
+            // Look for function at the definition position, not the original cursor position
+            if let Some(func_def) =
+                crate::state::state::CancellableTransaction::find_function_at_position_in_ast(
+                    &ast,
+                    def.definition_range.start(),
+                )
+            {
+                let name = func_def.name.id.to_string();
+                let detail = Some(format!("{}.{}", def.module.name(), name));
+                let kind = SymbolKind::FUNCTION;
+
+                let range = def.module.to_lsp_range(func_def.range());
+                let selection_range = def.module.to_lsp_range(func_def.name.range());
+
+                return Some(vec![CallHierarchyItem {
+                    name,
+                    kind,
+                    tags: None,
+                    detail,
+                    uri: def_uri,
+                    range,
+                    selection_range,
+                    data: None,
+                }]);
+            }
+        }
+        None
     }
 }
 
