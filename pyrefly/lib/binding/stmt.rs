@@ -299,6 +299,8 @@ impl<'a> BindingsBuilder<'a> {
     /// Evaluate the statements and update the bindings.
     /// Every statement should end up in the bindings, perhaps with a location that is never used.
     pub fn stmt(&mut self, x: Stmt, parent: &NestingContext) {
+        self.with_semantic_checker(|semantic, context| semantic.visit_stmt(&x, context));
+
         match x {
             Stmt::FunctionDef(x) => {
                 self.function_def(x, parent);

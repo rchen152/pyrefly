@@ -179,7 +179,7 @@ pub enum ErrorKind {
     /// e.g. calling `super(Y, x)` on an object `x` that does not match the class `Y`.
     InvalidSuperCall,
     /// Incorrect Python syntax, construct is not allowed in this position.
-    /// In many cases a syntax error will also be reported.
+    /// In many cases a parse error will also be reported.
     InvalidSyntax,
     /// An error related to type alias usage or definition.
     InvalidTypeAlias,

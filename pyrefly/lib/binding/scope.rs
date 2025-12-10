@@ -866,7 +866,7 @@ impl ScopeMethod {
 enum ScopeKind {
     Annotation,
     Class(ScopeClass),
-    Comprehension,
+    Comprehension { is_generator: bool },
     Function(ScopeFunction),
     Method(ScopeMethod),
     Module,
@@ -989,11 +989,11 @@ impl Scope {
         )
     }
 
-    pub fn comprehension(range: TextRange) -> Self {
+    pub fn comprehension(range: TextRange, is_generator: bool) -> Self {
         Self::new(
             range,
             FlowBarrier::AllowFlowChecked,
-            ScopeKind::Comprehension,
+            ScopeKind::Comprehension { is_generator },
         )
     }
 
@@ -1415,6 +1415,90 @@ impl Scopes {
 
     pub fn loop_depth(&self) -> usize {
         self.current().loops.len()
+    }
+
+    /// Check if a name is declared as global in the current scope.
+    /// Returns the range of the global statement if found.
+    pub fn get_global_declaration(&self, name: &str) -> Option<TextRange> {
+        if let Some(static_info) = self.current().stat.0.get(&Name::new(name))
+            && let StaticStyle::MutableCapture(MutableCapture {
+                kind: MutableCaptureKind::Global,
+                ..
+            }) = &static_info.style
+        {
+            return Some(static_info.range);
+        }
+        None
+    }
+
+    /// Check if a name has a nonlocal binding in an enclosing scope.
+    pub fn has_nonlocal_binding(&self, name: &str) -> bool {
+        let name_obj = Name::new(name);
+        // Skip the current scope and check enclosing scopes
+        for scope in self.iter_rev().skip(1) {
+            // Check if this name is defined in this scope (not as a mutable capture)
+            if let Some(static_info) = scope.stat.0.get(&name_obj) {
+                match &static_info.style {
+                    // Don't count mutable captures as nonlocal bindings
+                    StaticStyle::MutableCapture(..) => continue,
+                    // Any other definition counts as a binding
+                    _ => return true,
+                }
+            }
+        }
+        false
+    }
+
+    /// Check if we're currently in a comprehension scope (not a generator expression).
+    pub fn in_comprehension(&self) -> bool {
+        matches!(self.current().kind, ScopeKind::Comprehension { .. })
+    }
+
+    /// Check if we're in a synchronous comprehension.
+    /// A comprehension is synchronous unless we're in an async function.
+    pub fn in_sync_comprehension(&self) -> bool {
+        if !self.in_comprehension() {
+            return false;
+        }
+        // Check if any enclosing scope is an async function
+        for scope in self.iter_rev().skip(1) {
+            if let ScopeKind::Function(func_scope) = &scope.kind {
+                return !func_scope.is_async;
+            } else if let ScopeKind::Method(method_scope) = &scope.kind {
+                return !method_scope.is_async;
+            }
+        }
+        // If we didn't find a function, it's synchronous
+        true
+    }
+
+    /// Check if we're in a generator expression scope.
+    /// Generator expressions are created for `Expr::Generator` comprehensions.
+    pub fn in_generator_expression(&self) -> bool {
+        matches!(
+            self.current().kind,
+            ScopeKind::Comprehension { is_generator: true }
+        )
+    }
+
+    /// Check if a name is a bound parameter in the current function scope.
+    pub fn is_bound_parameter(&self, name: &str) -> bool {
+        let name_obj = Name::new(name);
+        // Check the current scope and enclosing scopes for a function with this parameter
+        for scope in self.iter_rev() {
+            match &scope.kind {
+                ScopeKind::Function(func_scope) => {
+                    return func_scope.parameters.contains_key(&name_obj);
+                }
+                ScopeKind::Method(method_scope) => {
+                    return method_scope.parameters.contains_key(&name_obj);
+                }
+                // Don't look past module or class boundaries
+                ScopeKind::Module | ScopeKind::Class(_) => return false,
+                _ => {}
+            }
+        }
+        false
     }
 
     /// Track a narrow for a name in the current flow. This should result from options
