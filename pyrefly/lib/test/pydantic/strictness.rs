@@ -154,6 +154,11 @@ class Model7(BaseModel):
     td: timedelta
 
 reveal_type(Model7.__init__)  # E: revealed type: (self: Model7, *, td: LaxTimedelta, **Unknown) -> None
+
+class Model8(BaseModel):
+    dec: Decimal
+
+reveal_type(Model8.__init__)  # E: revealed type: (self: Model8, *, dec: LaxDecimal, **Unknown) -> None
     "#,
 );
 

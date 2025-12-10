@@ -148,6 +148,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ],
                 ))
             }
+            Type::ClassType(cls) if cls == self.stdlib.decimal() => Some(self.types_to_lax_union(
+                self.stdlib.decimal(),
+                &[
+                    self.stdlib.decimal(),
+                    self.stdlib.int(),
+                    self.stdlib.float(),
+                    self.stdlib.str(),
+                ],
+            )),
             _ => None,
         }
     }
