@@ -135,6 +135,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.stdlib.decimal(),
                 ],
             )),
+            Type::ClassType(cls) if cls == self.stdlib.timedelta() => {
+                Some(self.types_to_lax_union(
+                    self.stdlib.timedelta(),
+                    &[
+                        self.stdlib.timedelta(),
+                        self.stdlib.int(),
+                        self.stdlib.float(),
+                        self.stdlib.str(),
+                        self.stdlib.bytes(),
+                        self.stdlib.decimal(),
+                    ],
+                ))
+            }
             _ => None,
         }
     }
