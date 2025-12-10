@@ -3133,6 +3133,32 @@ impl<'a> CancellableTransaction<'a> {
         }
     }
 
+    /// Processes each transitive reverse dependency for a given definition location.
+    ///
+    /// This is a common pattern in workspace-wide
+    /// references-related features
+    fn process_rdeps_with_definition<T>(
+        &mut self,
+        sys_info: &SysInfo,
+        definition: &TextRangeWithModule,
+        mut process_fn: impl FnMut(&mut Self, &Handle, &TextRangeWithModule) -> Option<T>,
+    ) -> Result<Vec<T>, Cancelled> {
+        let candidate_handles =
+            self.compute_transitive_rdeps_for_definition(sys_info, definition)?;
+
+        let mut results = Vec::new();
+        for handle in candidate_handles {
+            // "Patched" means the definition's module path is adjusted for in-memory files
+            // to use the filesystem path instead, enabling cross-module reference finding
+            let patched_definition = self.patch_definition_for_handle(&handle, definition);
+            if let Some(result) = process_fn(self, &handle, &patched_definition) {
+                results.push(result);
+            }
+        }
+
+        Ok(results)
+    }
+
     /// Returns Err if the request is canceled in the middle of a run.
     pub fn find_global_references_from_definition(
         &mut self,
@@ -3140,45 +3166,64 @@ impl<'a> CancellableTransaction<'a> {
         definition_kind: DefinitionMetadata,
         definition: TextRangeWithModule,
     ) -> Result<Vec<(Module, Vec<TextRange>)>, Cancelled> {
-        // General strategy:
-        // 1: Compute the set of transitive rdeps.
-        // 2. Find references in each one of them using the index computed during earlier checking
-        // 3. If this is a method definition, also search for reimplementations in child classes
-        let candidate_handles_for_references =
-            self.compute_transitive_rdeps_for_definition(sys_info, &definition)?;
+        let results = self.process_rdeps_with_definition(
+            sys_info,
+            &definition,
+            |transaction, handle, patched_definition| {
+                let mut module_refs: Vec<(Module, Vec<TextRange>)> = Vec::new();
 
-        let mut global_references = Vec::new();
-        for handle in candidate_handles_for_references {
-            let definition = self.patch_definition_for_handle(&handle, &definition);
-
-            let references = self
-                .as_ref()
-                .local_references_from_definition(
-                    &handle,
-                    definition_kind.clone(),
-                    definition.range,
-                    &definition.module,
-                )
-                .unwrap_or_default();
-            if !references.is_empty()
-                && let Some(module_info) = self.as_ref().get_module_info(&handle)
-            {
-                global_references.push((module_info, references));
-            }
-            // Step 3: Search for child class reimplementations using the parent_methods_map
-            // If this is a method definition, find all child classes that reimplement it
-            let child_implementations = self.find_child_implementations(&handle, &definition);
-            if !child_implementations.is_empty()
-                && let Some(module_info) = self.as_ref().get_module_info(&handle)
-            {
-                // Check if we already have this module in our results
-                if let Some((_, ranges)) = global_references
-                    .iter_mut()
-                    .find(|(m, _)| m.path() == module_info.path())
+                // Find local references
+                let references = transaction
+                    .as_ref()
+                    .local_references_from_definition(
+                        handle,
+                        definition_kind.clone(),
+                        patched_definition.range,
+                        &patched_definition.module,
+                    )
+                    .unwrap_or_default();
+                if !references.is_empty()
+                    && let Some(module_info) = transaction.as_ref().get_module_info(handle)
                 {
-                    ranges.extend(child_implementations);
+                    module_refs.push((module_info, references));
+                }
+
+                // Search for child class reimplementations using the parent_methods_map
+                let child_implementations =
+                    transaction.find_child_implementations(handle, patched_definition);
+                if !child_implementations.is_empty()
+                    && let Some(module_info) = transaction.as_ref().get_module_info(handle)
+                {
+                    // Check if we already have this module in our results
+                    if let Some((_, ranges)) = module_refs
+                        .iter_mut()
+                        .find(|(m, _)| m.path() == module_info.path())
+                    {
+                        ranges.extend(child_implementations);
+                    } else {
+                        module_refs.push((module_info, child_implementations));
+                    }
+                }
+
+                if module_refs.is_empty() {
+                    None
                 } else {
-                    global_references.push((module_info, child_implementations));
+                    Some(module_refs)
+                }
+            },
+        )?;
+
+        // Flatten nested results and merge by module
+        let mut global_references: Vec<(Module, Vec<TextRange>)> = Vec::new();
+        for module_refs in results {
+            for (module, ranges) in module_refs {
+                if let Some((_, existing_ranges)) = global_references
+                    .iter_mut()
+                    .find(|(m, _)| m.path() == module.path())
+                {
+                    existing_ranges.extend(ranges);
+                } else {
+                    global_references.push((module, ranges));
                 }
             }
         }
@@ -3201,26 +3246,30 @@ impl<'a> CancellableTransaction<'a> {
         sys_info: &SysInfo,
         definition: TextRangeWithModule,
     ) -> Result<Vec<TextRangeWithModule>, Cancelled> {
-        // General strategy (similar to find_global_references_from_definition):
-        // 1: Compute the set of transitive rdeps.
-        // 2: Find child implementations in each rdep using the parent_methods_map index
-        let candidate_handles_for_implementations =
-            self.compute_transitive_rdeps_for_definition(sys_info, &definition)?;
-
-        let mut all_implementations = Vec::new();
-        for handle in candidate_handles_for_implementations {
-            let definition = self.patch_definition_for_handle(&handle, &definition);
-
-            // Search for child class reimplementations using the parent_methods_map
-            let child_implementations = self.find_child_implementations(&handle, &definition);
-            if !child_implementations.is_empty()
-                && let Some(module_info) = self.as_ref().get_module_info(&handle)
-            {
-                for range in child_implementations {
-                    all_implementations.push(TextRangeWithModule::new(module_info.dupe(), range));
+        let results = self.process_rdeps_with_definition(
+            sys_info,
+            &definition,
+            |transaction, handle, patched_definition| {
+                // Search for child class reimplementations using the parent_methods_map
+                let child_implementations =
+                    transaction.find_child_implementations(handle, patched_definition);
+                if !child_implementations.is_empty()
+                    && let Some(module_info) = transaction.as_ref().get_module_info(handle)
+                {
+                    let implementations: Vec<TextRangeWithModule> = child_implementations
+                        .into_iter()
+                        .map(|range| TextRangeWithModule::new(module_info.dupe(), range))
+                        .collect();
+                    Some(implementations)
+                } else {
+                    None
                 }
-            }
-        }
+            },
+        )?;
+
+        // Flatten nested results
+        let mut all_implementations: Vec<TextRangeWithModule> =
+            results.into_iter().flatten().collect();
 
         // Sort and deduplicate implementations
         all_implementations.sort_by_key(|impl_| (impl_.module.path().dupe(), impl_.range.start()));

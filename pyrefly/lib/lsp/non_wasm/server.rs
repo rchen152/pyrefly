@@ -2221,14 +2221,16 @@ impl Server {
                 }
                 Ok(grouped)
             },
-            move |results| {
+            move |results: Vec<(ModuleInfo, Vec<TextRange>)>| {
                 let mut lsp_targets = Vec::new();
-                for (uri, ranges) in results {
-                    for range in ranges {
-                        lsp_targets.push(Location {
-                            uri: uri.clone(),
-                            range,
-                        });
+                for (info, ranges) in results {
+                    if let Some(uri) = module_info_to_uri(&info) {
+                        for range in ranges {
+                            lsp_targets.push(Location {
+                                uri: uri.clone(),
+                                range: info.to_lsp_range(range),
+                            });
+                        }
                     }
                 }
                 if lsp_targets.is_empty() {
@@ -2343,11 +2345,14 @@ impl Server {
 
     /// Compute references or implementations of a symbol at a given position. This is a non-blocking
     /// function that will send a response to the LSP client once the results are found and
-    /// transformed by `map_result`.
+    /// transformed by `transform_result`.
     ///
     /// The `find_fn` closure is called with the cancellable transaction, handle, and definition
-    /// information, and should return the results to be transformed into LSP locations.
-    fn async_find_from_definition_helper<'a, V: serde::Serialize>(
+    /// information, and should return a generic result type `T`.
+    ///
+    /// The `transform_result` closure transforms the result of type `T` into the final response
+    /// type `V` that will be sent to the LSP client.
+    fn async_find_from_definition_helper<'a, T: Send + 'static, V: serde::Serialize>(
         &'a self,
         request_id: RequestId,
         transaction: &Transaction<'a>,
@@ -2358,11 +2363,11 @@ impl Server {
             &mut CancellableTransaction,
             &Handle,
             FindDefinitionItemWithDocstring,
-        ) -> Result<Vec<(ModuleInfo, Vec<TextRange>)>, Cancelled>
+        ) -> Result<T, Cancelled>
         + Send
         + Sync
         + 'static,
-        map_result: impl FnOnce(Vec<(Url, Vec<Range>)>) -> V + Send + Sync + 'static,
+        transform_result: impl FnOnce(T) -> V + Send + Sync + 'static,
     ) {
         let Some(info) = transaction.get_module_info(&handle) else {
             return self.send_response(new_response::<Option<V>>(request_id, Ok(None)));
@@ -2393,17 +2398,10 @@ impl Server {
                 server.validate_in_memory_for_transaction(transaction.as_mut());
                 match find_fn(&mut transaction, &handle, definition) {
                     Ok(results) => {
-                        let mut locations = Vec::new();
-                        for (info, ranges) in results {
-                            if let Some(uri) = module_info_to_uri(&info) {
-                                locations
-                                    .push((uri, ranges.into_map(|range| info.to_lsp_range(range))));
-                            };
-                        }
                         server.cancellation_handles.lock().remove(&request_id);
                         server.connection.send(Message::Response(new_response(
                             request_id,
-                            Ok(Some(map_result(locations))),
+                            Ok(Some(transform_result(results))),
                         )));
                     }
                     Err(Cancelled) => {
@@ -2413,7 +2411,7 @@ impl Server {
                             request_id,
                             ErrorCode::RequestCanceled as i32,
                             message,
-                        )))
+                        )));
                     }
                 }
             }));
@@ -2437,7 +2435,7 @@ impl Server {
             handle,
             uri,
             position,
-            move |transaction, handle, definition| {
+            |transaction, handle, definition| {
                 let FindDefinitionItemWithDocstring {
                     metadata,
                     definition_range,
@@ -2451,7 +2449,16 @@ impl Server {
                     TextRangeWithModule::new(module, definition_range),
                 )
             },
-            map_result,
+            move |results: Vec<(ModuleInfo, Vec<TextRange>)>| {
+                // Transform ModuleInfo -> Url and TextRange -> Range
+                let mut locations = Vec::new();
+                for (info, ranges) in results {
+                    if let Some(uri) = module_info_to_uri(&info) {
+                        locations.push((uri, ranges.into_map(|range| info.to_lsp_range(range))));
+                    };
+                }
+                map_result(locations)
+            },
         )
     }
 
