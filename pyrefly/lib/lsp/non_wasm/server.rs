@@ -1483,7 +1483,6 @@ impl Server {
                 info!("Validated open files and saved non-committable transaction.");
             }
         }
-        self.queue_source_db_rebuild_and_recheck()
     }
 
     fn invalidate_find_for_configs(&self, invalidated_configs: SmallSet<ArcId<ConfigFile>>) {
@@ -1714,6 +1713,7 @@ impl Server {
         };
         self.version_info.lock().insert(path.clone(), version);
         self.open_files.write().insert(path.clone(), contents);
+        self.queue_source_db_rebuild_and_recheck();
         if !subsequent_mutation {
             // In order to improve perceived startup perf, when a file is opened, we run a
             // non-committing transaction that indexes the file with default require level Exports.
@@ -1952,7 +1952,7 @@ impl Server {
         // If no build system file was changed, then we should just not do anything. If
         // a build system file was changed, then the change should take effect soon.
         if should_requery_build_system {
-            self.queue_source_db_rebuild_and_recheck()
+            self.queue_source_db_rebuild_and_recheck();
         }
     }
 
@@ -1973,6 +1973,7 @@ impl Server {
                 .publish_diagnostics_for_uri(url.clone(), Vec::new(), None);
         }
         self.unsaved_file_tracker.forget_uri_path(&url);
+        self.queue_source_db_rebuild_and_recheck();
         self.recheck_queue.queue_task(HeavyTask::new(move |server| {
             // Clear out the memory associated with this file.
             // Not a race condition because we immediately call validate_in_memory to put back the open files as they are now.
@@ -1983,7 +1984,6 @@ impl Server {
             transaction.as_mut().set_memory(vec![(path, None)]);
             let _ = server.validate_in_memory_for_transaction(transaction.as_mut());
             server.state.commit_transaction(transaction);
-            server.queue_source_db_rebuild_and_recheck()
         }));
     }
 
