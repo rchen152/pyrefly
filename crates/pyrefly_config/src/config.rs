@@ -920,7 +920,7 @@ impl ConfigFile {
                 .flat_map(|x| x.1.iter())
                 .map(|p| p.module_path_buf())
                 .collect::<SmallSet<_>>();
-            let reloaded = match source_db.requery_source_db(all_files, force) {
+            let reloaded = match source_db.query_source_db(all_files, force) {
                 Err(error) => {
                     error!("Error reloading source database for config: {error:?}");
                     continue;
