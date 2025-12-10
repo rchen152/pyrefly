@@ -5749,3 +5749,26 @@ def foo():
         )]
     }
 );
+
+call_graph_testcase!(
+    test_int_compare,
+    TEST_MODULE_NAME,
+    r#"
+def foo():
+  return 1 < 2
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.foo",
+            vec![(
+                "3:10-3:15|artificial-call|comparison",
+                regular_call_callees(vec![
+                    create_call_target("builtins.int.__lt__", TargetType::Function)
+                        .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                        .with_receiver_class_for_test("builtins.int", context)
+                        .with_return_type(ScalarTypeProperties::bool()),
+                ]),
+            )],
+        )]
+    }
+);

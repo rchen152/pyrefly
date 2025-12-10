@@ -2669,19 +2669,16 @@ impl<'a> CallGraphVisitor<'a> {
     }
 
     fn resolve_and_register_compare(&mut self, compare: &ExprCompare) {
-        let Some(left_comparator_type) = &compare
-            .comparators
-            .first()
-            .and_then(|left| self.module_context.answers.get_type_trace(left.range()))
-        else {
-            return;
-        };
+        let left_comparator_type = self
+            .module_context
+            .answers
+            .get_type_trace(compare.comparators.first().unwrap().range());
 
         let mut last_lhs_start = compare.range().start();
         for (operator, right_comparator) in compare.ops.iter().zip(compare.comparators.iter()) {
             let callee_name = dunder::rich_comparison_dunder(*operator);
             let DunderAttrCallees { callees, .. } = self.call_targets_from_magic_dunder_attr(
-                /* base */ Some(left_comparator_type),
+                /* base */ left_comparator_type.as_ref(),
                 /* attribute */ callee_name.as_ref(),
                 compare.range(),
                 /* callee_expr */ None,
