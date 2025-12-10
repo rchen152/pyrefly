@@ -9,6 +9,7 @@ use std::collections::BTreeMap;
 use std::collections::HashMap;
 
 use pretty_assertions::assert_eq;
+use ruff_python_ast::name::Name;
 use serde::Serialize;
 use vec1::Vec1;
 
@@ -30,6 +31,8 @@ use crate::report::pysa::call_graph::Target;
 use crate::report::pysa::call_graph::Unresolved;
 use crate::report::pysa::call_graph::UnresolvedReason;
 use crate::report::pysa::call_graph::export_call_graphs;
+use crate::report::pysa::captured_variable::CapturedVariableRef;
+use crate::report::pysa::captured_variable::collect_captured_variables;
 use crate::report::pysa::class::ClassId;
 use crate::report::pysa::collect::CollectNoDuplicateKeys;
 use crate::report::pysa::context::ModuleContext;
@@ -71,7 +74,7 @@ fn split_module_and_identifier(string: &str) -> (String, String) {
     }
 }
 
-fn split_module_class_and_identifier(string: &str) -> (String, Option<String>, String) {
+pub fn split_module_class_and_identifier(string: &str) -> (String, Option<String>, String) {
     let parts: Vec<&str> = string.split('.').collect();
     if let Some((last, rest)) = parts.split_last()
         && let Some((second_to_last, rest_of_rest)) = rest.split_last()
@@ -294,6 +297,7 @@ fn test_building_call_graph_for_module(
         &reversed_override_graph,
     );
     let global_variables = collect_global_variables(&handles, &transaction, &module_ids);
+    let captured_variables = collect_captured_variables(&handles, &transaction, &module_ids);
 
     let test_module_handle = get_handle_for_module_name(test_module_name, &transaction);
     let context = ModuleContext::create(test_module_handle, &transaction, &module_ids).unwrap();
@@ -308,6 +312,7 @@ fn test_building_call_graph_for_module(
             &function_base_definitions,
             &override_graph,
             &global_variables,
+            &captured_variables,
         ),
         &function_base_definitions,
     );
@@ -407,6 +412,7 @@ fn class_identifier_without_constructors(
             unresolved: Unresolved::False,
         },
         global_targets: vec![],
+        nonlocal_targets: vec![],
     })
 }
 
@@ -499,6 +505,7 @@ fn identifier_callees(
             unresolved,
         },
         global_targets: vec![],
+        nonlocal_targets: vec![],
     })
 }
 
@@ -514,6 +521,7 @@ fn regular_identifier_callees(
             unresolved: Unresolved::False,
         },
         global_targets: vec![],
+        nonlocal_targets: vec![],
     })
 }
 
@@ -523,6 +531,21 @@ fn global_identifier_callees(
     ExpressionCallees::Identifier(IdentifierCallees {
         if_called: CallCallees::empty(),
         global_targets,
+        nonlocal_targets: vec![],
+    })
+}
+
+fn nonlocal_identifier_callees(
+    function: &str,
+    variable_name: &str,
+) -> ExpressionCallees<FunctionRefForTest> {
+    ExpressionCallees::Identifier(IdentifierCallees {
+        if_called: CallCallees::empty(),
+        global_targets: vec![],
+        nonlocal_targets: vec![CapturedVariableRef {
+            outer_function: FunctionRefForTest::from_string(function),
+            name: Name::new(variable_name),
+        }],
     })
 }
 
@@ -947,6 +970,7 @@ def foo(c: C):
                             unresolved: Unresolved::False,
                         },
                         global_targets: vec![],
+                        nonlocal_targets: vec![],
                     }),
                 ),
                 ("5:4-5:17", regular_call_callees(call_targets)),
@@ -5661,7 +5685,7 @@ def foo():
   x = "str"
 "#,
     &|_context: &ModuleContext| {
-        // TODO: Handle `global` keyword
+        // TODO: Handle keyword `global` in go-to-definitions
         vec![("test.foo", vec![])]
     }
 );
@@ -5768,6 +5792,68 @@ def foo():
                         .with_receiver_class_for_test("builtins.int", context)
                         .with_return_type(ScalarTypeProperties::bool()),
                 ]),
+            )],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_nonlocal_keyword,
+    TEST_MODULE_NAME,
+    r#"
+def outer():
+  x = ""
+  def inner():
+    nonlocal x
+    x = "str"
+"#,
+    &|_context: &ModuleContext| {
+        vec![(
+            "test.inner",
+            vec![(
+                "6:5-6:6|identifier|x",
+                nonlocal_identifier_callees("test.outer", "x"),
+            )],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_nonlocal_target,
+    TEST_MODULE_NAME,
+    r#"
+def outer():
+  x = ""
+  def inner():
+    y = x
+"#,
+    &|_context: &ModuleContext| {
+        vec![(
+            "test.inner",
+            vec![(
+                "5:9-5:10|identifier|x",
+                nonlocal_identifier_callees("test.outer", "x"),
+            )],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_nonlocal_target_with_outer_most_scope,
+    TEST_MODULE_NAME,
+    r#"
+def outer_most():
+  x = ""
+  def outer():
+    def inner():
+      y = x
+"#,
+    &|_context: &ModuleContext| {
+        vec![(
+            "test.inner",
+            vec![(
+                "6:11-6:12|identifier|x",
+                nonlocal_identifier_callees("test.outer_most", "x"),
             )],
         )]
     }

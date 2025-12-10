@@ -61,6 +61,9 @@ use crate::report::pysa::ast_visitor::AstScopedVisitor;
 use crate::report::pysa::ast_visitor::ScopeExportedFunctionFlags;
 use crate::report::pysa::ast_visitor::Scopes;
 use crate::report::pysa::ast_visitor::visit_module_ast;
+use crate::report::pysa::captured_variable::CapturedVariable;
+use crate::report::pysa::captured_variable::CapturedVariableRef;
+use crate::report::pysa::captured_variable::WholeProgramCapturedVariables;
 use crate::report::pysa::class::ClassRef;
 use crate::report::pysa::class::get_class_field_from_current_class_only;
 use crate::report::pysa::class::get_context_from_class;
@@ -748,6 +751,7 @@ pub struct IdentifierCallees<Function: FunctionTrait> {
     pub(crate) if_called: CallCallees<Function>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) global_targets: Vec<GlobalVariableRef>,
+    pub(crate) nonlocal_targets: Vec<CapturedVariableRef<Function>>,
 }
 
 impl<Function: FunctionTrait> IdentifierCallees<Function> {
@@ -762,11 +766,18 @@ impl<Function: FunctionTrait> IdentifierCallees<Function> {
         IdentifierCallees {
             if_called: self.if_called.map_function(map),
             global_targets: self.global_targets,
+            nonlocal_targets: self
+                .nonlocal_targets
+                .into_iter()
+                .map(|target| target.map_function(map))
+                .collect::<Vec<_>>(),
         }
     }
 
     fn is_empty(&self) -> bool {
-        self.if_called.is_empty() && self.global_targets.is_empty()
+        self.if_called.is_empty()
+            && self.global_targets.is_empty()
+            && self.nonlocal_targets.is_empty()
     }
 
     pub fn all_targets(&self) -> impl Iterator<Item = &CallTarget<Function>> {
@@ -777,6 +788,8 @@ impl<Function: FunctionTrait> IdentifierCallees<Function> {
         self.if_called.dedup_and_sort();
         self.global_targets.sort();
         self.global_targets.dedup();
+        self.nonlocal_targets.sort();
+        self.nonlocal_targets.dedup();
     }
 }
 
@@ -1323,6 +1336,7 @@ struct CallGraphVisitor<'a> {
     function_base_definitions: &'a WholeProgramFunctionDefinitions<FunctionBaseDefinition>,
     override_graph: &'a OverrideGraph,
     global_variables: &'a WholeProgramGlobalVariables,
+    captured_variables: &'a WholeProgramCapturedVariables,
     current_function: Option<FunctionRef>, // The current function, if it is exported.
     debug: bool,                           // Enable logging for the current function or class body.
     debug_scopes: Vec<bool>,               // The value of the debug flag for each scope.
@@ -2154,6 +2168,7 @@ impl<'a> CallGraphVisitor<'a> {
             return IdentifierCallees {
                 if_called: callees,
                 global_targets: vec![],
+                nonlocal_targets: vec![],
             };
         }
 
@@ -2179,8 +2194,35 @@ impl<'a> CallGraphVisitor<'a> {
             return IdentifierCallees {
                 if_called: CallCallees::empty(),
                 global_targets: vec![global],
+                nonlocal_targets: vec![],
             };
         }
+
+        // Check if this is a captured variable.
+        if let Some(current_function) = self.current_function.as_ref()
+            && let Some(current_module_captured_variables) = self
+                .captured_variables
+                .get_for_module(self.module_context.module_id)
+        {
+            let captured_variable = CapturedVariable {
+                name: name.id().clone(),
+            };
+            if let Some(captured) = current_module_captured_variables
+                .get(current_function)
+                .and_then(|captured_variables| captured_variables.get(&captured_variable))
+                .cloned()
+                .map(|outer_function| CapturedVariableRef {
+                    outer_function,
+                    name: captured_variable.name,
+                })
+            {
+                return IdentifierCallees {
+                    if_called: CallCallees::empty(),
+                    global_targets: vec![],
+                    nonlocal_targets: vec![captured],
+                };
+            }
+        };
 
         let callee_type = self.module_context.answers.get_type_trace(name.range());
         let callee_expr = Some(AnyNodeRef::from(name));
@@ -2209,6 +2251,7 @@ impl<'a> CallGraphVisitor<'a> {
         IdentifierCallees {
             if_called: callees,
             global_targets: vec![],
+            nonlocal_targets: vec![],
         }
     }
 
@@ -3271,7 +3314,7 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
         self.current_function = scopes.current_exported_function(
             self.module_id,
             self.module_name,
-            ScopeExportedFunctionFlags {
+            &ScopeExportedFunctionFlags {
                 include_top_level: true,
                 include_class_top_level: true,
                 include_function_decorators:
@@ -3305,7 +3348,7 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
                 .current_exported_function(
                     self.module_id,
                     self.module_name,
-                    ScopeExportedFunctionFlags {
+                    &ScopeExportedFunctionFlags {
                         include_top_level: false,
                         include_class_top_level: false,
                         include_function_decorators:
@@ -3369,7 +3412,6 @@ fn resolve_call(
     override_graph: &OverrideGraph,
 ) -> Vec<CallTarget<FunctionRef>> {
     let mut call_graphs = CallGraphs::new();
-    let global_variables = WholeProgramGlobalVariables::new();
     let visitor = CallGraphVisitor {
         call_graphs: &mut call_graphs,
         module_context,
@@ -3380,7 +3422,8 @@ fn resolve_call(
         debug: false,
         debug_scopes: Vec::new(),
         override_graph,
-        global_variables: &global_variables,
+        global_variables: &WholeProgramGlobalVariables::new(),
+        captured_variables: &WholeProgramCapturedVariables::new(),
         error_collector: ErrorCollector::new(module_context.module_info.dupe(), ErrorStyle::Never),
     };
     let callees = visitor.resolve_call(
@@ -3413,7 +3456,6 @@ fn resolve_expression(
         function_name: Name::new("artificial_function"),
     };
     let mut call_graphs = CallGraphs::new();
-    let global_variables = WholeProgramGlobalVariables::new();
     let mut visitor = CallGraphVisitor {
         call_graphs: &mut call_graphs,
         module_context,
@@ -3424,7 +3466,8 @@ fn resolve_expression(
         debug: false,
         debug_scopes: Vec::new(),
         override_graph,
-        global_variables: &global_variables,
+        global_variables: &WholeProgramGlobalVariables::new(),
+        captured_variables: &WholeProgramCapturedVariables::new(),
         error_collector: ErrorCollector::new(module_context.module_info.dupe(), ErrorStyle::Never),
     };
     visitor.resolve_and_register_expression(
@@ -3522,6 +3565,7 @@ pub fn export_call_graphs(
     function_base_definitions: &WholeProgramFunctionDefinitions<FunctionBaseDefinition>,
     override_graph: &OverrideGraph,
     global_variables: &WholeProgramGlobalVariables,
+    captured_variables: &WholeProgramCapturedVariables,
 ) -> CallGraphs<ExpressionIdentifier, FunctionRef> {
     let mut call_graphs = CallGraphs::new();
 
@@ -3536,6 +3580,7 @@ pub fn export_call_graphs(
         debug_scopes: Vec::new(),
         override_graph,
         global_variables,
+        captured_variables,
         error_collector: ErrorCollector::new(context.module_info.dupe(), ErrorStyle::Never),
     };
 
