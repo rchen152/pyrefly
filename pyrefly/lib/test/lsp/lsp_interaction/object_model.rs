@@ -1078,6 +1078,7 @@ impl LspInteraction {
             let args = LspArgs {
                 indexing_mode,
                 workspace_indexing_limit: 50,
+                build_system_blocking: false,
             };
             let _ = run_lsp(conn_server, args, "pyrefly-lsp-test-version");
             finish_server.notify_finished();

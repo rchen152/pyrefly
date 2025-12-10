@@ -45,6 +45,7 @@ pub fn run_tsp(connection: Connection, args: TspArgs) -> anyhow::Result<()> {
         initialization_params.clone(),
         args.indexing_mode,
         args.workspace_indexing_limit,
+        false,
     ));
 
     // Reuse the existing lsp_loop but with TSP initialization

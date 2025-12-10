@@ -339,6 +339,7 @@ pub struct Server {
     initialize_params: InitializeParams,
     indexing_mode: IndexingMode,
     workspace_indexing_limit: usize,
+    build_system_blocking: bool,
     state: State,
     /// This is a mapping from open notebook cells to the paths of the notebooks they belong to,
     /// which can be used to look up the notebook contents in `open_files`.
@@ -564,6 +565,7 @@ pub fn lsp_loop(
     initialization_params: InitializeParams,
     indexing_mode: IndexingMode,
     workspace_indexing_limit: usize,
+    build_system_blocking: bool,
 ) -> anyhow::Result<()> {
     info!("Reading messages");
     let lsp_queue = LspQueue::new();
@@ -573,6 +575,7 @@ pub fn lsp_loop(
         initialization_params,
         indexing_mode,
         workspace_indexing_limit,
+        build_system_blocking,
     );
     std::thread::scope(|scope| {
         scope.spawn(|| {
@@ -1159,6 +1162,7 @@ impl Server {
         initialize_params: InitializeParams,
         indexing_mode: IndexingMode,
         workspace_indexing_limit: usize,
+        build_system_blocking: bool,
     ) -> Self {
         let folders = if let Some(capability) = &initialize_params.capabilities.workspace
             && let Some(true) = capability.workspace_folders
@@ -1185,6 +1189,7 @@ impl Server {
             initialize_params,
             indexing_mode,
             workspace_indexing_limit,
+            build_system_blocking,
             state: State::new(config_finder),
             open_notebook_cells: RwLock::new(HashMap::new()),
             open_files: RwLock::new(HashMap::new()),
@@ -1648,7 +1653,7 @@ impl Server {
     /// Attempts to requery any open sourced_dbs for open files, and if there are changes,
     /// invalidate find and perform a recheck.
     fn queue_source_db_rebuild_and_recheck(&self) {
-        self.sourcedb_queue.queue_task(HeavyTask::new(|server| {
+        let run = |server: &Server| {
             let mut configs_to_paths: SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>> =
                 SmallMap::new();
             let config_finder = server.state.config_finder();
@@ -1673,7 +1678,13 @@ impl Server {
                 }
                 let _ = server.lsp_queue.send(LspEvent::InvalidateConfigFind);
             }
-        }));
+        };
+
+        if self.build_system_blocking {
+            run(self);
+        } else {
+            self.sourcedb_queue.queue_task(HeavyTask::new(run));
+        }
     }
 
     fn did_save(&self, url: Url) {
