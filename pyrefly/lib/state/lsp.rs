@@ -3353,11 +3353,97 @@ impl<'a> CancellableTransaction<'a> {
         Ok(results)
     }
 
+    /// Finds outgoing calls(functions called by) of a function, resolving across files.
+    ///
+    /// Given a function definition, this method finds all Call expressions within
+    /// that function's body and resolves each call target to its definition,
+    /// which may be in other files.
+    ///
+    /// Returns a vector of tuples containing:
+    /// - Target module (where the callee is defined)
+    /// - Vector of (call_site_range, callee_definition_range)
+    ///
+    /// Results are grouped by target module for consistency with find_global_callers_from_definition.
+    ///
+    /// Returns Err if the request is canceled during execution.
+    pub fn find_global_outgoing_calls_from_function_definition(
+        &mut self,
+        handle: &Handle,
+        position: TextSize,
+    ) -> Result<Vec<(Module, Vec<(TextRange, TextRange)>)>, Cancelled> {
+        // Resolve cursor position to function definition (handles both definitions and call sites)
+        let definitions =
+            self.as_ref()
+                .find_definition(handle, position, FindPreference::default());
+        let Some(target_def) = definitions.into_iter().next() else {
+            return Ok(Vec::new());
+        };
+
+        // Get handle for module where target function is defined (may differ from original handle)
+        let target_handle = Handle::new(
+            target_def.module.name(),
+            target_def.module.path().dupe(),
+            handle.sys_info().dupe(),
+        );
+
+        let Some(target_ast) = self.as_ref().get_ast(&target_handle) else {
+            return Ok(Vec::new());
+        };
+
+        let Some(func_def) = Self::find_function_at_position_in_ast(
+            &target_ast,
+            target_def.definition_range.start(),
+        ) else {
+            return Ok(Vec::new());
+        };
+
+        let mut callees_by_module: std::collections::HashMap<
+            ModulePath,
+            (Module, Vec<(TextRange, TextRange)>),
+        > = std::collections::HashMap::new();
+
+        for stmt in &func_def.body {
+            stmt.visit(&mut |expr| {
+                if let Expr::Call(call) = expr {
+                    let call_pos = call
+                        .func
+                        .range()
+                        .end()
+                        .checked_sub(TextSize::from(1))
+                        .unwrap_or(call.func.range().start());
+
+                    let definitions = self.as_ref().find_definition(
+                        &target_handle,
+                        call_pos,
+                        FindPreference::default(),
+                    );
+
+                    for def in definitions {
+                        let module_path = def.module.path().dupe();
+                        callees_by_module
+                            .entry(module_path)
+                            .or_insert_with(|| (def.module.clone(), Vec::new()))
+                            .1
+                            .push((call.range(), def.definition_range));
+                    }
+                }
+            });
+        }
+
+        let mut result: Vec<(Module, Vec<(TextRange, TextRange)>)> =
+            callees_by_module.into_values().collect();
+        result.sort_by_key(|(module, _)| module.path().dupe());
+
+        Ok(result)
+    }
+
     /// Helper: Finds a function definition at a specific position in an AST.
     ///
     /// This is used by call hierarchy to identify the function being queried.
     /// Returns None if no function is found at the position.
-    #[cfg_attr(not(test), expect(dead_code))]
+    ///
+    /// Uses `locate_node` for efficient single-pass traversal, consistent with
+    /// other LSP position-based queries. Handles nested functions and methods.
     pub(crate) fn find_function_at_position_in_ast(
         ast: &ModModule,
         position: TextSize,
@@ -3378,7 +3464,6 @@ impl<'a> CancellableTransaction<'a> {
     ///
     /// Given a call site position, finds the enclosing function and returns
     /// information needed to represent it in the call hierarchy.
-    #[cfg_attr(not(test), expect(dead_code))]
     fn find_containing_function_for_call(
         handle: &Handle,
         ast: &ModModule,
