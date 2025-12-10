@@ -25,7 +25,6 @@ def test():
 );
 
 django_testcase!(
-    bug = "Synthesize a display field when choices are present",
     test_get_foo_display,
     r#"
 from typing import assert_type
@@ -44,6 +43,6 @@ class Person(models.Model):
 p = Person(name="Fred Flintstone", shirt_size="L")
 p.save()
 assert_type(p.shirt_size, str) 
-assert_type(p.get_shirt_size_display(), str) # E: Object of class `Person` has no attribute `get_shirt_size_display` # E: assert_type(Any, str)
+assert_type(p.get_shirt_size_display(), str) 
 "#,
 );

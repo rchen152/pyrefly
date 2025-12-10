@@ -289,6 +289,8 @@ enum ClassFieldInner {
         is_staticmethod: bool,
         /// Django ForeignKey - triggers synthesis of _id field
         is_foreign_key: bool,
+        /// Django field with choices - triggers synthesis of get_FOO_display method
+        has_choices: bool,
     },
     /// Instance-only attributes (defined in methods, not in class body).
     #[allow(dead_code)]
@@ -333,6 +335,7 @@ impl ClassField {
         initialization: ClassFieldInitialization,
         read_only_reason: Option<ReadOnlyReason>,
         is_foreign_key: bool,
+        has_choices: bool,
         is_inherited: IsInherited,
     ) -> Self {
         Self(
@@ -344,6 +347,7 @@ impl ClassField {
                 is_classvar: false,
                 is_staticmethod: false,
                 is_foreign_key,
+                has_choices,
             },
             is_inherited,
         )
@@ -355,6 +359,7 @@ impl ClassField {
             None,
             ClassFieldInitialization::Magic,
             None,
+            false,
             false,
             IsInherited::Maybe,
         )
@@ -370,6 +375,7 @@ impl ClassField {
             Some(annotation),
             ClassFieldInitialization::Uninitialized,
             read_only_reason,
+            false,
             false,
             IsInherited::Maybe,
         )
@@ -429,6 +435,7 @@ impl ClassField {
                     is_classvar: false,
                     is_staticmethod: false,
                     is_foreign_key: false,
+                    has_choices: false,
                 },
                 IsInherited::Maybe,
             )
@@ -445,6 +452,7 @@ impl ClassField {
                 is_classvar: false,
                 is_staticmethod: false,
                 is_foreign_key: false,
+                has_choices: false,
             },
             IsInherited::Maybe,
         )
@@ -522,6 +530,7 @@ impl ClassField {
                 is_classvar,
                 is_staticmethod,
                 is_foreign_key,
+                has_choices,
             } => {
                 let mut ty = ty.clone();
                 f(&mut ty);
@@ -534,6 +543,7 @@ impl ClassField {
                         is_classvar: *is_classvar,
                         is_staticmethod: *is_staticmethod,
                         is_foreign_key: *is_foreign_key,
+                        has_choices: *has_choices,
                     },
                     self.1.clone(),
                 )
@@ -746,6 +756,17 @@ impl ClassField {
             ClassFieldInner::Method { .. } => false,
             ClassFieldInner::NestedClass { .. } => false,
             ClassFieldInner::ClassAttribute { is_foreign_key, .. } => *is_foreign_key,
+            ClassFieldInner::InstanceAttribute { .. } => false,
+        }
+    }
+
+    pub fn has_choices(&self) -> bool {
+        match &self.0 {
+            ClassFieldInner::Property { .. } => false,
+            ClassFieldInner::Descriptor { .. } => false,
+            ClassFieldInner::Method { .. } => false,
+            ClassFieldInner::NestedClass { .. } => false,
+            ClassFieldInner::ClassAttribute { has_choices, .. } => *has_choices,
             ClassFieldInner::InstanceAttribute { .. } => false,
         }
     }
@@ -1554,6 +1575,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let is_foreign_key = metadata.is_django_model()
             && matches!(&ty, Type::ClassType(cls) if self.is_foreign_key_field(cls.class_object()));
 
+        // Check if this is a Django field with choices
+        let has_choices = if let ClassFieldDefinition::AssignedInBody {
+            value: ExprOrBinding::Expr(expr),
+            ..
+        } = field_definition
+            && let Some(call_expr) = expr.as_call_expr()
+        {
+            metadata.is_django_model() && self.has_django_field_choices(call_expr)
+        } else {
+            false
+        };
+
         let ty = if let Some(special_ty) = self.get_special_class_field_type(
             class,
             name,
@@ -1651,6 +1684,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             is_classvar: is_class_var,
                             is_staticmethod,
                             is_foreign_key,
+                            has_choices,
                         },
                         is_inherited,
                     )
