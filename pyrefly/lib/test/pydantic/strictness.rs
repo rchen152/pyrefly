@@ -174,7 +174,7 @@ m = Model1(status="1")
 pydantic_testcase!(
     test_lax_mode_coercion_container,
     r#"
-from typing import List, reveal_type
+from typing import List, Sequence, Iterable, reveal_type
 from collections import deque
 
 from pydantic import BaseModel
@@ -203,6 +203,16 @@ class Model5(BaseModel):
     s: set[int]
 
 reveal_type(Model5.__init__) # E: revealed type: (self: Model5, *, s: Iterable[LaxInt], **Unknown) -> None
+
+class Model6(BaseModel):
+    t: Iterable[int]
+
+reveal_type(Model6.__init__) # E: revealed type: (self: Model6, *, t: Iterable[LaxInt], **Unknown) -> None
+
+class Model7(BaseModel):
+    seq: Sequence[int]
+
+reveal_type(Model7.__init__) # E: revealed type: (self: Model7, *, seq: Iterable[LaxInt], **Unknown) -> None
     "#,
 );
 

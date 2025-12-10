@@ -168,6 +168,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             || class_obj == self.stdlib.set_object()
             || class_obj == self.stdlib.frozenset_object()
             || class_obj.has_toplevel_qname(ModuleName::collections().as_str(), "deque")
+            || class_obj.has_toplevel_qname(ModuleName::typing().as_str(), "Sequence")
+            || class_obj.has_toplevel_qname(ModuleName::typing().as_str(), "Iterable")
         {
             return Some(self.stdlib.iterable(first_ty).to_type());
         }
