@@ -43,10 +43,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         union_type
     }
 
-    fn class_types_to_union(&self, types: Vec<ClassType>) -> Type {
-        self.unions(types.into_iter().map(|c| c.to_type()).collect())
-    }
-
     fn expand_types(&self, types: &[Type]) -> Vec<Type> {
         types
             .iter()
@@ -137,38 +133,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         class_obj: &Class,
         expanded_targs: &[Type],
     ) -> Option<Type> {
-        // Extract first type argument
         let first_ty = expanded_targs
             .first()
             .cloned()
             .unwrap_or_else(Type::any_implicit);
-
-        // Invariant single-element containers: use Iterable to allow covariance
-        if class_obj == self.stdlib.list_object() || class_obj == self.stdlib.set_object() {
+        // All single-element containers use Iterable to handle invariance issues
+        // This allows passing any iterable type (list, set, deque, frozenset, etc.)
+        // Note: dict is handled separately in expand_type_for_lax_mode to avoid expanding the key type
+        if class_obj == self.stdlib.list_object()
+            || class_obj == self.stdlib.set_object()
+            || class_obj == self.stdlib.frozenset_object()
+            || class_obj.has_toplevel_qname(ModuleName::collections().as_str(), "deque")
+        {
             return Some(self.stdlib.iterable(first_ty).to_type());
-        }
-
-        // Single-element containers
-        if class_obj.has_toplevel_qname(ModuleName::collections().as_str(), "deque") {
-            return Some(self.class_types_to_union(vec![
-                self.stdlib.deque(first_ty.clone()),
-                self.stdlib.frozenset(first_ty.clone()),
-                self.stdlib.list(first_ty.clone()),
-                self.stdlib.set(first_ty.clone()),
-                self.stdlib.tuple(first_ty),
-            ]));
-        }
-
-        if class_obj == self.stdlib.frozenset_object() {
-            return Some(self.class_types_to_union(vec![
-                self.stdlib.frozenset(first_ty.clone()),
-                self.stdlib.deque(first_ty.clone()),
-                self.stdlib.dict_keys(first_ty.clone(), first_ty.clone()),
-                self.stdlib.dict_values(first_ty.clone(), first_ty.clone()),
-                self.stdlib.list(first_ty.clone()),
-                self.stdlib.set(first_ty.clone()),
-                self.stdlib.tuple(first_ty),
-            ]));
         }
         None
     }

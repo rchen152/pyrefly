@@ -172,13 +172,12 @@ from pydantic import BaseModel
 class Model(BaseModel):
     x: List[int] = [0, 1]
 
-# list[int] is converted to Iterable[LaxInt] to handle invariance
 reveal_type(Model.__init__) # E: revealed type: (self: Model, *, x: Iterable[LaxInt] = ..., **Unknown) -> None
 
 class Model2(BaseModel):
     q: deque[int]
 
-reveal_type(Model2.__init__) # E: revealed type: (self: Model2, *, q: deque[LaxInt] | frozenset[LaxInt] | list[LaxInt] | set[LaxInt] | tuple[Decimal | bool | bytes | float | int | str, ...], **Unknown) -> None
+reveal_type(Model2.__init__) # E: revealed type: (self: Model2, *, q: Iterable[LaxInt], **Unknown) -> None
 
 class Model3(BaseModel):
     d: dict[str, int]
@@ -188,12 +187,11 @@ reveal_type(Model3.__init__) # E: revealed type: (self: Model3, *, d: Mapping[st
 class Model4(BaseModel):
     f: frozenset[int]
 
-reveal_type(Model4.__init__) # E: revealed type: (self: Model4, *, f: deque[LaxInt] | dict_keys[LaxInt, LaxInt] | dict_values[LaxInt, LaxInt] | frozenset[LaxInt] | list[LaxInt] | set[LaxInt] | tuple[Decimal | bool | bytes | float | int | str, ...], **Unknown) -> None
+reveal_type(Model4.__init__) # E: revealed type: (self: Model4, *, f: Iterable[LaxInt], **Unknown) -> None
 
 class Model5(BaseModel):
     s: set[int]
 
-# set[int] is converted to Iterable[LaxInt] to handle invariance
 reveal_type(Model5.__init__) # E: revealed type: (self: Model5, *, s: Iterable[LaxInt], **Unknown) -> None
     "#,
 );
@@ -250,5 +248,24 @@ class TestModel(BaseModel):
 
 my_dict = {"key1": "value1", "key2": "value2"}
 a = TestModel(name="test", metadata=my_dict)
+    "#,
+);
+
+pydantic_testcase!(
+    test_lax_mode_frozenset_invariance,
+    r#"
+from pydantic import BaseModel
+
+class TestModel(BaseModel):
+    items: frozenset[str]
+
+my_frozenset = frozenset({"a", "b"})
+a = TestModel(items=my_frozenset)
+
+my_list = ["a", "b"]
+b = TestModel(items=my_list)
+
+my_set = {"a", "b"}
+c = TestModel(items=my_set)
     "#,
 );
