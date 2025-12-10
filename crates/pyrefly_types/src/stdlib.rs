@@ -38,6 +38,7 @@ pub struct Stdlib {
     decimal: StdlibResult<ClassType>,
     date: StdlibResult<ClassType>,
     datetime: StdlibResult<ClassType>,
+    time: StdlibResult<ClassType>,
     slice: StdlibResult<(Class, Arc<TParams>)>,
     base_exception: StdlibResult<ClassType>,
     /// Introduced in Python 3.11.
@@ -167,6 +168,7 @@ impl Stdlib {
             decimal: lookup_concrete(ModuleName::from_str("decimal"), "Decimal"),
             date: lookup_concrete(ModuleName::from_str("datetime"), "date"),
             datetime: lookup_concrete(ModuleName::from_str("datetime"), "datetime"),
+            time: lookup_concrete(ModuleName::from_str("datetime"), "time"),
             slice: lookup_generic(builtins, "slice", 3),
             base_exception: lookup_concrete(builtins, "BaseException"),
             base_exception_group: version
@@ -322,6 +324,10 @@ impl Stdlib {
 
     pub fn datetime(&self) -> &ClassType {
         Self::primitive(&self.datetime)
+    }
+
+    pub fn time(&self) -> &ClassType {
+        Self::primitive(&self.time)
     }
 
     pub fn str(&self) -> &ClassType {

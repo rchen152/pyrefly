@@ -109,7 +109,7 @@ pydantic_testcase!(
 from pydantic import BaseModel
 from typing import Callable, reveal_type
 from decimal import Decimal
-from datetime import date, datetime
+from datetime import date, datetime, time
 
 class Model(BaseModel):
     x: int = 0
@@ -144,6 +144,11 @@ class Model5(BaseModel):
     dt: datetime
 
 reveal_type(Model5.__init__)  # E: revealed type: (self: Model5, *, dt: LaxDatetime, **Unknown) -> None
+
+class Model6(BaseModel):
+    t: time
+
+reveal_type(Model6.__init__)  # E: revealed type: (self: Model6, *, t: LaxTime, **Unknown) -> None
     "#,
 );
 
