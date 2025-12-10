@@ -8,20 +8,12 @@
 use std::ffi::OsString;
 use std::sync::LazyLock;
 
-use pyrefly_config::config::ConfigFile;
 use pyrefly_python::COMPILED_FILE_SUFFIXES;
 use pyrefly_python::PYTHON_EXTENSIONS;
 use pyrefly_util::events::CategorizedEvents;
 use starlark_map::small_set::SmallSet;
 
 pub fn should_requery_build_system(events: &CategorizedEvents) -> bool {
-    static CONFIG_NAMES: LazyLock<SmallSet<OsString>> = LazyLock::new(|| {
-        ConfigFile::CONFIG_FILE_NAMES
-            .iter()
-            .chain(ConfigFile::ADDITIONAL_ROOT_FILE_NAMES.iter())
-            .map(OsString::from)
-            .collect()
-    });
     static PYTHON_SUFFIXES: LazyLock<SmallSet<OsString>> = LazyLock::new(|| {
         PYTHON_EXTENSIONS
             .iter()
@@ -30,8 +22,7 @@ pub fn should_requery_build_system(events: &CategorizedEvents) -> bool {
             .collect()
     });
 
-    events.iter().any(|f| {
-        !(f.file_name().is_some_and(|n| CONFIG_NAMES.contains(n))
-            || f.extension().is_some_and(|e| PYTHON_SUFFIXES.contains(e)))
-    })
+    events
+        .iter()
+        .any(|f| !f.extension().is_some_and(|e| PYTHON_SUFFIXES.contains(e)))
 }

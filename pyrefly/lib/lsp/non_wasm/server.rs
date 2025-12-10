@@ -1652,8 +1652,8 @@ impl Server {
 
     /// Attempts to requery any open sourced_dbs for open files, and if there are changes,
     /// invalidate find and perform a recheck.
-    fn queue_source_db_rebuild_and_recheck(&self) {
-        let run = |server: &Server| {
+    fn queue_source_db_rebuild_and_recheck(&self, force: bool) {
+        let run = move |server: &Server| {
             let mut configs_to_paths: SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>> =
                 SmallMap::new();
             let config_finder = server.state.config_finder();
@@ -1670,7 +1670,7 @@ impl Server {
                     .or_default()
                     .insert(handle.path().dupe());
             }
-            let new_invalidated_configs = ConfigFile::query_source_db(&configs_to_paths);
+            let new_invalidated_configs = ConfigFile::query_source_db(&configs_to_paths, force);
             if !new_invalidated_configs.is_empty() {
                 let mut lock = server.invalidated_configs.lock();
                 for c in new_invalidated_configs {
@@ -1724,7 +1724,7 @@ impl Server {
         };
         self.version_info.lock().insert(path.clone(), version);
         self.open_files.write().insert(path.clone(), contents);
-        self.queue_source_db_rebuild_and_recheck();
+        self.queue_source_db_rebuild_and_recheck(false);
         if !subsequent_mutation {
             // In order to improve perceived startup perf, when a file is opened, we run a
             // non-committing transaction that indexes the file with default require level Exports.
@@ -1963,7 +1963,7 @@ impl Server {
         // If no build system file was changed, then we should just not do anything. If
         // a build system file was changed, then the change should take effect soon.
         if should_requery_build_system {
-            self.queue_source_db_rebuild_and_recheck();
+            self.queue_source_db_rebuild_and_recheck(true);
         }
     }
 
@@ -1984,7 +1984,7 @@ impl Server {
                 .publish_diagnostics_for_uri(url.clone(), Vec::new(), None);
         }
         self.unsaved_file_tracker.forget_uri_path(&url);
-        self.queue_source_db_rebuild_and_recheck();
+        self.queue_source_db_rebuild_and_recheck(false);
         self.recheck_queue.queue_task(HeavyTask::new(move |server| {
             // Clear out the memory associated with this file.
             // Not a race condition because we immediately call validate_in_memory to put back the open files as they are now.

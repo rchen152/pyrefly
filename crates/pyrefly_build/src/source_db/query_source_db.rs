@@ -310,10 +310,14 @@ impl SourceDatabase for QuerySourceDatabase {
         ))
     }
 
-    fn requery_source_db(&self, files: SmallSet<ModulePathBuf>) -> anyhow::Result<bool> {
+    fn requery_source_db(
+        &self,
+        files: SmallSet<ModulePathBuf>,
+        force: bool,
+    ) -> anyhow::Result<bool> {
         let new_includes = files.into_iter().map(Include::path).collect();
         let mut includes = self.includes.lock();
-        if *includes == new_includes {
+        if *includes == new_includes && !force {
             debug!("Not querying Buck source DB, since no inputs have changed");
             return Ok(false);
         }

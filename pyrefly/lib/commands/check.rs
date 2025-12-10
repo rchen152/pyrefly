@@ -420,7 +420,8 @@ impl Handles {
                 .insert(path.dupe());
         }
 
-        let reloaded_configs = ConfigFile::query_source_db(&configs);
+        // TODO(connernilsen): wire in force logic
+        let reloaded_configs = ConfigFile::query_source_db(&configs, false);
         let result = configs
             .iter()
             .flat_map(|(c, files)| files.iter().map(|p| c.handle_from_module_path(p.dupe())))

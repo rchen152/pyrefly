@@ -891,8 +891,16 @@ impl ConfigFile {
         result
     }
 
+    /// Requery the source database, if one is available, for any changes that may
+    /// occur with the current open set of files.
+    ///
+    /// When `force` is true, ignore any heuristics that would exit early if the open
+    /// set of files has not changed. Should be used when a build system file
+    /// or configuration file might have changed, or if we suspect the build system
+    /// may produce changes in generated files.
     pub fn query_source_db(
         configs_to_files: &SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>>,
+        force: bool,
     ) -> SmallSet<ArcId<ConfigFile>> {
         let mut reloaded_configs = SmallSet::new();
         let mut sourcedb_configs: SmallMap<_, Vec<_>> = SmallMap::new();
@@ -912,7 +920,7 @@ impl ConfigFile {
                 .flat_map(|x| x.1.iter())
                 .map(|p| p.module_path_buf())
                 .collect::<SmallSet<_>>();
-            let reloaded = match source_db.requery_source_db(all_files) {
+            let reloaded = match source_db.requery_source_db(all_files, force) {
                 Err(error) => {
                     error!("Error reloading source database for config: {error:?}");
                     continue;
