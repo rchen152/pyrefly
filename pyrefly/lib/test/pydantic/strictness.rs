@@ -110,6 +110,8 @@ from pydantic import BaseModel
 from typing import Callable, reveal_type
 from decimal import Decimal
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
+from uuid import UUID
 
 class Model(BaseModel):
     x: int = 0
@@ -159,6 +161,16 @@ class Model8(BaseModel):
     dec: Decimal
 
 reveal_type(Model8.__init__)  # E: revealed type: (self: Model8, *, dec: LaxDecimal, **Unknown) -> None
+
+class Model9(BaseModel):
+    p: Path
+
+reveal_type(Model9.__init__)  # E: revealed type: (self: Model9, *, p: LaxPath, **Unknown) -> None
+
+class Model10(BaseModel):
+    u: UUID
+
+reveal_type(Model10.__init__)  # E: revealed type: (self: Model10, *, u: LaxUUID, **Unknown) -> None
     "#,
 );
 

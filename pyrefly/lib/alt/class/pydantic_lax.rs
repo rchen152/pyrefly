@@ -157,6 +157,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.stdlib.str(),
                 ],
             )),
+            Type::ClassType(cls) if cls == self.stdlib.path() => {
+                Some(self.types_to_lax_union(
+                    self.stdlib.path(),
+                    &[self.stdlib.path(), self.stdlib.str()],
+                ))
+            }
+            Type::ClassType(cls) if cls == self.stdlib.uuid() => {
+                Some(self.types_to_lax_union(
+                    self.stdlib.uuid(),
+                    &[self.stdlib.uuid(), self.stdlib.str()],
+                ))
+            }
             _ => None,
         }
     }

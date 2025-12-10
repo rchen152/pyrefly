@@ -40,6 +40,8 @@ pub struct Stdlib {
     datetime: StdlibResult<ClassType>,
     time: StdlibResult<ClassType>,
     timedelta: StdlibResult<ClassType>,
+    path: StdlibResult<ClassType>,
+    uuid: StdlibResult<ClassType>,
     slice: StdlibResult<(Class, Arc<TParams>)>,
     base_exception: StdlibResult<ClassType>,
     /// Introduced in Python 3.11.
@@ -171,6 +173,8 @@ impl Stdlib {
             datetime: lookup_concrete(ModuleName::from_str("datetime"), "datetime"),
             time: lookup_concrete(ModuleName::from_str("datetime"), "time"),
             timedelta: lookup_concrete(ModuleName::from_str("datetime"), "timedelta"),
+            path: lookup_concrete(ModuleName::from_str("pathlib"), "Path"),
+            uuid: lookup_concrete(ModuleName::from_str("uuid"), "UUID"),
             slice: lookup_generic(builtins, "slice", 3),
             base_exception: lookup_concrete(builtins, "BaseException"),
             base_exception_group: version
@@ -334,6 +338,14 @@ impl Stdlib {
 
     pub fn timedelta(&self) -> &ClassType {
         Self::primitive(&self.timedelta)
+    }
+
+    pub fn path(&self) -> &ClassType {
+        Self::primitive(&self.path)
+    }
+
+    pub fn uuid(&self) -> &ClassType {
+        Self::primitive(&self.uuid)
     }
 
     pub fn str(&self) -> &ClassType {
