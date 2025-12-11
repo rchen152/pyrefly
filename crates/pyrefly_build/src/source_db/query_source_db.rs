@@ -6,6 +6,7 @@
  */
 
 use std::collections::VecDeque;
+use std::mem;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -140,9 +141,12 @@ impl QuerySourceDatabase {
             }
         }
         let mut write = self.inner.write();
-        write.db = new_db;
-        write.path_lookup = path_lookup;
-        write.package_lookup = package_lookup;
+        // force dropping write before exiting and dropping other large data structures
+        // by binding the replaced data and explicitly dropping `write`
+        let _old_db = mem::replace(&mut write.db, new_db);
+        let _old_path_lookup = mem::replace(&mut write.path_lookup, path_lookup);
+        let _old_package_lookup = mem::replace(&mut write.package_lookup, package_lookup);
+        drop(write);
         debug!("Finished updating source DB with Buck response");
         true
     }
