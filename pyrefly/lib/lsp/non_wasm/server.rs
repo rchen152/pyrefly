@@ -134,6 +134,7 @@ use lsp_types::notification::DidSaveTextDocument;
 use lsp_types::notification::Exit;
 use lsp_types::notification::Notification as _;
 use lsp_types::notification::PublishDiagnostics;
+use lsp_types::request::CallHierarchyIncomingCalls;
 use lsp_types::request::CallHierarchyPrepare;
 use lsp_types::request::CodeActionRequest;
 use lsp_types::request::Completion;
@@ -181,6 +182,7 @@ use pyrefly_util::prelude::VecExt;
 use pyrefly_util::task_heap::CancellationHandle;
 use pyrefly_util::task_heap::Cancelled;
 use pyrefly_util::watch_pattern::WatchPattern;
+use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 use serde::Serialize;
@@ -1128,6 +1130,14 @@ impl Server {
                             x.id,
                             Ok(self.prepare_call_hierarchy(&transaction, params)),
                         ));
+                    }
+                } else if let Some(params) = as_request::<CallHierarchyIncomingCalls>(&x) {
+                    if let Some(params) = self
+                        .extract_request_params_or_send_err_response::<CallHierarchyIncomingCalls>(
+                            params, &x.id,
+                        )
+                    {
+                        self.async_call_hierarchy_incoming_calls(x.id, &transaction, params);
                     }
                 } else if &x.method == "pyrefly/textDocument/docstringRanges" {
                     let text_document: TextDocumentIdentifier = serde_json::from_value(x.params)?;
@@ -3196,6 +3206,78 @@ impl Server {
         module.from_lsp_range(position, notebook_cell)
     }
 
+    /// Asynchronously finds incoming calls (callers) of a function.
+    ///
+    /// This queues work on the find_reference_queue to avoid blocking the LSP server
+    /// while searching for callers across potentially many files.
+    fn async_call_hierarchy_incoming_calls<'a>(
+        &'a self,
+        request_id: RequestId,
+        transaction: &Transaction<'a>,
+        params: lsp_types::CallHierarchyIncomingCallsParams,
+    ) {
+        let uri = params.item.uri.clone();
+
+        let Some(handle) =
+            self.make_handle_if_enabled(&uri, Some(CallHierarchyIncomingCalls::METHOD))
+        else {
+            return self.send_response(new_response::<
+                Option<Vec<lsp_types::CallHierarchyIncomingCall>>,
+            >(request_id, Ok(None)));
+        };
+
+        // The CallHierarchyItem we receive is already at the definition position
+        // (thanks to prepare_call_hierarchy doing the go-to-definition step).
+        self.async_find_from_definition_helper(
+            request_id,
+            transaction,
+            handle,
+            &uri,
+            params.item.selection_range.start,
+            FindPreference::default(),
+            |transaction, handle, definition| {
+                let target_def =
+                    TextRangeWithModule::new(definition.module.dupe(), definition.definition_range);
+
+                transaction.find_global_incoming_calls_from_function_definition(
+                    handle.sys_info(),
+                    definition.metadata.clone(),
+                    &target_def,
+                )
+            },
+            |callers| {
+                let mut incoming_calls = Vec::new();
+                for (caller_module, call_sites) in callers {
+                    for (call_range, caller_name, caller_def_range) in call_sites {
+                        let Some(caller_uri) = module_info_to_uri(&caller_module) else {
+                            continue;
+                        };
+
+                        let from = lsp_types::CallHierarchyItem {
+                            name: caller_name
+                                .split('.')
+                                .next_back()
+                                .unwrap_or(&caller_name)
+                                .to_owned(),
+                            kind: lsp_types::SymbolKind::FUNCTION,
+                            tags: None,
+                            detail: Some(caller_name),
+                            uri: caller_uri,
+                            range: caller_module.to_lsp_range(caller_def_range),
+                            selection_range: caller_module.to_lsp_range(caller_def_range),
+                            data: None,
+                        };
+
+                        incoming_calls.push(lsp_types::CallHierarchyIncomingCall {
+                            from,
+                            from_ranges: vec![caller_module.to_lsp_range(call_range)],
+                        });
+                    }
+                }
+                incoming_calls
+            },
+        );
+    }
     /// Prepares the call hierarchy by validating that the symbol at the cursor is a function/method.
     /// This can be called from anywhere within the function definition, or also on a call site of the function.
     ///
