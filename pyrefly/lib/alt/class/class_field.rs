@@ -2525,7 +2525,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         true
     }
 
-    fn should_check_field_for_override_consistency(&self, field_name: &Name) -> bool {
+    fn should_check_field_for_override_consistency(
+        &self,
+        field_name: &Name,
+        class_metadata: &Arc<ClassMetadata>,
+    ) -> bool {
         // Object construction (`__new__`, `__init__`, `__init_subclass__`) should not participate in override checks
         if field_name == &dunder::NEW
             || field_name == &dunder::INIT
@@ -2571,6 +2575,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             return false;
         }
 
+        // Django models: skip override check for `Meta` class
+        if class_metadata.is_django_model() && field_name.as_str() == "Meta" {
+            return false;
+        }
+
         true
     }
 
@@ -2587,7 +2596,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             return;
         }
 
-        if !self.should_check_field_for_override_consistency(field_name) {
+        let metadata = self.get_metadata_for_class(cls);
+        if !self.should_check_field_for_override_consistency(field_name, &metadata) {
             return;
         }
 
@@ -2600,7 +2610,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut got_attribute = None;
         let mut parent_attr_found = false;
         let mut parent_has_any = false;
-        let metadata = self.get_metadata_for_class(cls);
         let is_typed_dict_field = self.is_typed_dict_field(metadata.as_ref(), field_name);
 
         let bases_to_check: Box<dyn Iterator<Item = &ClassType>> = if bases.is_empty() {
@@ -2793,7 +2802,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let parent_class_fields = parent_class_object.fields();
             let parent_metadata = self.get_metadata_for_class(parent_class_object);
             for parent_field_name in parent_class_fields {
-                if !self.should_check_field_for_override_consistency(parent_field_name) {
+                if !self.should_check_field_for_override_consistency(
+                    parent_field_name,
+                    &current_class_metadata,
+                ) {
                     continue;
                 }
                 if current_class_fields.contains(parent_field_name) {
