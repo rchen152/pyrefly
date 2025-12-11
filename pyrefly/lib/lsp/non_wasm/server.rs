@@ -384,16 +384,27 @@ pub fn dispatch_lsp_events(connection: &Connection, lsp_queue: &LspQueue) {
     for msg in &connection.receiver {
         match msg {
             Message::Request(x) => {
-                match connection.handle_shutdown(&x) {
-                    Ok(is_shutdown) => {
+                // Catch panics from lsp_server's handle_shutdown which may unwrap on SendError
+                // when the client disconnects abruptly
+                let shutdown_result =
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        connection.handle_shutdown(&x)
+                    }));
+
+                match shutdown_result {
+                    Ok(Ok(is_shutdown)) => {
                         if is_shutdown {
                             // break to ensure we send exit event
                             break;
                         }
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         error!("Error handling shutdown: {:?}", e);
                         // still exit in the case of error
+                        break;
+                    }
+                    Err(_) => {
+                        info!("Shutdown panicked (likely client disconnected abruptly), exiting");
                         break;
                     }
                 }
