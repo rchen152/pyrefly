@@ -8,9 +8,12 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::LazyLock;
 
+use dupe::Dupe as _;
 use lsp_types::Url;
 use lsp_types::WorkspaceFoldersChangeEvent;
+use pyrefly_build::SourceDatabase;
 use pyrefly_config::config::FallbackSearchPath;
 use pyrefly_util::arc_id::ArcId;
 use pyrefly_util::arc_id::WeakArcId;
@@ -31,6 +34,34 @@ use crate::config::finder::ConfigFinder;
 use crate::state::lsp::DisplayTypeErrors;
 use crate::state::lsp::ImportFormat;
 use crate::state::lsp::InlayHintConfig;
+
+static SOURCEDB_CONFIG_MAP: LazyLock<
+    Mutex<SmallMap<ArcId<Box<dyn SourceDatabase + 'static>>, HashSet<WeakArcId<ConfigFile>>>>,
+> = LazyLock::new(|| Mutex::new(SmallMap::new()));
+
+pub fn get_configs_for_source_db(
+    source_db: ArcId<Box<dyn SourceDatabase + 'static>>,
+) -> SmallSet<ArcId<ConfigFile>> {
+    let mut map = SOURCEDB_CONFIG_MAP.lock();
+    let mut result = SmallSet::new();
+    let Some(sourcedb_configs) = map.get_mut(&source_db) else {
+        return result;
+    };
+
+    let mut old_configs = vec![];
+    for config in sourcedb_configs.iter() {
+        match config.upgrade() {
+            Some(c) => {
+                result.insert(c);
+            }
+            None => old_configs.push(config.clone()),
+        }
+    }
+    for c in old_configs {
+        sourcedb_configs.remove(&c);
+    }
+    result
+}
 
 /// Information about the Python environment provided by this workspace.
 #[derive(Debug, Clone)]
@@ -122,6 +153,14 @@ impl ConfigConfigurer for WorkspaceConfigConfigurer {
             error.print();
         }
         let config = ArcId::new(config);
+
+        if let Some(source_db) = &config.source_db {
+            SOURCEDB_CONFIG_MAP
+                .lock()
+                .entry(source_db.dupe())
+                .or_default()
+                .insert(config.downgrade());
+        }
 
         self.0.loaded_configs.insert(config.downgrade());
 

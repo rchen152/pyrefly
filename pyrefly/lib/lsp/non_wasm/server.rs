@@ -167,6 +167,7 @@ use lsp_types::request::UnregisterCapability;
 use lsp_types::request::WillRenameFiles;
 use lsp_types::request::WorkspaceConfiguration;
 use lsp_types::request::WorkspaceSymbolRequest;
+use pyrefly_build::SourceDatabase;
 use pyrefly_build::handle::Handle;
 use pyrefly_config::config::ConfigSource;
 use pyrefly_python::PYTHON_EXTENSIONS;
@@ -223,6 +224,7 @@ use crate::lsp::non_wasm::will_rename_files::will_rename_files;
 use crate::lsp::non_wasm::workspace::LspAnalysisConfig;
 use crate::lsp::non_wasm::workspace::Workspace;
 use crate::lsp::non_wasm::workspace::Workspaces;
+use crate::lsp::non_wasm::workspace::get_configs_for_source_db;
 use crate::lsp::wasm::hover::get_hover;
 use crate::lsp::wasm::notebook::DidChangeNotebookDocument;
 use crate::lsp::wasm::notebook::DidChangeNotebookDocumentParams;
@@ -340,7 +342,7 @@ pub struct Server {
     find_reference_queue: HeavyTaskQueue<HeavyTask>,
     sourcedb_queue: HeavyTaskQueue<HeavyTask>,
     /// Any configs whose find cache should be invalidated.
-    invalidated_configs: Mutex<SmallSet<ArcId<ConfigFile>>>,
+    invalidated_source_dbs: Mutex<SmallSet<ArcId<Box<dyn SourceDatabase + 'static>>>>,
     initialize_params: InitializeParams,
     indexing_mode: IndexingMode,
     workspace_indexing_limit: usize,
@@ -719,13 +721,17 @@ impl Server {
                 canceled_requests.insert(id);
             }
             LspEvent::InvalidateConfigFind => {
-                let mut lock = self.invalidated_configs.lock();
-                let invalidated_configs = std::mem::take(&mut *lock);
+                let mut lock = self.invalidated_source_dbs.lock();
+                let invalidated_source_dbs = std::mem::take(&mut *lock);
                 drop(lock);
-                if !invalidated_configs.is_empty() {
+                if !invalidated_source_dbs.is_empty() {
                     // a sourcedb rebuild completed before this, so it's okay
                     // to re-setup the file watcher right now
                     self.setup_file_watcher_if_necessary();
+                    let invalidated_configs = invalidated_source_dbs
+                        .into_iter()
+                        .flat_map(get_configs_for_source_db)
+                        .collect();
                     self.invalidate_find_for_configs(invalidated_configs);
                 }
             }
@@ -1242,7 +1248,7 @@ impl Server {
             recheck_queue: HeavyTaskQueue::new("recheck_queue"),
             find_reference_queue: HeavyTaskQueue::new("find_reference_queue"),
             sourcedb_queue: HeavyTaskQueue::new("sourcedb_queue"),
-            invalidated_configs: Mutex::new(SmallSet::new()),
+            invalidated_source_dbs: Mutex::new(SmallSet::new()),
             initialize_params,
             indexing_mode,
             workspace_indexing_limit,
@@ -1727,11 +1733,11 @@ impl Server {
                     .or_default()
                     .insert(handle.path().dupe());
             }
-            let new_invalidated_configs = ConfigFile::query_source_db(&configs_to_paths, force);
-            if !new_invalidated_configs.is_empty() {
-                let mut lock = server.invalidated_configs.lock();
-                for c in new_invalidated_configs {
-                    lock.insert(c);
+            let new_invalidated_source_dbs = ConfigFile::query_source_db(&configs_to_paths, force);
+            if !new_invalidated_source_dbs.is_empty() {
+                let mut lock = server.invalidated_source_dbs.lock();
+                for db in new_invalidated_source_dbs {
+                    lock.insert(db);
                 }
                 let _ = server.lsp_queue.send(LspEvent::InvalidateConfigFind);
             }

@@ -901,8 +901,8 @@ impl ConfigFile {
     pub fn query_source_db(
         configs_to_files: &SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>>,
         force: bool,
-    ) -> SmallSet<ArcId<ConfigFile>> {
-        let mut reloaded_configs = SmallSet::new();
+    ) -> SmallSet<ArcId<Box<dyn SourceDatabase + 'static>>> {
+        let mut reloaded_source_dbs = SmallSet::new();
         let mut sourcedb_configs: SmallMap<_, Vec<_>> = SmallMap::new();
         for (config, files) in configs_to_files {
             let Some(source_db) = &config.source_db else {
@@ -944,12 +944,10 @@ impl ConfigFile {
                         .filter_map(|x| x.0.source.root())
                         .collect::<Vec<_>>(),
                 );
-                for (config, _) in configs_and_files {
-                    reloaded_configs.insert(config.dupe());
-                }
+                reloaded_source_dbs.insert(source_db.dupe());
             }
         }
-        reloaded_configs
+        reloaded_source_dbs
     }
 
     /// Configures values that must be updated *after* overwriting with CLI flag values,
