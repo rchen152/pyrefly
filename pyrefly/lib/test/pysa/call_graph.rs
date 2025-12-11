@@ -1,9 +1,9 @@
 /*
- * Copyright (c) Meta Platforms, Inc. and affiliates.
- *
- * This source code is licensed under the MIT license found in the
- * LICENSE file in the root directory of this source tree.
- */
+* Copyright (c) Meta Platforms, Inc. and affiliates.
+*
+* This source code is licensed under the MIT license found in the
+* LICENSE file in the root directory of this source tree.
+*/
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -2696,7 +2696,7 @@ def foo(obj: Token):
                             init_targets: vec![],
                             new_targets: vec![],
                             higher_order_parameters: HashMap::new(),
-                            unresolved: Unresolved::False,
+                            unresolved: Unresolved::True(UnresolvedReason::EmptyPyreflyTarget),
                         },
                         property_setters: vec![],
                         property_getters: vec![],
@@ -5854,6 +5854,30 @@ def outer_most():
             vec![(
                 "6:11-6:12|identifier|x",
                 nonlocal_identifier_callees("test.outer_most", "x"),
+            )],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_random_random,
+    TEST_MODULE_NAME,
+    r#"
+import random
+def foo():
+  return random.random()
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.foo",
+            vec![(
+                "4:10-4:25",
+                regular_call_callees(vec![
+                    create_call_target("_random.Random.random", TargetType::Function)
+                        .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                        .with_receiver_class_for_test("random.Random", context)
+                        .with_return_type(ScalarTypeProperties::float()),
+                ]),
             )],
         )]
     }

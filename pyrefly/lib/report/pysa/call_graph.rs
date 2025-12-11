@@ -11,6 +11,8 @@ use std::hash::Hash;
 use std::ops::Not;
 
 use dupe::Dupe;
+use itertools::Either;
+use itertools::Itertools;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::dunder;
 use pyrefly_python::module_name::ModuleName;
@@ -2104,6 +2106,10 @@ impl<'a> CallGraphVisitor<'a> {
         call_arguments: Option<&ruff_python_ast::Arguments>,
         return_type: ScalarTypeProperties,
     ) -> IdentifierCallees<FunctionRef> {
+        // Always try to resolve callees using go-to definitions first.
+        // The main reason is that it automatically ignores decorators, which is
+        // the behavior we want with Pysa. When we try to resolve callees using
+        // type information, it gets complicated to ignore decorators.
         let identifier = Ast::expr_name_identifier(name.clone());
         let go_to_definition = self
             .module_context
@@ -2373,6 +2379,10 @@ impl<'a> CallGraphVisitor<'a> {
         return_type: ScalarTypeProperties,
         assignment_targets: Option<&[Expr]>,
     ) -> AttributeAccessCallees<FunctionRef> {
+        // Always try to resolve callees using go-to definitions first.
+        // The main reason is that it automatically ignores decorators, which is
+        // the behavior we want with Pysa. When we try to resolve callees using
+        // type information, it gets complicated to ignore decorators.
         let go_to_definitions = self
             .module_context
             .transaction
@@ -2386,21 +2396,6 @@ impl<'a> CallGraphVisitor<'a> {
         let callee_expr_suffix = Some(attribute.as_str());
         let receiver_type = self.module_context.answers.get_type_trace(base.range());
 
-        if go_to_definitions.is_empty() {
-            debug_println!(
-                self.debug,
-                "No go-to definitions for attribute access `{}.{}`",
-                base.display_with(self.module_context),
-                attribute
-            );
-            return self.resolve_magic_dunder_attr(
-                attribute,
-                receiver_type.as_ref(),
-                callee_expr,
-                callee_range,
-            );
-        }
-
         for go_to_definition in go_to_definitions.iter() {
             debug_println!(
                 self.debug,
@@ -2412,11 +2407,18 @@ impl<'a> CallGraphVisitor<'a> {
                 attribute,
             );
         }
+        if go_to_definitions.is_empty() {
+            debug_println!(
+                self.debug,
+                "No go-to definitions for attribute access `{}.{}`",
+                base.display_with(self.module_context),
+                attribute
+            );
+        }
 
         // Check for global variable accesses
-        let global_targets: Vec<GlobalVariableRef> = go_to_definitions
-            .iter()
-            .filter_map(|definition| {
+        let (global_targets, go_to_definitions): (Vec<GlobalVariableRef>, Vec<_>) =
+            go_to_definitions.into_iter().partition_map(|definition| {
                 let module_id = self
                     .module_context
                     .module_ids
@@ -2424,28 +2426,46 @@ impl<'a> CallGraphVisitor<'a> {
                     .unwrap();
 
                 self.global_variables
-                    .get_for_module(module_id)?
-                    .get(ShortIdentifier::from_text_range(
-                        definition.definition_range,
-                    ))
-                    .map(|global_var| GlobalVariableRef {
-                        module_id,
-                        module_name: definition.module.name(),
-                        name: global_var.name.clone(),
+                    .get_for_module(module_id)
+                    .and_then(|globals| {
+                        globals.get(ShortIdentifier::from_text_range(
+                            definition.definition_range,
+                        ))
                     })
+                    .map(|global_var| {
+                        Either::Left(GlobalVariableRef {
+                            module_id,
+                            module_name: definition.module.name(),
+                            name: global_var.name.clone(),
+                        })
+                    })
+                    .unwrap_or(Either::Right(definition))
+            });
+
+        let functions_from_go_to_def = go_to_definitions
+            .into_iter()
+            .filter_map(|definition| {
+                FunctionNode::exported_function_from_definition_item_with_docstring(
+                    &definition,
+                    self.module_context,
+                )
             })
+            .map(|(function, context)| function.as_function_ref(&context))
             .collect::<Vec<_>>();
 
+        if global_targets.is_empty() && functions_from_go_to_def.is_empty() {
+            // Fall back to using the callee type.
+            return self.resolve_magic_dunder_attr(
+                attribute,
+                receiver_type.as_ref(),
+                callee_expr,
+                callee_range,
+            );
+        }
+
         let (property_callees, non_property_callees): (Vec<FunctionRef>, Vec<FunctionRef>) =
-            go_to_definitions
-                .iter()
-                .filter_map(|definition| {
-                    FunctionNode::exported_function_from_definition_item_with_docstring(
-                        definition,
-                        self.module_context,
-                    )
-                })
-                .map(|(function, context)| function.as_function_ref(&context))
+            functions_from_go_to_def
+                .into_iter()
                 .partition(|function_ref| {
                     self.get_base_definition(function_ref)
                         .is_some_and(|definition| {

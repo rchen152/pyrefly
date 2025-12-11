@@ -390,12 +390,22 @@ impl ScalarTypeProperties {
         }
     }
 
-    #[allow(dead_code)] // Used in test code
+    #[cfg(test)]
     pub fn bool() -> ScalarTypeProperties {
         ScalarTypeProperties {
             is_bool: true,
             is_int: true,
             is_float: false,
+            is_enum: false,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn float() -> ScalarTypeProperties {
+        ScalarTypeProperties {
+            is_bool: false,
+            is_int: false,
+            is_float: true,
             is_enum: false,
         }
     }
