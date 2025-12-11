@@ -242,3 +242,67 @@ fn test_incoming_call_hierarchy_basic() {
 
     interaction.shutdown().unwrap();
 }
+
+/// todo(jvansch): Update this test once outgoing call hierarchy is implemented
+#[test]
+fn test_outgoing_call_hierarchy_not_implemented() {
+    let root = get_test_files_root();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.path().to_path_buf());
+    interaction
+        .initialize(InitializeSettings::default())
+        .unwrap();
+
+    let test_file = root.path().join("basic.py");
+    let uri = Url::from_file_path(&test_file).unwrap();
+
+    // Open a file with a simple function
+    interaction
+        .client
+        .send_notification::<DidOpenTextDocument>(json!({
+            "textDocument": {
+                "uri": uri.to_string(),
+                "languageId": "python",
+                "version": 1,
+                "text": "def foo():\n    pass\n",
+            }
+        }));
+
+    interaction.client.expect_any_message().unwrap();
+
+    // Try to send a callHierarchy/outgoingCalls request
+    // This should fail with "Unknown request" since it's not yet hooked up
+    interaction.client.send_message(Message::Request(Request {
+        id: RequestId::from(1),
+        method: "callHierarchy/outgoingCalls".to_owned(),
+        params: json!({
+            "item": {
+                "name": "foo",
+                "kind": 12,  // SymbolKind::FUNCTION
+                "uri": uri.to_string(),
+                "range": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 1, "character": 8}
+                },
+                "selectionRange": {
+                    "start": {"line": 0, "character": 4},
+                    "end": {"line": 0, "character": 7}
+                }
+            }
+        }),
+    }));
+
+    interaction
+        .client
+        .expect_response_error(
+            RequestId::from(1),
+            json!({
+                "code": -32601,
+                "message": "Unknown request: callHierarchy/outgoingCalls",
+                "data": null,
+            }),
+        )
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
