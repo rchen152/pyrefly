@@ -86,6 +86,8 @@ struct PysaProjectModule {
     module_id: ModuleId,
     module_name: ModuleName,        // e.g, `foo.bar`
     source_path: ModulePathDetails, // Path to the source code
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relative_source_path: Option<PathBuf>, // Path relative to a root or search path
     info_filename: Option<PathBuf>, // Filename for info files
     #[serde(skip_serializing)]
     handle: Handle,
@@ -231,14 +233,30 @@ fn build_module_mapping(
             }
         };
 
+        let module_name = handle.module();
+        let module_path = handle.path();
+        let relative_source_path = match module_path.details() {
+            ModulePathDetails::FileSystem(path) | ModulePathDetails::Namespace(path) => module_path
+                .root_of(module_name)
+                .and_then(|root| path.as_path().strip_prefix(root).ok())
+                .map(|path| path.to_path_buf()),
+            ModulePathDetails::Memory(_) => None,
+            ModulePathDetails::BundledTypeshed(relative_path)
+            | ModulePathDetails::BundledTypeshedThirdParty(relative_path)
+            | ModulePathDetails::BundledThirdParty(relative_path) => {
+                Some(relative_path.to_path_buf())
+            }
+        };
+
         assert!(
             project_modules
                 .insert(
                     module_id,
                     PysaProjectModule {
                         module_id,
-                        module_name: handle.module(),
-                        source_path: handle.path().details().clone(),
+                        module_name,
+                        source_path: module_path.details().clone(),
+                        relative_source_path,
                         info_filename: info_filename.clone(),
                         handle: handle.clone(),
                         is_test: false,
