@@ -230,6 +230,16 @@ class Model7(BaseModel):
     seq: Sequence[int]
 
 reveal_type(Model7.__init__) # E: revealed type: (self: Model7, *, seq: Iterable[LaxInt], **Unknown) -> None
+
+class Model8(BaseModel):
+    t: tuple[int, ...]
+
+reveal_type(Model8.__init__) # E: revealed type: (self: Model8, *, t: Iterable[LaxInt], **Unknown) -> None
+
+class Model9(BaseModel):
+    fixed: tuple[int, str, bool]
+
+reveal_type(Model9.__init__) # E: revealed type: (self: Model9, *, fixed: Iterable[Decimal | bool | bytearray | bytes | float | int | str], **Unknown) -> None
     "#,
 );
 

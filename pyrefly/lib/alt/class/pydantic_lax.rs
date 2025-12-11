@@ -9,6 +9,7 @@ use dupe::Dupe;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_types::class::ClassType;
 use pyrefly_types::keywords::ConverterMap;
+use pyrefly_types::tuple::Tuple;
 use pyrefly_types::types::TArgs;
 use pyrefly_types::types::Union;
 use starlark_map::ordered_map::OrderedMap;
@@ -197,8 +198,25 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         None
     }
 
+    fn get_tuple_element_type(&self, tuple: &Tuple) -> Type {
+        match tuple {
+            Tuple::Unbounded(elem) => self.expand_type_for_lax_mode(elem),
+            Tuple::Concrete(elems) => {
+                let expanded_elems = self.expand_types(elems);
+                self.unions(expanded_elems)
+            }
+            // this case is not a valid pydantic case
+            Tuple::Unpacked(_) => Type::any_explicit(),
+        }
+    }
+
     fn expand_type_for_lax_mode(&self, ty: &Type) -> Type {
         match ty {
+            // Tuple types: convert to Iterable[T] where T is a union of expanded element types
+            Type::Tuple(tuple) => self
+                .stdlib
+                .iterable(self.get_tuple_element_type(tuple))
+                .to_type(),
             // Container types: recursively expand all type arguments
             Type::ClassType(cls) if !cls.targs().as_slice().is_empty() => {
                 let class_obj = cls.class_object();
