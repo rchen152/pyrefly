@@ -2215,6 +2215,10 @@ impl Server {
             handle,
             uri,
             params.text_document_position_params.position,
+            FindPreference {
+                import_behavior: ImportBehavior::StopAtRenamedImports,
+                ..Default::default()
+            },
             move |transaction, handle, definition| {
                 let FindDefinitionItemWithDocstring {
                     metadata: _,
@@ -2382,6 +2386,7 @@ impl Server {
         handle: Handle,
         uri: &Url,
         position: Position,
+        find_preference: FindPreference,
         find_fn: impl FnOnce(
             &mut CancellableTransaction,
             &Handle,
@@ -2397,14 +2402,7 @@ impl Server {
         };
         let position = self.from_lsp_position(uri, &info, position);
         let Some(definition) = transaction
-            .find_definition(
-                &handle,
-                position,
-                FindPreference {
-                    import_behavior: ImportBehavior::StopAtRenamedImports,
-                    ..Default::default()
-                },
-            )
+            .find_definition(&handle, position, find_preference)
             // TODO: handle more than 1 definition
             .into_iter()
             .next()
@@ -2458,6 +2456,10 @@ impl Server {
             handle,
             uri,
             position,
+            FindPreference {
+                import_behavior: ImportBehavior::StopAtRenamedImports,
+                ..Default::default()
+            },
             |transaction, handle, definition| {
                 let FindDefinitionItemWithDocstring {
                     metadata,

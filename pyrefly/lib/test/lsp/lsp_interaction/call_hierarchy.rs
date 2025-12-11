@@ -8,6 +8,7 @@
 use lsp_server::Message;
 use lsp_server::Request;
 use lsp_server::RequestId;
+use lsp_types::SymbolKind;
 use lsp_types::Url;
 use lsp_types::notification::DidOpenTextDocument;
 use lsp_types::request::CallHierarchyPrepare;
@@ -66,7 +67,7 @@ fn test_prepare_call_hierarchy_on_function() {
             RequestId::from(1),
             json!([{
                 "name": "foo",
-                "kind": 12, // SymbolKind::FUNCTION
+                "kind": SymbolKind::FUNCTION,
                 "tags": null,
                 "detail": "basic.foo",
                 "uri": uri.to_string(),
@@ -135,7 +136,7 @@ fn test_prepare_call_hierarchy_on_call_site() {
             RequestId::from(1),
             json!([{
                 "name": "my_function",
-                "kind": 12, // SymbolKind::FUNCTION
+                "kind": SymbolKind::FUNCTION,
                 "tags": null,
                 "detail": "callee.my_function",
                 "uri": callee_uri.to_string(),  // Should point to callee.py, not caller.py
@@ -149,6 +150,70 @@ fn test_prepare_call_hierarchy_on_call_site() {
                 },
                 "data": null
             }]),
+        )
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
+
+/// todo(jvansch): Update this test once incoming call hierarchy is implemented
+#[test]
+fn test_incoming_call_hierarchy_not_implemented() {
+    let root = get_test_files_root();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.path().to_path_buf());
+    interaction
+        .initialize(InitializeSettings::default())
+        .unwrap();
+
+    let test_file = root.path().join("basic.py");
+    let uri = Url::from_file_path(&test_file).unwrap();
+
+    // Open a file with a simple function
+    interaction
+        .client
+        .send_notification::<DidOpenTextDocument>(json!({
+            "textDocument": {
+                "uri": uri.to_string(),
+                "languageId": "python",
+                "version": 1,
+                "text": "def foo():\n    pass\n",
+            }
+        }));
+
+    interaction.client.expect_any_message().unwrap();
+
+    // Try to send a callHierarchy/incomingCalls request
+    // This should fail with "Unknown request" since it's not yet hooked up
+    interaction.client.send_message(Message::Request(Request {
+        id: RequestId::from(1),
+        method: "callHierarchy/incomingCalls".to_owned(),
+        params: json!({
+            "item": {
+                "name": "foo",
+                "kind": SymbolKind::FUNCTION,
+                "uri": uri.to_string(),
+                "range": {
+                    "start": {"line": 0, "character": 0},
+                    "end": {"line": 1, "character": 8}
+                },
+                "selectionRange": {
+                    "start": {"line": 0, "character": 4},
+                    "end": {"line": 0, "character": 7}
+                }
+            }
+        }),
+    }));
+
+    interaction
+        .client
+        .expect_response_error(
+            RequestId::from(1),
+            json!({
+                "code": -32601,
+                "message": "Unknown request: callHierarchy/incomingCalls",
+                "data": null,
+            }),
         )
         .unwrap();
 
