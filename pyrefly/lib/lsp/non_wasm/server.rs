@@ -135,6 +135,7 @@ use lsp_types::notification::Exit;
 use lsp_types::notification::Notification as _;
 use lsp_types::notification::PublishDiagnostics;
 use lsp_types::request::CallHierarchyIncomingCalls;
+use lsp_types::request::CallHierarchyOutgoingCalls;
 use lsp_types::request::CallHierarchyPrepare;
 use lsp_types::request::CodeActionRequest;
 use lsp_types::request::Completion;
@@ -1138,6 +1139,14 @@ impl Server {
                         )
                     {
                         self.async_call_hierarchy_incoming_calls(x.id, &transaction, params);
+                    }
+                } else if let Some(params) = as_request::<CallHierarchyOutgoingCalls>(&x) {
+                    if let Some(params) = self
+                        .extract_request_params_or_send_err_response::<CallHierarchyOutgoingCalls>(
+                            params, &x.id,
+                        )
+                    {
+                        self.async_call_hierarchy_outgoing_calls(x.id, &transaction, params);
                     }
                 } else if &x.method == "pyrefly/textDocument/docstringRanges" {
                     let text_document: TextDocumentIdentifier = serde_json::from_value(x.params)?;
@@ -3278,6 +3287,81 @@ impl Server {
             },
         );
     }
+
+    /// Asynchronously finds outgoing calls (callees) of a function.
+    ///
+    /// This queues work on the find_reference_queue to avoid blocking the LSP server
+    /// while searching for callees across potentially many files.
+    fn async_call_hierarchy_outgoing_calls<'a>(
+        &'a self,
+        request_id: RequestId,
+        transaction: &Transaction<'a>,
+        params: lsp_types::CallHierarchyOutgoingCallsParams,
+    ) {
+        let uri = params.item.uri.clone();
+
+        let Some(handle) =
+            self.make_handle_if_enabled(&uri, Some(CallHierarchyOutgoingCalls::METHOD))
+        else {
+            return self.send_response(new_response::<
+                Option<Vec<lsp_types::CallHierarchyOutgoingCall>>,
+            >(request_id, Ok(None)));
+        };
+
+        // Clone uri for use in the transform closure
+        let uri_for_transform = uri.clone();
+
+        // The CallHierarchyItem we receive is already at the definition position
+        // (thanks to prepare_call_hierarchy doing the go-to-definition step).
+        self.async_find_from_definition_helper(
+            request_id,
+            transaction,
+            handle.dupe(),
+            &uri,
+            params.item.selection_range.start,
+            FindPreference::default(),
+            move |transaction, handle, definition| {
+                // find_global_outgoing_calls_from_function_definition expects a position
+                let position = definition.definition_range.start();
+
+                let callees = transaction
+                    .find_global_outgoing_calls_from_function_definition(handle, position)?;
+
+                // Return both the callees and the module we need for LSP range conversion
+                Ok((callees, definition.module))
+            },
+            move |(callees, source_module)| {
+                let mut outgoing_calls = Vec::new();
+                for (target_module, calls) in callees {
+                    let target_uri = lsp_types::Url::from_file_path(target_module.path().as_path())
+                        .unwrap_or_else(|()| uri_for_transform.clone());
+
+                    for (call_range, target_def_range) in calls {
+                        let target_name_short = target_module.code_at(target_def_range);
+                        let target_name = format!("{}.{}", target_module.name(), target_name_short);
+
+                        let to = lsp_types::CallHierarchyItem {
+                            name: target_name_short.to_owned(),
+                            kind: lsp_types::SymbolKind::FUNCTION,
+                            tags: None,
+                            detail: Some(target_name),
+                            uri: target_uri.clone(),
+                            range: target_module.to_lsp_range(target_def_range),
+                            selection_range: target_module.to_lsp_range(target_def_range),
+                            data: None,
+                        };
+
+                        outgoing_calls.push(lsp_types::CallHierarchyOutgoingCall {
+                            to,
+                            from_ranges: vec![source_module.to_lsp_range(call_range)],
+                        });
+                    }
+                }
+                outgoing_calls
+            },
+        );
+    }
+
     /// Prepares the call hierarchy by validating that the symbol at the cursor is a function/method.
     /// This can be called from anywhere within the function definition, or also on a call site of the function.
     ///
