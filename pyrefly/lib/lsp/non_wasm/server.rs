@@ -26,6 +26,7 @@ use lsp_server::Request;
 use lsp_server::RequestId;
 use lsp_server::Response;
 use lsp_server::ResponseError;
+use lsp_types::CallHierarchyServerCapability;
 use lsp_types::CodeAction;
 use lsp_types::CodeActionKind;
 use lsp_types::CodeActionOptions;
@@ -507,6 +508,13 @@ pub fn capabilities(
         document_symbol_provider: Some(OneOf::Left(true)),
         workspace_symbol_provider: Some(OneOf::Left(true)),
         folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
+        // Call hierarchy needs indexing to find cross-file callers/callees
+        call_hierarchy_provider: match indexing_mode {
+            IndexingMode::None => None,
+            IndexingMode::LazyNonBlockingBackground | IndexingMode::LazyBlocking => {
+                Some(CallHierarchyServerCapability::Simple(true))
+            }
+        },
         semantic_tokens_provider: if augments_syntax_tokens {
             // We currently only return partial tokens (e.g. no tokens for keywords right now).
             // If the client doesn't support `augments_syntax_tokens` to fallback baseline
