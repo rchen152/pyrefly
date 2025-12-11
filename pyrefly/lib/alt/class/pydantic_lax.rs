@@ -63,84 +63,48 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.stdlib.decimal(),
                 ],
             )),
-            Type::ClassType(cls) if cls == self.stdlib.int() => Some(self.types_to_lax_union(
-                self.stdlib.int(),
-                &[
-                    self.stdlib.int(),
-                    self.stdlib.bool(),
-                    self.stdlib.float(),
-                    self.stdlib.str(),
-                    self.stdlib.bytes(),
-                    self.stdlib.decimal(),
-                ],
-            )),
-            Type::ClassType(cls) if cls == self.stdlib.float() => Some(self.types_to_lax_union(
-                self.stdlib.float(),
-                &[
-                    self.stdlib.float(),
-                    self.stdlib.int(),
-                    self.stdlib.bool(),
-                    self.stdlib.str(),
-                    self.stdlib.bytes(),
-                    self.stdlib.decimal(),
-                ],
-            )),
-            Type::ClassType(cls) if cls == self.stdlib.bytes() => Some(self.types_to_lax_union(
-                self.stdlib.bytes(),
-                &[
-                    self.stdlib.bytes(),
-                    self.stdlib.bytearray(),
-                    self.stdlib.str(),
-                ],
-            )),
-            Type::ClassType(cls) if cls == self.stdlib.str() => Some(self.types_to_lax_union(
-                self.stdlib.str(),
-                &[
-                    self.stdlib.str(),
-                    self.stdlib.bytes(),
-                    self.stdlib.bytearray(),
-                ],
-            )),
-            Type::ClassType(cls) if cls == self.stdlib.date() => Some(self.types_to_lax_union(
-                self.stdlib.date(),
-                &[
-                    self.stdlib.date(),
-                    self.stdlib.datetime(),
-                    self.stdlib.int(),
-                    self.stdlib.float(),
-                    self.stdlib.str(),
-                    self.stdlib.bytes(),
-                    self.stdlib.decimal(),
-                ],
-            )),
-            Type::ClassType(cls) if cls == self.stdlib.datetime() => Some(self.types_to_lax_union(
-                self.stdlib.datetime(),
-                &[
-                    self.stdlib.datetime(),
-                    self.stdlib.date(),
-                    self.stdlib.int(),
-                    self.stdlib.float(),
-                    self.stdlib.str(),
-                    self.stdlib.bytes(),
-                    self.stdlib.decimal(),
-                ],
-            )),
-            Type::ClassType(cls) if cls == self.stdlib.time() => Some(self.types_to_lax_union(
-                self.stdlib.time(),
-                &[
-                    self.stdlib.time(),
-                    self.stdlib.int(),
-                    self.stdlib.float(),
-                    self.stdlib.str(),
-                    self.stdlib.bytes(),
-                    self.stdlib.decimal(),
-                ],
-            )),
-            Type::ClassType(cls) if cls == self.stdlib.timedelta() => {
+            Type::ClassType(cls) if cls == self.stdlib.int() || cls == self.stdlib.float() => {
                 Some(self.types_to_lax_union(
-                    self.stdlib.timedelta(),
+                    cls,
                     &[
-                        self.stdlib.timedelta(),
+                        self.stdlib.int(),
+                        self.stdlib.float(),
+                        self.stdlib.bool(),
+                        self.stdlib.str(),
+                        self.stdlib.bytes(),
+                        self.stdlib.decimal(),
+                    ],
+                ))
+            }
+            Type::ClassType(cls) if cls == self.stdlib.bytes() || cls == self.stdlib.str() => {
+                Some(self.types_to_lax_union(
+                    cls,
+                    &[
+                        self.stdlib.bytes(),
+                        self.stdlib.str(),
+                        self.stdlib.bytearray(),
+                    ],
+                ))
+            }
+            Type::ClassType(cls) if cls == self.stdlib.date() || cls == self.stdlib.datetime() => {
+                Some(self.types_to_lax_union(
+                    cls,
+                    &[
+                        self.stdlib.date(),
+                        self.stdlib.datetime(),
+                        self.stdlib.int(),
+                        self.stdlib.float(),
+                        self.stdlib.str(),
+                        self.stdlib.bytes(),
+                        self.stdlib.decimal(),
+                    ],
+                ))
+            }
+            Type::ClassType(cls) if cls == self.stdlib.time() || cls == self.stdlib.timedelta() => {
+                Some(self.types_to_lax_union(
+                    cls,
+                    &[
+                        cls,
                         self.stdlib.int(),
                         self.stdlib.float(),
                         self.stdlib.str(),
@@ -158,17 +122,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.stdlib.str(),
                 ],
             )),
-            Type::ClassType(cls) if cls == self.stdlib.path() => {
-                Some(self.types_to_lax_union(
-                    self.stdlib.path(),
-                    &[self.stdlib.path(), self.stdlib.str()],
-                ))
-            }
-            Type::ClassType(cls) if cls == self.stdlib.uuid() => {
-                Some(self.types_to_lax_union(
-                    self.stdlib.uuid(),
-                    &[self.stdlib.uuid(), self.stdlib.str()],
-                ))
+            Type::ClassType(cls) if cls == self.stdlib.path() || cls == self.stdlib.uuid() => {
+                Some(self.types_to_lax_union(cls, &[cls, self.stdlib.str()]))
             }
             _ => None,
         }
