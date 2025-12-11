@@ -84,6 +84,10 @@ use crate::types::callable::Param;
 use crate::types::module::ModuleType;
 use crate::types::types::Type;
 
+mod quick_fixes;
+
+use self::quick_fixes::extract_function::LocalRefactorCodeAction;
+
 fn default_true() -> bool {
     true
 }
@@ -1726,6 +1730,14 @@ impl<'a> Transaction<'a> {
         }
         code_actions.sort_by(|(title1, _, _, _), (title2, _, _, _)| title1.cmp(title2));
         Some(code_actions)
+    }
+
+    pub fn extract_function_code_actions(
+        &self,
+        handle: &Handle,
+        selection: TextRange,
+    ) -> Option<Vec<LocalRefactorCodeAction>> {
+        quick_fixes::extract_function::extract_function_code_actions(self, handle, selection)
     }
 
     /// Determines whether a module is a third-party package.
