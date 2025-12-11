@@ -316,3 +316,35 @@ my_set = {"a", "b"}
 c = TestModel(items=my_set)
     "#,
 );
+
+pydantic_testcase!(
+    test_lax_mode_other,
+    r#"
+from pydantic import BaseModel
+from typing import Any, reveal_type
+
+class Model1(BaseModel):
+    x: None
+
+reveal_type(Model1.__init__)  # E: revealed type: (self: Model1, *, x: None, **Unknown) -> None
+
+class Model2(BaseModel):
+    y: Any
+
+reveal_type(Model2.__init__)  # E: revealed type: (self: Model2, *, y: Any, **Unknown) -> None
+    "#,
+);
+
+pydantic_testcase!(
+    test_lax_mode_type_expansion,
+    r#"
+from pydantic import BaseModel
+from typing import reveal_type
+
+class Model1(BaseModel):
+    t: type[int]
+
+reveal_type(Model1.__init__)  # E: revealed type: (self: Model1, *, t: type[LaxInt], **Unknown) -> None
+
+    "#,
+);

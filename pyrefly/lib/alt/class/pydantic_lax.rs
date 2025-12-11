@@ -167,6 +167,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     fn expand_type_for_lax_mode(&self, ty: &Type) -> Type {
         match ty {
+            Type::None => ty.clone(),
+            Type::Type(box inner) => Type::Type(Box::new(self.expand_type_for_lax_mode(inner))),
             // Tuple types: convert to Iterable[T] where T is a union of expanded element types
             Type::Tuple(tuple) => self
                 .stdlib
