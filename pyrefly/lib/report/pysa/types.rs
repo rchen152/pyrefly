@@ -418,3 +418,19 @@ pub fn is_callable_like(ty: &Type) -> bool {
         _ => false,
     }
 }
+
+pub fn is_bound_method_like(ty: &Type) -> bool {
+    match ty {
+        Type::BoundMethod(_) => true,
+        Type::Overload(_) => true,
+        Type::Union(box Union {
+            members: elements, ..
+        }) => {
+            elements.iter().any(is_bound_method_like)
+                && elements
+                    .iter()
+                    .all(|ty| ty.is_none() || ty.is_any() || is_bound_method_like(ty))
+        }
+        _ => false,
+    }
+}
