@@ -294,6 +294,7 @@ impl ErrorKind {
     }
 
     pub fn default_severity(self) -> Severity {
+        // IMPORTANT: When updating these, also update error-kinds.mdx in the docs
         match self {
             ErrorKind::RevealType => Severity::Info,
             ErrorKind::Deprecated => Severity::Warn,
