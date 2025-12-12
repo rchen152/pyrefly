@@ -224,7 +224,6 @@ use crate::lsp::non_wasm::will_rename_files::will_rename_files;
 use crate::lsp::non_wasm::workspace::LspAnalysisConfig;
 use crate::lsp::non_wasm::workspace::Workspace;
 use crate::lsp::non_wasm::workspace::Workspaces;
-use crate::lsp::non_wasm::workspace::get_configs_for_source_db;
 use crate::lsp::wasm::hover::get_hover;
 use crate::lsp::wasm::notebook::DidChangeNotebookDocument;
 use crate::lsp::wasm::notebook::DidChangeNotebookDocumentParams;
@@ -730,7 +729,7 @@ impl Server {
                     self.setup_file_watcher_if_necessary();
                     let invalidated_configs = invalidated_source_dbs
                         .into_iter()
-                        .flat_map(get_configs_for_source_db)
+                        .flat_map(|db| self.workspaces.get_configs_for_source_db(db))
                         .collect();
                     self.invalidate_find_for_configs(invalidated_configs);
                 }
