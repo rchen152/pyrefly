@@ -6,7 +6,7 @@ build-backend = "maturin"
 bindings = "bin"
 python-source = "python"
 module-name = "pyrefly"
-strip = true
+strip = false
 include = ["rust-toolchain"]
 
 [project.urls]
