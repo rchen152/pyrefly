@@ -319,14 +319,16 @@ impl ServerConnection {
         &self,
         diags: SmallMap<PathBuf, Vec<Diagnostic>>,
         notebook_cell_urls: SmallMap<PathBuf, Url>,
+        version_info: HashMap<PathBuf, i32>,
     ) {
         for (path, diags) in diags {
             if let Some(url) = notebook_cell_urls.get(&path) {
                 self.publish_diagnostics_for_uri(url.clone(), diags, None)
             } else {
                 let path = path.absolutize();
+                let version = version_info.get(&path).copied();
                 match Url::from_file_path(&path) {
-                    Ok(uri) => self.publish_diagnostics_for_uri(uri, diags, None),
+                    Ok(uri) => self.publish_diagnostics_for_uri(uri, diags, version),
                     Err(_) => eprint!("Unable to convert path to uri: {path:?}"),
                 }
             }
@@ -1515,8 +1517,11 @@ impl Server {
                 let handle = make_open_handle(&self.state, path);
                 Self::append_ide_specific_diagnostics(transaction, &handle, diagnostics);
             }
-            self.connection
-                .publish_diagnostics(diags, notebook_cell_urls);
+            self.connection.publish_diagnostics(
+                diags,
+                notebook_cell_urls,
+                self.version_info.lock().clone(),
+            );
             if self
                 .initialize_params
                 .capabilities
@@ -1832,6 +1837,8 @@ impl Server {
             ));
         }
         version_info.insert(file_path.clone(), version);
+        // drop this to avoid deadlock
+        drop(version_info);
         let mut lock = self.open_files.write();
         let Some(original) = lock.get_mut(&file_path) else {
             return Err(anyhow::anyhow!(
@@ -1901,6 +1908,7 @@ impl Server {
             notebook_document.metadata = Some(metadata.clone());
         }
         version_info.insert(file_path.clone(), version);
+        drop(version_info);
         notebook_document.version = version;
         // Changes to cells
         if let Some(change) = &params.change.cells {
@@ -2033,17 +2041,21 @@ impl Server {
         let Some(path) = self.path_for_uri(&url) else {
             return;
         };
-        self.version_info.lock().remove(&path);
+        let version = self
+            .version_info
+            .lock()
+            .remove(&path)
+            .map(|version| version + 1);
         if let Some(LspFile::Notebook(notebook)) = self.open_files.write().remove(&path).as_deref()
         {
             for cell in notebook.cell_urls() {
                 self.connection
-                    .publish_diagnostics_for_uri(cell.clone(), Vec::new(), None);
+                    .publish_diagnostics_for_uri(cell.clone(), Vec::new(), version);
                 self.open_notebook_cells.write().remove(cell);
             }
         } else {
             self.connection
-                .publish_diagnostics_for_uri(url.clone(), Vec::new(), None);
+                .publish_diagnostics_for_uri(url.clone(), Vec::new(), version);
         }
         self.unsaved_file_tracker.forget_uri_path(&url);
         self.queue_source_db_rebuild_and_recheck(false);

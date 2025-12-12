@@ -5,6 +5,9 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use lsp_server::Message;
+use lsp_server::Notification;
+use lsp_types::Url;
 use pyrefly_config::environment::environment::PythonEnvironment;
 use serde_json::json;
 
@@ -787,6 +790,100 @@ fn test_shows_stdlib_errors_when_explicitly_included_in_project_includes() {
             ],
             "kind": "full"
         }))
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
+
+#[test]
+fn test_publish_diagnostics_version_numbers_only_go_up() {
+    let test_files_root = get_test_files_root();
+    let root = test_files_root.path();
+    let file = root.join("text_document.py");
+    let uri = Url::from_file_path(file).unwrap();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.to_path_buf());
+    interaction
+        .initialize(InitializeSettings::default())
+        .unwrap();
+
+    let create_version_validator = |expected_version: i64| {
+        let actual_uri = uri.as_str();
+        move |msg: Message| match msg {
+            Message::Notification(Notification { method, params })
+                if let Some((expected_uri, actual_version)) = params
+                    .get("uri")
+                    .and_then(|uri| uri.as_str())
+                    .zip(params.get("version").and_then(|version| version.as_i64()))
+                    && expected_uri == actual_uri
+                    && method == "textDocument/publishDiagnostics" =>
+            {
+                assert!(
+                    actual_version == expected_version,
+                    "expected version: {}, actual version: {}",
+                    expected_version,
+                    actual_version
+                );
+                (actual_version == expected_version).then_some(())
+            }
+            _ => None,
+        }
+    };
+
+    interaction.client.did_open("text_document.py");
+
+    let version = 1;
+    interaction
+        .client
+        .expect_message(
+            &format!(
+                "publishDiagnostics notification with version {} for file: {}",
+                version,
+                uri.as_str()
+            ),
+            create_version_validator(version),
+        )
+        .unwrap();
+
+    interaction.client.did_change("text_document.py", "a = b");
+
+    let version = 2;
+    interaction
+        .client
+        .expect_message(
+            &format!(
+                "publishDiagnostics notification with version {} for file: {}",
+                version,
+                uri.as_str()
+            ),
+            create_version_validator(version),
+        )
+        .unwrap();
+
+    interaction
+        .client
+        .send_message(Message::Notification(Notification {
+            method: "textDocument/didClose".to_owned(),
+            params: serde_json::json!({
+                "textDocument": {
+                    "uri": uri.as_str(),
+                    "languageId": "python",
+                    "version": 3
+                },
+            }),
+        }));
+
+    let version = 3;
+    interaction
+        .client
+        .expect_message(
+            &format!(
+                "publishDiagnostics notification with version {} for file: {}",
+                version,
+                uri.as_str()
+            ),
+            create_version_validator(version),
+        )
         .unwrap();
 
     interaction.shutdown().unwrap();
