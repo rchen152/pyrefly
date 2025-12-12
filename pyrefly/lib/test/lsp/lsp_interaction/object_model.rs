@@ -649,6 +649,9 @@ impl TestClient {
                         "codeDescriptionSupport": true,
                         "dataSupport": true,
                     },
+                    "documentSymbol": {
+                        "hierarchicalDocumentSymbolSupport": true
+                    },
                 },
             },
         });

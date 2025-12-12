@@ -14,6 +14,7 @@ mod configuration;
 mod definition;
 mod diagnostic;
 mod did_change;
+mod document_symbols;
 mod file_watcher;
 mod hover;
 mod implementation;
