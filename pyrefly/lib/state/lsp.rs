@@ -1723,13 +1723,20 @@ impl<'a> Transaction<'a> {
                                 import_format,
                             );
                             let range = TextRange::at(position, TextSize::new(0));
+                            let is_deprecated = export.deprecation.is_some();
                             let title = format!(
                                 "Insert import: `{}`{}",
                                 insert_text.trim(),
-                                export.deprecation.map_or("", |_| " (deprecated)")
+                                if is_deprecated { " (deprecated)" } else { "" }
                             );
 
-                            code_actions.push((title, module_info.dupe(), range, insert_text));
+                            code_actions.push((
+                                title,
+                                module_info.dupe(),
+                                range,
+                                insert_text,
+                                is_deprecated,
+                            ));
                         }
 
                         for module_name in self.search_modules_fuzzy(unknown_name) {
@@ -1743,7 +1750,13 @@ impl<'a> Transaction<'a> {
                                     import_regular_import_edit(&ast, module_handle);
                                 let range = TextRange::at(position, TextSize::new(0));
                                 let title = format!("Insert import: `{}`", insert_text.trim());
-                                code_actions.push((title, module_info.dupe(), range, insert_text));
+                                code_actions.push((
+                                    title,
+                                    module_info.dupe(),
+                                    range,
+                                    insert_text,
+                                    false,
+                                ));
                             }
                         }
                     }
@@ -1753,15 +1766,24 @@ impl<'a> Transaction<'a> {
         }
 
         // Sort code actions: non-deprecated first, then alphabetically
-        code_actions.sort_by(|(title1, _, _, _), (title2, _, _, _)| {
-            match (title1.contains("deprecated"), title2.contains("deprecated")) {
+        code_actions.sort_by(
+            |(title1, _, _, _, is_deprecated1), (title2, _, _, _, is_deprecated2)| match (
+                is_deprecated1,
+                is_deprecated2,
+            ) {
                 (true, false) => Ordering::Greater,
                 (false, true) => Ordering::Less,
                 _ => title1.cmp(title2),
-            }
-        });
+            },
+        );
 
-        Some(code_actions)
+        // Drop the deprecated flag and return
+        Some(
+            code_actions
+                .into_iter()
+                .map(|(title, module, range, insert_text, _)| (title, module, range, insert_text))
+                .collect(),
+        )
     }
 
     pub fn extract_function_code_actions(
