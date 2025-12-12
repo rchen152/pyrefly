@@ -1209,10 +1209,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     .cloned(),
             );
         }
+
         let mut abstract_members = SmallSet::new();
         for field_name in fields_to_check {
-            if let Some(field) = self.get_non_synthesized_class_member(cls, &field_name)
-                && field.is_abstract()
+            if let Some(field) =
+                self.get_non_synthesized_class_member_and_defining_class(cls, &field_name)
+                && (field.value.is_abstract() ||
+                // Uninitialized class vars in protocols are considered absract, unless it is in a stub file
+                (!cls.module().path().is_interface() && field.value.is_uninit_class_var() &&
+                self.get_metadata_for_class(&field.defining_class).is_protocol()))
             {
                 abstract_members.insert(field_name.clone());
             }

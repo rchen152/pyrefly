@@ -873,6 +873,27 @@ impl ClassField {
         }
     }
 
+    pub fn is_uninit_class_var(&self) -> bool {
+        match &self.0 {
+            ClassFieldInner::Property { .. } => false,
+            ClassFieldInner::Descriptor { .. } => false,
+            ClassFieldInner::Method { .. } => false,
+            ClassFieldInner::NestedClass { .. } => false,
+            ClassFieldInner::ClassAttribute {
+                is_classvar,
+                initialization,
+                ..
+            } => {
+                *is_classvar
+                    && matches!(
+                        initialization,
+                        ClassFieldInitialization::Uninitialized | ClassFieldInitialization::Magic
+                    )
+            }
+            ClassFieldInner::InstanceAttribute { .. } => false,
+        }
+    }
+
     pub fn is_init_var(&self) -> bool {
         match &self.0 {
             ClassFieldInner::Property { .. } => false,
@@ -3018,11 +3039,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         cls: &Class,
         name: &Name,
     ) -> Option<Arc<ClassField>> {
+        self.get_non_synthesized_class_member_and_defining_class(cls, name)
+            .map(|x| x.value)
+    }
+
+    pub fn get_non_synthesized_class_member_and_defining_class(
+        &self,
+        cls: &Class,
+        name: &Name,
+    ) -> Option<WithDefiningClass<Arc<ClassField>>> {
         self.get_field_from_mro(cls, name, &|cls, name| {
             self.get_non_synthesized_field_from_current_class_only(cls, name)
                 .filter(|field| !field.is_init_var())
         })
-        .map(|x| x.value)
     }
 
     fn get_synthesized_field_from_current_class_only(
