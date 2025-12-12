@@ -2376,7 +2376,7 @@ impl Server {
         let range = self.from_lsp_range(uri, &module_info, params.range);
         let mut actions = Vec::new();
         if let Some(quickfixes) =
-            transaction.local_quickfix_code_actions(&handle, range, import_format)
+            transaction.local_quickfix_code_actions_sorted(&handle, range, import_format)
         {
             actions.extend(
                 quickfixes

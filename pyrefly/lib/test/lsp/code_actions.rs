@@ -33,7 +33,7 @@ fn get_test_report(state: &State, handle: &Handle, position: TextSize) -> String
     let mut report = "Code Actions Results:\n".to_owned();
     let transaction = state.transaction();
     for (title, info, range, patch) in transaction
-        .local_quickfix_code_actions(
+        .local_quickfix_code_actions_sorted(
             handle,
             TextRange::new(position, position),
             ImportFormat::Absolute,
@@ -313,6 +313,90 @@ my_export
 from a import my_export
 from a import another_thing
 my_export
+# ^
+"#
+        .trim(),
+        report.trim()
+    );
+}
+
+#[test]
+fn test_import_from_stdlib() {
+    let report = get_batched_lsp_operations_report_allow_error(
+        &[("a", "TypeVar('T')\n# ^")],
+        get_test_report,
+    );
+    // TODO: Ideally `typing` would be preferred over `ast`.
+    assert_eq!(
+        r#"
+# a.py
+1 | TypeVar('T')
+      ^
+Code Actions Results:
+# Title: Insert import: `from ast import TypeVar`
+
+## Before:
+TypeVar('T')
+# ^
+## After:
+from ast import TypeVar
+TypeVar('T')
+# ^
+# Title: Insert import: `from typing import TypeVar`
+
+## Before:
+TypeVar('T')
+# ^
+## After:
+from typing import TypeVar
+TypeVar('T')
+# ^
+"#
+        .trim(),
+        report.trim()
+    );
+}
+
+#[test]
+fn test_take_deprecation_into_account_in_sorting_of_actions() {
+    let report = get_batched_lsp_operations_report_allow_error(
+        &[
+            (
+                "a",
+                "from warnings import deprecated\n@deprecated('')\ndef my_func(): pass",
+            ),
+            ("b", "def my_func(): pass"),
+            ("c", "my_func()\n# ^"),
+        ],
+        get_test_report,
+    );
+    assert_eq!(
+        r#"
+# a.py
+
+# b.py
+
+# c.py
+1 | my_func()
+      ^
+Code Actions Results:
+# Title: Insert import: `from b import my_func`
+
+## Before:
+my_func()
+# ^
+## After:
+from b import my_func
+my_func()
+# ^
+# Title: Insert import: `from a import my_func` (deprecated)
+
+## Before:
+my_func()
+# ^
+## After:
+from a import my_func
+my_func()
 # ^
 "#
         .trim(),
