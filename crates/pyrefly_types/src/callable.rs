@@ -856,8 +856,8 @@ impl FunctionKind {
             ("abc", None, "abstractmethod") => Self::AbstractMethod,
             ("functools", None, "total_ordering") => Self::TotalOrdering,
             ("typing" | "typing_extensions", None, "disjoint_base") => Self::DisjointBase,
-            ("numba", None, "jit") => Self::NumbaJit,
-            ("numba", None, "njit") => Self::NumbaNjit,
+            ("numba.core.decorators", None, "jit") => Self::NumbaJit,
+            ("numba.core.decorators", None, "njit") => Self::NumbaNjit,
             _ => Self::Def(Box::new(FuncId {
                 module,
                 cls,
