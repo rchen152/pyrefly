@@ -39,6 +39,7 @@ use ruff_python_ast::ExprCall;
 use ruff_python_ast::ExprCompare;
 use ruff_python_ast::ExprFString;
 use ruff_python_ast::ExprName;
+use ruff_python_ast::ExprStringLiteral;
 use ruff_python_ast::ExprSubscript;
 use ruff_python_ast::InterpolatedElement;
 use ruff_python_ast::ModModule;
@@ -102,6 +103,7 @@ pub enum OriginKind {
     BinaryOperator,
     ForIter,
     ForNext,
+    ReprCall,
 }
 
 impl std::fmt::Display for OriginKind {
@@ -118,6 +120,7 @@ impl std::fmt::Display for OriginKind {
             Self::BinaryOperator => write!(f, "binary"),
             Self::ForIter => write!(f, "for-iter"),
             Self::ForNext => write!(f, "for-next"),
+            Self::ReprCall => write!(f, "repr-call"),
         }
     }
 }
@@ -2056,50 +2059,6 @@ impl<'a> CallGraphVisitor<'a> {
         }
     }
 
-    fn resolve_repr_special_case(
-        &self,
-        function_ref: FunctionRef,
-        call_arguments: Option<&ruff_python_ast::Arguments>,
-        callee_expr: Option<AnyNodeRef>,
-        callee_type: Option<&Type>,
-        return_type: ScalarTypeProperties,
-        callee_expr_suffix: Option<&str>,
-    ) -> Option<CallCallees<FunctionRef>> {
-        if function_ref.module_name == ModuleName::builtins()
-            && function_ref.function_name == "repr"
-        {
-            // Find the actual `__repr__`
-            let actual_repr = call_arguments
-                .as_ref()
-                .and_then(|arguments| arguments.find_positional(0))
-                .and_then(|argument| self.module_context.answers.get_type_trace(argument.range()))
-                .map(|first_argument_type| {
-                    self.call_targets_from_method_name(
-                        &dunder::REPR,
-                        Some(&first_argument_type),
-                        callee_expr,
-                        callee_type,
-                        return_type,
-                        /* is_bound_method */ true,
-                        callee_expr_suffix,
-                        /* override_implicit_receiver*/ None,
-                        /* override_is_direct_call */ None,
-                        /* unknown_callee_as_direct_call */ true,
-                        /* exclude_object_methods */ false,
-                    )
-                });
-            if let Some(actual_repr) = actual_repr
-                && !actual_repr.is_unresolved()
-            {
-                Some(actual_repr.into_call_callees())
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-
     fn resolve_name(
         &self,
         name: &ExprName,
@@ -2148,16 +2107,7 @@ impl<'a> CallGraphVisitor<'a> {
             let callee_expr = Some(AnyNodeRef::from(name));
             let callee_expr_suffix = Some(name.id.as_str());
 
-            let callees = if let Some(callee) = self.resolve_repr_special_case(
-                function_ref.clone(),
-                call_arguments,
-                callee_expr,
-                callee_type.as_ref(),
-                return_type,
-                callee_expr_suffix,
-            ) {
-                callee
-            } else {
+            let callees =
                 CallCallees::new(Vec1::new(self.call_target_from_static_or_virtual_call(
                     function_ref,
                     callee_expr,
@@ -2168,8 +2118,7 @@ impl<'a> CallGraphVisitor<'a> {
                     /* override_implicit_receiver*/ None,
                     /* override_is_direct_call */ None,
                     /* unknown_callee_as_direct_call */ true,
-                )))
-            };
+                )));
 
             return IdentifierCallees {
                 if_called: callees,
@@ -2685,6 +2634,61 @@ impl<'a> CallGraphVisitor<'a> {
             .unwrap_or(ScalarTypeProperties::none())
     }
 
+    fn resolve_and_register_getattr(
+        &mut self,
+        call: &ExprCall,
+        base: &Expr,
+        attribute: &ExprStringLiteral,
+        _default_value: &Expr,
+        return_type: ScalarTypeProperties,
+        assignment_targets: Option<&[Expr]>,
+    ) {
+        let callees = ExpressionCallees::AttributeAccess(self.resolve_attribute_access(
+            base,
+            &Name::new(attribute.value.to_str()),
+            /* callee_expr */ None,
+            /* callee_type */ None,
+            call.range(),
+            return_type,
+            assignment_targets,
+        ));
+        let expression_identifier = ExpressionIdentifier::ArtificialAttributeAccess(Origin {
+            kind: OriginKind::GetAttrConstantLiteral,
+            location: self.pysa_location(call.range()),
+        });
+        self.add_callees(expression_identifier, callees);
+    }
+
+    fn resolve_and_register_repr(
+        &mut self,
+        call: &ExprCall,
+        argument: &Expr,
+        return_type: ScalarTypeProperties,
+    ) {
+        let argument_type = self.module_context.answers.get_type_trace(argument.range());
+        let callees = self.call_targets_from_method_name(
+            &dunder::REPR,
+            argument_type.as_ref(),
+            /* callee_expr */ None,
+            /* callee_type */ None,
+            return_type,
+            /* is_bound_method */ true,
+            /* callee_expr_suffix */ Some(&dunder::REPR),
+            /* override_implicit_receiver */ None,
+            /* override_is_direct_call */ None,
+            /* unknown_callee_as_direct_call */ true,
+            /* exclude_object_methods */ false,
+        );
+        let expression_identifier = ExpressionIdentifier::ArtificialCall(Origin {
+            kind: OriginKind::ReprCall,
+            location: self.pysa_location(call.range()),
+        });
+        self.add_callees(
+            expression_identifier,
+            ExpressionCallees::Call(callees.into_call_callees()),
+        );
+    }
+
     fn resolve_and_register_call(
         &mut self,
         call: &ExprCall,
@@ -2701,30 +2705,33 @@ impl<'a> CallGraphVisitor<'a> {
         ));
         self.add_callees(expression_identifier, callees);
 
+        // Add extra callees for specific functions.
+        // The pattern matching here must match exactly with different pattern
+        // matches under `preprocess_statement` in callGraphBuilder.ml
         match callee.as_ref() {
             Expr::Name(name) if name.id == "getattr" => {
                 let base = call.arguments.find_positional(0);
                 let attribute = call.arguments.find_positional(1);
-                match (base, attribute) {
-                    (Some(base), Some(Expr::StringLiteral(attribute))) => {
-                        let callees =
-                            ExpressionCallees::AttributeAccess(self.resolve_attribute_access(
-                                base,
-                                &Name::new(attribute.value.to_str()),
-                                /* callee_expr */ None,
-                                /* callee_type */ None,
-                                call.range(),
-                                return_type,
-                                assignment_targets,
-                            ));
-                        let expression_identifier =
-                            ExpressionIdentifier::ArtificialAttributeAccess(Origin {
-                                kind: OriginKind::GetAttrConstantLiteral,
-                                location: self.pysa_location(call.range()),
-                            });
-                        self.add_callees(expression_identifier, callees);
+                let default_value = call.arguments.find_positional(2);
+                match (base, attribute, default_value) {
+                    (Some(base), Some(Expr::StringLiteral(attribute)), Some(default_value)) => {
+                        self.resolve_and_register_getattr(
+                            call,
+                            base,
+                            attribute,
+                            default_value,
+                            return_type,
+                            assignment_targets,
+                        );
                     }
                     _ => {}
+                }
+            }
+            Expr::Name(name) if name.id == "repr" => {
+                let argument = call.arguments.find_positional(0);
+                match argument {
+                    Some(argument) => self.resolve_and_register_repr(call, argument, return_type),
+                    _ => (),
                 }
             }
             _ => {}

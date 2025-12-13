@@ -1,9 +1,9 @@
 /*
-* Copyright (c) Meta Platforms, Inc. and affiliates.
-*
-* This source code is licensed under the MIT license found in the
-* LICENSE file in the root directory of this source tree.
-*/
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
 
 use std::collections::BTreeMap;
 use std::collections::HashMap;
@@ -1443,14 +1443,25 @@ def foo(c: C):
   repr(c)
 "#,
     &|context: &ModuleContext| {
-        let call_targets = vec![
-            create_call_target("test.C.__repr__", TargetType::Function)
-                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
-                .with_receiver_class_for_test("test.C", context),
-        ];
         vec![(
             "test.foo",
-            vec![("5:3-5:10", regular_call_callees(call_targets))],
+            vec![
+                (
+                    "5:3-5:10",
+                    regular_call_callees(vec![create_call_target(
+                        "builtins.repr",
+                        TargetType::Function,
+                    )]),
+                ),
+                (
+                    "5:3-5:10|artificial-call|repr-call",
+                    regular_call_callees(vec![
+                        create_call_target("test.C.__repr__", TargetType::Function)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_receiver_class_for_test("test.C", context),
+                    ]),
+                ),
+            ],
         )]
     }
 );
@@ -1465,14 +1476,25 @@ def foo(c: C):
   repr(c)
 "#,
     &|_context: &ModuleContext| {
-        let call_targets = vec![
-            create_call_target("builtins.object.__repr__", TargetType::Function)
-                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
-                .with_receiver_class_for_test("test.C", _context),
-        ];
         vec![(
             "test.foo",
-            vec![("5:3-5:10", regular_call_callees(call_targets))],
+            vec![
+                (
+                    "5:3-5:10",
+                    regular_call_callees(vec![create_call_target(
+                        "builtins.repr",
+                        TargetType::Function,
+                    )]),
+                ),
+                (
+                    "5:3-5:10|artificial-call|repr-call",
+                    regular_call_callees(vec![
+                        create_call_target("builtins.object.__repr__", TargetType::Function)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_receiver_class_for_test("test.C", _context),
+                    ]),
+                ),
+            ],
         )]
     }
 );
