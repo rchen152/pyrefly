@@ -10,6 +10,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use dupe::Dupe;
+use pyrefly_graph::index::Idx;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::dunder;
 use pyrefly_python::short_identifier::ShortIdentifier;
@@ -103,7 +104,6 @@ use crate::error::context::TypeCheckKind;
 use crate::error::style::ErrorStyle;
 use crate::export::deprecation::parse_deprecation;
 use crate::export::special::SpecialExport;
-use crate::graph::index::Idx;
 use crate::solver::solver::SubsetError;
 use crate::types::annotation::Annotation;
 use crate::types::annotation::Qualifier;

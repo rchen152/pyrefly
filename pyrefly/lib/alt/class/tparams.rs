@@ -9,6 +9,7 @@ use std::ops::Deref;
 use std::sync::Arc;
 
 use dupe::Dupe;
+use pyrefly_graph::index::Idx;
 use ruff_python_ast::Identifier;
 use ruff_python_ast::TypeParams;
 use ruff_text_size::Ranged;
@@ -25,7 +26,6 @@ use crate::binding::binding::KeyTParams;
 use crate::config::error_kind::ErrorKind;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
-use crate::graph::index::Idx;
 use crate::types::class::Class;
 use crate::types::types::TParams;
 use crate::types::types::TParamsSource;

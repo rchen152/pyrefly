@@ -97,7 +97,8 @@ impl<T: Dupe, R: Dupe> Calculation<T, R> {
                 *lock = Status::Calculating(Box::new((None, smallset! {thread::current().id()})));
                 ProposalResult::Calculatable
             }
-            Status::Calculating(box (rec, threads)) => {
+            Status::Calculating(calc) => {
+                let (rec, threads) = &mut **calc;
                 if threads.insert(thread::current().id()) {
                     ProposalResult::Calculatable
                 } else {
@@ -122,7 +123,8 @@ impl<T: Dupe, R: Dupe> Calculation<T, R> {
             Status::NotCalculated => {
                 unreachable!("Should not record a recursive result before calculating")
             }
-            Status::Calculating(box (rec, _)) => {
+            Status::Calculating(calc) => {
+                let rec = &mut calc.0;
                 if rec.is_none() {
                     // The first thread to write a cycle placeholder wins
                     *rec = Some(placeholder.dupe());
@@ -146,7 +148,8 @@ impl<T: Dupe, R: Dupe> Calculation<T, R> {
             Status::NotCalculated => {
                 unreachable!("Should not record a result before calculating")
             }
-            Status::Calculating(box (rec, _)) => {
+            Status::Calculating(calc) => {
+                let rec = &mut calc.0;
                 let value = match rec.take() {
                     Some(r) => on_recursive(r, value),
                     None => value,

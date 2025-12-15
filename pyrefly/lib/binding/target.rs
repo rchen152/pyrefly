@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use pyrefly_graph::index::Idx;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprAttribute;
@@ -34,7 +35,6 @@ use crate::binding::narrow::identifier_and_chain_prefix_for_expr;
 use crate::binding::scope::FlowStyle;
 use crate::binding::scope::NameReadInfo;
 use crate::export::special::SpecialExport;
-use crate::graph::index::Idx;
 
 impl<'a> BindingsBuilder<'a> {
     /// Bind one level of an unpacked LHS target, for example in `x, (y, [*z]), q = foo`

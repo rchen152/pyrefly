@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use pyrefly_graph::index::Idx;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::nesting_context::NestingContext;
@@ -50,7 +51,6 @@ use crate::export::exports::Export;
 use crate::export::exports::ExportLocation;
 use crate::export::exports::Exports;
 use crate::export::special::SpecialExport;
-use crate::graph::index::Idx;
 use crate::state::loader::FindError;
 use crate::state::loader::FindingOrError;
 use crate::types::alias::resolve_typeshed_alias;

@@ -2042,6 +2042,7 @@ dependencies = [
  "pyrefly_bundled",
  "pyrefly_config",
  "pyrefly_derive",
+ "pyrefly_graph",
  "pyrefly_python",
  "pyrefly_types",
  "pyrefly_util",
@@ -2141,6 +2142,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.111",
+]
+
+[[package]]
+name = "pyrefly_graph"
+version = "0.46.0"
+dependencies = [
+ "dupe",
+ "itertools 0.14.0",
+ "pyrefly_util",
+ "starlark_map",
 ]
 
 [[package]]

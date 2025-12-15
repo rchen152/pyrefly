@@ -8,7 +8,7 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::graph::index::Idx;
+use crate::index::Idx;
 
 /// A mapping from `Idx<K>` to `V`.
 /// All the `Idx` values must be obtained from the same `Index`.
@@ -34,6 +34,10 @@ impl<K, V> IndexMap<K, V> {
 
     pub fn len(&self) -> usize {
         self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 
     pub fn get(&self, key: Idx<K>) -> Option<&V> {
