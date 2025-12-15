@@ -55,6 +55,7 @@ mod pysa;
 mod redundant_cast;
 mod returns;
 mod scope;
+mod semantic_syntax_errors;
 mod simple;
 mod state;
 mod subscript_narrow;

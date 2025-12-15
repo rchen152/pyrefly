@@ -485,9 +485,9 @@ impl Bindings {
             | SemanticSyntaxErrorKind::ContinueOutsideLoop
             | SemanticSyntaxErrorKind::SingleStarredAssignment
             | SemanticSyntaxErrorKind::DifferentMatchPatternBindings
-            | SemanticSyntaxErrorKind::IrrefutableCasePattern(_) => true,
-            SemanticSyntaxErrorKind::LateFutureImport
-            | SemanticSyntaxErrorKind::InvalidStarExpression
+            | SemanticSyntaxErrorKind::IrrefutableCasePattern(_)
+            | SemanticSyntaxErrorKind::LateFutureImport => true,
+            SemanticSyntaxErrorKind::InvalidStarExpression
             | SemanticSyntaxErrorKind::ReboundComprehensionVariable
             | SemanticSyntaxErrorKind::DuplicateTypeParameter
             | SemanticSyntaxErrorKind::MultipleCaseAssignment(_)
