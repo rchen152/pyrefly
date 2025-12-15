@@ -278,6 +278,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn narrow_length_greater(&self, ty: &Type, len: usize) -> Type {
         self.distribute_over_union(ty, |ty| match ty {
             Type::Tuple(Tuple::Concrete(elts)) if elts.len() <= len => Type::never(),
+            Type::Literal(Lit::Str(x)) if x.len() <= len => Type::never(),
             Type::ClassType(class)
                 if let Some(Tuple::Concrete(elts)) = self.as_tuple(class)
                     && elts.len() <= len =>
