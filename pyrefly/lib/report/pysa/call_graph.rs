@@ -2062,7 +2062,7 @@ impl<'a> CallGraphVisitor<'a> {
     fn resolve_name(
         &self,
         name: &ExprName,
-        call_arguments: Option<&ruff_python_ast::Arguments>,
+        _call_arguments: Option<&ruff_python_ast::Arguments>,
         return_type: ScalarTypeProperties,
     ) -> IdentifierCallees<FunctionRef> {
         // Always try to resolve callees using go-to definitions first.
