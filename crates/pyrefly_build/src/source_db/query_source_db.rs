@@ -548,6 +548,13 @@ mod tests {
                 Target::from_string("//pyre/client/log:log".to_owned()),
                 Target::from_string("//pyre/client/log:log2".to_owned()),
             },
+            // Synthesized parent packages from pyre.client.log.log and pyre.client.log.format
+            ModulePathBuf::new(root.join("pyre/client")) => smallset! {
+                Target::from_string("//pyre/client/log:log".to_owned()),
+            },
+            ModulePathBuf::new(root.join("pyre")) => smallset! {
+                Target::from_string("//pyre/client/log:log".to_owned()),
+            },
             ModulePathBuf::new(root.join("implicit_package/test")) => smallset! {
                 Target::from_string("//implicit_package/test:main".to_owned()),
                 Target::from_string("//implicit_package/test:lib".to_owned()),
@@ -889,6 +896,13 @@ mod tests {
                 Target::from_string("//colorama:py".to_owned()),
             },
             ModulePathBuf::new(root.join("pyre/client/log/__init__.py")) => smallset! {
+                Target::from_string("//pyre/client/log:log".to_owned()),
+            },
+            // Synthesized parent packages from pyre.client.log.log
+            ModulePathBuf::new(root.join("pyre/client")) => smallset! {
+                Target::from_string("//pyre/client/log:log".to_owned()),
+            },
+            ModulePathBuf::new(root.join("pyre")) => smallset! {
                 Target::from_string("//pyre/client/log:log".to_owned()),
             },
         };
