@@ -1394,4 +1394,39 @@ mod tests {
 
         assert_eq!(result.1, expected_ancestor_synthesized_packages);
     }
+
+    #[test]
+    fn test_implicit_packages_for_generated_files() {
+        let db = TargetManifestDatabase::new(
+            smallmap! {
+                Target::from_string("//thrift:types".to_owned()) => TargetManifest::lib(
+                    &[("foo.bar.types", &["buck-out/gen/foo/bar/types.pyi"])],
+                    &[],
+                    "thrift/BUCK",
+                    &[],
+                    None
+                ),
+            },
+            PathBuf::from("/repo"),
+        );
+
+        let result = db.produce_map();
+        let manifest = result
+            .get(&Target::from_string("//thrift:types".to_owned()))
+            .unwrap();
+
+        // TODO(grievejia): Both of these assertions should hold. Need to fix the logic to make them true.
+        assert!(
+            !manifest
+                .packages
+                .contains_key(&ModuleName::from_str("foo.bar")),
+            "Expected packages to contain 'foo.bar', but got: {:?}",
+            manifest.packages.keys().collect::<Vec<_>>()
+        );
+        assert!(
+            !manifest.packages.contains_key(&ModuleName::from_str("foo")),
+            "Expected packages to contain 'foo', but got: {:?}",
+            manifest.packages.keys().collect::<Vec<_>>()
+        );
+    }
 }
