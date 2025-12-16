@@ -57,3 +57,30 @@ testcase!(
 [y := 1 for y in range(10)]  # E: assignment expression cannot rebind comprehension variable
 "#,
 );
+
+testcase!(
+    test_nonlocal_at_module_level,
+    r#"
+nonlocal x  # E: nonlocal declaration not allowed at module level
+"#,
+);
+
+testcase!(
+    test_nonlocal_in_class_body,
+    r#"
+x = 1
+class Foo:
+    nonlocal x  # E: Found `x`, but it is coming from the global scope
+"#,
+);
+
+testcase!(
+    test_nonlocal_inside_function_ok,
+    r#"
+def outer():
+    x = 1
+    def inner():
+        nonlocal x
+        x = 2
+"#,
+);

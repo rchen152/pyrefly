@@ -488,7 +488,8 @@ impl Bindings {
             | SemanticSyntaxErrorKind::IrrefutableCasePattern(_)
             | SemanticSyntaxErrorKind::LateFutureImport
             | SemanticSyntaxErrorKind::ReboundComprehensionVariable
-            | SemanticSyntaxErrorKind::DuplicateParameter(_) => true,
+            | SemanticSyntaxErrorKind::DuplicateParameter(_)
+            | SemanticSyntaxErrorKind::NonlocalDeclarationAtModuleLevel => true,
             SemanticSyntaxErrorKind::InvalidStarExpression
             | SemanticSyntaxErrorKind::DuplicateTypeParameter
             | SemanticSyntaxErrorKind::MultipleCaseAssignment(_)
@@ -502,7 +503,6 @@ impl Bindings {
             | SemanticSyntaxErrorKind::YieldOutsideFunction(_)
             | SemanticSyntaxErrorKind::ReturnOutsideFunction
             | SemanticSyntaxErrorKind::AwaitOutsideAsyncFunction(_)
-            | SemanticSyntaxErrorKind::NonlocalDeclarationAtModuleLevel
             | SemanticSyntaxErrorKind::NonlocalAndGlobal(_)
             | SemanticSyntaxErrorKind::AnnotatedGlobal(_)
             | SemanticSyntaxErrorKind::AnnotatedNonlocal(_)
@@ -907,11 +907,16 @@ impl<'a> BindingsBuilder<'a> {
         {
             Ok(key) => Binding::Forward(self.table.types.0.insert(key)),
             Err(error) => {
-                self.error(
-                    name.range,
-                    ErrorInfo::Kind(ErrorKind::UnknownName),
-                    error.message(name),
-                );
+                let should_suppress = matches!(kind, MutableCaptureKind::Nonlocal)
+                    && self.scopes.in_module_or_class_top_level()
+                    && !self.scopes.in_class_body();
+                if !should_suppress {
+                    self.error(
+                        name.range,
+                        ErrorInfo::Kind(ErrorKind::UnknownName),
+                        error.message(name),
+                    );
+                }
                 Binding::Type(Type::any_error())
             }
         };
