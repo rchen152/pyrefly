@@ -192,14 +192,26 @@ impl ReportArgs {
                 let func_name = if let Some(class_key) = fun.class_key {
                     match bindings.get(class_key) {
                         BindingClass::ClassDef(cls) => {
-                            format!("{}.{}", cls.def.name, fun.def.name)
+                            // Build full qualified name using nesting context
+                            let parent_path = module.display(&cls.parent).to_string();
+                            if parent_path.is_empty() {
+                                format!("{}.{}.{}", module.name(), cls.def.name, fun.def.name)
+                            } else {
+                                format!(
+                                    "{}.{}.{}.{}",
+                                    module.name(),
+                                    parent_path,
+                                    cls.def.name,
+                                    fun.def.name
+                                )
+                            }
                         }
                         BindingClass::FunctionalClassDef(..) => {
                             continue;
                         }
                     }
                 } else {
-                    format!("{}", fun.def.name)
+                    format!("{}.{}", module.name(), fun.def.name)
                 };
                 // Get return annotation from ReturnTypeKind
                 let return_annotation = {
@@ -378,8 +390,9 @@ class C:
 
         assert_eq!(functions.len(), 4);
 
+        // functions[0]: foo - fully annotated top-level function
         let foo = &functions[0];
-        assert_eq!(foo.name, "foo");
+        assert_eq!(foo.name, "test.foo");
         assert_eq!(foo.return_annotation, Some("bool".to_owned()));
         assert_eq!(foo.parameters.len(), 2);
         assert_eq!(foo.parameters[0].name, "x");
@@ -387,8 +400,9 @@ class C:
         assert_eq!(foo.parameters[1].name, "y");
         assert_eq!(foo.parameters[1].annotation, Some("str".to_owned()));
 
+        // functions[1]: foo_unannotated - no annotations
         let foo_unannotated = &functions[1];
-        assert_eq!(foo_unannotated.name, "foo_unannotated");
+        assert_eq!(foo_unannotated.name, "test.foo_unannotated");
         assert_eq!(foo_unannotated.return_annotation, None);
         assert_eq!(foo_unannotated.parameters.len(), 2);
         assert_eq!(foo_unannotated.parameters[0].name, "x");
@@ -396,8 +410,9 @@ class C:
         assert_eq!(foo_unannotated.parameters[1].name, "y");
         assert_eq!(foo_unannotated.parameters[1].annotation, None);
 
+        // functions[2]: C.bar - method in class C
         let c_bar = &functions[2];
-        assert_eq!(c_bar.name, "C.bar");
+        assert_eq!(c_bar.name, "test.C.bar");
         assert_eq!(c_bar.return_annotation, Some("bool".to_owned()));
         assert_eq!(c_bar.parameters.len(), 3);
         assert_eq!(c_bar.parameters[0].name, "self");
@@ -407,8 +422,9 @@ class C:
         assert_eq!(c_bar.parameters[2].name, "y");
         assert_eq!(c_bar.parameters[2].annotation, Some("str".to_owned()));
 
+        // functions[3]: C.Inner.baz - method in nested class Inner
         let inner_baz = &functions[3];
-        assert_eq!(inner_baz.name, "Inner.baz");
+        assert_eq!(inner_baz.name, "test.C.Inner.baz");
         assert_eq!(inner_baz.return_annotation, Some("bool".to_owned()));
         assert_eq!(inner_baz.parameters.len(), 3);
         assert_eq!(inner_baz.parameters[0].name, "self");
