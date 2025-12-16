@@ -104,3 +104,17 @@ match x:
         pass
 "#,
 );
+
+testcase!(
+    test_duplicate_match_class_attribute,
+    r#"
+class Point:
+    x: int
+    y: int
+
+p = Point()
+match p:
+    case Point(x=1, x=2):  # E: attribute name `x` repeated in class pattern
+        pass
+"#,
+);
