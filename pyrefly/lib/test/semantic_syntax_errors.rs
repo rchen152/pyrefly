@@ -94,3 +94,13 @@ match x:
         pass
 "#,
 );
+
+testcase!(
+    test_duplicate_match_key,
+    r#"
+x = {"a": 1, "b": 2}
+match x:
+    case {"a": 1, "a": 2}:  # E: mapping pattern checks duplicate key `"a"`
+        pass
+"#,
+);

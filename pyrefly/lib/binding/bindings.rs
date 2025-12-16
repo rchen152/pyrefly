@@ -490,12 +490,12 @@ impl Bindings {
             | SemanticSyntaxErrorKind::ReboundComprehensionVariable
             | SemanticSyntaxErrorKind::DuplicateParameter(_)
             | SemanticSyntaxErrorKind::NonlocalDeclarationAtModuleLevel
-            | SemanticSyntaxErrorKind::MultipleCaseAssignment(_) => true,
+            | SemanticSyntaxErrorKind::MultipleCaseAssignment(_)
+            | SemanticSyntaxErrorKind::DuplicateMatchKey(_) => true,
             SemanticSyntaxErrorKind::InvalidStarExpression
             | SemanticSyntaxErrorKind::DuplicateTypeParameter
             | SemanticSyntaxErrorKind::WriteToDebug(_)
             | SemanticSyntaxErrorKind::InvalidExpression(_, _)
-            | SemanticSyntaxErrorKind::DuplicateMatchKey(_)
             | SemanticSyntaxErrorKind::DuplicateMatchClassAttribute(_)
             | SemanticSyntaxErrorKind::LoadBeforeGlobalDeclaration { .. }
             | SemanticSyntaxErrorKind::LoadBeforeNonlocalDeclaration { .. }
