@@ -305,3 +305,117 @@ impl ReportArgs {
         Ok(CommandExitStatus::Success)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+    use std::sync::Arc;
+
+    use pyrefly_python::module::Module;
+    use pyrefly_python::module_name::ModuleName;
+    use pyrefly_python::module_path::ModulePath;
+
+    use super::*;
+    use crate::state::require::Require;
+    use crate::test::util::TestEnv;
+
+    /// Helper to create a module from source code for testing
+    fn create_test_module(code: &str) -> Module {
+        Module::new(
+            ModuleName::from_str("test"),
+            ModulePath::memory(PathBuf::from("test.py")),
+            Arc::new(code.to_owned()),
+        )
+    }
+
+    #[test]
+    fn test_parse_suppressions() {
+        let code = r#"
+x = 1  # pyrefly: ignore[error-code]
+y = 2
+z = 3  # pyrefly: ignore[code1, code2]
+"#;
+        let module = create_test_module(code);
+        let suppressions = ReportArgs::parse_suppressions(&module);
+
+        assert_eq!(suppressions.len(), 2);
+
+        // Suppression with single error code
+        assert_eq!(suppressions[0].kind, "ignore");
+        assert_eq!(suppressions[0].codes, vec!["error-code"]);
+        assert_eq!(suppressions[0].location.start.line, 2);
+
+        // Suppression with multiple error codes
+        assert_eq!(suppressions[1].kind, "ignore");
+        assert_eq!(suppressions[1].codes, vec!["code1", "code2"]);
+        assert_eq!(suppressions[1].location.start.line, 4);
+    }
+
+    #[test]
+    fn test_parse_functions() {
+        let code = r#"
+def foo(x: int, y: str) -> bool:
+    return True
+def foo_unannotated(x, y):
+    return True
+class C:
+    def bar(self, x: int, y: str) -> bool:
+        return True
+    class Inner:
+        def baz(self, x: int, y: str) -> bool:
+            return True
+"#;
+        let (state, handle_fn) = TestEnv::one("test", code)
+            .with_default_require_level(Require::Everything)
+            .to_state();
+        let handle = handle_fn("test");
+        let transaction = state.transaction();
+
+        let module = transaction.get_module_info(&handle).unwrap();
+        let bindings = transaction.get_bindings(&handle).unwrap();
+
+        let functions = ReportArgs::parse_functions(&module, bindings);
+
+        assert_eq!(functions.len(), 4);
+
+        let foo = &functions[0];
+        assert_eq!(foo.name, "foo");
+        assert_eq!(foo.return_annotation, Some("bool".to_owned()));
+        assert_eq!(foo.parameters.len(), 2);
+        assert_eq!(foo.parameters[0].name, "x");
+        assert_eq!(foo.parameters[0].annotation, Some("int".to_owned()));
+        assert_eq!(foo.parameters[1].name, "y");
+        assert_eq!(foo.parameters[1].annotation, Some("str".to_owned()));
+
+        let foo_unannotated = &functions[1];
+        assert_eq!(foo_unannotated.name, "foo_unannotated");
+        assert_eq!(foo_unannotated.return_annotation, None);
+        assert_eq!(foo_unannotated.parameters.len(), 2);
+        assert_eq!(foo_unannotated.parameters[0].name, "x");
+        assert_eq!(foo_unannotated.parameters[0].annotation, None);
+        assert_eq!(foo_unannotated.parameters[1].name, "y");
+        assert_eq!(foo_unannotated.parameters[1].annotation, None);
+
+        let c_bar = &functions[2];
+        assert_eq!(c_bar.name, "C.bar");
+        assert_eq!(c_bar.return_annotation, Some("bool".to_owned()));
+        assert_eq!(c_bar.parameters.len(), 3);
+        assert_eq!(c_bar.parameters[0].name, "self");
+        assert_eq!(c_bar.parameters[0].annotation, None);
+        assert_eq!(c_bar.parameters[1].name, "x");
+        assert_eq!(c_bar.parameters[1].annotation, Some("int".to_owned()));
+        assert_eq!(c_bar.parameters[2].name, "y");
+        assert_eq!(c_bar.parameters[2].annotation, Some("str".to_owned()));
+
+        let inner_baz = &functions[3];
+        assert_eq!(inner_baz.name, "Inner.baz");
+        assert_eq!(inner_baz.return_annotation, Some("bool".to_owned()));
+        assert_eq!(inner_baz.parameters.len(), 3);
+        assert_eq!(inner_baz.parameters[0].name, "self");
+        assert_eq!(inner_baz.parameters[0].annotation, None);
+        assert_eq!(inner_baz.parameters[1].name, "x");
+        assert_eq!(inner_baz.parameters[1].annotation, Some("int".to_owned()));
+        assert_eq!(inner_baz.parameters[2].name, "y");
+        assert_eq!(inner_baz.parameters[2].annotation, Some("str".to_owned()));
+    }
+}
