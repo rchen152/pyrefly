@@ -84,3 +84,13 @@ def outer():
         x = 2
 "#,
 );
+
+testcase!(
+    test_multiple_case_assignment,
+    r#"
+x = [1, 2]
+match x:
+    case [a, a]:  # E: multiple assignments to name `a` in pattern
+        pass
+"#,
+);
