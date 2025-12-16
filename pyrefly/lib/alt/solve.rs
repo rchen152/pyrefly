@@ -1510,9 +1510,27 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     /// Force the outermost type, without deep-forcing. Without this, narrowing behavior
     /// is unpredictable and has undesirable behavior particularly in loop recursion.
-    pub fn force_for_narrowing(&self, ty: &Type) -> Type {
+    pub fn force_for_narrowing(
+        &self,
+        ty: &Type,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Type {
         match ty {
-            Type::Var(v) => self.force_for_narrowing(&self.solver().force_var(*v)),
+            Type::Var(v) => {
+                if let Some(_guard) = self.recurse(*v) {
+                    let forced = self.solver().force_var(*v);
+                    self.force_for_narrowing(&forced, range, errors)
+                } else {
+                    // Cycle detected - report as internal error
+                    self.error(
+                        errors,
+                        range,
+                        ErrorInfo::Kind(ErrorKind::InternalError),
+                        "Type narrowing encountered a cycle in Type::Var".to_owned(),
+                    )
+                }
+            }
             _ => ty.clone(),
         }
     }
