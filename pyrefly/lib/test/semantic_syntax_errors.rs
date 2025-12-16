@@ -50,3 +50,10 @@ def foo(x: int, x: str):  # E: Duplicate parameter "x"
     pass
 "#,
 );
+
+testcase!(
+    test_rebound_comprehension_variable,
+    r#"
+[y := 1 for y in range(10)]  # E: assignment expression cannot rebind comprehension variable
+"#,
+);
