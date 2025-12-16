@@ -2184,7 +2184,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.populate_dict_literal_facets(&mut type_info, &mut prefix, expr.as_ref());
                 type_info
             }
-            Binding::AssignToAttribute(attr, got) => {
+            Binding::AssignToAttribute {
+                attr,
+                value: got,
+                allow_assign_to_final,
+            } => {
                 // NOTE: Deterministic pinning of placeholder types based on first use relies on an
                 // invariant: if `got` is used in the binding for a class field, we must always solve
                 // that `ClassField` binding *before* analyzing `got`.
@@ -2196,6 +2200,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     &base,
                     &attr.attr.id,
                     got,
+                    *allow_assign_to_final,
                     attr.range,
                     errors,
                 );
@@ -2591,7 +2596,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             | Binding::Phi(..)
             | Binding::LoopPhi(..)
             | Binding::Narrow(..)
-            | Binding::AssignToAttribute(..)
+            | Binding::AssignToAttribute { .. }
             | Binding::AssignToSubscript(..)
             | Binding::PossibleLegacyTParam(..) => {
                 // These forms require propagating attribute narrowing information, so they
