@@ -486,7 +486,8 @@ impl Bindings {
             | SemanticSyntaxErrorKind::SingleStarredAssignment
             | SemanticSyntaxErrorKind::DifferentMatchPatternBindings
             | SemanticSyntaxErrorKind::IrrefutableCasePattern(_)
-            | SemanticSyntaxErrorKind::LateFutureImport => true,
+            | SemanticSyntaxErrorKind::LateFutureImport
+            | SemanticSyntaxErrorKind::DuplicateParameter(_) => true,
             SemanticSyntaxErrorKind::InvalidStarExpression
             | SemanticSyntaxErrorKind::ReboundComprehensionVariable
             | SemanticSyntaxErrorKind::DuplicateTypeParameter
@@ -501,7 +502,6 @@ impl Bindings {
             | SemanticSyntaxErrorKind::YieldOutsideFunction(_)
             | SemanticSyntaxErrorKind::ReturnOutsideFunction
             | SemanticSyntaxErrorKind::AwaitOutsideAsyncFunction(_)
-            | SemanticSyntaxErrorKind::DuplicateParameter(_)
             | SemanticSyntaxErrorKind::NonlocalDeclarationAtModuleLevel
             | SemanticSyntaxErrorKind::NonlocalAndGlobal(_)
             | SemanticSyntaxErrorKind::AnnotatedGlobal(_)

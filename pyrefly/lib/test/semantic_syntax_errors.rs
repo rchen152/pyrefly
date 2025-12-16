@@ -42,3 +42,11 @@ from __future__ import annotations
 import os
 "#,
 );
+
+testcase!(
+    test_duplicate_parameter,
+    r#"
+def foo(x: int, x: str):  # E: Duplicate parameter "x"
+    pass
+"#,
+);
