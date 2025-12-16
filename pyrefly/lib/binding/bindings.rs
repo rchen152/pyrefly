@@ -1100,9 +1100,11 @@ impl<'a> BindingsBuilder<'a> {
         write_info.annotation
     }
 
-    pub fn type_params(&mut self, x: &mut TypeParams) {
+    pub fn type_params(&mut self, x: &mut TypeParams) -> SmallSet<Name> {
+        let mut names = SmallSet::new();
         for x in x.type_params.iter_mut() {
             let name = x.name().clone();
+            names.insert(name.id.clone());
 
             // Check for shadowing of type parameters in enclosing Annotation scopes
             if self
@@ -1172,6 +1174,7 @@ impl<'a> BindingsBuilder<'a> {
                 FlowStyle::Other,
             );
         }
+        names
     }
 
     pub fn bind_narrow_ops(
