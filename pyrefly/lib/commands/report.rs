@@ -12,6 +12,7 @@ use dupe::Dupe;
 use pyrefly_config::args::ConfigOverrideArgs;
 use pyrefly_config::finder::ConfigFinder;
 use pyrefly_python::module::Module;
+use pyrefly_python::module_name::ModuleName;
 use pyrefly_util::forgetter::Forgetter;
 use pyrefly_util::includes::Includes;
 use regex::Regex;
@@ -183,6 +184,12 @@ impl ReportArgs {
 
     fn parse_functions(module: &Module, bindings: Bindings) -> Vec<Function> {
         let mut functions = Vec::new();
+        let module_prefix = if module.name() != ModuleName::unknown() {
+            format!("{}.", module.name())
+        } else {
+            String::new()
+        };
+
         for idx in bindings.keys::<Key>() {
             if let Key::Definition(id) = bindings.idx_to_key(idx)
                 && let Binding::Function(x, _pred, _class_meta) = bindings.get(idx)
@@ -195,14 +202,11 @@ impl ReportArgs {
                             // Build full qualified name using nesting context
                             let parent_path = module.display(&cls.parent).to_string();
                             if parent_path.is_empty() {
-                                format!("{}.{}.{}", module.name(), cls.def.name, fun.def.name)
+                                format!("{}{}.{}", module_prefix, cls.def.name, fun.def.name)
                             } else {
                                 format!(
-                                    "{}.{}.{}.{}",
-                                    module.name(),
-                                    parent_path,
-                                    cls.def.name,
-                                    fun.def.name
+                                    "{}{}.{}.{}",
+                                    module_prefix, parent_path, cls.def.name, fun.def.name
                                 )
                             }
                         }
@@ -211,7 +215,7 @@ impl ReportArgs {
                         }
                     }
                 } else {
-                    format!("{}.{}", module.name(), fun.def.name)
+                    format!("{}{}", module_prefix, fun.def.name)
                 };
                 // Get return annotation from ReturnTypeKind
                 let return_annotation = {
@@ -433,5 +437,29 @@ class C:
         assert_eq!(inner_baz.parameters[1].annotation, Some("int".to_owned()));
         assert_eq!(inner_baz.parameters[2].name, "y");
         assert_eq!(inner_baz.parameters[2].annotation, Some("str".to_owned()));
+    }
+
+    #[test]
+    fn test_unknown_module() {
+        let code = r#"
+def foo():
+    pass
+"#;
+        let module = Module::new(
+            ModuleName::unknown(),
+            ModulePath::memory(PathBuf::from("test.py")),
+            Arc::new(code.to_owned()),
+        );
+        let (state, handle_fn) = TestEnv::one("__unknown__", code)
+            .with_default_require_level(Require::Everything)
+            .to_state();
+        let handle = handle_fn("__unknown__");
+        let transaction = state.transaction();
+        let bindings = transaction.get_bindings(&handle).unwrap();
+
+        let functions = ReportArgs::parse_functions(&module, bindings);
+
+        assert_eq!(functions.len(), 1);
+        assert_eq!(functions[0].name, "foo");
     }
 }
