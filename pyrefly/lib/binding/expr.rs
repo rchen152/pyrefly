@@ -90,14 +90,6 @@ pub enum Usage {
 }
 
 impl Usage {
-    pub fn narrowing_from(other: &Self) -> Self {
-        match other {
-            Self::CurrentIdx(idx, _) => Self::Narrowing(Some(*idx)),
-            Self::Narrowing(idx) => Self::Narrowing(*idx),
-            Self::StaticTypeInformation => Self::Narrowing(None),
-        }
-    }
-
     pub fn current_idx(&self) -> Option<Idx<Key>> {
         match self {
             Self::CurrentIdx(idx, _) => Some(*idx),
@@ -414,7 +406,7 @@ impl<'a> BindingsBuilder<'a> {
                 Binding::Forward(iterable_value_idx)
             });
             for x in comp.ifs.iter_mut() {
-                self.ensure_expr(x, &mut Usage::narrowing_from(usage));
+                self.ensure_expr(x, usage);
                 let narrow_ops = NarrowOps::from_expr(self, Some(x));
                 self.bind_narrow_ops(&narrow_ops, NarrowUseLocation::Span(comp.range), usage);
             }
@@ -512,7 +504,7 @@ impl<'a> BindingsBuilder<'a> {
             Expr::If(x) => {
                 // Ternary operation. We treat it like an if/else statement.
                 self.start_fork_and_branch(x.range);
-                self.ensure_expr(&mut x.test, &mut Usage::narrowing_from(usage));
+                self.ensure_expr(&mut x.test, usage);
                 let narrow_ops = NarrowOps::from_expr(self, Some(&x.test));
                 self.bind_narrow_ops(&narrow_ops, NarrowUseLocation::Span(x.body.range()), usage);
                 self.ensure_expr(&mut x.body, usage);
@@ -551,7 +543,7 @@ impl<'a> BindingsBuilder<'a> {
                 if let Some(value) = values.next() {
                     // The first operation runs unconditionally, so any walrus-defined
                     // names will be added to the base flow.
-                    self.ensure_expr(value, &mut Usage::narrowing_from(usage));
+                    self.ensure_expr(value, usage);
                     self.start_fork_and_branch(*range);
                     let mut narrow_ops = get_narrow_ops(self, value, *op);
                     for value in values {
@@ -560,7 +552,7 @@ impl<'a> BindingsBuilder<'a> {
                             NarrowUseLocation::Span(value.range()),
                             usage,
                         );
-                        self.ensure_expr(value, &mut Usage::narrowing_from(usage));
+                        self.ensure_expr(value, usage);
                         let new_narrow_ops = get_narrow_ops(self, value, *op);
                         narrow_ops.and_all(new_narrow_ops);
                     }
@@ -702,7 +694,7 @@ impl<'a> BindingsBuilder<'a> {
             {
                 self.ensure_expr(func, usage);
                 for arg in arguments.args.iter_mut() {
-                    self.ensure_expr(arg, &mut Usage::narrowing_from(usage));
+                    self.ensure_expr(arg, usage);
                 }
                 for kw in arguments.keywords.iter_mut() {
                     self.ensure_expr(&mut kw.value, usage);
