@@ -63,8 +63,7 @@ use lsp_types::request::WillRenameFiles;
 use lsp_types::request::WorkspaceConfiguration;
 use pretty_assertions::assert_eq;
 use pyrefly_util::fs_anyhow::read_to_string;
-use pyrefly_util::lock::Condvar;
-use pyrefly_util::lock::Mutex;
+use pyrefly_util::lock::FinishHandle;
 use serde_json::Value;
 use serde_json::json;
 
@@ -111,31 +110,6 @@ pub struct InitializeSettings {
     pub capabilities: Option<serde_json::Value>,
     // initialization_options to send in the initialize request
     pub initialization_options: Option<serde_json::Value>,
-}
-
-pub struct FinishHandle {
-    finished: Mutex<bool>,
-    cvar: Condvar,
-}
-
-impl FinishHandle {
-    pub fn new() -> Self {
-        Self {
-            finished: Mutex::new(false),
-            cvar: Condvar::new(),
-        }
-    }
-
-    pub fn notify_finished(&self) {
-        let mut finished = self.finished.lock();
-        *finished = true;
-        self.cvar.notify_one();
-    }
-
-    pub fn wait_for_finish(&self, timeout: Duration) -> bool {
-        let finished = self.finished.lock();
-        *self.cvar.wait_timeout(finished, timeout).0
-    }
 }
 
 pub struct ClientRequestHandle<'a, R: lsp_types::request::Request> {
