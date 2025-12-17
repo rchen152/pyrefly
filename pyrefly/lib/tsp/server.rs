@@ -45,6 +45,7 @@ impl TspServer {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
+        telemetry: &mut LspEventTelemetry,
         subsequent_mutation: bool,
         event: LspEvent,
     ) -> anyhow::Result<ProcessEvent> {
@@ -78,6 +79,7 @@ impl TspServer {
         let result = self.inner.process_event(
             ide_transaction_manager,
             canceled_requests,
+            telemetry,
             subsequent_mutation,
             event,
         )?;
@@ -156,12 +158,14 @@ pub fn tsp_loop(
         let mut canceled_requests = HashSet::new();
 
         while let Ok((subsequent_mutation, event, enqueued_at)) = server.inner.lsp_queue().recv() {
-            let event_telemetry = LspEventTelemetry::new_dequeued(event.describe(), enqueued_at);
+            let mut event_telemetry =
+                LspEventTelemetry::new_dequeued(event.describe(), enqueued_at);
             let event_description = event.describe();
 
             let result = server.process_event(
                 &mut ide_transaction_manager,
                 &mut canceled_requests,
+                &mut event_telemetry,
                 subsequent_mutation,
                 event,
             );

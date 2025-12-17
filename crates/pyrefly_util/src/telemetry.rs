@@ -34,6 +34,7 @@ pub struct LspEventTelemetry {
     pub enqueued_at: Instant,
     pub dequeued_at: Instant,
     pub error: Option<Error>,
+    pub validate: Option<Duration>,
 }
 
 impl LspEventTelemetry {
@@ -43,7 +44,12 @@ impl LspEventTelemetry {
             enqueued_at,
             dequeued_at: Instant::now(),
             error: None,
+            validate: None,
         }
+    }
+
+    pub fn set_validate_duration(&mut self, duration: Duration) {
+        self.validate = Some(duration);
     }
 
     pub fn finish<T>(&self, result: Result<T, Error>) -> (Duration, Duration, Result<T, Error>) {

@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering;
+use std::time::Instant;
 
 use dupe::Dupe;
 use dupe::OptionDupedExt;
@@ -290,6 +291,7 @@ pub trait TspInterface: Send + Sync {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
+        telemetry: &mut LspEventTelemetry,
         subsequent_mutation: bool,
         event: LspEvent,
     ) -> anyhow::Result<ProcessEvent>;
@@ -630,11 +632,13 @@ pub fn lsp_loop(
         let mut ide_transaction_manager = TransactionManager::default();
         let mut canceled_requests = HashSet::new();
         while let Ok((subsequent_mutation, event, enqueue_time)) = server.lsp_queue.recv() {
-            let event_telemetry = LspEventTelemetry::new_dequeued(event.describe(), enqueue_time);
+            let mut event_telemetry =
+                LspEventTelemetry::new_dequeued(event.describe(), enqueue_time);
             let event_description = event.describe();
             let result = server.process_event(
                 &mut ide_transaction_manager,
                 &mut canceled_requests,
+                &mut event_telemetry,
                 subsequent_mutation,
                 event,
             );
@@ -706,6 +710,7 @@ impl Server {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
+        telemetry: &mut LspEventTelemetry,
         // After this event there is another mutation
         subsequent_mutation: bool,
         event: LspEvent,
@@ -716,7 +721,9 @@ impl Server {
             }
             LspEvent::RecheckFinished => {
                 // We did a commit and want to get back to a stable state.
+                let validate_start = Instant::now();
                 self.validate_in_memory_and_commit_if_possible(ide_transaction_manager);
+                telemetry.set_validate_duration(validate_start.elapsed());
             }
             LspEvent::CancelRequest(id) => {
                 info!("We should cancel request {id:?}");
@@ -748,6 +755,7 @@ impl Server {
                 let contents = Arc::new(LspFile::from_source(text));
                 self.did_open(
                     ide_transaction_manager,
+                    telemetry,
                     subsequent_mutation,
                     uri,
                     version,
@@ -791,6 +799,7 @@ impl Server {
                 }
                 self.did_open(
                     ide_transaction_manager,
+                    telemetry,
                     subsequent_mutation,
                     url,
                     version,
@@ -871,7 +880,9 @@ impl Server {
                 //
                 // Validating in-memory files is relatively cheap, since we only actually recheck open files which have
                 // changed file contents, so it's simpler to just always do it.
+                let validate_start = Instant::now();
                 self.validate_in_memory_for_transaction(&mut transaction);
+                telemetry.set_validate_duration(validate_start.elapsed());
 
                 info!("Handling non-canceled request {} ({})", x.method, &x.id);
                 if let Some(params) = as_request::<GotoDefinition>(&x) {
@@ -1767,6 +1778,7 @@ impl Server {
     fn did_open<'a>(
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
+        telemetry: &mut LspEventTelemetry,
         subsequent_mutation: bool,
         url: Url,
         version: i32,
@@ -1811,7 +1823,9 @@ impl Server {
                 "File {} opened, prepare to validate open files.",
                 path.display()
             );
+            let validate_start = Instant::now();
             self.validate_in_memory_without_committing(ide_transaction_manager);
+            telemetry.set_validate_duration(validate_start.elapsed());
         }
         self.populate_project_files_if_necessary(config_to_populate_files);
         self.populate_workspace_files_if_necessary();
@@ -3542,12 +3556,14 @@ impl TspInterface for Server {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
+        telemetry: &mut LspEventTelemetry,
         subsequent_mutation: bool,
         event: LspEvent,
     ) -> anyhow::Result<ProcessEvent> {
         self.process_event(
             ide_transaction_manager,
             canceled_requests,
+            telemetry,
             subsequent_mutation,
             event,
         )
