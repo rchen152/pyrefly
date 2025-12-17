@@ -300,8 +300,7 @@ impl ErrorKind {
             ErrorKind::Deprecated => Severity::Warn,
             ErrorKind::RedundantCast => Severity::Warn,
             ErrorKind::UnnecessaryComparison => Severity::Warn,
-            // TODO(rechen): re-enable this once we figure out how to make it less noisy.
-            ErrorKind::UntypedImport => Severity::Ignore,
+            ErrorKind::UntypedImport => Severity::Warn,
             ErrorKind::ImplicitlyDefinedAttribute => Severity::Ignore,
             ErrorKind::ImplicitAbstractClass => Severity::Ignore,
             ErrorKind::ImplicitAny => Severity::Ignore,
