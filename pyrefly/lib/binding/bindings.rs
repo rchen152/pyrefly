@@ -479,7 +479,6 @@ impl Bindings {
     }
 
     fn should_emit_semantic_syntax_error(error: &SemanticSyntaxError) -> bool {
-        // TODO: enable and add tests for the other semantic syntax errors
         match error.kind {
             SemanticSyntaxErrorKind::BreakOutsideLoop
             | SemanticSyntaxErrorKind::ContinueOutsideLoop
@@ -495,19 +494,20 @@ impl Bindings {
             | SemanticSyntaxErrorKind::DuplicateMatchClassAttribute(_)
             | SemanticSyntaxErrorKind::DuplicateTypeParameter
             | SemanticSyntaxErrorKind::NonModuleImportStar(_) => true,
-             SemanticSyntaxErrorKind::WriteToDebug(_)
-            | SemanticSyntaxErrorKind::InvalidExpression(_, _)
-            | SemanticSyntaxErrorKind::AwaitOutsideAsyncFunction(_)
+            // TODO: the following errors aren't being emitted even when enabled
+            // we should investigate that
+            SemanticSyntaxErrorKind::WriteToDebug(_)
             | SemanticSyntaxErrorKind::MultipleStarredExpressions
-            // pyrefly already raises errors for these cases and we should
-            // weigh the pros and cons of enabling them
+            // pyrefly already handles these errors - we should weigh the pros and cons of enabling them
+            | SemanticSyntaxErrorKind::InvalidExpression(_, _)
             | SemanticSyntaxErrorKind::FutureFeatureNotDefined(_)
+            | SemanticSyntaxErrorKind::AsyncComprehensionInSyncComprehension(_)
+            | SemanticSyntaxErrorKind::InvalidStarExpression
+            | SemanticSyntaxErrorKind::AwaitOutsideAsyncFunction(_)
             | SemanticSyntaxErrorKind::ReturnOutsideFunction
             | SemanticSyntaxErrorKind::YieldFromInAsyncFunction
             | SemanticSyntaxErrorKind::YieldOutsideFunction(_)
-            | SemanticSyntaxErrorKind::AsyncComprehensionInSyncComprehension(_)
-            | SemanticSyntaxErrorKind::InvalidStarExpression
-            // the following errors involve modifying our scope implementation  
+            // The following errors involve modifying our scope implementation
             | SemanticSyntaxErrorKind::LoadBeforeGlobalDeclaration { .. }
             | SemanticSyntaxErrorKind::GlobalParameter(_)
             | SemanticSyntaxErrorKind::LoadBeforeNonlocalDeclaration { .. }

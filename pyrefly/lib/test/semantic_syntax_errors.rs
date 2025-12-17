@@ -167,3 +167,56 @@ class Foo:
     from os import *  # E: `from os import *` only allowed at module level
 "#,
 );
+
+testcase!(
+    bug = "TODO: raise error on this invalid program",
+    test_write_to_debug,
+    r#"
+__debug__ = False
+"#,
+);
+
+testcase!(
+    test_invalid_expression_in_match,
+    r#"
+x = 1
+match x:
+    case 1 + 1:  # E: Parse error: Expected an imaginary number in complex literal pattern
+        pass
+"#,
+);
+
+testcase!(
+    test_future_feature_not_defined,
+    r#"
+from __future__ import not_a_real_feature  # E: Could not import `not_a_real_feature` from `__future__`
+"#,
+);
+
+testcase!(
+    test_async_comprehension_in_sync_comprehension,
+    r#"
+async def async_gen():
+    for i in range(5):
+        yield i
+
+def sync_func():
+    result = [x async for x in async_gen()]  # E: `async` can only be used inside an async function
+    return result
+"#,
+);
+
+testcase!(
+    test_invalid_star_expression,
+    r#"
+x = *[1, 2, 3]  # E: Expected a type form, got instance of `Literal[1]` # E: Expected a type form, got instance of `Literal[2]` # E: Expected a type form, got instance of `Literal[3]`
+"#,
+);
+
+testcase!(
+    bug = "Raise error on this invalid program",
+    test_multiple_starred_expressions,
+    r#"
+x, *y, *z = [1, 2, 3, 4]
+"#,
+);
