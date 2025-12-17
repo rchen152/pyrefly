@@ -2378,18 +2378,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.completions_class(class.class_object(), expected_attribute_name, res)
             }
             AttributeBase1::BoundMethod(bound_func) => {
-                let before = res.len();
                 self.completions_class_type(
                     self.stdlib.method_type(),
                     expected_attribute_name,
                     res,
                 );
-                if res.len() == before {
-                    let mut func_bases = Vec::new();
-                    self.as_attribute_base1(bound_func.clone().as_type(), &mut func_bases);
-                    for base1 in func_bases {
-                        self.completions_inner1(&base1, expected_attribute_name, res);
-                    }
+                let mut func_bases = Vec::new();
+                self.as_attribute_base1(bound_func.clone().as_type(), &mut func_bases);
+                for base1 in func_bases {
+                    self.completions_inner1(&base1, expected_attribute_name, res);
                 }
             }
             AttributeBase1::TypeAny(_) | AttributeBase1::TypeNever => self.completions_class_type(
