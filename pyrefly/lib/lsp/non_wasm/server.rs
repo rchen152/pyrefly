@@ -2393,10 +2393,6 @@ impl Server {
         params: CodeActionParams,
     ) -> Option<CodeActionResponse> {
         let uri = &params.text_document.uri;
-        if self.open_notebook_cells.read().contains_key(uri) {
-            // TODO(yangdanny) handle notebooks
-            return None;
-        }
         let (handle, lsp_config) = self.make_handle_with_lsp_analysis_config_if_enabled(
             uri,
             Some(CodeActionRequest::METHOD),
@@ -2408,37 +2404,42 @@ impl Server {
         if let Some(quickfixes) =
             transaction.local_quickfix_code_actions_sorted(&handle, range, import_format)
         {
-            actions.extend(
-                quickfixes
-                    .into_iter()
-                    .map(|(title, info, range, insert_text)| {
-                        CodeActionOrCommand::CodeAction(CodeAction {
-                            title,
-                            kind: Some(CodeActionKind::QUICKFIX),
-                            edit: Some(WorkspaceEdit {
-                                changes: Some(HashMap::from([(
-                                    uri.clone(),
-                                    vec![TextEdit {
-                                        range: info.to_lsp_range(range),
-                                        new_text: insert_text,
-                                    }],
-                                )])),
-                                ..Default::default()
-                            }),
+            actions.extend(quickfixes.into_iter().filter_map(
+                |(title, info, range, insert_text)| {
+                    let lsp_location = self.to_lsp_location(&TextRangeWithModule {
+                        module: info,
+                        range,
+                    })?;
+                    Some(CodeActionOrCommand::CodeAction(CodeAction {
+                        title,
+                        kind: Some(CodeActionKind::QUICKFIX),
+                        edit: Some(WorkspaceEdit {
+                            changes: Some(HashMap::from([(
+                                lsp_location.uri,
+                                vec![TextEdit {
+                                    range: lsp_location.range,
+                                    new_text: insert_text,
+                                }],
+                            )])),
                             ..Default::default()
-                        })
-                    }),
-            );
+                        }),
+                        ..Default::default()
+                    }))
+                },
+            ));
         }
         if let Some(refactors) = transaction.extract_function_code_actions(&handle, range) {
             for action in refactors {
                 let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
                 for (module, edit_range, new_text) in action.edits {
-                    let Some(edit_uri) = module_info_to_uri(&module) else {
+                    let Some(lsp_location) = self.to_lsp_location(&TextRangeWithModule {
+                        module,
+                        range: edit_range,
+                    }) else {
                         continue;
                     };
-                    changes.entry(edit_uri).or_default().push(TextEdit {
-                        range: module.to_lsp_range(edit_range),
+                    changes.entry(lsp_location.uri).or_default().push(TextEdit {
+                        range: lsp_location.range,
                         new_text,
                     });
                 }

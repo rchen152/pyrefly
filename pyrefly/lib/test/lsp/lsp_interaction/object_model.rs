@@ -43,6 +43,7 @@ use lsp_types::notification::Exit;
 use lsp_types::notification::Initialized;
 use lsp_types::notification::Notification as _;
 use lsp_types::notification::PublishDiagnostics;
+use lsp_types::request::CodeActionRequest;
 use lsp_types::request::Completion;
 use lsp_types::request::DocumentDiagnosticRequest;
 use lsp_types::request::GotoDefinition;
@@ -1358,6 +1359,37 @@ impl LspInteraction {
                     "line": end_line,
                     "character": end_char
                 }
+            }
+        }))
+    }
+
+    /// Sends a code action request for a notebook cell at the specified range
+    pub fn code_action_cell(
+        &self,
+        file_name: &str,
+        cell_name: &str,
+        start_line: u32,
+        start_char: u32,
+        end_line: u32,
+        end_char: u32,
+    ) -> ClientRequestHandle<'_, CodeActionRequest> {
+        let cell_uri = self.cell_uri(file_name, cell_name);
+        self.client.send_request(json!({
+            "textDocument": {
+                "uri": cell_uri
+            },
+            "range": {
+                "start": {
+                    "line": start_line,
+                    "character": start_char
+                },
+                "end": {
+                    "line": end_line,
+                    "character": end_char
+                }
+            },
+            "context": {
+                "diagnostics": []
             }
         }))
     }
