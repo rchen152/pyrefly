@@ -455,10 +455,10 @@ impl Globs {
             )?))
         }
 
-        fn eden_glob(root: PathBuf, patterns: Vec<&Path>) -> anyhow::Result<Vec<PathBuf>> {
+        fn eden_glob(root: PathBuf, patterns: Vec<(&Path, bool)>) -> anyhow::Result<Vec<PathBuf>> {
             let mut command = Command::new("eden");
             command.arg("glob");
-            command.args(patterns);
+            command.args(patterns.iter().map(|(p, _)| p));
             command.current_dir(&root);
             let output = command.output().context("Failed to run `eden glob`")?;
             if !output.status.success() {
@@ -477,15 +477,31 @@ impl Globs {
                         line.to_str_lossy()
                     )
                 })?;
-                // Eden glob results are from glob matching, not explicit
-                Glob::resolve_path(root.join(path), &mut result, &GlobFilter::empty(), false)?;
+                // Determine if this result came from an explicit pattern
+                // by checking if any of the explicit patterns match this exact path
+                let is_explicit = patterns
+                    .iter()
+                    .any(|(pattern, explicit)| *explicit && pattern == &path);
+                Glob::resolve_path(
+                    root.join(path),
+                    &mut result,
+                    &GlobFilter::empty(),
+                    is_explicit,
+                )?;
             }
             Ok(result)
         }
 
         let root = hg_root()?;
-        let globs = self.0.try_map(|g| g.as_path().strip_prefix(&root))?;
-        let mut result = eden_glob(root, globs)?;
+        let patterns_with_explicit: Vec<(&Path, bool)> = self
+            .0
+            .iter()
+            .map(|g| {
+                let stripped = g.as_path().strip_prefix(&root)?;
+                Ok((stripped, g.is_explicit_file_pattern()))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let mut result = eden_glob(root, patterns_with_explicit)?;
         result.retain(|p| !filter.is_excluded(p));
         Ok(result)
     }
@@ -1527,5 +1543,105 @@ mod tests {
         // Should not include files without extensions when using wildcard
         assert!(!files.contains(&root.join("myscript")));
         assert!(!files.contains(&root.join("another_script")));
+    }
+
+    #[cfg(fbcode_build)]
+    #[test]
+    fn test_explicitly_specified_files_without_extension_eden() {
+        // This test ensures that the Eden code path correctly handles explicit files
+        // without Python extensions. It uses the actual Eden integration.
+        use std::process::Command;
+
+        // First check if we're in an Eden root
+        let eden_info_output = Command::new("eden").arg("info").output();
+        if eden_info_output.is_err() {
+            // Not in an eden root, skip this test
+            return;
+        }
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        TestPath::setup_test_directory(
+            root,
+            vec![
+                TestPath::file_with_contents("myscript", "#!/usr/bin/env python3\nprint('hello')"),
+                TestPath::file_with_contents("another_script", "import sys\nprint(sys.version)"),
+                TestPath::file("regular.py"),
+            ],
+        );
+
+        // Test single explicit file without extension using Eden
+        // Note: This will use files_eden if Eden is available
+        let files = Globs::new_with_root(root, vec!["myscript".to_owned()])
+            .unwrap()
+            .filtered_files(&GlobFilter::empty(), None)
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0], root.join("myscript"));
+
+        // Test multiple explicit files without extensions
+        let files = Globs::new_with_root(
+            root,
+            vec!["myscript".to_owned(), "another_script".to_owned()],
+        )
+        .unwrap()
+        .filtered_files(&GlobFilter::empty(), None)
+        .unwrap();
+        assert_eq!(files.len(), 2);
+
+        // Test that wildcards still filter by extension even with Eden
+        let files = Globs::new_with_root(root, vec!["*".to_owned()])
+            .unwrap()
+            .filtered_files(&GlobFilter::empty(), None)
+            .unwrap();
+        // Should only include .py files, not files without extensions
+        assert!(!files.contains(&root.join("myscript")));
+        assert!(!files.contains(&root.join("another_script")));
+        assert!(files.contains(&root.join("regular.py")));
+    }
+
+    #[cfg(not(fbcode_build))]
+    #[test]
+    fn test_explicitly_specified_files_without_extension_non_eden() {
+        // This test ensures that the non-Eden code path correctly handles explicit files
+        // without Python extensions.
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        TestPath::setup_test_directory(
+            root,
+            vec![
+                TestPath::file_with_contents("myscript", "#!/usr/bin/env python3\nprint('hello')"),
+                TestPath::file_with_contents("another_script", "import sys\nprint(sys.version)"),
+                TestPath::file("regular.py"),
+            ],
+        );
+
+        // Test single explicit file without extension using non-Eden path
+        let files = Globs::new_with_root(root, vec!["myscript".to_owned()])
+            .unwrap()
+            .filtered_files(&GlobFilter::empty(), None)
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0], root.join("myscript"));
+
+        // Test multiple explicit files without extensions
+        let files = Globs::new_with_root(
+            root,
+            vec!["myscript".to_owned(), "another_script".to_owned()],
+        )
+        .unwrap()
+        .filtered_files(&GlobFilter::empty(), None)
+        .unwrap();
+        assert_eq!(files.len(), 2);
+
+        // Test that wildcards still filter by extension
+        let files = Globs::new_with_root(root, vec!["*".to_owned()])
+            .unwrap()
+            .filtered_files(&GlobFilter::empty(), None)
+            .unwrap();
+        // Should only include .py files, not files without extensions
+        assert!(!files.contains(&root.join("myscript")));
+        assert!(!files.contains(&root.join("another_script")));
+        assert!(files.contains(&root.join("regular.py")));
     }
 }
