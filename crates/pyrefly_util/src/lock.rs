@@ -91,6 +91,17 @@ impl Condvar {
     ) -> (sync::MutexGuard<'a, T>, sync::WaitTimeoutResult) {
         self.0.wait_timeout(guard, duration).unwrap()
     }
+
+    pub fn wait_timeout_while<'a, T>(
+        &self,
+        guard: sync::MutexGuard<'a, T>,
+        duration: std::time::Duration,
+        condition: impl FnMut(&mut T) -> bool,
+    ) -> (sync::MutexGuard<'a, T>, sync::WaitTimeoutResult) {
+        self.0
+            .wait_timeout_while(guard, duration, condition)
+            .unwrap()
+    }
 }
 
 pub struct FinishHandle {
@@ -113,6 +124,9 @@ impl FinishHandle {
 
     pub fn wait_for_finish(&self, timeout: Duration) -> bool {
         let finished = self.finished.lock();
-        *self.cvar.wait_timeout(finished, timeout).0
+        *self
+            .cvar
+            .wait_timeout_while(finished, timeout, |finished| !*finished)
+            .0
     }
 }
