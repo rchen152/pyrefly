@@ -494,23 +494,26 @@ impl Bindings {
             | SemanticSyntaxErrorKind::DuplicateMatchKey(_)
             | SemanticSyntaxErrorKind::DuplicateMatchClassAttribute(_)
             | SemanticSyntaxErrorKind::DuplicateTypeParameter => true,
-            SemanticSyntaxErrorKind::InvalidStarExpression
-            | SemanticSyntaxErrorKind::WriteToDebug(_)
+             SemanticSyntaxErrorKind::WriteToDebug(_)
             | SemanticSyntaxErrorKind::InvalidExpression(_, _)
-            | SemanticSyntaxErrorKind::LoadBeforeGlobalDeclaration { .. }
-            | SemanticSyntaxErrorKind::LoadBeforeNonlocalDeclaration { .. }
-            | SemanticSyntaxErrorKind::AsyncComprehensionInSyncComprehension(_)
-            | SemanticSyntaxErrorKind::YieldOutsideFunction(_)
             | SemanticSyntaxErrorKind::ReturnOutsideFunction
             | SemanticSyntaxErrorKind::AwaitOutsideAsyncFunction(_)
-            | SemanticSyntaxErrorKind::NonlocalAndGlobal(_)
-            | SemanticSyntaxErrorKind::AnnotatedGlobal(_)
-            | SemanticSyntaxErrorKind::AnnotatedNonlocal(_)
-            | SemanticSyntaxErrorKind::YieldFromInAsyncFunction
             | SemanticSyntaxErrorKind::NonModuleImportStar(_)
             | SemanticSyntaxErrorKind::MultipleStarredExpressions
             | SemanticSyntaxErrorKind::FutureFeatureNotDefined(_)
+            // pyrefly already raises errors for these cases and we should
+            // weigh the pros and cons of enabling them
+            | SemanticSyntaxErrorKind::YieldFromInAsyncFunction
+            | SemanticSyntaxErrorKind::YieldOutsideFunction(_)
+            | SemanticSyntaxErrorKind::AsyncComprehensionInSyncComprehension(_)
+            | SemanticSyntaxErrorKind::InvalidStarExpression
+            // the following errors involve modifying our scope implementation  
+            | SemanticSyntaxErrorKind::LoadBeforeGlobalDeclaration { .. }
             | SemanticSyntaxErrorKind::GlobalParameter(_)
+            | SemanticSyntaxErrorKind::LoadBeforeNonlocalDeclaration { .. }
+            | SemanticSyntaxErrorKind::NonlocalAndGlobal(_)
+            | SemanticSyntaxErrorKind::AnnotatedGlobal(_)
+            | SemanticSyntaxErrorKind::AnnotatedNonlocal(_)
             | SemanticSyntaxErrorKind::NonlocalWithoutBinding(_) => false,
         }
     }
