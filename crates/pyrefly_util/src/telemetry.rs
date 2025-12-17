@@ -5,7 +5,59 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-pub trait Telemetry {}
+use std::time::Duration;
+use std::time::Instant;
+
+use anyhow::Error;
+
+pub trait Telemetry {
+    fn record_lsp_event<T>(
+        &self,
+        event: LspEventTelemetry,
+        result: Result<T, Error>,
+    ) -> (Duration, Duration, Result<T, Error>);
+}
 pub struct NoTelemetry;
 
-impl Telemetry for NoTelemetry {}
+impl Telemetry for NoTelemetry {
+    fn record_lsp_event<T>(
+        &self,
+        event: LspEventTelemetry,
+        result: Result<T, Error>,
+    ) -> (Duration, Duration, Result<T, Error>) {
+        event.finish(result)
+    }
+}
+
+pub struct LspEventTelemetry {
+    pub name: String,
+    pub enqueued_at: Instant,
+    pub dequeued_at: Instant,
+    pub error: Option<Error>,
+}
+
+impl LspEventTelemetry {
+    pub fn new_dequeued(name: String, enqueued_at: Instant) -> Self {
+        Self {
+            name,
+            enqueued_at,
+            dequeued_at: Instant::now(),
+            error: None,
+        }
+    }
+
+    pub fn finish<T>(&self, result: Result<T, Error>) -> (Duration, Duration, Result<T, Error>) {
+        let finished_at = Instant::now();
+        let queue_duration = self.dequeued_at - self.enqueued_at;
+        let process_duration = finished_at - self.dequeued_at;
+        (queue_duration, process_duration, result)
+    }
+
+    pub fn finish_and_record<T>(
+        self,
+        telemetry: &impl Telemetry,
+        result: Result<T, Error>,
+    ) -> (Duration, Duration, Result<T, Error>) {
+        telemetry.record_lsp_event(self, result)
+    }
+}

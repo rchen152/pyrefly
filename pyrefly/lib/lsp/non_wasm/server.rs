@@ -14,7 +14,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::AtomicI32;
 use std::sync::atomic::Ordering;
-use std::time::Instant;
 
 use dupe::Dupe;
 use dupe::OptionDupedExt;
@@ -184,6 +183,7 @@ use pyrefly_util::lock::RwLock;
 use pyrefly_util::prelude::VecExt;
 use pyrefly_util::task_heap::CancellationHandle;
 use pyrefly_util::task_heap::Cancelled;
+use pyrefly_util::telemetry::LspEventTelemetry;
 use pyrefly_util::telemetry::Telemetry;
 use pyrefly_util::watch_pattern::WatchPattern;
 use ruff_text_size::Ranged;
@@ -596,7 +596,7 @@ pub fn lsp_loop(
     indexing_mode: IndexingMode,
     workspace_indexing_limit: usize,
     build_system_blocking: bool,
-    _telemetry: &impl Telemetry,
+    telemetry: &impl Telemetry,
 ) -> anyhow::Result<()> {
     info!("Reading messages");
     let lsp_queue = LspQueue::new();
@@ -630,21 +630,23 @@ pub fn lsp_loop(
         let mut ide_transaction_manager = TransactionManager::default();
         let mut canceled_requests = HashSet::new();
         while let Ok((subsequent_mutation, event, enqueue_time)) = server.lsp_queue.recv() {
-            let process_start = Instant::now();
+            let event_telemetry = LspEventTelemetry::new_dequeued(event.describe(), enqueue_time);
             let event_description = event.describe();
-            match server.process_event(
+            let result = server.process_event(
                 &mut ide_transaction_manager,
                 &mut canceled_requests,
                 subsequent_mutation,
                 event,
-            ) {
+            );
+            let (queue_duration, process_duration, result) =
+                event_telemetry.finish_and_record(telemetry, result);
+            match result {
                 Ok(ProcessEvent::Continue) => {
-                    let process_end = Instant::now();
-                    let process_duration = (process_end - process_start).as_secs_f32();
-                    let queue_duration = (process_start - enqueue_time).as_secs_f32();
                     info!(
                         "Language server processed event `{}` in {:.2}s ({:.2}s waiting)",
-                        event_description, process_duration, queue_duration
+                        event_description,
+                        process_duration.as_secs_f32(),
+                        queue_duration.as_secs_f32()
                     );
                 }
                 Ok(ProcessEvent::Exit) => break,
