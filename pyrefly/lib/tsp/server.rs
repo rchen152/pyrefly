@@ -8,12 +8,12 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::time::Instant;
 
 use lsp_server::Request;
 use lsp_server::RequestId;
 use lsp_types::InitializeParams;
 use lsp_types::ServerCapabilities;
+use pyrefly_util::telemetry::LspEventTelemetry;
 use tracing::info;
 use tsp_types::TSPRequests;
 
@@ -155,21 +155,24 @@ pub fn tsp_loop(
         let mut ide_transaction_manager = TransactionManager::default();
         let mut canceled_requests = HashSet::new();
 
-        while let Ok((subsequent_mutation, event, queue_time)) = server.inner.lsp_queue().recv() {
-            let queue_duration = queue_time.elapsed().as_secs_f32();
-            let process_start = Instant::now();
+        while let Ok((subsequent_mutation, event, enqueued_at)) = server.inner.lsp_queue().recv() {
+            let event_telemetry = LspEventTelemetry::new_dequeued(event.describe(), enqueued_at);
             let event_description = event.describe();
-            match server.process_event(
+
+            let result = server.process_event(
                 &mut ide_transaction_manager,
                 &mut canceled_requests,
                 subsequent_mutation,
                 event,
-            )? {
+            );
+            let (queue_duration, process_duration, result) = event_telemetry.finish(result);
+            match result? {
                 ProcessEvent::Continue => {
-                    let process_duration = process_start.elapsed().as_secs_f32();
                     info!(
                         "Type server processed event `{}` in {:.2}s ({:.2}s waiting)",
-                        event_description, process_duration, queue_duration
+                        event_description,
+                        process_duration.as_secs_f32(),
+                        queue_duration.as_secs_f32()
                     );
                 }
                 ProcessEvent::Exit => break,
