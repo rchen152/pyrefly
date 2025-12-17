@@ -141,3 +141,13 @@ testcase!(
 type Alias[T, T] = list[T]  # E: duplicate type parameter
 "#,
 );
+
+testcase!(
+    bug = "we should not error on the global declaration. Also, the error on the nonlocal declaration should be more specific.",
+    test_nonlocal_and_global,
+    r#"
+def bar():
+    nonlocal x # E: Could not find name `x`
+    global x # E: `x` was assigned in the current scope before the global declaration
+"#,
+);
