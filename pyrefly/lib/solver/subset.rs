@@ -412,6 +412,15 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             // Assume recursive checks are true
             return Ok(());
         }
+        // TODO: Remove this once pandas 2.x is no longer supported.
+        // This is fixed in pandas 3.0 stubs. Until then, we hard-code that list/tuple satisfy
+        // SequenceNotStr. See https://github.com/pandas-dev/pandas/issues/56995
+        if protocol.has_qname("pandas._typing", "SequenceNotStr")
+            && let Type::ClassType(got_cls) = &got
+            && (got_cls.is_builtin("list") || got_cls.is_builtin("tuple"))
+        {
+            return Ok(());
+        }
         let protocol_members = self
             .type_order
             .get_protocol_member_names(protocol.class_object());
