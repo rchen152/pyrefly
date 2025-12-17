@@ -493,16 +493,16 @@ impl Bindings {
             | SemanticSyntaxErrorKind::MultipleCaseAssignment(_)
             | SemanticSyntaxErrorKind::DuplicateMatchKey(_)
             | SemanticSyntaxErrorKind::DuplicateMatchClassAttribute(_)
-            | SemanticSyntaxErrorKind::DuplicateTypeParameter => true,
+            | SemanticSyntaxErrorKind::DuplicateTypeParameter
+            | SemanticSyntaxErrorKind::NonModuleImportStar(_) => true,
              SemanticSyntaxErrorKind::WriteToDebug(_)
             | SemanticSyntaxErrorKind::InvalidExpression(_, _)
-            | SemanticSyntaxErrorKind::ReturnOutsideFunction
             | SemanticSyntaxErrorKind::AwaitOutsideAsyncFunction(_)
-            | SemanticSyntaxErrorKind::NonModuleImportStar(_)
             | SemanticSyntaxErrorKind::MultipleStarredExpressions
-            | SemanticSyntaxErrorKind::FutureFeatureNotDefined(_)
             // pyrefly already raises errors for these cases and we should
             // weigh the pros and cons of enabling them
+            | SemanticSyntaxErrorKind::FutureFeatureNotDefined(_)
+            | SemanticSyntaxErrorKind::ReturnOutsideFunction
             | SemanticSyntaxErrorKind::YieldFromInAsyncFunction
             | SemanticSyntaxErrorKind::YieldOutsideFunction(_)
             | SemanticSyntaxErrorKind::AsyncComprehensionInSyncComprehension(_)

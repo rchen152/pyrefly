@@ -151,3 +151,19 @@ def bar():
     global x # E: `x` was assigned in the current scope before the global declaration
 "#,
 );
+
+testcase!(
+    test_import_star_in_function,
+    r#"
+def foo():
+    from os import *  # E: `from os import *` only allowed at module level
+"#,
+);
+
+testcase!(
+    test_import_star_in_class,
+    r#"
+class Foo:
+    from os import *  # E: `from os import *` only allowed at module level
+"#,
+);
