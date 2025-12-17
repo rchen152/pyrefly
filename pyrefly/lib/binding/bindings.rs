@@ -492,9 +492,9 @@ impl Bindings {
             | SemanticSyntaxErrorKind::NonlocalDeclarationAtModuleLevel
             | SemanticSyntaxErrorKind::MultipleCaseAssignment(_)
             | SemanticSyntaxErrorKind::DuplicateMatchKey(_)
-            | SemanticSyntaxErrorKind::DuplicateMatchClassAttribute(_) => true,
+            | SemanticSyntaxErrorKind::DuplicateMatchClassAttribute(_)
+            | SemanticSyntaxErrorKind::DuplicateTypeParameter => true,
             SemanticSyntaxErrorKind::InvalidStarExpression
-            | SemanticSyntaxErrorKind::DuplicateTypeParameter
             | SemanticSyntaxErrorKind::WriteToDebug(_)
             | SemanticSyntaxErrorKind::InvalidExpression(_, _)
             | SemanticSyntaxErrorKind::LoadBeforeGlobalDeclaration { .. }

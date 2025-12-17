@@ -118,3 +118,26 @@ match p:
         pass
 "#,
 );
+
+testcase!(
+    test_duplicate_type_parameter_function,
+    r#"
+def f[T, T](x: T) -> T:  # E: duplicate type parameter
+    return x
+"#,
+);
+
+testcase!(
+    test_duplicate_type_parameter_class,
+    r#"
+class C[T, T]:  # E: duplicate type parameter
+    pass
+"#,
+);
+
+testcase!(
+    test_duplicate_type_parameter_type_alias,
+    r#"
+type Alias[T, T] = list[T]  # E: duplicate type parameter
+"#,
+);
