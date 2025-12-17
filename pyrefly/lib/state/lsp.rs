@@ -1793,6 +1793,8 @@ impl<'a> Transaction<'a> {
             },
         );
 
+        // Keep only the first suggestion for each unique import text (after sorting,
+        // this will be the public/non-deprecated version)
         code_actions.dedup_by(|a, b| a.3 == b.3);
 
         // Drop the deprecated flag and return
@@ -3052,6 +3054,11 @@ impl<'a> Transaction<'a> {
         }
     }
 
+    /// Used to avoid making use of reexports of private modules for some LSP
+    /// uses like auto-import (where we want to import the public API).
+    /// - Returns true if both modules should be shown in auto-import suggestions.
+    /// - Handles stdlib patterns where a public module (`io`) re-exports from a
+    ///   private implementation module (`_io`).
     fn should_include_reexport(original: &Handle, canonical: &Handle) -> bool {
         let canonical_components = canonical.module().components();
         let canonical_component = canonical_components
