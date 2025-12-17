@@ -64,6 +64,7 @@ use lsp_types::request::WorkspaceConfiguration;
 use pretty_assertions::assert_eq;
 use pyrefly_util::fs_anyhow::read_to_string;
 use pyrefly_util::lock::FinishHandle;
+use pyrefly_util::telemetry::NoTelemetry;
 use serde_json::Value;
 use serde_json::json;
 
@@ -1057,7 +1058,7 @@ impl LspInteraction {
                 workspace_indexing_limit: 50,
                 build_system_blocking: false,
             };
-            let _ = run_lsp(conn_server, args, "pyrefly-lsp-test-version");
+            let _ = run_lsp(conn_server, args, "pyrefly-lsp-test-version", &NoTelemetry);
             finish_server.notify_finished();
         });
 
