@@ -2413,6 +2413,12 @@ enum MergeStyle {
     BoolOp,
 }
 
+impl MergeStyle {
+    fn is_loop(self) -> bool {
+        matches!(self, MergeStyle::Loop | MergeStyle::LoopDefinitelyRuns)
+    }
+}
+
 struct MergeItem {
     base: Option<FlowInfo>,
     branches: Vec<FlowInfo>,
@@ -2508,10 +2514,8 @@ impl<'a> BindingsBuilder<'a> {
         let base_has_value = merge_item.base.as_ref().is_some_and(|b| b.value.is_some());
         // If this is a loop, we want to use the current default in any phis we produce,
         // and the base flow is part of the merge for type inference purposes.
-        let loop_prior = if matches!(
-            merge_style,
-            MergeStyle::Loop | MergeStyle::LoopDefinitelyRuns
-        ) && let Some(base) = merge_item.base
+        let loop_prior = if merge_style.is_loop()
+            && let Some(base) = merge_item.base
         {
             let loop_prior = base.loop_prior;
             flow_infos.push(base);
@@ -2649,21 +2653,14 @@ impl<'a> BindingsBuilder<'a> {
         merge_style: MergeStyle,
     ) {
         // Include the current flow in the merge if the merge style calls for it.
-        if matches!(
-            merge_style,
-            MergeStyle::Loop | MergeStyle::LoopDefinitelyRuns | MergeStyle::Inclusive
-        ) {
+        if merge_style.is_loop() || matches!(merge_style, MergeStyle::Inclusive) {
             branches.push(mem::take(&mut self.scopes.current_mut().flow));
         }
 
         // Short circuit when there is only one flow. Note that we can never short
         // circuit for loops, because (a) we need to merge with the base flow, and
         // (b) we have already promised the phi keys so we'll panic if we short-circuit.
-        if !matches!(
-            merge_style,
-            MergeStyle::Loop | MergeStyle::LoopDefinitelyRuns
-        ) && branches.len() == 1
-        {
+        if !merge_style.is_loop() && branches.len() == 1 {
             self.scopes.current_mut().flow = branches.pop().unwrap();
             return;
         }
@@ -2674,11 +2671,7 @@ impl<'a> BindingsBuilder<'a> {
         // we'll use the terminated branches.
         let (terminated_branches, live_branches): (Vec<_>, Vec<_>) =
             branches.into_iter().partition(|flow| flow.has_terminated);
-        let has_terminated = live_branches.is_empty()
-            && !matches!(
-                merge_style,
-                MergeStyle::Loop | MergeStyle::LoopDefinitelyRuns
-            );
+        let has_terminated = live_branches.is_empty() && !merge_style.is_loop();
         let flows = if has_terminated {
             terminated_branches
         } else {
