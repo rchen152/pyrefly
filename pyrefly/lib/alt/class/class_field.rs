@@ -2601,7 +2601,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if matches!(class_field.1, IsInherited::No) && !is_override {
             return;
         }
-
         let metadata = self.get_metadata_for_class(cls);
         if !self.should_check_field_for_override_consistency(field_name, &metadata) {
             return;
@@ -2784,6 +2783,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         field_name,
                     ),
                 );
+        }
+        // Check for missing @override decorator when overriding a parent attribute.
+        // This error is emitted when a method overrides a parent but doesn't have @override.
+        // Since this error has Severity::Ignore by default, it won't be shown unless enabled.
+        if !is_override && parent_attr_found && !parent_has_any {
+            self.error(
+                errors,
+                range,
+                ErrorInfo::Kind(ErrorKind::MissingOverrideDecorator),
+                format!(
+                    "Class member `{}.{}` overrides a member in a parent class but is missing an `@override` decorator",
+                    cls.name(),
+                    field_name,
+                ),
+            );
         }
     }
 
