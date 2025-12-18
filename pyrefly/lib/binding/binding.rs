@@ -167,6 +167,9 @@ impl DisplayWith<Bindings> for AnyIdx {
     }
 }
 
+/// Any key that sets `EXPORTED` to `true` should not include positions
+/// Incremental updates depend on knowing when a file's exports changed, which uses equality between exported keys
+/// Moving code around should not cause all dependencies to be re-checked
 pub trait Keyed: Hash + Eq + Clone + DisplayWith<ModuleInfo> + Debug + Ranged + 'static {
     const EXPORTED: bool = false;
     type Value: Debug + DisplayWith<Bindings>;
@@ -241,7 +244,7 @@ impl Keyed for KeyClassSynthesizedFields {
         AnyIdx::KeyClassSynthesizedFields(idx)
     }
 }
-impl Exported for KeyVariance {}
+impl Exported for KeyClassSynthesizedFields {}
 impl Keyed for KeyVariance {
     const EXPORTED: bool = true;
     type Value = BindingVariance;
@@ -250,8 +253,7 @@ impl Keyed for KeyVariance {
         AnyIdx::KeyVariance(idx)
     }
 }
-
-impl Exported for KeyClassSynthesizedFields {}
+impl Exported for KeyVariance {}
 impl Keyed for KeyExport {
     const EXPORTED: bool = true;
     type Value = BindingExport;
