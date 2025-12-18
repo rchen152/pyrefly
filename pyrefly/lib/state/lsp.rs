@@ -87,7 +87,7 @@ use crate::types::types::Type;
 
 mod quick_fixes;
 
-use self::quick_fixes::extract_function::LocalRefactorCodeAction;
+pub(crate) use self::quick_fixes::extract_function::LocalRefactorCodeAction;
 
 fn default_true() -> bool {
     true
@@ -1814,6 +1814,14 @@ impl<'a> Transaction<'a> {
         selection: TextRange,
     ) -> Option<Vec<LocalRefactorCodeAction>> {
         quick_fixes::extract_function::extract_function_code_actions(self, handle, selection)
+    }
+
+    pub fn extract_variable_code_actions(
+        &self,
+        handle: &Handle,
+        selection: TextRange,
+    ) -> Option<Vec<LocalRefactorCodeAction>> {
+        quick_fixes::extract_variable::extract_variable_code_actions(self, handle, selection)
     }
 
     /// Determines whether a module is a third-party package.
