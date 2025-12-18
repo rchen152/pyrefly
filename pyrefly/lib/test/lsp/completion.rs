@@ -1191,7 +1191,7 @@ foo(
 4 | foo(
         ^
 Completion Results:
-- (Value) 'foo': Literal['foo']
+- (Value) 'foo': Literal['foo'] inserting `'foo'`
 - (Variable) x=: Literal['foo']
 "#
         .trim(),
@@ -1215,16 +1215,16 @@ foo(
 4 | foo(
         ^
 Completion Results:
-- (Value) '"': Literal['"']
-- (Value) '\'': Literal['\'']
-- (Value) '\\': Literal['\\']
-- (Value) '\a': Literal['\a']
-- (Value) '\b': Literal['\b']
-- (Value) '\f': Literal['\f']
-- (Value) '\n': Literal['\n']
-- (Value) '\r': Literal['\r']
-- (Value) '\t': Literal['\t']
-- (Value) '\v': Literal['\v']
+- (Value) '"': Literal['"'] inserting `'"'`
+- (Value) '\'': Literal['\''] inserting `'\''`
+- (Value) '\\': Literal['\\'] inserting `'\\'`
+- (Value) '\a': Literal['\a'] inserting `'\a'`
+- (Value) '\b': Literal['\b'] inserting `'\b'`
+- (Value) '\f': Literal['\f'] inserting `'\f'`
+- (Value) '\n': Literal['\n'] inserting `'\n'`
+- (Value) '\r': Literal['\r'] inserting `'\r'`
+- (Value) '\t': Literal['\t'] inserting `'\t'`
+- (Value) '\v': Literal['\v'] inserting `'\v'`
 - (Variable) x=: Literal['\a', '\b', '\t', '\n', '\v', '\f', '\r', '"', '\'', '\\']
 "#
         .trim(),
@@ -1248,8 +1248,9 @@ foo("
 4 | foo("
          ^
 Completion Results:
-- (Value) 'a\nb': Literal['a\nb']"#
-            .trim(),
+- (Value) 'a\nb': Literal['a\nb'] inserting `a
+b`"#
+        .trim(),
         report.trim(),
     );
 }
@@ -1270,8 +1271,8 @@ foo(
 4 | foo(
         ^
 Completion Results:
-- (Value) 'bar': Literal['bar']
-- (Value) 'foo': Literal['foo']
+- (Value) 'bar': Literal['bar'] inserting `'bar'`
+- (Value) 'foo': Literal['foo'] inserting `'foo'`
 - (Variable) x=: Literal['bar', 'foo']
 "#
         .trim(),
@@ -1295,8 +1296,8 @@ foo('
 4 | foo('
          ^
 Completion Results:
-- (Value) 'bar': Literal['bar']
-- (Value) 'foo': Literal['foo']
+- (Value) 'bar': Literal['bar'] inserting `bar`
+- (Value) 'foo': Literal['foo'] inserting `foo`
 "#
         .trim(),
         report.trim(),
@@ -1321,8 +1322,8 @@ foo(
 5 | foo(
         ^
 Completion Results:
-- (Value) 'bar': Literal['bar']
-- (Value) 'foo': Literal['foo']
+- (Value) 'bar': Literal['bar'] inserting `'bar'`
+- (Value) 'foo': Literal['foo'] inserting `'foo'`
 - (Variable) x=: Literal['bar', 'foo']
 "#
         .trim(),
@@ -1346,7 +1347,7 @@ foo(
 4 | foo(
         ^
 Completion Results:
-- (Value) 1: Literal[1]
+- (Value) 1: Literal[1] inserting `1`
 - (Variable) x=: Literal[1] | LiteralString
 "#
         .trim(),
@@ -1371,8 +1372,8 @@ foo(
 5 | foo(
         ^
 Completion Results:
-- (Value) 'foo': Literal['foo']
-- (Value) 1: Literal[1]
+- (Value) 'foo': Literal['foo'] inserting `'foo'`
+- (Value) 1: Literal[1] inserting `1`
 - (Variable) x=: Literal['foo', 1] | Foo
 "#
         .trim(),
@@ -1380,7 +1381,6 @@ Completion Results:
     );
 }
 
-// todo(kylei): provide editttext to remove the quotes
 #[test]
 fn completion_literal_do_not_duplicate_quotes() {
     let code = r#"
@@ -1398,8 +1398,8 @@ foo(''
 5 | foo(''
          ^
 Completion Results:
-- (Value) 'foo': Literal['foo']
-- (Value) 1: Literal[1]
+- (Value) 'foo': Literal['foo'] inserting `foo`
+- (Value) 1: Literal[1] inserting `1`
 "#
         .trim(),
         report.trim(),
