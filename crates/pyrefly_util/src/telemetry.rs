@@ -40,7 +40,11 @@ pub struct TelemetryEvent {
     pub validate: Option<Duration>,
     pub transaction_stats: Option<TelemetryTransactionStats>,
     pub server_state: TelemetryServerState,
-    pub uri: Option<Url>,
+    pub file_stats: Option<TelemetryFileStats>,
+}
+
+pub struct TelemetryFileStats {
+    pub uri: Url,
 }
 
 pub struct TelemetryServerState {
@@ -74,7 +78,7 @@ impl TelemetryEvent {
             validate: None,
             transaction_stats: None,
             server_state,
-            uri: None,
+            file_stats: None,
         }
     }
 
@@ -90,8 +94,8 @@ impl TelemetryEvent {
         self.transaction_stats = Some(stats);
     }
 
-    pub fn set_file_path(&mut self, path: Url) {
-        self.uri = Some(path);
+    pub fn set_file_stats(&mut self, stats: TelemetryFileStats) {
+        self.file_stats = Some(stats);
     }
 
     pub fn finish_and_record(self, telemetry: &impl Telemetry, error: Option<&Error>) -> Duration {
