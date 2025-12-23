@@ -42,6 +42,7 @@ pub struct TelemetryEvent {
     pub transaction_stats: Option<TelemetryTransactionStats>,
     pub server_state: TelemetryServerState,
     pub file_stats: Option<TelemetryFileStats>,
+    pub task_stats: Option<TelemetryTaskStats>,
 }
 
 pub struct TelemetryFileStats {
@@ -64,6 +65,17 @@ pub struct TelemetryTransactionStats {
     pub committed: bool,
 }
 
+pub struct TelemetryTaskStats {
+    pub queue_name: &'static str,
+    pub id: usize,
+}
+
+impl TelemetryTaskStats {
+    pub fn new(queue_name: &'static str, id: usize) -> Self {
+        Self { queue_name, id }
+    }
+}
+
 impl TelemetryEvent {
     pub fn new_dequeued(
         kind: TelemetryEventKind,
@@ -82,6 +94,7 @@ impl TelemetryEvent {
             transaction_stats: None,
             server_state,
             file_stats: None,
+            task_stats: None,
         }
     }
 
@@ -99,6 +112,10 @@ impl TelemetryEvent {
 
     pub fn set_file_stats(&mut self, stats: TelemetryFileStats) {
         self.file_stats = Some(stats);
+    }
+
+    pub fn set_task_stats(&mut self, stats: TelemetryTaskStats) {
+        self.task_stats = Some(stats);
     }
 
     pub fn finish_and_record(self, telemetry: &impl Telemetry, error: Option<&Error>) -> Duration {
