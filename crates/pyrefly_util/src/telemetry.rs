@@ -45,6 +45,7 @@ pub struct TelemetryEvent {
 
 pub struct TelemetryFileStats {
     pub uri: Url,
+    pub config_root: Option<Url>,
 }
 
 pub struct TelemetryServerState {

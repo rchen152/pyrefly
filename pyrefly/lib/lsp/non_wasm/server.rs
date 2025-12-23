@@ -1407,7 +1407,20 @@ impl Server {
     }
 
     pub fn set_file_stats(&self, uri: Url, telemetry: &mut TelemetryEvent) {
-        telemetry.set_file_stats(TelemetryFileStats { uri });
+        let config_root = if let Ok(path) = uri.to_file_path() {
+            let config = self
+                .state
+                .config_finder()
+                .python_file(ModuleName::unknown(), &ModulePath::filesystem(path));
+            config
+                .source
+                .root()
+                .and_then(|p| Url::from_file_path(p).ok())
+        } else {
+            None
+        };
+
+        telemetry.set_file_stats(TelemetryFileStats { uri, config_root });
     }
 
     fn send_response(&self, x: Response) {
