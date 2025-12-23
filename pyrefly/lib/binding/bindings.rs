@@ -427,7 +427,7 @@ impl Bindings {
         for (range, name) in exports.invalid_dunder_all_entries(lookup, &module_info) {
             builder.error(
                 range,
-                ErrorInfo::Kind(ErrorKind::MissingModuleAttribute),
+                ErrorInfo::Kind(ErrorKind::BadDunderAll),
                 format!("Name `{name}` is listed in `__all__` but is not defined in the module"),
             );
         }

@@ -100,6 +100,8 @@ pub enum ErrorKind {
     BadClassDefinition,
     /// Attempting to use a type that cannot be used as a contextmanager in a `with` statement.
     BadContextManager,
+    /// An entry in user-defined `__all__` does not exist in the module.
+    BadDunderAll,
     /// A function definition has some typing-related error.
     /// e.g. putting a non-default argument after a default argument.
     BadFunctionDefinition,
