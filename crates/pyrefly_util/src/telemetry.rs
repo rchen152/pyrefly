@@ -54,6 +54,7 @@ pub struct TelemetryTransactionStats {
     pub cycle_rdeps: usize,
     pub run_steps: usize,
     pub run_time: Duration,
+    pub committed: bool,
 }
 
 impl TelemetryEvent {
