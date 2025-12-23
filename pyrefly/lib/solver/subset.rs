@@ -1188,7 +1188,8 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 }
             }
             (Type::LiteralString | Type::Literal(Lit::Str(_)), Type::ClassType(want))
-                if want.has_qname("typing", "Container") =>
+                if want.has_qname("typing", "Container")
+                    || want.has_qname("typing", "Collection") =>
             {
                 // The signature of `typing.Container.__contains__` is weird.
                 // `str` matches it by direct inheritance, but we cannot convert `LiteralString` to `str`
