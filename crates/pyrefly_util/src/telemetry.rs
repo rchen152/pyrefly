@@ -43,6 +43,7 @@ pub struct TelemetryEvent {
     pub server_state: TelemetryServerState,
     pub file_stats: Option<TelemetryFileStats>,
     pub task_stats: Option<TelemetryTaskStats>,
+    pub sourcedb_rebuild_stats: Option<TelemetrySourceDbRebuildStats>,
 }
 
 pub struct TelemetryFileStats {
@@ -76,6 +77,14 @@ impl TelemetryTaskStats {
     }
 }
 
+#[derive(Default)]
+pub struct TelemetrySourceDbRebuildStats {
+    pub count: usize,
+    pub files: usize,
+    pub changed: bool,
+    pub had_error: bool,
+}
+
 impl TelemetryEvent {
     pub fn new_dequeued(
         kind: TelemetryEventKind,
@@ -95,6 +104,7 @@ impl TelemetryEvent {
             server_state,
             file_stats: None,
             task_stats: None,
+            sourcedb_rebuild_stats: None,
         }
     }
 
@@ -116,6 +126,10 @@ impl TelemetryEvent {
 
     pub fn set_task_stats(&mut self, stats: TelemetryTaskStats) {
         self.task_stats = Some(stats);
+    }
+
+    pub fn set_sourcedb_rebuild_stats(&mut self, stats: TelemetrySourceDbRebuildStats) {
+        self.sourcedb_rebuild_stats = Some(stats);
     }
 
     pub fn finish_and_record(self, telemetry: &impl Telemetry, error: Option<&Error>) -> Duration {

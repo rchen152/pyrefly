@@ -1894,7 +1894,7 @@ impl Server {
     /// Attempts to requery any open sourced_dbs for open files, and if there are changes,
     /// invalidate find and perform a recheck.
     fn queue_source_db_rebuild_and_recheck(&self, telemetry: &mut TelemetryEvent, force: bool) {
-        let run = move |server: &Server, _telemetry: &mut TelemetryEvent| {
+        let run = move |server: &Server, telemetry: &mut TelemetryEvent| {
             let mut configs_to_paths: SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>> =
                 SmallMap::new();
             let config_finder = server.state.config_finder();
@@ -1911,7 +1911,9 @@ impl Server {
                     .or_default()
                     .insert(handle.path().dupe());
             }
-            let new_invalidated_source_dbs = ConfigFile::query_source_db(&configs_to_paths, force);
+            let (new_invalidated_source_dbs, rebuild_stats) =
+                ConfigFile::query_source_db(&configs_to_paths, force);
+            telemetry.set_sourcedb_rebuild_stats(rebuild_stats);
             if !new_invalidated_source_dbs.is_empty() {
                 let mut lock = server.invalidated_source_dbs.lock();
                 for db in new_invalidated_source_dbs {

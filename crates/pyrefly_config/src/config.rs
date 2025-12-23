@@ -42,6 +42,7 @@ use pyrefly_util::globs::Glob;
 use pyrefly_util::globs::Globs;
 use pyrefly_util::lock::RwLock;
 use pyrefly_util::prelude::VecExt;
+use pyrefly_util::telemetry::TelemetrySourceDbRebuildStats;
 use pyrefly_util::watch_pattern::WatchPattern;
 use serde::Deserialize;
 use serde::Serialize;
@@ -888,7 +889,11 @@ impl ConfigFile {
     pub fn query_source_db(
         configs_to_files: &SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>>,
         force: bool,
-    ) -> SmallSet<ArcId<Box<dyn SourceDatabase + 'static>>> {
+    ) -> (
+        SmallSet<ArcId<Box<dyn SourceDatabase + 'static>>>,
+        TelemetrySourceDbRebuildStats,
+    ) {
+        let mut stats: TelemetrySourceDbRebuildStats = Default::default();
         let mut reloaded_source_dbs = SmallSet::new();
         let mut sourcedb_configs: SmallMap<_, Vec<_>> = SmallMap::new();
         for (config, files) in configs_to_files {
@@ -899,17 +904,22 @@ impl ConfigFile {
                 .entry(source_db)
                 .or_default()
                 .push((config, files));
+            // Files can be uniquely tied to a config, so we will be counting each file at most
+            // once here.
+            stats.files += files.len();
         }
 
+        stats.count = sourcedb_configs.len();
         for (source_db, configs_and_files) in sourcedb_configs {
             let all_files = configs_and_files
                 .iter()
                 .flat_map(|x| x.1.iter())
                 .map(|p| p.module_path_buf())
                 .collect::<SmallSet<_>>();
-            let reloaded = match source_db.query_source_db(all_files, force) {
+            let changed = match source_db.query_source_db(all_files, force) {
                 Err(error) => {
                     error!("Error reloading source database for config: {error:?}");
+                    stats.had_error = true;
                     continue;
                 }
                 Ok(r) => r,
@@ -923,7 +933,8 @@ impl ConfigFile {
                     write.insert(file, first_config.dupe());
                 }
             }
-            if reloaded {
+            if changed {
+                stats.changed = true;
                 debug!(
                     "Performed grouped source db query for configs at {:?}",
                     configs_and_files
@@ -934,7 +945,7 @@ impl ConfigFile {
                 reloaded_source_dbs.insert(source_db.dupe());
             }
         }
-        reloaded_source_dbs
+        (reloaded_source_dbs, stats)
     }
 
     /// Configures values that must be updated *after* overwriting with CLI flag values,
