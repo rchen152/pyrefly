@@ -6,6 +6,7 @@
  */
 
 use pyrefly_graph::index::Idx;
+use pyrefly_python::ast::Ast;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprAttribute;
@@ -420,15 +421,14 @@ impl<'a> BindingsBuilder<'a> {
         if ensure_assigned && let Some(assigned) = &mut assigned {
             self.ensure_expr(assigned, user.usage());
         }
-        if name.id.as_str().is_empty() || name.range.is_empty() {
+        let ann = if !Ast::is_synthesized_empty_name(name) {
+            self.bind_current(&name.id, &user, FlowStyle::Other)
+        } else {
             // Parser error recovery can synthesize walrus targets with empty identifiers.
             // Pretend the name binding succeeded so we still analyze the RHS, but skip
             // putting an entry into the flow-sensitive scope to avoid panics later.
-            let binding = make_binding(assigned.as_deref(), None);
-            self.insert_binding_current(user, binding);
-            return;
-        }
-        let ann = self.bind_current(&name.id, &user, FlowStyle::Other);
+            None
+        };
         let binding = make_binding(assigned.as_deref(), ann);
         self.insert_binding_current(user, binding);
     }
