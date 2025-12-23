@@ -1151,7 +1151,30 @@ def test1(x: object) -> None:
         pass
 ```
 
-This check is relatively conservative and only warn on limited cases where the comparison is highly likely to be redundant.
+This check is relatively conservative and only warns on limited cases where the comparison is highly likely to be redundant.
+
+## unsafe-overlap
+
+Protocols decorated with `@runtime_checkable` may be used in `isinstance` and `issubclass` checks, but the runtime will only checks that all the required attributes are present, without looking at their types.
+
+This error occurs when the object you're checking against the protocol has all the required attributes, but their types are not compatible.
+
+In the example below, `C` should not match with `P`, but the `isinstance` check will succeed at runtime.
+
+```python
+from typing import Protocol, runtime_checkable
+
+@runtime_checkable
+class P(Protocol):
+    x: int
+
+class C:
+    x: str
+
+c = C()
+if isinstance(c, P):
+    pass
+```
 
 ## unsupported
 

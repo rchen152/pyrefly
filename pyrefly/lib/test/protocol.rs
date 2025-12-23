@@ -619,6 +619,19 @@ c: C = g  # E: `(x: int) -> int` is not assignable to `C`
 );
 
 testcase!(
+    test_protocol_return_self,
+    r#"
+from typing import Protocol, Self, runtime_checkable
+
+@runtime_checkable
+class CanAddSelf(Protocol):
+    def __add__(self, other: Self, /) -> Self: ...
+
+assert isinstance(42, CanAddSelf)
+    "#,
+);
+
+testcase!(
     test_protocol_self_tvar,
     r#"
 from typing import Protocol
