@@ -504,17 +504,6 @@ pub struct ConfigFile {
     #[derivative(PartialEq = "ignore")]
     pub source_db: Option<ArcId<Box<dyn SourceDatabase>>>,
 
-    /// Skips the check to ensure any `-stubs` `site_package_path` entries have an
-    /// installed non-stubs package.
-    #[serde(
-                     default = "ConfigFile::default_true",
-                     skip_serializing_if = "crate::util::skip_default_true",
-                     // TODO(connernilsen): DON'T COPY THIS TO NEW FIELDS. This is a temporary
-                     // alias while we migrate existing fields from snake case to kebab case.
-                     alias = "ignore_missing_source",
-                 )]
-    pub ignore_missing_source: bool,
-
     /// Should we let Pyrefly try to index the project's files? Disabling this
     /// may speed up LSP operations on large projects.
     #[serde(default, skip_serializing_if = "crate::util::skip_default_false")]
@@ -546,7 +535,6 @@ impl Default for ConfigFile {
             build_system: Default::default(),
             source_db: Default::default(),
             use_ignore_files: true,
-            ignore_missing_source: true,
             typeshed_path: None,
             skip_lsp_config_indexing: false,
         }
@@ -822,7 +810,6 @@ impl ConfigFile {
             self.errors(path),
             self.ignore_errors_in_generated_code(path),
             self.enabled_ignores(path).clone(),
-            self.ignore_missing_source,
         )
     }
 
@@ -1224,10 +1211,7 @@ impl ConfigFile {
             (config, errors)
         }
         let config_path = config_path.absolutize();
-        let (config, mut errors) = f(&config_path);
-        if !config.ignore_missing_source {
-            errors.push(ConfigError::warn(anyhow!("`ignore-missing-source` is deprecated and will be removed in a future version. Please enable the `missing-source` error instead.")))
-        }
+        let (config, errors) = f(&config_path);
         let errors = errors.into_map(|err| err.context(format!("{}", config_path.display())));
         (config, errors)
     }
@@ -1409,7 +1393,6 @@ mod tests {
                         enabled_ignores: None,
                     }
                 }],
-                ignore_missing_source: true,
                 typeshed_path: None,
                 skip_lsp_config_indexing: false,
             }
@@ -1429,7 +1412,6 @@ mod tests {
              python-interpreter-path = "venv/my/python"
              replace_imports_with_any = ["fibonacci"]
              ignore_errors_in_generated_code = true
-             ignore_missing_source = true
 
              [errors]
              assert-type = "error"
@@ -1643,7 +1625,6 @@ mod tests {
                 matches: Glob::new("sub/project/**".to_owned()).unwrap(),
                 settings: Default::default(),
             }],
-            ignore_missing_source: false,
             typeshed_path: Some(PathBuf::from(typeshed)),
             skip_lsp_config_indexing: false,
         };
@@ -1702,7 +1683,6 @@ mod tests {
                 matches: sub_config_matches,
                 settings: Default::default(),
             }],
-            ignore_missing_source: false,
             typeshed_path: Some(expected_typeshed),
             skip_lsp_config_indexing: false,
         };
