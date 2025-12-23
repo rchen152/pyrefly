@@ -200,6 +200,7 @@ use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
 use tracing::error;
 use tracing::info;
+use uuid::Uuid;
 
 use crate::ModuleInfo;
 use crate::commands::lsp::IndexingMode;
@@ -377,6 +378,7 @@ pub struct Server {
     outgoing_requests: Mutex<HashMap<RequestId, Request>>,
     filewatcher_registered: AtomicBool,
     version_info: Mutex<HashMap<PathBuf, i32>>,
+    id: Uuid,
 }
 
 /// At the time when we are ready to handle a new LSP event, it will help if we know the list of
@@ -1378,6 +1380,7 @@ impl Server {
             outgoing_requests: Mutex::new(HashMap::new()),
             filewatcher_registered: AtomicBool::new(false),
             version_info: Mutex::new(HashMap::new()),
+            id: Uuid::new_v4(),
         };
 
         if let Some(init_options) = &s.initialize_params.initialization_options {
@@ -1403,6 +1406,7 @@ impl Server {
     pub fn telemetry_state(&self) -> TelemetryServerState {
         TelemetryServerState {
             has_sourcedb: self.workspaces.sourcedb_available(),
+            id: self.id,
         }
     }
 

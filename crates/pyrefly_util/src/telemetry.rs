@@ -10,6 +10,7 @@ use std::time::Instant;
 
 use anyhow::Error;
 use lsp_types::Url;
+use uuid::Uuid;
 
 pub trait Telemetry: Send + Sync {
     fn record_event(&self, event: TelemetryEvent, process: Duration, error: Option<&Error>);
@@ -50,6 +51,7 @@ pub struct TelemetryFileStats {
 
 pub struct TelemetryServerState {
     pub has_sourcedb: bool,
+    pub id: Uuid,
 }
 
 #[derive(Default)]
