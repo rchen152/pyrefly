@@ -132,7 +132,7 @@ pub struct Definitions {
     /// All the modules that are imported with `from x import *`.
     pub import_all: SmallMap<ModuleName, TextRange>,
     /// The `__all__` variable contents.
-    pub dunder_all: Vec<DunderAllEntry>,
+    pub dunder_all: DunderAll,
     /// If the containing module `foo` is a __init__ file, then this is the set of submodules
     /// that are guaranteed to be imported under `foo` when `foo` is itself imported in downstream
     /// files.
@@ -143,12 +143,29 @@ pub struct Definitions {
     pub special_exports: SmallMap<Name, SpecialExport>,
 }
 
+/// Whether `__all__` was explicitly defined by the user or synthesized from module definitions.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
+pub enum DunderAllKind {
+    /// `__all__` was synthesized from module definitions
+    #[default]
+    Inferred,
+    /// `__all__` was explicitly defined by the user
+    Specified,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum DunderAllEntry {
     Name(TextRange, Name),
     Module(TextRange, ModuleName),
     // We have to have this explicitly, as you might remove something in a Module
     Remove(TextRange, Name),
+}
+
+/// The `__all__` variable contents with tracking of whether it was user-specified.
+#[derive(Debug, Clone, Default)]
+pub struct DunderAll {
+    pub kind: DunderAllKind,
+    pub entries: Vec<DunderAllEntry>,
 }
 
 impl DunderAllEntry {
@@ -255,7 +272,9 @@ impl Definitions {
         }
         if style == ModuleStyle::Executable {
             for (x, range) in self.import_all.iter() {
-                self.dunder_all.push(DunderAllEntry::Module(*range, *x));
+                self.dunder_all
+                    .entries
+                    .push(DunderAllEntry::Module(*range, *x));
             }
         }
         for (name, def) in self.definitions.iter() {
@@ -269,6 +288,7 @@ impl Definitions {
                     ))
             {
                 self.dunder_all
+                    .entries
                     .push(DunderAllEntry::Name(def.range, name.clone()));
             }
         }
@@ -279,6 +299,7 @@ impl Definitions {
         for name in extra {
             if let Some(def) = self.definitions.get(name) {
                 self.dunder_all
+                    .entries
                     .push(DunderAllEntry::Name(def.range, name.clone()))
             }
         }
@@ -420,7 +441,10 @@ impl<'a> DefinitionsBuilder<'a> {
                             && a.name.id == dunder::ALL
                             && let Some(module) = name
                         {
-                            self.inner.dunder_all = vec![DunderAllEntry::Module(x.range, module)]
+                            self.inner.dunder_all = DunderAll {
+                                kind: DunderAllKind::Specified,
+                                entries: vec![DunderAllEntry::Module(x.range, module)],
+                            }
                         }
                         self.add_identifier(a.asname.as_ref().unwrap_or(&a.name), style);
                     }
@@ -468,7 +492,10 @@ impl<'a> DefinitionsBuilder<'a> {
                 for t in &x.targets {
                     self.expr_lvalue(t);
                     if DunderAllEntry::is_all(t) {
-                        self.inner.dunder_all = DunderAllEntry::as_list(&x.value);
+                        self.inner.dunder_all = DunderAll {
+                            kind: DunderAllKind::Specified,
+                            entries: DunderAllEntry::as_list(&x.value),
+                        };
                     }
                 }
             }
@@ -479,7 +506,10 @@ impl<'a> DefinitionsBuilder<'a> {
                 if let Some(v) = &x.value
                     && DunderAllEntry::is_all(&x.target)
                 {
-                    self.inner.dunder_all = DunderAllEntry::as_list(v.as_ref());
+                    self.inner.dunder_all = DunderAll {
+                        kind: DunderAllKind::Specified,
+                        entries: DunderAllEntry::as_list(v.as_ref()),
+                    };
                 }
                 match &*x.target {
                     Expr::Name(x) => {
@@ -498,8 +528,10 @@ impl<'a> DefinitionsBuilder<'a> {
             Stmt::AugAssign(x) => {
                 self.named_in_expr(&x.value);
                 if DunderAllEntry::is_all(&x.target) && x.op == Operator::Add {
+                    self.inner.dunder_all.kind = DunderAllKind::Specified;
                     self.inner
                         .dunder_all
+                        .entries
                         .extend(DunderAllEntry::as_list(&x.value));
                 }
                 if let Expr::Name(name) = &*x.target {
@@ -531,14 +563,17 @@ impl<'a> DefinitionsBuilder<'a> {
                     && arguments.len() == 1
                     && arguments.keywords.is_empty()
                 {
+                    self.inner.dunder_all.kind = DunderAllKind::Specified;
                     match attr.as_str() {
                         "extend" => self
                             .inner
                             .dunder_all
+                            .entries
                             .extend(DunderAllEntry::as_list(&arguments.args[0])),
                         "append" => self
                             .inner
                             .dunder_all
+                            .entries
                             .extend(DunderAllEntry::as_item(&arguments.args[0])),
                         "remove" => {
                             if let Some(DunderAllEntry::Name(range, remove)) =
@@ -546,6 +581,7 @@ impl<'a> DefinitionsBuilder<'a> {
                             {
                                 self.inner
                                     .dunder_all
+                                    .entries
                                     .push(DunderAllEntry::Remove(range, remove));
                             }
                         }
@@ -733,7 +769,7 @@ mod tests {
             is_init,
             &SysInfo::default(),
         );
-        res.dunder_all.iter_mut().for_each(unrange);
+        res.dunder_all.entries.iter_mut().for_each(unrange);
         res
     }
 
@@ -808,6 +844,8 @@ match x():
                 "qux", "moo", "mod", "x", "z", "w", "n", "X", "Y", "case0", "case1",
             ],
         );
+        // No explicit __all__, so it should be inferred
+        assert_eq!(defs.dunder_all.kind, DunderAllKind::Inferred);
     }
 
     #[test]
@@ -862,6 +900,8 @@ def bar(x: str) -> str: ...
         );
         assert_import_all(&defs, &[]);
         assert_definition_names(&defs, &["overload", "foo", "bar"]);
+        // No explicit __all__, so it should be inferred
+        assert_eq!(defs.dunder_all.kind, DunderAllKind::Inferred);
 
         let foo = defs.definitions.get(&Name::new_static("foo")).unwrap();
         assert_eq!(
@@ -898,6 +938,7 @@ __all__.remove('r')
         );
         assert_import_all(&defs, &["foo"]);
         assert_definition_names(&defs, &["a", "b", "__all__"]);
+        assert_eq!(defs.dunder_all.kind, DunderAllKind::Specified);
 
         let loc = TextRange::default();
         let a = &DunderAllEntry::Name(loc, Name::new_static("a"));
@@ -905,7 +946,7 @@ __all__.remove('r')
         let foo = &DunderAllEntry::Module(loc, ModuleName::from_str("foo"));
         let r = &DunderAllEntry::Remove(loc, Name::new_static("r"));
         assert_eq!(
-            defs.dunder_all.map(|x| x),
+            defs.dunder_all.entries.map(|x| x),
             vec![a, b, a, b, foo, a, b, foo, a, r]
         );
     }
@@ -921,10 +962,11 @@ __all__: list[str] = ["a", "b"]
         "#,
         );
         assert_definition_names(&defs, &["a", "b", "__all__"]);
+        assert_eq!(defs.dunder_all.kind, DunderAllKind::Specified);
         let loc = TextRange::default();
         let a = &DunderAllEntry::Name(loc, Name::new_static("a"));
         let b = &DunderAllEntry::Name(loc, Name::new_static("b"));
-        assert_eq!(defs.dunder_all.map(|x| x), vec![a, b]);
+        assert_eq!(defs.dunder_all.entries.map(|x| x), vec![a, b]);
     }
 
     #[test]
@@ -938,9 +980,10 @@ from _collections_abc import __all__ as __all__
         );
         assert_import_all(&defs, &["_collections_abc"]);
         assert_definition_names(&defs, &["__all__"]);
+        assert_eq!(defs.dunder_all.kind, DunderAllKind::Specified);
 
         assert_eq!(
-            defs.dunder_all,
+            defs.dunder_all.entries,
             vec![DunderAllEntry::Module(
                 TextRange::default(),
                 ModuleName::from_str("_collections_abc")
