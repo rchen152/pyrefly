@@ -9,6 +9,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use anyhow::Error;
+use lsp_types::Url;
 
 pub trait Telemetry: Send + Sync {
     fn record_event(&self, event: TelemetryEvent, process: Duration, error: Option<&Error>);
@@ -39,6 +40,7 @@ pub struct TelemetryEvent {
     pub validate: Option<Duration>,
     pub transaction_stats: Option<TelemetryTransactionStats>,
     pub server_state: TelemetryServerState,
+    pub uri: Option<Url>,
 }
 
 pub struct TelemetryServerState {
@@ -71,6 +73,7 @@ impl TelemetryEvent {
             validate: None,
             transaction_stats: None,
             server_state,
+            uri: None,
         }
     }
 
@@ -84,6 +87,10 @@ impl TelemetryEvent {
 
     pub fn set_transaction_stats(&mut self, stats: TelemetryTransactionStats) {
         self.transaction_stats = Some(stats);
+    }
+
+    pub fn set_file_path(&mut self, path: Url) {
+        self.uri = Some(path);
     }
 
     pub fn finish_and_record(self, telemetry: &impl Telemetry, error: Option<&Error>) -> Duration {
