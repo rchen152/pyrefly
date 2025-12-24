@@ -5307,28 +5307,6 @@
     },
     {
       "code": -2,
-      "column": 30,
-      "concise_description": "Expected default `TypeVar[X1]` of `Ok1` to be assignable to the upper bound of `float`",
-      "description": "Expected default `TypeVar[X1]` of `Ok1` to be assignable to the upper bound of `float`",
-      "line": 66,
-      "name": "invalid-type-var",
-      "severity": "error",
-      "stop_column": 32,
-      "stop_line": 66
-    },
-    {
-      "code": -2,
-      "column": 38,
-      "concise_description": "Expected default `TypeVar[X1]` of `AlsoOk1` to be assignable to the upper bound of `int`",
-      "description": "Expected default `TypeVar[X1]` of `AlsoOk1` to be assignable to the upper bound of `int`",
-      "line": 67,
-      "name": "invalid-type-var",
-      "severity": "error",
-      "stop_column": 40,
-      "stop_line": 67
-    },
-    {
-      "code": -2,
       "column": 40,
       "concise_description": "Expected default `TypeVar[X1]` of `Invalid1` to be assignable to the upper bound of `str`",
       "description": "Expected default `TypeVar[X1]` of `Invalid1` to be assignable to the upper bound of `str`",
@@ -5348,17 +5326,6 @@
       "severity": "error",
       "stop_column": 54,
       "stop_line": 74
-    },
-    {
-      "code": -2,
-      "column": 54,
-      "concise_description": "Expected default `TypeVar[Y2]` of `AlsoOk2` to be one of the following constraints: `int`, `str`, `bool`",
-      "description": "Expected default `TypeVar[Y2]` of `AlsoOk2` to be one of the following constraints: `int`, `str`, `bool`",
-      "line": 77,
-      "name": "invalid-type-var",
-      "severity": "error",
-      "stop_column": 56,
-      "stop_line": 77
     },
     {
       "code": -2,
