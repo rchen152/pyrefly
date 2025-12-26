@@ -21,10 +21,13 @@ use pyrefly_types::callable::FuncId;
 use pyrefly_types::callable::FunctionKind;
 use pyrefly_types::callable::ParamList;
 use pyrefly_types::callable::Params;
+use pyrefly_types::quantified::QuantifiedKind;
 use pyrefly_types::read_only::IsFinalVariableInitialized;
 use pyrefly_types::simplify::unions;
+use pyrefly_types::type_var::PreInferenceVariance;
 use pyrefly_types::type_var::Restriction;
 use pyrefly_types::typed_dict::TypedDictInner;
+use pyrefly_types::types::TParam;
 use pyrefly_types::types::TParams;
 use pyrefly_types::types::Union;
 use pyrefly_util::owner::Owner;
@@ -2234,12 +2237,95 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         ty.subst(&gradual_fallbacks)
     }
 
+    /// Creates a Quantified for a class's "self" type.
+    fn get_self_quantified(&self, class_name: &Name, instance_type: Type) -> Quantified {
+        Quantified::new(
+            self.uniques.fresh(),
+            Name::new(format!("Self@{class_name}")),
+            QuantifiedKind::TypeVar,
+            None,
+            Restriction::Bound(instance_type),
+        )
+    }
+
+    /// Makes `ty` generic in `quantified` by wrapping in a `Forall`.
+    fn wrap_with_quantified(&self, ty: Type, quantified: Quantified) -> Type {
+        fn forall<T: Visit<Type>>(
+            body: T,
+            quantified: &Quantified,
+            existing_tparams: Option<&TParams>,
+        ) -> Option<Forall<T>> {
+            let mut quantifieds = SmallSet::new();
+            body.visit(&mut |t| t.collect_quantifieds(&mut quantifieds));
+            let uses_quantified = quantifieds.contains(quantified);
+            drop(quantifieds);
+            if !uses_quantified {
+                return None;
+            }
+            let new_tparams = TParams::new(vec![TParam {
+                quantified: quantified.clone(),
+                variance: PreInferenceVariance::PUndefined,
+            }]);
+            let tparams = if let Some(mut tparams) = existing_tparams.cloned() {
+                tparams.extend(&new_tparams);
+                tparams
+            } else {
+                new_tparams
+            };
+            Some(Forall {
+                tparams: Arc::new(tparams),
+                body,
+            })
+        }
+        match &ty {
+            Type::Function(func) => {
+                forall(Forallable::Function((**func).clone()), &quantified, None)
+                    .map_or(ty, |forall| Type::Forall(Box::new(forall)))
+            }
+            Type::Forall(box Forall { tparams, body }) => {
+                forall(body.clone(), &quantified, Some(tparams))
+                    .map_or(ty, |forall| Type::Forall(Box::new(forall)))
+            }
+            Type::Overload(overload) => Type::Overload(Overload {
+                signatures: overload.signatures.clone().mapped(|sig| match &sig {
+                    OverloadType::Function(func) => {
+                        forall(func.clone(), &quantified, None).map_or(sig, OverloadType::Forall)
+                    }
+                    OverloadType::Forall(Forall { tparams, body }) => {
+                        forall(body.clone(), &quantified, Some(tparams))
+                            .map_or(sig, OverloadType::Forall)
+                    }
+                }),
+                metadata: overload.metadata.clone(),
+            }),
+            _ => ty,
+        }
+    }
+
     fn as_instance_attribute(
         &self,
         field_name: &Name,
         field: &ClassField,
         instance: &Instance,
     ) -> ClassAttribute {
+        // Special handling for `__new__`: because `__new__` is a static method, it can be called
+        // with a `cls` argument that differs from the class on which it is accessed, so we use a
+        // quantified to capture `cls`. Note that `__new__` is the only method that needs this
+        // special case because it's not legal to use `Self` in other static methods.
+        let self_quantified =
+            if field_name == &dunder::NEW && matches!(instance.kind, InstanceKind::ClassType) {
+                Some(self.get_self_quantified(instance.class.name(), instance.to_type()))
+            } else {
+                None
+            };
+        let instance = match &self_quantified {
+            Some(quantified) => &Instance {
+                kind: InstanceKind::TypeVar(quantified.clone()),
+                class: instance.class,
+                targs: instance.targs,
+            },
+            None => instance,
+        };
         match field.instantiate_for(instance).0 {
             ClassFieldInner::Property { ty, .. } => {
                 // Properties on instances bind to the getter/setter
@@ -2291,6 +2377,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         },
                     }))
                 }
+                if let Some(quantified) = self_quantified {
+                    ty = self.wrap_with_quantified(ty, quantified);
+                }
                 ClassAttribute::read_write(
                     make_bound_method(instance.to_type(), ty).unwrap_or_else(|ty| {
                         make_bound_classmethod(&instance.to_class_base(), ty).into_inner()
@@ -2330,8 +2419,27 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn as_class_attribute(&self, field: &ClassField, cls: &ClassBase) -> ClassAttribute {
-        let self_type = cls.clone().to_self_type();
+    fn as_class_attribute(
+        &self,
+        field_name: &Name,
+        field: &ClassField,
+        cls: &ClassBase,
+    ) -> ClassAttribute {
+        // Special handling for `__new__`: because `__new__` is a static method, it can be called
+        // with a `cls` argument that differs from the class on which it is accessed, so we use a
+        // quantified to capture `cls`. Note that `__new__` is the only method that needs this
+        // special case because it's not legal to use `Self` in other static methods.
+        let self_quantified = if field_name == &dunder::NEW
+            && let ClassBase::ClassDef(cls) = cls
+        {
+            Some(self.get_self_quantified(cls.class_object().name(), cls.clone().to_type()))
+        } else {
+            None
+        };
+        let self_type = match &self_quantified {
+            Some(quantified) => quantified.clone().to_type(),
+            None => cls.clone().to_self_type(),
+        };
         let mut ambiguous = false;
         let field = match cls.targs() {
             Some(targs) => field.instantiate_for_class_targs(targs, self_type, &mut ambiguous),
@@ -2349,8 +2457,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 descriptor,
                 DescriptorBase::ClassDef(cls.class_object().dupe()),
             ),
-            ClassFieldInner::Method { ty, .. } => {
+            ClassFieldInner::Method { mut ty, .. } => {
                 // When accessing a method on a class (not instance), you get the unbound function
+                if let Some(quantified) = self_quantified {
+                    ty = self.wrap_with_quantified(ty, quantified);
+                }
                 bind_class_attribute(cls, ty, None)
             }
             ClassFieldInner::NestedClass { ty, .. } => {
@@ -3307,7 +3418,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     if let Some(reason) = self.super_method_needs_impl_reason(&member) {
                         ClassAttribute::no_access(reason)
                     } else {
-                        self.as_class_attribute(&member.value, &ClassBase::SelfType(obj.clone()))
+                        self.as_class_attribute(
+                            name,
+                            &member.value,
+                            &ClassBase::SelfType(obj.clone()),
+                        )
                     }
                 }),
         }
@@ -3341,7 +3456,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// type contains a class-scoped type parameter - e.g., `class A[T]: x: T`.
     pub fn get_class_attribute(&self, cls: &ClassBase, name: &Name) -> Option<ClassAttribute> {
         self.get_class_member(cls.class_object(), name)
-            .map(|field| self.as_class_attribute(&field, cls))
+            .map(|field| self.as_class_attribute(name, &field, cls))
     }
 
     pub fn get_bounded_quantified_class_attribute(
@@ -3352,7 +3467,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Option<ClassAttribute> {
         self.get_class_member(class.class_object(), name)
             .map(|field| {
-                self.as_class_attribute(&field, &ClassBase::Quantified(quantified, class.clone()))
+                self.as_class_attribute(
+                    name,
+                    &field,
+                    &ClassBase::Quantified(quantified, class.clone()),
+                )
             })
     }
 
