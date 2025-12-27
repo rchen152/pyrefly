@@ -2264,7 +2264,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             let new_tparams = TParams::new(vec![TParam {
                 quantified: quantified.clone(),
-                variance: PreInferenceVariance::PUndefined,
+                variance: PreInferenceVariance::Undefined,
             }]);
             let tparams = if let Some(mut tparams) = existing_tparams.cloned() {
                 tparams.extend(&new_tparams);

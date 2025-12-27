@@ -1404,10 +1404,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             kw.value.range(),
                         ))
                     }
-                    "covariant" => try_set_variance(kw, PreInferenceVariance::PCovariant),
-                    "contravariant" => try_set_variance(kw, PreInferenceVariance::PContravariant),
-                    "invariant" => try_set_variance(kw, PreInferenceVariance::PInvariant),
-                    "infer_variance" => try_set_variance(kw, PreInferenceVariance::PUndefined),
+                    "covariant" => try_set_variance(kw, PreInferenceVariance::Covariant),
+                    "contravariant" => try_set_variance(kw, PreInferenceVariance::Contravariant),
+                    "invariant" => try_set_variance(kw, PreInferenceVariance::Invariant),
+                    "infer_variance" => try_set_variance(kw, PreInferenceVariance::Undefined),
                     "name" => {
                         if arg_name {
                             self.error(
@@ -1478,7 +1478,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             ));
         }
 
-        let variance = variance.unwrap_or(PreInferenceVariance::PInvariant);
+        let variance = variance.unwrap_or(PreInferenceVariance::Invariant);
 
         TypeVar::new(
             name,

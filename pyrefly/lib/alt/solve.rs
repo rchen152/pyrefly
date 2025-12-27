@@ -260,7 +260,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
                 Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
                     quantified: q,
-                    variance: PreInferenceVariance::PInvariant,
+                    variance: PreInferenceVariance::Invariant,
                 }))
             }
             Type::ParamSpec(x) => {
@@ -271,7 +271,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
                 Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
                     quantified: q,
-                    variance: PreInferenceVariance::PInvariant,
+                    variance: PreInferenceVariance::Invariant,
                 }))
             }
             ty => Arc::new(LegacyTypeParameterLookup::NotParameter(ty.clone())),
@@ -920,7 +920,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             e.insert(q.clone());
                             tparams.push(TParam {
                                 quantified: q.clone(),
-                                variance: PreInferenceVariance::PInvariant,
+                                variance: PreInferenceVariance::Invariant,
                             });
                         }
                     };
@@ -944,7 +944,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             e.insert(q.clone());
                             tparams.push(TParam {
                                 quantified: q.clone(),
-                                variance: PreInferenceVariance::PInvariant,
+                                variance: PreInferenceVariance::Invariant,
                             });
                         }
                     };
@@ -1070,7 +1070,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         e.insert(q.clone());
                         tparams.push(TParam {
                             quantified: q.clone(),
-                            variance: PreInferenceVariance::PInvariant,
+                            variance: PreInferenceVariance::Invariant,
                         });
                         q
                     }
@@ -1089,7 +1089,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         e.insert(q.clone());
                         tparams.push(TParam {
                             quantified: q.clone(),
-                            variance: PreInferenceVariance::PInvariant,
+                            variance: PreInferenceVariance::Invariant,
                         });
                         q
                     }
@@ -1449,7 +1449,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     };
                     params.push(TParam {
                         quantified,
-                        variance: PreInferenceVariance::PUndefined,
+                        variance: PreInferenceVariance::Undefined,
                     });
                 }
                 params

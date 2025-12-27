@@ -973,7 +973,7 @@ pub mod tests {
                 None,
                 Restriction::Unrestricted,
             ),
-            variance: PreInferenceVariance::PInvariant,
+            variance: PreInferenceVariance::Invariant,
         }
     }
 
@@ -988,7 +988,7 @@ pub mod tests {
             mi,
             Restriction::Unrestricted,
             None,
-            PreInferenceVariance::PInvariant,
+            PreInferenceVariance::Invariant,
         )
     }
 
