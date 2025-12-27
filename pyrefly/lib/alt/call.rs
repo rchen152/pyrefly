@@ -324,6 +324,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ConstructorKind::TypeOfClass,
                 )))
             }
+            Type::Type(box Type::Intersect(box (_, fallback))) => {
+                // TODO(rechen): implement calling `type[A & B]`
+                self.as_call_target_impl(Type::type_form(fallback), quantified, dunder_call)
+            }
             Type::Quantified(q) if q.is_type_var() => match q.restriction() {
                 Restriction::Unrestricted => CallTargetLookup::Error(vec![]),
                 Restriction::Bound(bound) => match bound {

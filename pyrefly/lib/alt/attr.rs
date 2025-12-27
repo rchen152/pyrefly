@@ -1971,6 +1971,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.as_attribute_base1(Type::type_form(ty), acc)
                 }
             }
+            Type::Type(box Type::Intersect(box (_, fallback))) => {
+                // TODO(rechen): implement attribute access on `type[A & B]`
+                self.as_attribute_base1(Type::type_form(fallback), acc)
+            }
             Type::Quantified(quantified) => match quantified.restriction() {
                 Restriction::Bound(ty) => {
                     let mut use_fallback = false;

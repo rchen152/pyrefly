@@ -950,14 +950,62 @@ if "foo" in foo and foo["foo"] is not "as":
 testcase!(
     test_issubclass,
     r#"
-from typing import assert_type
+from typing import assert_type, reveal_type
 class A: ...
 class B(A): ...
 def f(x: type[B] | type[int]):
     if issubclass(x, A):
-        assert_type(x, type[B])
+        reveal_type(x)  # E: type[(A & int) | B]
     else:
         assert_type(x, type[int])
+    "#,
+);
+
+testcase!(
+    test_issubclass_nondisjoint_classes,
+    r#"
+from typing import reveal_type
+
+class A: ...
+class B: ...
+
+def f(x: type[A]):
+    if issubclass(x, B):
+        reveal_type(x)  # E: type[A & B]
+    "#,
+);
+
+testcase!(
+    test_issubclass_disjoint_classes,
+    r#"
+from typing import assert_type, Never
+def f(x: type[int]):
+    if issubclass(x, str):
+        assert_type(x, type[Never])
+    "#,
+);
+
+testcase!(
+    test_call_after_issubclass,
+    r#"
+class A: ...
+class B: ...
+def f(x: type[A]):
+    if issubclass(x, B):
+        return x()
+    "#,
+);
+
+testcase!(
+    test_attribute_access_after_issubclass,
+    r#"
+from typing import assert_type
+class A: ...
+class B:
+    b: int
+def f(x: type[A]):
+    if issubclass(x, B):
+        assert_type(x.b, int)
     "#,
 );
 

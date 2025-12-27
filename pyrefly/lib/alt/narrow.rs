@@ -231,6 +231,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.intersects(&res)
     }
 
+    fn issubclass_result(&self, instance_result: Type, original: &Type) -> Type {
+        // If a ClassDef is not narrowed by an `issubclass` call,
+        // preserve the information that this is a bare class reference.
+        if matches!(original, Type::ClassDef(cls) if instance_result == self.promote_silently(cls))
+        {
+            original.clone()
+        } else {
+            Type::type_form(instance_result)
+        }
+    }
+
     fn narrow_issubclass(
         &self,
         left: &Type,
@@ -240,12 +251,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
-            if matches!(left, Type::ClassDef(_)) && matches!(right, Type::ClassDef(_)) {
-                res.push(self.intersect(left, &right))
-            } else if let Some(left) = self.untype_opt(left.clone(), range, errors)
+            if let Some(left_untyped) = self.untype_opt(left.clone(), range, errors)
                 && let Some(right) = self.unwrap_class_object_silently(&right)
             {
-                res.push(Type::type_form(self.intersect(&left, &right)))
+                res.push(self.issubclass_result(
+                    self.intersect_with_fallback(&left_untyped, &right, &|| right.clone()),
+                    left,
+                ))
             } else {
                 res.push(left.clone())
             }
@@ -262,12 +274,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
-            if matches!(left, Type::ClassDef(_)) && matches!(right, Type::ClassDef(_)) {
-                res.push(self.subtract(left, &right))
-            } else if let Some(left) = self.untype_opt(left.clone(), range, errors)
+            if let Some(left_untyped) = self.untype_opt(left.clone(), range, errors)
                 && let Some(right) = self.unwrap_class_object_silently(&right)
             {
-                res.push(Type::type_form(self.subtract(&left, &right)))
+                res.push(self.issubclass_result(self.subtract(&left_untyped, &right), left))
             } else {
                 res.push(left.clone())
             }
