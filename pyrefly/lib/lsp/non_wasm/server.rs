@@ -7,6 +7,7 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::collections::hash_map::Entry;
 use std::iter::once;
 use std::path::Path;
 use std::path::PathBuf;
@@ -252,6 +253,11 @@ use crate::state::state::CancellableTransaction;
 use crate::state::state::CommittingTransaction;
 use crate::state::state::State;
 use crate::state::state::Transaction;
+
+pub enum DidCloseKind {
+    NotebookDocument,
+    TextDocument,
+}
 
 #[derive(Clone, Copy, Debug, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -776,7 +782,11 @@ impl Server {
             }
             LspEvent::DidCloseTextDocument(params) => {
                 self.set_file_stats(params.text_document.uri.clone(), telemetry);
-                self.did_close(params.text_document.uri, telemetry);
+                self.did_close(
+                    params.text_document.uri,
+                    DidCloseKind::TextDocument,
+                    telemetry,
+                );
             }
             LspEvent::DidSaveTextDocument(params) => {
                 self.set_file_stats(params.text_document.uri.clone(), telemetry);
@@ -825,7 +835,11 @@ impl Server {
             }
             LspEvent::DidCloseNotebookDocument(params) => {
                 self.set_file_stats(params.notebook_document.uri.clone(), telemetry);
-                self.did_close(params.notebook_document.uri, telemetry);
+                self.did_close(
+                    params.notebook_document.uri,
+                    DidCloseKind::NotebookDocument,
+                    telemetry,
+                );
             }
             LspEvent::DidSaveNotebookDocument(params) => {
                 self.set_file_stats(params.notebook_document.uri.clone(), telemetry);
@@ -2221,7 +2235,7 @@ impl Server {
         }
     }
 
-    fn did_close(&self, url: Url, telemetry: &mut TelemetryEvent) {
+    fn did_close(&self, url: Url, kind: DidCloseKind, telemetry: &mut TelemetryEvent) {
         let Some(path) = self.path_for_uri(&url) else {
             return;
         };
@@ -2230,16 +2244,40 @@ impl Server {
             .lock()
             .remove(&path)
             .map(|version| version + 1);
-        if let Some(LspFile::Notebook(notebook)) = self.open_files.write().remove(&path).as_deref()
-        {
-            for cell in notebook.cell_urls() {
-                self.connection
-                    .publish_diagnostics_for_uri(cell.clone(), Vec::new(), version);
-                self.open_notebook_cells.write().remove(cell);
-            }
-        } else {
-            self.connection
-                .publish_diagnostics_for_uri(url.clone(), Vec::new(), version);
+        let mut open_files = self.open_files.write();
+        let Entry::Occupied(entry) = open_files.entry(path.clone()) else {
+            return;
+        };
+        match entry.get().as_ref() {
+            LspFile::Notebook(notebook) => match kind {
+                DidCloseKind::NotebookDocument => {
+                    let cell_urls: Vec<_> = notebook.cell_urls().to_vec();
+                    for cell in cell_urls {
+                        self.connection.publish_diagnostics_for_uri(
+                            cell.clone(),
+                            Vec::new(),
+                            version,
+                        );
+                        self.open_notebook_cells.write().remove(&cell);
+                    }
+                    entry.remove();
+                }
+                DidCloseKind::TextDocument => {
+                    info!("textDocument/didClose received for file open as a notebook");
+                    return;
+                }
+            },
+            LspFile::Source(_) => match kind {
+                DidCloseKind::NotebookDocument => {
+                    info!("notebookDocument/didClose received for file open in a text editor");
+                    return;
+                }
+                DidCloseKind::TextDocument => {
+                    self.connection
+                        .publish_diagnostics_for_uri(url.clone(), Vec::new(), version);
+                    entry.remove();
+                }
+            },
         }
         self.unsaved_file_tracker.forget_uri_path(&url);
         self.queue_source_db_rebuild_and_recheck(telemetry, false);
