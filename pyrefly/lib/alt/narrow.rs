@@ -250,14 +250,46 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         errors: &ErrorCollector,
     ) -> Type {
         let mut res = Vec::new();
-        for right in self.as_class_info(right.clone()) {
-            if let Some(left_untyped) = self.untype_opt(left.clone(), range, errors)
-                && let Some(right) = self.unwrap_class_object_silently(&right)
-            {
-                res.push(self.issubclass_result(
+
+        let narrow = |left: &Type, right| {
+            if let Some(left_untyped) = self.untype_opt(left.clone(), range, errors) {
+                self.issubclass_result(
                     self.intersect_with_fallback(&left_untyped, &right, &|| right.clone()),
                     left,
-                ))
+                )
+            } else {
+                left.clone()
+            }
+        };
+
+        for right in self.as_class_info(right.clone()) {
+            if let Some(right_unwrapped) = self.unwrap_class_object_silently(&right) {
+                // Handle type vars specially: we need to enforce restrictions and avoid
+                // simplifying them away.
+                let mut quantifieds = Vec::new();
+                let mut nonquantifieds = Vec::new();
+                self.map_over_union(left, |left| {
+                    if let Type::Quantified(q) = left {
+                        quantifieds.push((**q).clone());
+                    } else {
+                        nonquantifieds.push(left.clone());
+                    }
+                });
+                for q in quantifieds {
+                    // The only time it's safe to simplify a quantified away is when the entire intersection is Never.
+                    let intersection = narrow(
+                        &q.restriction().as_type(self.stdlib),
+                        right_unwrapped.clone(),
+                    );
+                    res.push(if matches!(&intersection, Type::Type(t) if t.is_never()) {
+                        intersection
+                    } else {
+                        intersect(vec![q.to_type(), right.clone()], right.clone())
+                    })
+                }
+                if !nonquantifieds.is_empty() {
+                    res.push(narrow(&self.unions(nonquantifieds), right_unwrapped))
+                }
             } else {
                 res.push(left.clone())
             }
