@@ -1043,6 +1043,17 @@ def check(t: T) -> T:
 );
 
 testcase!(
+    test_isinstance_typevar_intersection,
+    r#"
+def test[T: int | str](value: T) -> T:
+    if isinstance(value, int):
+        return value
+    else:
+        return value
+    "#,
+);
+
+testcase!(
     test_issubclass_typevar_nondisjoint_classes,
     r#"
 from typing import reveal_type
