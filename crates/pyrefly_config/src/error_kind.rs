@@ -253,6 +253,10 @@ pub enum ErrorKind {
     /// Identity comparison (`is` or `is not`) between types that are provably disjoint
     /// or between literals whose comparison result is statically known.
     UnnecessaryComparison,
+    /// A return or yield that can never be reached.
+    /// This occurs when a return/yield follows a statement that always exits,
+    /// such as return, raise, break, or continue.
+    Unreachable,
     /// Protocols decorated with `@runtime_checkable` can be used in `isinstance` checks
     /// The runtime only checks that an attribute with that name is present, so the
     /// type checker must warn if the types are not compatible.

@@ -140,7 +140,7 @@ impl<'a> BindingsBuilder<'a> {
             &Usage::Narrowing(None),
         );
         if let Some(false) = static_test {
-            self.scopes.mark_flow_termination();
+            self.scopes.mark_flow_termination(true);
         }
     }
 
@@ -323,6 +323,14 @@ impl<'a> BindingsBuilder<'a> {
     /// If this is the top level, report a type error about the invalid return
     /// and also create a binding to ensure we type check the expression.
     fn record_return(&mut self, mut x: StmtReturn) {
+        // Check if this return is unreachable (comes after a terminating statement)
+        if self.scopes.is_definitely_unreachable() {
+            self.error(
+                x.range(),
+                ErrorInfo::Kind(ErrorKind::Unreachable),
+                "This `return` statement is unreachable".to_owned(),
+            );
+        }
         // PEP 765: Disallow return in finally block (Python 3.14+)
         if self.sys_info.version().at_least(3, 14) && self.scopes.in_finally() {
             self.error(
@@ -344,7 +352,7 @@ impl<'a> BindingsBuilder<'a> {
                 "Invalid `return` outside of a function".to_owned(),
             );
         }
-        self.scopes.mark_flow_termination();
+        self.scopes.mark_flow_termination(false);
     }
 
     fn find_error(&self, error: &FindError, range: TextRange) {
@@ -763,6 +771,7 @@ impl<'a> BindingsBuilder<'a> {
                 );
             }
             Stmt::If(x) => {
+                let is_definitely_unreachable = self.scopes.is_definitely_unreachable();
                 let mut exhaustive = false;
                 self.start_fork(x.range);
                 // Type narrowing operations that are carried over from one branch to the next. For example, in:
@@ -773,6 +782,7 @@ impl<'a> BindingsBuilder<'a> {
                 // x is bound to Narrow(x, Is(None)) in the if branch, and the negation, Narrow(x, IsNot(None)),
                 // is carried over to the else branch.
                 let mut negated_prev_ops = NarrowOps::new();
+                let mut contains_static_test_with_no_else = false;
                 for (range, mut test, body) in Ast::if_branches_owned(x) {
                     self.start_branch();
                     self.bind_narrow_ops(
@@ -782,8 +792,17 @@ impl<'a> BindingsBuilder<'a> {
                     );
                     // If there is no test, it's an `else` clause and `this_branch_chosen` will be true.
                     let this_branch_chosen = match &test {
-                        None => Some(true),
-                        Some(x) => self.sys_info.evaluate_bool(x),
+                        None => {
+                            contains_static_test_with_no_else = false;
+                            Some(true)
+                        }
+                        Some(x) => {
+                            let result = self.sys_info.evaluate_bool(x);
+                            if result.is_some() {
+                                contains_static_test_with_no_else = true;
+                            }
+                            result
+                        }
                     };
                     self.ensure_expr_opt(test.as_mut(), &mut Usage::Narrowing(None));
                     let new_narrow_ops = if this_branch_chosen == Some(false) {
@@ -819,6 +838,11 @@ impl<'a> BindingsBuilder<'a> {
                 } else {
                     self.finish_non_exhaustive_fork(&negated_prev_ops);
                 }
+                // If we have a statically evaluated test like `sys.version_info`, we should set `is_definitely_unreachable` to false
+                // to reduce false positive unreachable errors, since some code paths can still be hit at runtime
+                if contains_static_test_with_no_else && !is_definitely_unreachable {
+                    self.scopes.set_definitely_unreachable(false);
+                }
             }
             Stmt::With(x) => {
                 if x.is_async && !self.scopes.is_in_async_def() {
@@ -847,7 +871,9 @@ impl<'a> BindingsBuilder<'a> {
                         );
                     }
                 }
+                self.scopes.enter_with();
                 self.stmts(x.body, parent);
+                self.scopes.exit_with();
             }
             Stmt::Match(x) => {
                 self.stmt_match(x, parent);
@@ -873,7 +899,7 @@ impl<'a> BindingsBuilder<'a> {
                 } else {
                     // If there's no exception raised, don't bother checking the cause.
                 }
-                self.scopes.mark_flow_termination();
+                self.scopes.mark_flow_termination(false);
             }
             Stmt::Try(x) => {
                 self.start_fork_and_branch(x.range);
@@ -1059,7 +1085,7 @@ impl<'a> BindingsBuilder<'a> {
                 };
                 self.insert_binding_current(current, Binding::StmtExpr(*x.value, special_export));
                 if special_export == Some(SpecialExport::PytestNoReturn) {
-                    self.scopes.mark_flow_termination();
+                    self.scopes.mark_flow_termination(false);
                 }
             }
             Stmt::Pass(_) => { /* no-op */ }
