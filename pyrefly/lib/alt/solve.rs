@@ -2989,6 +2989,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             ty,
                         )
                     }
+                    None if matches!(&**expr, Expr::EllipsisLiteral(_))
+                        && self.module().path().is_interface() =>
+                    {
+                        // `x = ...` in a stub file means that the type of `x` is unknown
+                        (None, Type::any_implicit())
+                    }
                     None => (None, self.expr(expr, None, errors)),
                 };
                 let is_bare_annotated = has_type_alias_qualifier != Some(true)
