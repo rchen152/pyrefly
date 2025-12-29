@@ -436,10 +436,10 @@ impl<'a> BindingsBuilder<'a> {
         // One example of this is in the standard library, in `_collections_abc.pyi`:
         // https://github.com/python/cpython/blob/965662ee4a986605b60da470d9e7c1e9a6f922b3/Lib/_collections_abc.py#L92
         let (yields_and_returns, _, _, _) = self.scopes.pop_function_scope();
-        for (idx, y) in yields_and_returns.yields {
+        for (idx, y, _) in yields_and_returns.yields {
             self.insert_binding_idx(idx, BindingYield::Invalid(y));
         }
-        for (idx, y) in yields_and_returns.yield_froms {
+        for (idx, y, _) in yields_and_returns.yield_froms {
             self.insert_binding_idx(idx, BindingYieldFrom::Invalid(y));
         }
     }
@@ -482,36 +482,26 @@ impl<'a> BindingsBuilder<'a> {
     }
 
     fn record_yield(&mut self, mut x: ExprYield) {
-        // Check if this yield is unreachable (comes after a terminating statement)
-        if self.scopes.is_definitely_unreachable() {
-            self.error(
-                x.range,
-                ErrorInfo::Kind(ErrorKind::Unreachable),
-                "This `yield` expression is unreachable".to_owned(),
-            );
-        }
         let mut yield_link = self.declare_current_idx(Key::YieldLink(x.range));
         let idx = self.idx_for_promise(KeyYield(x.range));
         self.ensure_expr_opt(x.value.as_deref_mut(), yield_link.usage());
-        if let Err(oops_top_level) = self.scopes.record_or_reject_yield(idx, x) {
+        if let Err(oops_top_level) =
+            self.scopes
+                .record_or_reject_yield(idx, x, self.scopes.is_definitely_unreachable())
+        {
             self.insert_binding_idx(idx, BindingYield::Invalid(oops_top_level));
         }
         self.insert_binding_current(yield_link, Binding::UsageLink(LinkedKey::Yield(idx)));
     }
 
     fn record_yield_from(&mut self, mut x: ExprYieldFrom) {
-        // Check if this yield from is unreachable (comes after a terminating statement)
-        if self.scopes.is_definitely_unreachable() {
-            self.error(
-                x.range,
-                ErrorInfo::Kind(ErrorKind::Unreachable),
-                "This `yield from` expression is unreachable".to_owned(),
-            );
-        }
         let mut yield_from_link = self.declare_current_idx(Key::YieldLink(x.range));
         let idx = self.idx_for_promise(KeyYieldFrom(x.range));
         self.ensure_expr(&mut x.value, yield_from_link.usage());
-        if let Err(oops_top_level) = self.scopes.record_or_reject_yield_from(idx, x) {
+        if let Err(oops_top_level) =
+            self.scopes
+                .record_or_reject_yield_from(idx, x, self.scopes.is_definitely_unreachable())
+        {
             self.insert_binding_idx(idx, BindingYieldFrom::Invalid(oops_top_level));
         }
         self.insert_binding_current(

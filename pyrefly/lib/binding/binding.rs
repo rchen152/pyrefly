@@ -1135,6 +1135,7 @@ pub struct ReturnExplicit {
     pub is_generator: bool,
     pub is_async: bool,
     pub range: TextRange,
+    pub is_unreachable: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -2257,6 +2258,7 @@ impl BindingLegacyTypeParam {
 pub enum BindingYield {
     Yield(Option<Idx<KeyAnnotation>>, ExprYield),
     Invalid(ExprYield),
+    Unreachable(ExprYield),
 }
 
 impl BindingYield {
@@ -2264,6 +2266,7 @@ impl BindingYield {
         match self {
             Self::Yield(_, x) => x,
             Self::Invalid(x) => x,
+            Self::Unreachable(x) => x,
         }
     }
 }
@@ -2279,6 +2282,7 @@ impl DisplayWith<Bindings> for BindingYield {
 pub enum BindingYieldFrom {
     YieldFrom(Option<Idx<KeyAnnotation>>, IsAsync, ExprYieldFrom),
     Invalid(ExprYieldFrom),
+    Unreachable(ExprYieldFrom),
 }
 
 impl BindingYieldFrom {
@@ -2286,6 +2290,7 @@ impl BindingYieldFrom {
         match self {
             Self::YieldFrom(_, _, x) => x,
             Self::Invalid(x) => x,
+            Self::Unreachable(x) => x,
         }
     }
 }

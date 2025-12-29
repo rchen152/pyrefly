@@ -317,9 +317,10 @@ def gen() -> Generator[int, None, str]:
 testcase!(
     test_unreachable_return_after_return,
     r#"
-def test():
+def test() -> int:
     return 1
-    return 2 # E: This `return` statement is unreachable
+    # values in unreachable returns do not get checked against the annotation
+    return "" # E: This `return` statement is unreachable
 "#,
 );
 

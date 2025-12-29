@@ -323,14 +323,6 @@ impl<'a> BindingsBuilder<'a> {
     /// If this is the top level, report a type error about the invalid return
     /// and also create a binding to ensure we type check the expression.
     fn record_return(&mut self, mut x: StmtReturn) {
-        // Check if this return is unreachable (comes after a terminating statement)
-        if self.scopes.is_definitely_unreachable() {
-            self.error(
-                x.range(),
-                ErrorInfo::Kind(ErrorKind::Unreachable),
-                "This `return` statement is unreachable".to_owned(),
-            );
-        }
         // PEP 765: Disallow return in finally block (Python 3.14+)
         if self.sys_info.version().at_least(3, 14) && self.scopes.in_finally() {
             self.error(
@@ -341,7 +333,10 @@ impl<'a> BindingsBuilder<'a> {
         }
         let mut ret = self.declare_current_idx(Key::ReturnExplicit(x.range()));
         self.ensure_expr_opt(x.value.as_deref_mut(), ret.usage());
-        if let Err((ret, oops_top_level)) = self.scopes.record_or_reject_return(ret, x) {
+        if let Err((ret, oops_top_level)) =
+            self.scopes
+                .record_or_reject_return(ret, x, self.scopes.is_definitely_unreachable())
+        {
             match oops_top_level.value {
                 Some(v) => self.insert_binding_current(ret, Binding::Expr(None, *v)),
                 None => self.insert_binding_current(ret, Binding::Type(Type::None)),

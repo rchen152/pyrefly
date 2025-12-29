@@ -783,11 +783,12 @@ fn is_test_setup_method(method_name: &Name) -> bool {
 }
 
 /// Things we collect from inside a function
+/// The boolean flag is set when we know for sure the statement is definitely unreachable.
 #[derive(Default, Clone, Debug)]
 pub struct YieldsAndReturns {
-    pub returns: Vec<(Idx<Key>, StmtReturn)>,
-    pub yields: Vec<(Idx<KeyYield>, ExprYield)>,
-    pub yield_froms: Vec<(Idx<KeyYieldFrom>, ExprYieldFrom)>,
+    pub returns: Vec<(Idx<Key>, StmtReturn, bool)>,
+    pub yields: Vec<(Idx<KeyYield>, ExprYield, bool)>,
+    pub yield_froms: Vec<(Idx<KeyYieldFrom>, ExprYieldFrom, bool)>,
 }
 
 #[derive(Clone, Debug)]
@@ -1997,10 +1998,13 @@ impl Scopes {
         &mut self,
         ret: CurrentIdx,
         x: StmtReturn,
+        is_unreachable: bool,
     ) -> Result<(), (CurrentIdx, StmtReturn)> {
         match self.current_yields_and_returns_mut() {
             Some(yields_and_returns) => {
-                yields_and_returns.returns.push((ret.into_idx(), x));
+                yields_and_returns
+                    .returns
+                    .push((ret.into_idx(), x, is_unreachable));
                 Ok(())
             }
             None => Err((ret, x)),
@@ -2014,10 +2018,11 @@ impl Scopes {
         &mut self,
         idx: Idx<KeyYield>,
         x: ExprYield,
+        is_unreachable: bool,
     ) -> Result<(), ExprYield> {
         match self.current_yields_and_returns_mut() {
             Some(yields_and_returns) => {
-                yields_and_returns.yields.push((idx, x));
+                yields_and_returns.yields.push((idx, x, is_unreachable));
                 Ok(())
             }
             None => Err(x),
@@ -2031,10 +2036,13 @@ impl Scopes {
         &mut self,
         idx: Idx<KeyYieldFrom>,
         x: ExprYieldFrom,
+        is_unreachable: bool,
     ) -> Result<(), ExprYieldFrom> {
         match self.current_yields_and_returns_mut() {
             Some(yields_and_returns) => {
-                yields_and_returns.yield_froms.push((idx, x));
+                yields_and_returns
+                    .yield_froms
+                    .push((idx, x, is_unreachable));
                 Ok(())
             }
             None => Err(x),
