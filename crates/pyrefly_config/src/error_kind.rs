@@ -308,7 +308,8 @@ impl ErrorKind {
             ErrorKind::Deprecated => Severity::Warn,
             ErrorKind::RedundantCast => Severity::Warn,
             ErrorKind::UnnecessaryComparison => Severity::Warn,
-            ErrorKind::UntypedImport => Severity::Warn,
+            // TODO: up severity to Warn when https://github.com/facebook/pyrefly/issues/1950 is fixed
+            ErrorKind::UntypedImport => Severity::Ignore,
             ErrorKind::ImplicitlyDefinedAttribute => Severity::Ignore,
             ErrorKind::ImplicitAbstractClass => Severity::Ignore,
             ErrorKind::ImplicitAny => Severity::Ignore,
