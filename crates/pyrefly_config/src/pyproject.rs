@@ -74,7 +74,8 @@ impl PyProject {
                         .max()
                         .unwrap_or(0);
                     tool_table_mut.insert("pyrefly", pyrefly_table.clone());
-                    if let Some(pyrefly_item) = tool_table_mut.get_mut("pyrefly")
+                    if !original_content.is_empty()
+                        && let Some(pyrefly_item) = tool_table_mut.get_mut("pyrefly")
                         && let Some(pyrefly_table_mut) = pyrefly_item.as_table_mut()
                     {
                         pyrefly_table_mut.decor_mut().set_prefix("\n");
@@ -133,7 +134,8 @@ line-length = 88
         assert!(updated_content.contains("[tool.poetry]"));
         assert!(updated_content.contains("[tool.black]"));
 
-        assert!(updated_content.contains("[tool.pyrefly]"));
+        // Make sure we add a blank line between the pyrefly section and the previous one
+        assert!(updated_content.contains("\n\n[tool.pyrefly]"));
         assert!(updated_content.contains("project-includes = [\"new/path/**/*.py\"]"));
         assert!(!updated_content.contains("project_includes = [\"old/path/**/*.py\"]"));
         assert!(!updated_content.contains("project_excludes"));
@@ -146,7 +148,7 @@ line-length = 88
         let tmp = tempfile::tempdir()?;
         let pyproject_path = tmp.path().join("pyproject.toml");
 
-        let existing_content = "\n";
+        let existing_content = "";
         fs_anyhow::write(&pyproject_path, existing_content)?;
 
         let config = ConfigFile {
@@ -162,6 +164,9 @@ line-length = 88
 
         // Regression test for bug where we would insert an unnecessary [tool] section
         assert!(!updated_content.contains("[tool]"));
+
+        // Make sure we don't add an extra blank line
+        assert!(!updated_content.starts_with("\n"));
 
         Ok(())
     }
