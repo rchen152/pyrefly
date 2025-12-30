@@ -220,6 +220,8 @@ pub enum ErrorKind {
     NotCallable,
     /// Attempting to use a non-iterable value as an iterable.
     NotIterable,
+    /// Accessing a `NotRequired` TypedDict key without first proving it exists.
+    NotRequiredKeyAccess,
     /// Unpacking an open TypedDict that may contain a bad key via inheritance.
     OpenUnpacking,
     /// An error related to parsing or syntax.
@@ -314,6 +316,7 @@ impl ErrorKind {
             ErrorKind::UnnecessaryComparison => Severity::Warn,
             // TODO: up severity to Warn when https://github.com/facebook/pyrefly/issues/1950 is fixed
             ErrorKind::UntypedImport => Severity::Ignore,
+            ErrorKind::NotRequiredKeyAccess => Severity::Ignore,
             ErrorKind::ImplicitlyDefinedAttribute => Severity::Ignore,
             ErrorKind::ImplicitAbstractClass => Severity::Ignore,
             ErrorKind::ImplicitAny => Severity::Ignore,

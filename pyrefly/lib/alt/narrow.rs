@@ -692,6 +692,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // `hasattr` and `getattr` are handled in `narrow`
             AtomicNarrowOp::HasAttr(_) => ty.clone(),
             AtomicNarrowOp::NotHasAttr(_) => ty.clone(),
+            AtomicNarrowOp::HasKey(_) => ty.clone(),
+            AtomicNarrowOp::NotHasKey(_) => ty.clone(),
             AtomicNarrowOp::GetAttr(_, _) => ty.clone(),
             AtomicNarrowOp::NotGetAttr(_, _) => ty.clone(),
             AtomicNarrowOp::TypeGuard(t, arguments) => {
@@ -916,6 +918,57 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         errors: &ErrorCollector,
     ) -> TypeInfo {
         match op {
+            NarrowOp::Atomic(subject, AtomicNarrowOp::HasKey(key)) => {
+                let base_ty = match subject {
+                    Some(facet_subject) => {
+                        self.get_facet_chain_type(type_info, &facet_subject.chain, range)
+                    }
+                    None => self.force_for_narrowing(type_info.ty(), range, errors),
+                };
+                if matches!(base_ty, Type::TypedDict(_)) {
+                    let key_facet = FacetKind::Key(key.to_string());
+                    let facets = match subject {
+                        Some(facet_subject) => {
+                            let mut new_facets = facet_subject.chain.facets().clone();
+                            new_facets.push(key_facet);
+                            new_facets
+                        }
+                        None => Vec1::new(key_facet),
+                    };
+                    let chain = FacetChain::new(facets);
+                    // Apply a facet narrow w/ that key's type, so that the usual subscript inference
+                    // code path which raises a warning for NotRequired keys does not execute later
+                    let value_ty = self.get_facet_chain_type(type_info, &chain, range);
+                    type_info.with_narrow(chain.facets(), value_ty)
+                } else {
+                    type_info.clone()
+                }
+            }
+            NarrowOp::Atomic(subject, AtomicNarrowOp::NotHasKey(key)) => {
+                let base_ty = match subject {
+                    Some(facet_subject) => {
+                        self.get_facet_chain_type(type_info, &facet_subject.chain, range)
+                    }
+                    None => self.force_for_narrowing(type_info.ty(), range, errors),
+                };
+                if matches!(base_ty, Type::TypedDict(_)) {
+                    let key_facet = FacetKind::Key(key.to_string());
+                    let facets = match subject {
+                        Some(facet_subject) => {
+                            let mut new_facets = facet_subject.chain.facets().clone();
+                            new_facets.push(key_facet);
+                            new_facets
+                        }
+                        None => Vec1::new(key_facet),
+                    };
+                    // Invalidate existing facet narrows
+                    let mut type_info = type_info.clone();
+                    type_info.update_for_assignment(&facets, None);
+                    type_info
+                } else {
+                    type_info.clone()
+                }
+            }
             NarrowOp::Atomic(subject, AtomicNarrowOp::HasAttr(attr)) => {
                 let base_ty = match subject {
                     Some(facet_subject) => {
@@ -1004,13 +1057,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
                 let mut narrowed = type_info.with_narrow(facet_subject.chain.facets(), ty);
                 // For certain types of narrows, we can also narrow the parent of the current subject
+                // If `.get()` on a dict or TypedDict is falsy, the key may not be present at all
+                // We should invalidate any existing narrows
                 if let Some((last, prefix)) = facet_subject.chain.facets().split_last() {
                     match Vec1::try_from(prefix) {
                         Ok(prefix_facets) => {
                             let prefix_chain = FacetChain::new(prefix_facets);
                             let base_ty =
                                 self.get_facet_chain_type(type_info, &prefix_chain, range);
-                            if let Some(narrowed_ty) =
+                            let dict_get_key_falsy = matches!(op, AtomicNarrowOp::IsFalsy)
+                                && matches!(last, FacetKind::Key(_));
+                            if dict_get_key_falsy {
+                                narrowed.update_for_assignment(facet_subject.chain.facets(), None);
+                            } else if let Some(narrowed_ty) =
                                 self.atomic_narrow_for_facet(&base_ty, last, op, range, errors)
                                 && narrowed_ty != base_ty
                             {
@@ -1019,7 +1078,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         }
                         _ => {
                             let base_ty = type_info.ty();
-                            if let Some(narrowed_ty) =
+                            let dict_get_key_falsy = matches!(op, AtomicNarrowOp::IsFalsy)
+                                && matches!(last, FacetKind::Key(_));
+                            if dict_get_key_falsy {
+                                narrowed.update_for_assignment(facet_subject.chain.facets(), None);
+                            } else if let Some(narrowed_ty) =
                                 self.atomic_narrow_for_facet(base_ty, last, op, range, errors)
                                 && narrowed_ty != *base_ty
                             {
