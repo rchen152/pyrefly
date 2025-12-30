@@ -820,3 +820,19 @@ class Container1[T1: (A, B), T2: (A, B, C) = T1]: ...
 class Container2[T1: (A, B, C), T2: (A, B) = T1]: ...  # E: Expected default `T1` of `T2` to be one of the following constraints: `A`, `B`
 "#,
 );
+
+testcase!(
+    bug = "False positive",
+    test_default_is_typevar_in_bound,
+    r#"
+from typing import Any, Generic, TypeVar
+
+_NBit1 = TypeVar("_NBit1", default=Any)
+_NBit2 = TypeVar("_NBit2", default=_NBit1)
+
+class complexfloating(Generic[_NBit1, _NBit2]):
+    pass
+
+_Complex_DT = TypeVar("_Complex_DT", bound=complexfloating[Any, Any])  # E: bounds and constraints must be concrete
+    "#,
+);
