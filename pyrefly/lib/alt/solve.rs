@@ -652,8 +652,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     );
                 }
                 let mut ann = self.expr_annotation(&unpacked_slice[0], type_form_context, errors);
-                if qualifier == Qualifier::ClassVar && ann.get_type().any(|x| x.is_type_variable())
-                {
+                if qualifier == Qualifier::ClassVar && ann.get_type().contains_type_variable() {
                     self.error(
                         errors,
                         unpacked_slice[0].range(),

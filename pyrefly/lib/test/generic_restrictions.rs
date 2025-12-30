@@ -875,3 +875,22 @@ class LinearTimeInvariant(Generic[T1, T2]):
     pass
     "#,
 );
+
+testcase!(
+    test_typevar_in_classvar,
+    r#"
+from typing import Any, ClassVar, Generic, TypeAlias, TypeVar
+
+_NBit1 = TypeVar("_NBit1", default=Any)
+_NBit2 = TypeVar("_NBit2", default=_NBit1)
+
+class complexfloating(Generic[_NBit1, _NBit2]):
+    pass
+
+ComplexFloatingOrFloat: TypeAlias = complexfloating[Any, Any] | float
+
+class A:
+    x: ClassVar[complexfloating[Any, complexfloating[Any, Any]]]
+    y: ClassVar[ComplexFloatingOrFloat]
+    "#,
+);
