@@ -4123,8 +4123,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
             }
         }
-        if type_form_context == TypeFormContext::TypeVarConstraint && ty.any(Type::is_type_variable)
-        {
+        if type_form_context == TypeFormContext::TypeVarConstraint && ty.contains_type_variable() {
             return self.error(
                 errors,
                 range,

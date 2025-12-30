@@ -822,10 +822,25 @@ class Container2[T1: (A, B, C), T2: (A, B) = T1]: ...  # E: Expected default `T1
 );
 
 testcase!(
-    bug = "False positive",
+    test_catch_bad_bound,
+    r#"
+from typing import Generic, TypeVar
+T1 = TypeVar("T1")
+T2 = TypeVar("T2", bound=T1)  # E: bounds and constraints must be concrete
+T3 = TypeVar("T3", bound=list[T1])  # E: bounds and constraints must be concrete
+T4 = TypeVar("T4", bound=list[list[T1]])  # E: bounds and constraints must be concrete
+
+S1 = TypeVar("S1")
+S2 = TypeVar("S2", default=S1)
+class A(Generic[S1, S2]): ...
+T5 = TypeVar("T5", bound=list[A[int]])  # OK
+    "#,
+);
+
+testcase!(
     test_default_is_typevar_in_bound,
     r#"
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeAlias, TypeVar
 
 _NBit1 = TypeVar("_NBit1", default=Any)
 _NBit2 = TypeVar("_NBit2", default=_NBit1)
@@ -833,7 +848,10 @@ _NBit2 = TypeVar("_NBit2", default=_NBit1)
 class complexfloating(Generic[_NBit1, _NBit2]):
     pass
 
-_Complex_DT = TypeVar("_Complex_DT", bound=complexfloating[Any, Any])  # E: bounds and constraints must be concrete
+ComplexFloatingOrFloat: TypeAlias = complexfloating[Any, Any] | float
+
+_Complex_DT = TypeVar("_Complex_DT", bound=complexfloating[Any, Any])
+_ComplexOrFloatT = TypeVar("_ComplexOrFloatT", bound=ComplexFloatingOrFloat)
     "#,
 );
 
