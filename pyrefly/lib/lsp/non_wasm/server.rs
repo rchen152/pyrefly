@@ -872,6 +872,7 @@ impl Server {
                     Completion::METHOD,
                     SignatureHelpRequest::METHOD,
                     GotoDefinition::METHOD,
+                    ProvideType::METHOD,
                 ];
 
                 let in_cancelled_requests = canceled_requests.remove(&x.id);
@@ -1232,7 +1233,7 @@ impl Server {
                         self.set_file_stats(params.text_document.uri.clone(), telemetry);
                         self.send_response(new_response(
                             x.id,
-                            Ok(self.provide_type(&transaction, params)),
+                            Ok(self.provide_type(&mut transaction, params)),
                         ));
                     }
                 } else if let Some(params) = as_request::<WillRenameFiles>(&x) {
@@ -1542,7 +1543,7 @@ impl Server {
 
     fn provide_type(
         &self,
-        transaction: &Transaction<'_>,
+        transaction: &mut Transaction<'_>,
         params: crate::lsp::wasm::provide_type::ProvideTypeParams,
     ) -> Option<ProvideTypeResponse> {
         let uri = &params.text_document.uri;
