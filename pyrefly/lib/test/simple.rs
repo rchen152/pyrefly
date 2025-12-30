@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use pyrefly_python::sys_info::PythonVersion;
+
 use crate::test::util::TestEnv;
 use crate::test::util::testcase_for_macro;
 use crate::testcase;
@@ -388,6 +390,16 @@ testcase!(
     test_reveal_type,
     r#"
 from typing import reveal_type
+reveal_type()  # E: reveal_type needs 1 positional argument, got 0
+reveal_type(1)  # E: revealed type: Literal[1]
+    "#,
+);
+
+testcase!(
+    test_typing_extensions_reveal_type,
+    TestEnv::new_with_version(PythonVersion::new(3, 10, 0)),
+    r#"
+from typing_extensions import reveal_type
 reveal_type()  # E: reveal_type needs 1 positional argument, got 0
 reveal_type(1)  # E: revealed type: Literal[1]
     "#,
