@@ -856,10 +856,9 @@ _ComplexOrFloatT = TypeVar("_ComplexOrFloatT", bound=ComplexFloatingOrFloat)
 );
 
 testcase!(
-    bug = "False positive",
     test_default_is_typevar_in_default,
     r#"
-from typing import Any, Generic, TypeVar
+from typing import Any, Generic, TypeAlias, TypeVar
 
 _NBit1 = TypeVar("_NBit1", default=Any)
 _NBit2 = TypeVar("_NBit2", default=_NBit1)
@@ -867,9 +866,12 @@ _NBit2 = TypeVar("_NBit2", default=_NBit1)
 class complexfloating(Generic[_NBit1, _NBit2]):
     pass
 
-_ZerosT_co = TypeVar("_ZerosT_co", default=complexfloating[Any, Any])
+ComplexFloatingOrFloat: TypeAlias = complexfloating[Any, Any] | float
 
-class LinearTimeInvariant(Generic[_ZerosT_co]):  # E: Default of type parameter `_ZerosT_co` refers to out-of-scope type parameter `_NBit1`
+T1 = TypeVar("T1", default=complexfloating[Any, complexfloating[Any, Any]])
+T2 = TypeVar("T2", default=ComplexFloatingOrFloat)
+
+class LinearTimeInvariant(Generic[T1, T2]):
     pass
     "#,
 );
