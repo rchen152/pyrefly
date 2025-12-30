@@ -836,3 +836,22 @@ class complexfloating(Generic[_NBit1, _NBit2]):
 _Complex_DT = TypeVar("_Complex_DT", bound=complexfloating[Any, Any])  # E: bounds and constraints must be concrete
     "#,
 );
+
+testcase!(
+    bug = "False positive",
+    test_default_is_typevar_in_default,
+    r#"
+from typing import Any, Generic, TypeVar
+
+_NBit1 = TypeVar("_NBit1", default=Any)
+_NBit2 = TypeVar("_NBit2", default=_NBit1)
+
+class complexfloating(Generic[_NBit1, _NBit2]):
+    pass
+
+_ZerosT_co = TypeVar("_ZerosT_co", default=complexfloating[Any, Any])
+
+class LinearTimeInvariant(Generic[_ZerosT_co]):  # E: Default of type parameter `_ZerosT_co` refers to out-of-scope type parameter `_NBit1`
+    pass
+    "#,
+);
