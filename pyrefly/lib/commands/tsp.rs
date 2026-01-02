@@ -35,7 +35,7 @@ pub fn run_tsp(
     args: TspArgs,
     telemetry: &impl Telemetry,
 ) -> anyhow::Result<()> {
-    let initialization_params = match initialize_tsp_connection(&connection, &args) {
+    let initialization_params = match initialize_tsp_connection(&connection, args.indexing_mode) {
         Ok(it) => it,
         Err(e) => {
             return Err(e.into());
@@ -60,7 +60,7 @@ pub fn run_tsp(
 
 fn initialize_tsp_connection(
     connection: &Connection,
-    args: &TspArgs,
+    indexing_mode: IndexingMode,
 ) -> Result<InitializeParams, ProtocolError> {
     let (request_id, initialization_params) = connection.initialize_start()?;
     let initialization_params: InitializeParams =
@@ -68,7 +68,7 @@ fn initialize_tsp_connection(
 
     // Use TSP-specific capabilities (same as LSP but without serverInfo)
     let server_capabilities =
-        serde_json::to_value(tsp_capabilities(args.indexing_mode, &initialization_params)).unwrap();
+        serde_json::to_value(tsp_capabilities(indexing_mode, &initialization_params)).unwrap();
     let initialize_data = serde_json::json!({
         "capabilities": server_capabilities,
         // Note: TSP doesn't include serverInfo, unlike LSP

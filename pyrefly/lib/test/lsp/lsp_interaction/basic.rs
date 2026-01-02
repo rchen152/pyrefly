@@ -72,9 +72,6 @@ fn test_initialize_basic() {
                     }
                 }
             }
-        }, "serverInfo": {
-            "name":"pyrefly-lsp",
-            "version":"pyrefly-lsp-test-version"
         }}))
         .unwrap();
     interaction.client.send_initialized();
