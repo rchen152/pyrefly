@@ -72,6 +72,7 @@ use lsp_types::HoverParams;
 use lsp_types::HoverProviderCapability;
 use lsp_types::ImplementationProviderCapability;
 use lsp_types::InitializeParams;
+use lsp_types::InitializeResult;
 use lsp_types::InlayHint;
 use lsp_types::InlayHintLabel;
 use lsp_types::InlayHintLabelPart;
@@ -104,6 +105,7 @@ use lsp_types::SemanticTokensRangeResult;
 use lsp_types::SemanticTokensResult;
 use lsp_types::SemanticTokensServerCapabilities;
 use lsp_types::ServerCapabilities;
+use lsp_types::ServerInfo;
 use lsp_types::SignatureHelp;
 use lsp_types::SignatureHelpOptions;
 use lsp_types::SignatureHelpParams;
@@ -134,6 +136,7 @@ use lsp_types::notification::DidCloseTextDocument;
 use lsp_types::notification::DidOpenTextDocument;
 use lsp_types::notification::DidSaveTextDocument;
 use lsp_types::notification::Exit;
+use lsp_types::notification::Initialized;
 use lsp_types::notification::Notification as _;
 use lsp_types::notification::PublishDiagnostics;
 use lsp_types::request::CallHierarchyIncomingCalls;
@@ -154,6 +157,7 @@ use lsp_types::request::GotoTypeDefinition;
 use lsp_types::request::GotoTypeDefinitionParams;
 use lsp_types::request::GotoTypeDefinitionResponse;
 use lsp_types::request::HoverRequest;
+use lsp_types::request::Initialize;
 use lsp_types::request::InlayHintRequest;
 use lsp_types::request::PrepareRenameRequest;
 use lsp_types::request::References;
@@ -388,6 +392,145 @@ pub struct Server {
     id: Uuid,
 }
 
+pub fn shutdown_finish(connection: &Connection, id: RequestId) {
+    let response = Response::new_ok(id, ());
+    if connection.sender.send(response.into()).is_err() {
+        return;
+    }
+    while let Ok(msg) = connection.receiver.recv() {
+        match msg {
+            Message::Request(x) => {
+                error!("Unexpected request after shutdown: {x:?}");
+
+                let response = Response::new_err(
+                    x.id,
+                    ErrorCode::InvalidRequest as i32,
+                    "Shutdown already requested".to_owned(),
+                );
+                if connection.sender.send(response.into()).is_err() {
+                    return;
+                }
+            }
+            Message::Response(x) => {
+                error!("Unexpected response after shutdown: {x:?}");
+            }
+            Message::Notification(x) => {
+                if x.method == Exit::METHOD {
+                    return;
+                }
+
+                error!("Unexpected notification after shutdown: {x:?}");
+            }
+        }
+    }
+}
+
+// Waits for the client initialize request, returning the initialize request ID and params.
+// If the connection is closed, or we receive an exit notification, returns None.
+// If we receive an unexpected shutdown notification, respond and wait for exit.
+pub fn initialize_start(
+    connection: &Connection,
+) -> anyhow::Result<Option<(RequestId, InitializeParams)>> {
+    loop {
+        let Ok(msg) = connection.receiver.recv() else {
+            break;
+        };
+        match msg {
+            Message::Request(x) => {
+                if x.method == Initialize::METHOD {
+                    let params = serde_json::from_value(x.params)?;
+                    return Ok(Some((x.id, params)));
+                }
+
+                error!("Unexpected request before initialize: {x:?}");
+
+                let response = if x.method == Shutdown::METHOD {
+                    shutdown_finish(connection, x.id);
+                    break;
+                } else {
+                    Response::new_err(
+                        x.id,
+                        ErrorCode::ServerNotInitialized as i32,
+                        "Expected an initialize request".to_owned(),
+                    )
+                };
+
+                if connection.sender.send(response.into()).is_err() {
+                    break;
+                }
+            }
+            Message::Response(x) => {
+                error!("Unexpected response before initialize: {x:?}");
+            }
+            Message::Notification(x) => {
+                error!("Unexpected notification before initialize: {x:?}");
+
+                if x.method == Exit::METHOD {
+                    break;
+                }
+            }
+        }
+    }
+    Ok(None)
+}
+
+// Sends the initialize response and waits for the initialized notification.
+// If the connection is closed, or we receive an exit notification, returns false.
+pub fn initialize_finish(
+    connection: &Connection,
+    id: RequestId,
+    capabilities: ServerCapabilities,
+    server_info: Option<ServerInfo>,
+) -> anyhow::Result<bool> {
+    let result = InitializeResult {
+        capabilities,
+        server_info,
+    };
+    let response = Response::new_ok(id, result);
+    if connection.sender.send(response.into()).is_err() {
+        return Ok(false);
+    }
+    loop {
+        let Ok(msg) = connection.receiver.recv() else {
+            break;
+        };
+        match msg {
+            Message::Request(x) => {
+                error!("Unexpected request before initialized: {x:?}");
+
+                let response = if x.method == Shutdown::METHOD {
+                    shutdown_finish(connection, x.id);
+                    break;
+                } else {
+                    Response::new_err(
+                        x.id,
+                        ErrorCode::ServerNotInitialized as i32,
+                        format!(
+                            "Unexpected request before initialized notification: {}",
+                            x.method
+                        ),
+                    )
+                };
+                if connection.sender.send(response.into()).is_err() {
+                    break;
+                }
+            }
+            Message::Response(x) => {
+                error!("Unexpected response before initialized: {x:?}");
+            }
+            Message::Notification(x) => {
+                if x.method == Initialized::METHOD {
+                    return Ok(true);
+                } else if x.method == Exit::METHOD {
+                    break;
+                }
+                error!("Unexpected notification before initialized: {x:?}");
+            }
+        }
+    }
+    Ok(false)
+}
+
 /// At the time when we are ready to handle a new LSP event, it will help if we know the list of
 /// buffered requests and notifications ready to be processed, because we can potentially make smart
 /// decisions (e.g. not process cancelled requests).
@@ -398,34 +541,12 @@ pub struct Server {
 ///   request is cancelled)
 /// - queued_events includes most of the other events.
 pub fn dispatch_lsp_events(connection: &Connection, lsp_queue: &LspQueue) {
-    let mut shutdown_requested = false;
     for msg in &connection.receiver {
-        if shutdown_requested {
-            match msg {
-                Message::Request(x) => {
-                    let response = Response::new_err(
-                        x.id,
-                        ErrorCode::InvalidRequest as i32,
-                        "Shutdown already requested".to_owned(),
-                    );
-                    let _ = connection.sender.send(response.into());
-                }
-                Message::Notification(x) if x.method == Exit::METHOD => {
-                    // Send LspEvent::Exit and stop listening
-                    break;
-                }
-                _ => { /* ignore */ }
-            }
-            continue;
-        }
-
         match msg {
             Message::Request(x) => {
                 if x.method == Shutdown::METHOD {
-                    shutdown_requested = true;
-                    let response = Response::new_ok(x.id, ());
-                    let _ = connection.sender.send(response.into());
-                    continue;
+                    shutdown_finish(connection, x.id);
+                    break;
                 }
                 if lsp_queue.send(LspEvent::LspRequest(x)).is_err() {
                     return;

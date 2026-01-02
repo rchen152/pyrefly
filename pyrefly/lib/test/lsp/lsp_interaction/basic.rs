@@ -268,8 +268,86 @@ fn test_connection_closed_server_stops() {
     // Close the connection by dropping both the receiver and sender
     // This simulates the client disconnecting unexpectedly
     interaction.client.drop_connection();
-    interaction.client.drop_connection();
 
     // The server should stop when the connection is closed
+    interaction.client.expect_stop();
+}
+
+#[test]
+fn test_shutdown_exit_before_initialize() {
+    let interaction = LspInteraction::new();
+    interaction
+        .client
+        .send_shutdown()
+        .expect_response(json!(null))
+        .unwrap();
+    interaction.client.send_exit();
+    interaction.client.expect_stop();
+}
+
+#[test]
+fn test_exit_without_shutdown_before_initialize() {
+    let interaction = LspInteraction::new();
+    interaction.client.send_exit();
+    interaction.client.expect_stop();
+}
+
+#[test]
+fn test_drop_connection_before_initialize() {
+    let mut interaction = LspInteraction::new();
+    interaction.client.drop_connection();
+    interaction.client.expect_stop();
+}
+
+#[test]
+fn test_shutdown_exit_before_initialized() {
+    let interaction = LspInteraction::new();
+    interaction
+        .client
+        .send_initialize(
+            interaction
+                .client
+                .get_initialize_params(&InitializeSettings::default()),
+        )
+        .expect_response_with(|_| true)
+        .unwrap();
+    interaction
+        .client
+        .send_shutdown()
+        .expect_response(json!(null))
+        .unwrap();
+    interaction.client.send_exit();
+    interaction.client.expect_stop();
+}
+
+#[test]
+fn test_exit_without_shutdown_before_initialized() {
+    let interaction = LspInteraction::new();
+    interaction
+        .client
+        .send_initialize(
+            interaction
+                .client
+                .get_initialize_params(&InitializeSettings::default()),
+        )
+        .expect_response_with(|_| true)
+        .unwrap();
+    interaction.client.send_exit();
+    interaction.client.expect_stop();
+}
+
+#[test]
+fn test_drop_connection_before_initialized() {
+    let mut interaction = LspInteraction::new();
+    interaction
+        .client
+        .send_initialize(
+            interaction
+                .client
+                .get_initialize_params(&InitializeSettings::default()),
+        )
+        .expect_response_with(|_| true)
+        .unwrap();
+    interaction.client.drop_connection();
     interaction.client.expect_stop();
 }

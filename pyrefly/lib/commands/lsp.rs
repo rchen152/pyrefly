@@ -8,13 +8,14 @@
 use clap::Parser;
 use clap::ValueEnum;
 use lsp_server::Connection;
-use lsp_server::ProtocolError;
 use lsp_types::InitializeParams;
 use lsp_types::ServerInfo;
 use pyrefly_util::telemetry::Telemetry;
 
 use crate::commands::util::CommandExitStatus;
 use crate::lsp::non_wasm::server::capabilities;
+use crate::lsp::non_wasm::server::initialize_finish;
+use crate::lsp::non_wasm::server::initialize_start;
 use crate::lsp::non_wasm::server::lsp_loop;
 
 /// Pyrefly's indexing strategy for open projects when performing go-to-definition
@@ -59,25 +60,18 @@ pub fn run_lsp(
     server_info: Option<ServerInfo>,
     telemetry: &impl Telemetry,
 ) -> anyhow::Result<()> {
-    let initialization_params =
-        match initialize_connection(&connection, args.indexing_mode, server_info) {
-            Ok(it) => it,
-            Err(e) => {
-                // Use this in later versions of LSP server
-                // if e.channel_is_disconnected() {
-                // io_threads.join()?;
-                // }
-                return Err(e.into());
-            }
-        };
-    lsp_loop(
-        connection,
-        initialization_params,
-        args.indexing_mode,
-        args.workspace_indexing_limit,
-        args.build_system_blocking,
-        telemetry,
-    )?;
+    if let Some(initialize_params) =
+        initialize_connection(&connection, args.indexing_mode, server_info)?
+    {
+        lsp_loop(
+            connection,
+            initialize_params,
+            args.indexing_mode,
+            args.workspace_indexing_limit,
+            args.build_system_blocking,
+            telemetry,
+        )?;
+    }
     Ok(())
 }
 
@@ -85,19 +79,15 @@ fn initialize_connection(
     connection: &Connection,
     indexing_mode: IndexingMode,
     server_info: Option<ServerInfo>,
-) -> Result<InitializeParams, ProtocolError> {
-    let (request_id, initialization_params) = connection.initialize_start()?;
-    let initialization_params: InitializeParams =
-        serde_json::from_value(initialization_params).unwrap();
-    let server_capabilities =
-        serde_json::to_value(capabilities(indexing_mode, &initialization_params)).unwrap();
-    let initialize_data = serde_json::json!({
-        "capabilities": server_capabilities,
-        "serverInfo": server_info,
-    });
-
-    connection.initialize_finish(request_id, initialize_data)?;
-    Ok(initialization_params)
+) -> anyhow::Result<Option<InitializeParams>> {
+    let Some((id, initialize_params)) = initialize_start(connection)? else {
+        return Ok(None);
+    };
+    let capabilities = capabilities(indexing_mode, &initialize_params);
+    if !initialize_finish(connection, id, capabilities, server_info)? {
+        return Ok(None);
+    }
+    Ok(Some(initialize_params))
 }
 
 impl LspArgs {

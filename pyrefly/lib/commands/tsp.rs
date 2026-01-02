@@ -7,13 +7,14 @@
 
 use clap::Parser;
 use lsp_server::Connection;
-use lsp_server::ProtocolError;
 use lsp_types::InitializeParams;
 use pyrefly_util::telemetry::Telemetry;
 
 use crate::commands::lsp::IndexingMode;
 use crate::commands::util::CommandExitStatus;
 use crate::lsp::non_wasm::queue::LspQueue;
+use crate::lsp::non_wasm::server::initialize_finish;
+use crate::lsp::non_wasm::server::initialize_start;
 use crate::tsp::server::tsp_capabilities;
 use crate::tsp::server::tsp_loop;
 
@@ -35,47 +36,37 @@ pub fn run_tsp(
     args: TspArgs,
     telemetry: &impl Telemetry,
 ) -> anyhow::Result<()> {
-    let initialization_params = match initialize_tsp_connection(&connection, args.indexing_mode) {
-        Ok(it) => it,
-        Err(e) => {
-            return Err(e.into());
-        }
-    };
+    if let Some(initialize_params) = initialize_tsp_connection(&connection, args.indexing_mode)? {
+        // Create an LSP server instance for the TSP server to use.
+        let lsp_queue = LspQueue::new();
+        let lsp_server = crate::lsp::non_wasm::server::Server::new(
+            connection,
+            lsp_queue,
+            initialize_params.clone(),
+            args.indexing_mode,
+            args.workspace_indexing_limit,
+            false,
+        );
 
-    // Create an LSP server instance for the TSP server to use.
-    let lsp_queue = LspQueue::new();
-    let lsp_server = crate::lsp::non_wasm::server::Server::new(
-        connection,
-        lsp_queue,
-        initialization_params.clone(),
-        args.indexing_mode,
-        args.workspace_indexing_limit,
-        false,
-    );
-
-    // Reuse the existing lsp_loop but with TSP initialization
-    tsp_loop(lsp_server, initialization_params, telemetry)?;
+        // Reuse the existing lsp_loop but with TSP initialization
+        tsp_loop(lsp_server, initialize_params, telemetry)?;
+    }
     Ok(())
 }
 
 fn initialize_tsp_connection(
     connection: &Connection,
     indexing_mode: IndexingMode,
-) -> Result<InitializeParams, ProtocolError> {
-    let (request_id, initialization_params) = connection.initialize_start()?;
-    let initialization_params: InitializeParams =
-        serde_json::from_value(initialization_params).unwrap();
-
-    // Use TSP-specific capabilities (same as LSP but without serverInfo)
-    let server_capabilities =
-        serde_json::to_value(tsp_capabilities(indexing_mode, &initialization_params)).unwrap();
-    let initialize_data = serde_json::json!({
-        "capabilities": server_capabilities,
-        // Note: TSP doesn't include serverInfo, unlike LSP
-    });
-
-    connection.initialize_finish(request_id, initialize_data)?;
-    Ok(initialization_params)
+) -> anyhow::Result<Option<InitializeParams>> {
+    let Some((id, initialize_params)) = initialize_start(connection)? else {
+        return Ok(None);
+    };
+    let capabilities = tsp_capabilities(indexing_mode, &initialize_params);
+    // Note: TSP doesn't include serverInfo, unlike LSP
+    if !initialize_finish(connection, id, capabilities, None)? {
+        return Ok(None);
+    }
+    Ok(Some(initialize_params))
 }
 
 impl TspArgs {
