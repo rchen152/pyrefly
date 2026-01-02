@@ -925,22 +925,3 @@ def sink(values):
 "#;
     assert_no_extract_action(code);
 }
-
-#[test]
-#[ignore = "multiple insertion point choices not yet supported"]
-fn extract_function_offers_inner_function_option() {
-    let code = r#"
-def outer(xs):
-    # EXTRACT-START
-    running = 0
-    for x in xs:
-        running += x
-    # EXTRACT-END
-    return running
-"#;
-    let (_, _, titles) = compute_extract_actions(code);
-    assert!(
-        titles.iter().any(|title| title.contains("module scope")),
-        "expected at least one extract action when control flow is simple"
-    );
-}
