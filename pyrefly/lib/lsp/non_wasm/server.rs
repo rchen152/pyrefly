@@ -163,6 +163,7 @@ use lsp_types::request::Request as _;
 use lsp_types::request::SemanticTokensFullRequest;
 use lsp_types::request::SemanticTokensRangeRequest;
 use lsp_types::request::SemanticTokensRefresh;
+use lsp_types::request::Shutdown;
 use lsp_types::request::SignatureHelpRequest;
 use lsp_types::request::UnregisterCapability;
 use lsp_types::request::WillRenameFiles;
@@ -397,32 +398,34 @@ pub struct Server {
 ///   request is cancelled)
 /// - queued_events includes most of the other events.
 pub fn dispatch_lsp_events(connection: &Connection, lsp_queue: &LspQueue) {
+    let mut shutdown_requested = false;
     for msg in &connection.receiver {
+        if shutdown_requested {
+            match msg {
+                Message::Request(x) => {
+                    let response = Response::new_err(
+                        x.id,
+                        ErrorCode::InvalidRequest as i32,
+                        "Shutdown already requested".to_owned(),
+                    );
+                    let _ = connection.sender.send(response.into());
+                }
+                Message::Notification(x) if x.method == Exit::METHOD => {
+                    // Send LspEvent::Exit and stop listening
+                    break;
+                }
+                _ => { /* ignore */ }
+            }
+            continue;
+        }
+
         match msg {
             Message::Request(x) => {
-                // Catch panics from lsp_server's handle_shutdown which may unwrap on SendError
-                // when the client disconnects abruptly
-                let shutdown_result =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        connection.handle_shutdown(&x)
-                    }));
-
-                match shutdown_result {
-                    Ok(Ok(is_shutdown)) => {
-                        if is_shutdown {
-                            // break to ensure we send exit event
-                            break;
-                        }
-                    }
-                    Ok(Err(e)) => {
-                        error!("Error handling shutdown: {:?}", e);
-                        // still exit in the case of error
-                        break;
-                    }
-                    Err(_) => {
-                        info!("Shutdown panicked (likely client disconnected abruptly), exiting");
-                        break;
-                    }
+                if x.method == Shutdown::METHOD {
+                    shutdown_requested = true;
+                    let response = Response::new_ok(x.id, ());
+                    let _ = connection.sender.send(response.into());
+                    continue;
                 }
                 if lsp_queue.send(LspEvent::LspRequest(x)).is_err() {
                     return;

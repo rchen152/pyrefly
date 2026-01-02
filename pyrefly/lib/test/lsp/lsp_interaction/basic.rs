@@ -136,8 +136,15 @@ fn test_shutdown_with_messages_in_between() {
             "textDocument": {
                 "uri": uri.to_string()
             },
-        }));
+        }))
+        .expect_response_error(json!({
+            "code": -32600,
+            "message": "Shutdown already requested",
+            "data": null,
+        }))
+        .unwrap();
 
+    interaction.client.send_exit();
     interaction.client.expect_stop();
 }
 
