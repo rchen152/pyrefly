@@ -3353,6 +3353,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             })
     }
 
+    /// This function is for getting non-field attributes of a TypedDict
     pub fn get_typed_dict_attribute(
         &self,
         td: &TypedDictInner,
@@ -3368,6 +3369,26 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
         self.get_class_member(td.class_object(), name)
             .map(|field| self.as_instance_attribute(name, &field, &Instance::of_typed_dict(td)))
+    }
+
+    /// Get the type of a TypedDict's field, using the given instance's type arguments
+    /// if the TypedDict is generic. Note that this type does not encode requiredness information,
+    /// since that is stored as qualifiers.
+    pub(in crate::alt::class) fn get_instantiated_typed_dict_field_type(
+        &self,
+        td: &TypedDictInner,
+        name: &Name,
+    ) -> Option<Type> {
+        if let Some(meta) = self
+            .get_metadata_for_class(td.class_object())
+            .typed_dict_metadata()
+            && !meta.fields.contains_key(name)
+        {
+            return None;
+        }
+        self.get_class_member(td.class_object(), name)
+            .map(|field| self.as_instance_attribute(name, &field, &Instance::of_typed_dict(td)))
+            .and_then(|attr| attr.as_instance_method())
     }
 
     pub fn get_super_class_member(
