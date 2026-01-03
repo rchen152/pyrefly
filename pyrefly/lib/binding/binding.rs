@@ -62,6 +62,7 @@ use crate::binding::base_class::BaseClass;
 use crate::binding::base_class::BaseClassGeneric;
 use crate::binding::bindings::Bindings;
 use crate::binding::narrow::NarrowOp;
+use crate::binding::narrow::NarrowingSubject;
 use crate::binding::pydantic::PydanticConfigDict;
 use crate::export::special::SpecialExport;
 use crate::module::module_info::ModuleInfo;
@@ -582,6 +583,17 @@ pub enum BindingExpect {
     },
     /// Expression used in a boolean context (`bool()`, `if`, or `while`)
     Bool(Expr),
+    /// A match statement that may be non-exhaustive at runtime.
+    /// Due to gaps in our type algebra, we only check exhaustiveness for enums & unions
+    /// of enum literals.
+    /// Since this makes use of narrowing, not every match subject will be
+    /// checked for exhaustiveness, only variables and chained subscripts/attributes of variables
+    MatchExhaustiveness {
+        subject_idx: Idx<Key>,
+        narrowing_subject: NarrowingSubject,
+        narrow_ops_for_fall_through: (Box<NarrowOp>, TextRange),
+        subject_range: TextRange,
+    },
 }
 
 impl DisplayWith<Bindings> for BindingExpect {
@@ -632,6 +644,18 @@ impl DisplayWith<Bindings> for BindingExpect {
                 ctx.display(*existing),
                 name
             ),
+            Self::MatchExhaustiveness {
+                subject_idx,
+                subject_range: range,
+                ..
+            } => {
+                write!(
+                    f,
+                    "MatchExhaustiveness({}, {})",
+                    ctx.display(*subject_idx),
+                    ctx.module().display(range)
+                )
+            }
         }
     }
 }

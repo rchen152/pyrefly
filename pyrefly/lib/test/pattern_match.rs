@@ -65,7 +65,7 @@ testcase!(
     r#"
 from typing import assert_type, Literal
 def foo(x: Literal['A'] | Literal['B']):
-    match x:
+    match x: # E: Match on `Literal['A', 'B']` is not exhaustive
         case 'A':
             raise ValueError()
     assert_type(x, Literal['B'])
@@ -78,7 +78,7 @@ testcase!(
 from typing import assert_type, Literal
 def condition() -> bool: ...
 def foo(x: Literal['A'] | Literal['B']):
-    match x:
+    match x: # E: Match on `Literal['A', 'B']` is not exhaustive
         case 'A' if condition():
             raise ValueError()
     assert_type(x, Literal['A', 'B'])
@@ -149,5 +149,102 @@ def f0(x: C):
             pass
         case _:
             assert_type(x, C)
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_enum_match_warning,
+    r#"
+from enum import Enum
+
+class Color(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+def describe(color: Color):
+    match color:  # E: Missing cases: Color.BLUE
+        case Color.RED:
+            print("danger")
+
+def describe_ok(color: Color):
+    match color:
+        case Color.RED:
+            print("danger")
+        case Color.BLUE:
+            print("ok")
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_literal_union_match_warning,
+    r#"
+from typing import Literal
+
+def describe(color: Literal["red", "blue"]):
+    match color:  # E: Missing cases: 'blue'
+        case "red":
+            print("danger")
+
+def describe_ok(color: Literal["red", "blue"]):
+    match color:
+        case "red":
+            print("danger")
+        case "blue":
+            print("ok")
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_enum_match_facet_subject,
+    r#"
+from enum import Enum
+
+class Color(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+class X:
+    color: Color
+
+def describe(x: X):
+    match x.color: # E: Missing cases: Color.BLUE
+        case Color.RED:
+            print("danger")
+
+def describe_ok(x: X):
+    match x.color:
+        case Color.RED:
+            print("danger")
+        case Color.BLUE:
+            print("ok")
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_literal_union_match_facet_subject,
+    r#"
+from typing import Literal
+
+class X:
+    color: Literal["red", "blue"]
+
+def describe(x: X):
+    match x.color:  # E: Missing cases: 'blue'
+        case "red":
+            print("danger")
+
+def describe_ok(x: X):
+    match x.color:
+        case "red":
+            print("danger")
+        case "blue":
+            print("ok")
+
+def describe_ok_2(x: X):
+    match x.color:
+        case "red":
+            print("danger")
+        case _:
+            print("default")
 "#,
 );

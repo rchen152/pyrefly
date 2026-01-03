@@ -269,6 +269,12 @@ pub enum NarrowingSubject {
 }
 
 impl NarrowingSubject {
+    pub fn name(&self) -> &Name {
+        match self {
+            Self::Name(name) | Self::Facets(name, _) => name,
+        }
+    }
+
     pub fn with_facet(&self, prop: FacetKind) -> Self {
         match self {
             Self::Name(name) => Self::Facets(

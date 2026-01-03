@@ -6,8 +6,11 @@
  */
 
 use num_traits::ToPrimitive;
+use pyrefly_config::error_kind::ErrorKind;
+use pyrefly_graph::index::Idx;
 use pyrefly_python::ast::Ast;
 use pyrefly_types::class::Class;
+use pyrefly_types::display::TypeDisplayContext;
 use pyrefly_types::simplify::intersect;
 use pyrefly_types::type_info::JoinStyle;
 use pyrefly_util::prelude::SliceExt;
@@ -22,17 +25,21 @@ use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 use vec1::Vec1;
+use vec1::vec1;
 
 use crate::alt::answers::LookupAnswer;
 use crate::alt::answers_solver::AnswersSolver;
 use crate::alt::call::CallTargetLookup;
 use crate::alt::callable::CallArg;
 use crate::alt::callable::CallKeyword;
+use crate::binding::binding::Key;
 use crate::binding::narrow::AtomicNarrowOp;
 use crate::binding::narrow::FacetOrigin;
 use crate::binding::narrow::FacetSubject;
 use crate::binding::narrow::NarrowOp;
+use crate::binding::narrow::NarrowingSubject;
 use crate::error::collector::ErrorCollector;
+use crate::error::context::ErrorInfo;
 use crate::error::style::ErrorStyle;
 use crate::types::callable::FunctionKind;
 use crate::types::class::ClassType;
@@ -1140,5 +1147,113 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
         };
         self.is_dict_like(&base_ty)
+    }
+
+    fn is_non_flag_enum(&self, cls: &ClassType) -> bool {
+        self.get_metadata_for_class(cls.class_object())
+            .enum_metadata()
+            .is_some_and(|meta| !meta.is_flag)
+    }
+
+    fn is_enum_class_or_literal_union(&self, ty: &Type) -> bool {
+        match ty {
+            Type::ClassType(cls) | Type::SelfType(cls) => self.is_non_flag_enum(cls),
+            Type::Union(union) => {
+                let union = union.as_ref();
+                !union.members.is_empty()
+                    && union
+                        .members
+                        .iter()
+                        .all(|member| matches!(member, Type::Literal(_)))
+            }
+            _ => false,
+        }
+    }
+
+    fn format_missing_literal_cases(&self, ty: &Type) -> Option<String> {
+        fn collect_cases(ty: &Type, acc: &mut Vec<String>) -> bool {
+            match ty {
+                Type::Literal(lit) => {
+                    acc.push(format!("{}", lit));
+                    true
+                }
+                Type::Union(union) => {
+                    let union = union.as_ref();
+                    union
+                        .members
+                        .iter()
+                        .all(|member| collect_cases(member, acc))
+                }
+                _ => false,
+            }
+        }
+
+        let mut cases = Vec::new();
+        if collect_cases(ty, &mut cases) {
+            Some(cases.join(", "))
+        } else {
+            None
+        }
+    }
+
+    pub fn check_match_exhaustiveness(
+        &self,
+        subject_idx: &Idx<Key>,
+        narrowing_subject: &NarrowingSubject,
+        narrow_ops_for_fall_through: &(Box<NarrowOp>, TextRange),
+        subject_range: &TextRange,
+        errors: &ErrorCollector,
+    ) {
+        let (op, narrow_range) = narrow_ops_for_fall_through;
+        let subject_info = self.get_idx(*subject_idx);
+        let mut subject_ty = subject_info.ty().clone();
+        self.expand_vars_mut(&mut subject_ty);
+        // We only check match exhaustiveness if the subject is an enum or a union of enum literals
+        if !self.is_enum_class_or_literal_union(&subject_ty) {
+            return;
+        }
+        let ignore_errors = self.error_swallower();
+        let narrowing_subject_info = match narrowing_subject {
+            NarrowingSubject::Name(_) => &subject_info,
+            NarrowingSubject::Facets(_, facets) => {
+                // If the narrowing subject is the facet of some variable like `x.foo`,
+                // We need to make a `TypeInfo` rooted at `x` using the type of `x.foo`
+                let type_info = TypeInfo::of_ty(Type::any_implicit());
+                &type_info.with_narrow(facets.chain.facets(), subject_ty.clone())
+            }
+        };
+        // Get the narrowed type of the match subject when none of the cases match
+        let narrowed = self.narrow(
+            narrowing_subject_info,
+            op.as_ref(),
+            *narrow_range,
+            &ignore_errors,
+        );
+        let mut remaining_ty = match narrowing_subject {
+            NarrowingSubject::Name(_) => narrowed.ty().clone(),
+            NarrowingSubject::Facets(_, facets) => {
+                self.get_facet_chain_type(&narrowed, &facets.chain, *subject_range)
+            }
+        };
+        self.expand_vars_mut(&mut remaining_ty);
+        // If the result is `Never` then the cases were exhaustive
+        if remaining_ty.is_never() || remaining_ty.is_any() {
+            return;
+        }
+        let subject_display = self.for_display(subject_ty);
+        let remaining_display = self.for_display(remaining_ty.clone());
+        let ctx = TypeDisplayContext::new(&[&subject_display, &remaining_display]);
+        let mut msg = vec1![format!(
+            "Match on `{}` is not exhaustive",
+            ctx.display(&subject_display)
+        )];
+        if let Some(missing_cases) = self.format_missing_literal_cases(&remaining_ty) {
+            msg.push(format!("Missing cases: {}", missing_cases));
+        }
+        errors.add(
+            *subject_range,
+            ErrorInfo::Kind(ErrorKind::NonExhaustiveMatch),
+            msg,
+        );
     }
 }
