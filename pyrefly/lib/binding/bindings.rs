@@ -610,9 +610,9 @@ impl CurrentIdx {
         self.idx()
     }
 
-    pub fn decompose(self) -> (SmallSet<Idx<Key>>, Idx<Key>) {
+    pub fn decompose(self) -> (Idx<Key>, SmallSet<Idx<Key>>) {
         match self.0 {
-            Usage::CurrentIdx(idx, first_used_by) => (first_used_by, idx),
+            Usage::CurrentIdx(idx, first_use_of) => (idx, first_use_of),
             _ => unreachable!(),
         }
     }

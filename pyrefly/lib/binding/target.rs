@@ -496,17 +496,17 @@ impl<'a> BindingsBuilder<'a> {
             is_in_function_scope: self.scopes.in_function_scope(),
         };
         // Record the raw assignment
-        let (first_used_by, def_idx) = current.decompose();
+        let (def_idx, first_use_of) = current.decompose();
         let def_idx = self.insert_binding_idx(def_idx, binding);
         // If this is a first use, add a binding that will eliminate any placeholder types coming from upstream.
-        let unpinned_idx = if first_used_by.is_empty() {
+        let unpinned_idx = if first_use_of.is_empty() {
             def_idx
         } else {
             self.insert_binding(
                 Key::PartialTypeWithUpstreamsCompleted(identifier),
                 Binding::PartialTypeWithUpstreamsCompleted(
                     def_idx,
-                    first_used_by.into_iter().collect(),
+                    first_use_of.into_iter().collect(),
                 ),
             )
         };
