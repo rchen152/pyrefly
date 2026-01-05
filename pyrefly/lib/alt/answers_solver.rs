@@ -307,6 +307,14 @@ enum CycleState {
     BreakAt,
 }
 
+enum CycleDetectedResult {
+    /// Break immediately at the idx where we detected the cycle, so that we
+    /// unwind back to the same idx.
+    BreakHere,
+    /// Continue recursing until we hit some other idx that is the minimal `break_at` idx.
+    Continue,
+}
+
 /// Represent the current thread's cycles, which form a stack
 /// because we can encounter a new one while solving another.
 pub struct Cycles(RefCell<Vec<Cycle>>);
@@ -322,12 +330,16 @@ impl Cycles {
 
     /// Handle a cycle we just detected.
     ///
-    /// Return whether or not to break immediately (which is relatively
-    /// common, since we break on the minimal idx which is often where we would
-    /// detect the problem).
-    fn on_cycle_detected(&self, raw: Vec1<CalcId>) -> bool {
+    /// Return whether to break immediately (which is relatively common, since
+    /// we break on the minimal idx which is often where we detect the problem)
+    /// or continue recursing.
+    fn on_cycle_detected(&self, raw: Vec1<CalcId>) -> CycleDetectedResult {
         let cycle = Cycle::new(raw);
-        let res = cycle.break_at == cycle.detected_at;
+        let res = if cycle.break_at == cycle.detected_at {
+            CycleDetectedResult::BreakHere
+        } else {
+            CycleDetectedResult::Continue
+        };
         self.0.borrow_mut().push(cycle);
         res
     }
@@ -498,12 +510,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(r)),
                 ProposalResult::CycleDetected => {
                     let current_cycle = self.stack().current_cycle().unwrap();
-                    let break_immediately = self.cycles().on_cycle_detected(current_cycle);
-                    if break_immediately {
-                        self.attempt_to_unwind_cycle_from_here(idx, calculation)
-                            .unwrap_or_else(|r| Arc::new(K::promote_recursive(r)))
-                    } else {
-                        self.calculate_and_record_answer(current, idx, calculation)
+                    match self.cycles().on_cycle_detected(current_cycle) {
+                        CycleDetectedResult::BreakHere => self
+                            .attempt_to_unwind_cycle_from_here(idx, calculation)
+                            .unwrap_or_else(|r| Arc::new(K::promote_recursive(r))),
+                        CycleDetectedResult::Continue => {
+                            self.calculate_and_record_answer(current, idx, calculation)
+                        }
                     }
                 }
                 ProposalResult::Calculatable => {
