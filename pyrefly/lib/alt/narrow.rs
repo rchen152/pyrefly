@@ -723,7 +723,26 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     let ret =
                         self.call_infer(*call_target, &args, &kws, range, errors, None, None, None);
                     if let Type::TypeIs(t) = ret {
-                        return self.intersect(ty, &t);
+                        return self.distribute_over_union(&t, |right| {
+                            self.intersect_with_fallback(ty, right, &|| {
+                                // TODO: falling back to Never when the lhs is a union is a hack to get
+                                // reasonable behavior in cases like this:
+                                //     def f(x: int | Callable[[], int]):
+                                //         if callable(x):
+                                //             reveal_type(x)
+                                // Both mypy and pyright say that the type of `x` on the last line is
+                                // `() -> int`, whereas if we didn't fall back to Never, pyrefly would
+                                // say `(int & (...) -> object) | () -> int`. A naive implementation of
+                                // calling an intersection type would then lead to the type of `x()`
+                                // being `object | int`. This is a surprising and unhelpful type, so we
+                                // use Never as the fallback for now.
+                                if ty.is_union() {
+                                    Type::never()
+                                } else {
+                                    (*t).clone()
+                                }
+                            })
+                        });
                     }
                 }
                 ty.clone()
