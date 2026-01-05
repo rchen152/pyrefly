@@ -602,3 +602,81 @@ fn test_completion_complete_with_local_completions() {
 
     interaction.shutdown().unwrap();
 }
+
+/// Test that autoimport completions show both the re-exported path and the original path
+/// when a symbol is re-exported from a package's __init__.py.
+///
+/// Given:
+///   - example/main.py defines ExampleClass
+///   - example/__init__.py re-exports ExampleClass
+///
+/// When completing "ExampleClass" in foo.py, both import paths should appear:
+///   - from example import ExampleClass (re-exported path)
+///   - from example.main import ExampleClass (original path)
+#[test]
+fn test_autoimport_completions_show_reexported_paths() {
+    let root = get_test_files_root();
+    let root_path = root.path().join("autoimport_reexport_test");
+
+    let mut interaction =
+        LspInteraction::new_with_indexing_mode(crate::commands::lsp::IndexingMode::LazyBlocking);
+
+    interaction.set_root(root_path.clone());
+    interaction
+        .initialize(InitializeSettings::default())
+        .unwrap();
+
+    interaction.client.did_open("foo.py");
+
+    // Modify the file to trigger completion for ExampleClass
+    interaction.client.did_change(
+        "foo.py",
+        r#"
+class MyClass(ExampleClass):
+    pass
+"#,
+    );
+
+    // Request completion at the position of "ExampleClass" (line 1, after "MyClass(")
+    // Line 1 is "class MyClass(ExampleClass):", column 14 is where "ExampleClass" starts
+    interaction
+        .client
+        .completion("foo.py", 1, 22) // Position at end of "ExampleClass"
+        .expect_completion_response_with(|list| {
+            // Collect all completion items that match ExampleClass
+            let example_class_items: Vec<_> = list
+                .items
+                .iter()
+                .filter(|item| item.label == "ExampleClass")
+                .collect();
+
+            // We should have at least 2 completion items for ExampleClass:
+            // one from the re-exported path and one from the original path
+            let has_reexport = example_class_items.iter().any(|item| {
+                item.detail
+                    .as_ref()
+                    .is_some_and(|d| d.contains("from example import ExampleClass"))
+            });
+
+            let has_original = example_class_items.iter().any(|item| {
+                item.detail
+                    .as_ref()
+                    .is_some_and(|d| d.contains("from example.main import ExampleClass"))
+            });
+
+            if !has_reexport || !has_original {
+                eprintln!(
+                    "Expected both re-exported and original import paths. Found items: {:?}",
+                    example_class_items
+                        .iter()
+                        .map(|item| (&item.label, &item.detail))
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            has_reexport && has_original
+        })
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}

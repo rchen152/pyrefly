@@ -2416,6 +2416,7 @@ impl<'a> Transaction<'a> {
                 {
                     continue;
                 }
+                let depth = handle_to_import_from.module().components().len();
                 let module_description = handle_to_import_from.module().as_str().to_owned();
                 let (insert_text, additional_text_edits, imported_module) = {
                     let (position, insert_text, module_name) = insert_import_edit(
@@ -2454,6 +2455,7 @@ impl<'a> Transaction<'a> {
                     } else {
                         None
                     },
+                    sort_text: Some(format!("4{}", depth)),
                     ..Default::default()
                 });
             }
@@ -2974,8 +2976,22 @@ impl<'a> Transaction<'a> {
             .last()
             .map(|name| name.as_str())
             .unwrap_or("");
-        canonical_component.starts_with('_')
+
+        if canonical_component.starts_with('_')
             && canonical_component.trim_start_matches('_') == original_component
+        {
+            return true;
+        }
+
+        // Include re-export if original is a parent package of canonical
+        if canonical_components.len() > original_components.len() {
+            canonical_components
+                .iter()
+                .zip(original_components.iter())
+                .all(|(c, o)| c == o)
+        } else {
+            false
+        }
     }
 
     pub fn search_exports_exact(&self, name: &str) -> Vec<(Handle, Export)> {
