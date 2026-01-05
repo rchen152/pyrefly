@@ -419,6 +419,11 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
         // detect cycles that would otherwise be missed due to fresh Var creation when
         // checking Forall types against protocols. We only do this for nested checks
         // because the top-level check doesn't have fresh Vars yet.
+        //
+        // TODO: At some point we should audit this more closely, it's not entirely clear
+        // this is the exact right recursive condition to handle `Var` synthesis in `Forall`,
+        // it may be possible to get false positives on concrete types here. See
+        // D90129077 and D89604001 for context.
         let class_check = if self.recursive_assumptions.len() > 1
             && let Type::ClassType(got_class) = &got
         {
