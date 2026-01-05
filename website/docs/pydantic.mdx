@@ -156,15 +156,16 @@ ModelForbid(x=1, y=2)
 
 ### Handling field constraints
 
+Pyrefly provides limited support for range constraints on fields.
 ```python
 from pydantic import BaseModel, Field
 
 class Model(BaseModel):
-   x: int = Field(gt=0, lt=10)
+    x: int = Field(gt=0, lt=10)
 
-Model(x=5)  # OK
-Model(x="5")  # OK in Pyrefly (lax mode allows string-to-int coercion)
-               # Will also pass at runtime if the string can be converted to int
+Model(x=5)   # OK
+Model(x=0)   # Error: Argument value `Literal[0]` violates Pydantic `gt` constraint for field `x`
+Model(x=15)  # Error: Argument value `Literal[15]` violates Pydantic `lt` constraint for field `x`
 ```
 
 ### Root Models
@@ -180,7 +181,7 @@ class StrictIntRootModel(RootModel[StrictInt]):
 
 m1 = IntRootModel(123)  # OK
 m2 = IntRootModel("123") # OK - lax mode allows string-to-int coercion
-m3 = StrictIntRootModel("123")  # Error - StrictInt doesn't allow coercion
+m3 = StrictIntRootModel("123")  # Error: StrictInt doesn't allow coercion
 ```
 
 ### Alias validation
