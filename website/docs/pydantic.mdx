@@ -66,6 +66,8 @@ Model(x=Decimal('123'))
 
 > **Note:** Pyrefly applies named unions (like `LaxInt`) to atomic types and recursively to nested types. Container types are converted to more general types to handle variance: for example, `list[int]` becomes `Iterable[LaxInt]`. When you use union types (e.g., `int | bool`), each member is expanded individually and then flattened into a regular union.
 
+For a complete reference of all type conversions in lax mode, see the [Lax Mode Type Conversions](../pydantic-lax-conversions) page.
+
 ---
 
 ## Comparison to Existing Tools
