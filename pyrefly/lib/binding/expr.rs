@@ -72,6 +72,9 @@ fn is_special_name(name: &str) -> bool {
 #[derive(Debug)]
 pub enum Usage {
     /// I am a usage to create a `Binding`.
+    /// - First entry is the idx we are working on
+    /// - Second entry is all the idxs for which this idx is a first use (used to
+    ///   create `PartialTypeWithUpstreamsCompleted` bindings).
     CurrentIdx(Idx<Key>, SmallSet<Idx<Key>>),
     /// I am a usage that will appear in a narrowing operation (including a
     /// match pattern). We don't allow pinning in this case:
