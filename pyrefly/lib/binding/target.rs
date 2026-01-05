@@ -456,7 +456,7 @@ impl<'a> BindingsBuilder<'a> {
         direct_ann: Option<(&Expr, Idx<KeyAnnotation>)>,
     ) -> Option<Idx<KeyAnnotation>> {
         let identifier = ShortIdentifier::new(name);
-        let mut user = self.declare_current_idx(Key::Definition(identifier));
+        let mut current = self.declare_current_idx(Key::Definition(identifier));
         let pinned_idx = self.idx_for_promise(Key::CompletedPartialType(identifier));
         let is_definitely_type_alias = if let Some((e, _)) = direct_ann
             && self.as_special_export(e) == Some(SpecialExport::TypeAlias)
@@ -473,7 +473,7 @@ impl<'a> BindingsBuilder<'a> {
                 tparams = Some(collector.lookup_keys().into_boxed_slice());
             }
         } else {
-            self.ensure_expr(&mut value, user.usage());
+            self.ensure_expr(&mut value, current.usage());
         }
         let style = if self.scopes.in_class_body() {
             FlowStyle::ClassField {
@@ -496,7 +496,7 @@ impl<'a> BindingsBuilder<'a> {
             is_in_function_scope: self.scopes.in_function_scope(),
         };
         // Record the raw assignment
-        let (first_used_by, def_idx) = user.decompose();
+        let (first_used_by, def_idx) = current.decompose();
         let def_idx = self.insert_binding_idx(def_idx, binding);
         // If this is a first use, add a binding that will eliminate any placeholder types coming from upstream.
         let unpinned_idx = if first_used_by.is_empty() {
