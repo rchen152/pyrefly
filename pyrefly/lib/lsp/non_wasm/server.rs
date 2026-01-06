@@ -195,6 +195,7 @@ use pyrefly_util::telemetry::TelemetryEvent;
 use pyrefly_util::telemetry::TelemetryEventKind;
 use pyrefly_util::telemetry::TelemetryFileStats;
 use pyrefly_util::telemetry::TelemetryServerState;
+use pyrefly_util::telemetry::TelemetryTaskId;
 use pyrefly_util::watch_pattern::WatchPattern;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
@@ -1875,7 +1876,7 @@ impl Server {
                     if self.indexed_configs.lock().insert(config.dupe()) {
                         self.recheck_queue.queue_task(
                             TelemetryEventKind::PopulateProjectFiles,
-                            Box::new(move |server, _telemetry, telemetry_event| {
+                            Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                                 server
                                     .populate_all_project_files_in_config(config, telemetry_event);
                             }),
@@ -1910,7 +1911,7 @@ impl Server {
                 drop(indexed_workspaces);
                 self.recheck_queue.queue_task(
                     TelemetryEventKind::PopulateWorkspaceFiles,
-                    Box::new(move |server, _telemetry, telemetry_event| {
+                    Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                         server.populate_all_workspaces_files(
                             roots_to_populate_files,
                             telemetry_event,
@@ -1931,7 +1932,7 @@ impl Server {
     fn invalidate(&self, f: impl FnOnce(&mut Transaction) + Send + Sync + 'static) {
         self.recheck_queue.queue_task(
             TelemetryEventKind::Invalidate,
-            Box::new(move |server, _telemetry, telemetry_event| {
+            Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                 let mut transaction = server
                     .state
                     .new_committable_transaction(Require::indexing(), None);
@@ -2054,7 +2055,8 @@ impl Server {
     ) {
         let run = move |server: &Server,
                         _telemetry: &dyn Telemetry,
-                        telemetry_event: &mut TelemetryEvent| {
+                        telemetry_event: &mut TelemetryEvent,
+                        _task_stats: Option<&TelemetryTaskId>| {
             let mut configs_to_paths: SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>> =
                 SmallMap::new();
             let config_finder = server.state.config_finder();
@@ -2084,7 +2086,7 @@ impl Server {
         };
 
         if self.build_system_blocking {
-            run(self, telemetry, telemetry_event);
+            run(self, telemetry, telemetry_event, None);
         } else {
             self.sourcedb_queue
                 .queue_task(TelemetryEventKind::SourceDbRebuild, Box::new(run));
@@ -2437,7 +2439,7 @@ impl Server {
         self.queue_source_db_rebuild_and_recheck(telemetry, telemetry_event, false);
         self.recheck_queue.queue_task(
             TelemetryEventKind::InvalidateOnClose,
-            Box::new(move |server, _telemetry, telemetry_event| {
+            Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                 // Clear out the memory associated with this file.
                 // Not a race condition because we immediately call validate_in_memory to put back the open files as they are now.
                 // Having the extra file hanging around doesn't harm anything, but does use extra memory.
@@ -2899,7 +2901,7 @@ impl Server {
         };
         self.find_reference_queue.queue_task(
             TelemetryEventKind::FindFromDefinition,
-            Box::new(move |server, _telemetry, telemetry_event| {
+            Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                 let mut transaction = server.state.cancellable_transaction();
                 server
                     .cancellation_handles
@@ -3592,7 +3594,7 @@ impl Server {
     fn invalidate_config_and_validate_in_memory(&self) {
         self.recheck_queue.queue_task(
             TelemetryEventKind::InvalidateConfig,
-            Box::new(move |server, _telemetry, telemetry_event| {
+            Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                 let mut transaction = server
                     .state
                     .new_committable_transaction(Require::indexing(), None);

@@ -27,7 +27,7 @@ use lsp_types::DidSaveTextDocumentParams;
 use pyrefly_util::telemetry::Telemetry;
 use pyrefly_util::telemetry::TelemetryEvent;
 use pyrefly_util::telemetry::TelemetryEventKind;
-use pyrefly_util::telemetry::TelemetryTaskStats;
+use pyrefly_util::telemetry::TelemetryTaskId;
 use tracing::debug;
 use tracing::info;
 
@@ -196,7 +196,12 @@ impl LspQueue {
 }
 
 pub struct HeavyTask(
-    Box<dyn FnOnce(&Server, &dyn Telemetry, &mut TelemetryEvent) + Send + Sync + 'static>,
+    Box<
+        dyn FnOnce(&Server, &dyn Telemetry, &mut TelemetryEvent, Option<&TelemetryTaskId>)
+            + Send
+            + Sync
+            + 'static,
+    >,
 );
 
 impl HeavyTask {
@@ -205,8 +210,9 @@ impl HeavyTask {
         server: &Server,
         telemetry: &impl Telemetry,
         telemetry_event: &mut TelemetryEvent,
+        task_stats: Option<&TelemetryTaskId>,
     ) {
-        self.0(server, telemetry, telemetry_event);
+        self.0(server, telemetry, telemetry_event, task_stats);
     }
 }
 
@@ -237,7 +243,12 @@ impl HeavyTaskQueue {
     pub fn queue_task(
         &self,
         kind: TelemetryEventKind,
-        f: Box<dyn FnOnce(&Server, &dyn Telemetry, &mut TelemetryEvent) + Send + Sync + 'static>,
+        f: Box<
+            dyn FnOnce(&Server, &dyn Telemetry, &mut TelemetryEvent, Option<&TelemetryTaskId>)
+                + Send
+                + Sync
+                + 'static,
+        >,
     ) {
         self.task_sender
             .send((HeavyTask(f), kind, Instant::now()))
@@ -268,11 +279,12 @@ impl HeavyTaskQueue {
                     let mut telemetry_event =
                         TelemetryEvent::new_dequeued(kind, enqueued, server.telemetry_state());
                     let queue_duration = telemetry_event.queue;
-                    telemetry_event.set_task_stats(TelemetryTaskStats::new(
+                    let task_stats = TelemetryTaskId::new(
                         self.queue_name,
                         self.next_task_id.fetch_add(1, Ordering::Relaxed),
-                    ));
-                    task.run(server, telemetry, &mut telemetry_event);
+                    );
+                    task.run(server, telemetry, &mut telemetry_event, Some(&task_stats));
+                    telemetry_event.set_task_stats(task_stats);
                     let process_duration = telemetry_event.finish_and_record(telemetry, None);
                     info!(
                         "Ran task on {} heavy task queue. Queue time: {:.2}, task time: {:.2}",

@@ -42,7 +42,7 @@ pub struct TelemetryEvent {
     pub transaction_stats: Option<TelemetryTransactionStats>,
     pub server_state: TelemetryServerState,
     pub file_stats: Option<TelemetryFileStats>,
-    pub task_stats: Option<TelemetryTaskStats>,
+    pub task_id: Option<TelemetryTaskId>,
     pub sourcedb_rebuild_stats: Option<TelemetrySourceDbRebuildStats>,
 }
 
@@ -66,12 +66,13 @@ pub struct TelemetryTransactionStats {
     pub committed: bool,
 }
 
-pub struct TelemetryTaskStats {
+#[derive(Clone)]
+pub struct TelemetryTaskId {
     pub queue_name: &'static str,
     pub id: usize,
 }
 
-impl TelemetryTaskStats {
+impl TelemetryTaskId {
     pub fn new(queue_name: &'static str, id: usize) -> Self {
         Self { queue_name, id }
     }
@@ -103,7 +104,7 @@ impl TelemetryEvent {
             transaction_stats: None,
             server_state,
             file_stats: None,
-            task_stats: None,
+            task_id: None,
             sourcedb_rebuild_stats: None,
         }
     }
@@ -124,8 +125,8 @@ impl TelemetryEvent {
         self.file_stats = Some(stats);
     }
 
-    pub fn set_task_stats(&mut self, stats: TelemetryTaskStats) {
-        self.task_stats = Some(stats);
+    pub fn set_task_stats(&mut self, stats: TelemetryTaskId) {
+        self.task_id = Some(stats);
     }
 
     pub fn set_sourcedb_rebuild_stats(&mut self, stats: TelemetrySourceDbRebuildStats) {
