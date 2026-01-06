@@ -276,9 +276,8 @@ impl HeavyTaskQueue {
                         .recv(&self.task_receiver)
                         .expect("Failed to receive heavy task");
                     debug!("Dequeued task on {} heavy task queue", self.queue_name);
-                    let mut telemetry_event =
+                    let (mut telemetry_event, queue_duration) =
                         TelemetryEvent::new_dequeued(kind, enqueued, server.telemetry_state());
-                    let queue_duration = telemetry_event.queue;
                     let task_stats = TelemetryTaskId::new(
                         self.queue_name,
                         self.next_task_id.fetch_add(1, Ordering::Relaxed),

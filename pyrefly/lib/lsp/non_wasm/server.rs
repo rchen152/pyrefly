@@ -764,12 +764,11 @@ pub fn lsp_loop(
         let mut ide_transaction_manager = TransactionManager::default();
         let mut canceled_requests = HashSet::new();
         while let Ok((subsequent_mutation, event, enqueue_time)) = server.lsp_queue.recv() {
-            let mut event_telemetry = TelemetryEvent::new_dequeued(
+            let (mut event_telemetry, queue_duration) = TelemetryEvent::new_dequeued(
                 TelemetryEventKind::LspEvent(event.describe()),
                 enqueue_time,
                 server.telemetry_state(),
             );
-            let queue_duration = event_telemetry.queue;
             let event_description = event.describe();
             let result = server.process_event(
                 &mut ide_transaction_manager,

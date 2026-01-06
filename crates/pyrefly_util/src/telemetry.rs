@@ -34,7 +34,7 @@ pub enum TelemetryEventKind {
 
 pub struct TelemetryEvent {
     pub kind: TelemetryEventKind,
-    pub queue: Duration,
+    pub queue: Option<Duration>,
     pub start: Instant,
     pub error: Option<Error>,
     pub invalidate: Option<Duration>,
@@ -91,22 +91,25 @@ impl TelemetryEvent {
         kind: TelemetryEventKind,
         enqueued_at: Instant,
         server_state: TelemetryServerState,
-    ) -> Self {
+    ) -> (Self, Duration) {
         let start = Instant::now();
         let queue = start - enqueued_at;
-        Self {
-            kind,
+        (
+            Self {
+                kind,
+                queue: Some(queue),
+                start,
+                error: None,
+                invalidate: None,
+                validate: None,
+                transaction_stats: None,
+                server_state,
+                file_stats: None,
+                task_id: None,
+                sourcedb_rebuild_stats: None,
+            },
             queue,
-            start,
-            error: None,
-            invalidate: None,
-            validate: None,
-            transaction_stats: None,
-            server_state,
-            file_stats: None,
-            task_id: None,
-            sourcedb_rebuild_stats: None,
-        }
+        )
     }
 
     pub fn set_invalidate_duration(&mut self, duration: Duration) {
