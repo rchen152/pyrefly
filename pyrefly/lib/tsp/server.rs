@@ -47,7 +47,8 @@ impl<T: TspInterface> TspServer<T> {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
-        telemetry: &mut TelemetryEvent,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
         subsequent_mutation: bool,
         event: LspEvent,
     ) -> anyhow::Result<ProcessEvent> {
@@ -82,6 +83,7 @@ impl<T: TspInterface> TspServer<T> {
             ide_transaction_manager,
             canceled_requests,
             telemetry,
+            telemetry_event,
             subsequent_mutation,
             event,
         )?;
@@ -164,6 +166,7 @@ pub fn tsp_loop(
             let result = server.process_event(
                 &mut ide_transaction_manager,
                 &mut canceled_requests,
+                telemetry,
                 &mut event_telemetry,
                 subsequent_mutation,
                 event,

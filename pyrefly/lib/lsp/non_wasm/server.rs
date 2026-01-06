@@ -305,7 +305,8 @@ pub trait TspInterface: Send + Sync {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
-        telemetry: &mut TelemetryEvent,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
         subsequent_mutation: bool,
         event: LspEvent,
     ) -> anyhow::Result<ProcessEvent>;
@@ -772,6 +773,7 @@ pub fn lsp_loop(
             let result = server.process_event(
                 &mut ide_transaction_manager,
                 &mut canceled_requests,
+                telemetry,
                 &mut event_telemetry,
                 subsequent_mutation,
                 event,
@@ -844,7 +846,8 @@ impl Server {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
-        telemetry: &mut TelemetryEvent,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
         // After this event there is another mutation
         subsequent_mutation: bool,
         event: LspEvent,
@@ -855,7 +858,10 @@ impl Server {
             }
             LspEvent::RecheckFinished => {
                 // We did a commit and want to get back to a stable state.
-                self.validate_in_memory_and_commit_if_possible(ide_transaction_manager, telemetry);
+                self.validate_in_memory_and_commit_if_possible(
+                    ide_transaction_manager,
+                    telemetry_event,
+                );
             }
             LspEvent::CancelRequest(id) => {
                 info!("We should cancel request {id:?}");
@@ -884,11 +890,12 @@ impl Server {
                 let lsp_types::TextDocumentItem {
                     uri, version, text, ..
                 } = text_document;
-                self.set_file_stats(uri.clone(), telemetry);
+                self.set_file_stats(uri.clone(), telemetry_event);
                 let contents = Arc::new(LspFile::from_source(text));
                 self.did_open(
                     ide_transaction_manager,
                     telemetry,
+                    telemetry_event,
                     subsequent_mutation,
                     uri,
                     version,
@@ -896,29 +903,30 @@ impl Server {
                 )?;
             }
             LspEvent::DidChangeTextDocument(params) => {
-                self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                 self.text_document_did_change(
                     ide_transaction_manager,
                     subsequent_mutation,
                     params,
-                    telemetry,
+                    telemetry_event,
                 )?;
             }
             LspEvent::DidCloseTextDocument(params) => {
-                self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                 self.did_close(
                     params.text_document.uri,
                     DidCloseKind::TextDocument,
                     telemetry,
+                    telemetry_event,
                 );
             }
             LspEvent::DidSaveTextDocument(params) => {
-                self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                 self.did_save(params.text_document.uri);
             }
             LspEvent::DidOpenNotebookDocument(params) => {
                 let url = params.notebook_document.uri.clone();
-                self.set_file_stats(url.clone(), telemetry);
+                self.set_file_stats(url.clone(), telemetry_event);
                 let version = params.notebook_document.version;
                 let notebook_document = params.notebook_document.clone();
                 let cell_contents: HashMap<Url, String> = params
@@ -942,6 +950,7 @@ impl Server {
                 self.did_open(
                     ide_transaction_manager,
                     telemetry,
+                    telemetry_event,
                     subsequent_mutation,
                     url,
                     version,
@@ -949,28 +958,29 @@ impl Server {
                 )?;
             }
             LspEvent::DidChangeNotebookDocument(params) => {
-                self.set_file_stats(params.notebook_document.uri.clone(), telemetry);
+                self.set_file_stats(params.notebook_document.uri.clone(), telemetry_event);
                 self.notebook_document_did_change(
                     ide_transaction_manager,
                     subsequent_mutation,
                     params,
-                    telemetry,
+                    telemetry_event,
                 )?;
             }
             LspEvent::DidCloseNotebookDocument(params) => {
-                self.set_file_stats(params.notebook_document.uri.clone(), telemetry);
+                self.set_file_stats(params.notebook_document.uri.clone(), telemetry_event);
                 self.did_close(
                     params.notebook_document.uri,
                     DidCloseKind::NotebookDocument,
                     telemetry,
+                    telemetry_event,
                 );
             }
             LspEvent::DidSaveNotebookDocument(params) => {
-                self.set_file_stats(params.notebook_document.uri.clone(), telemetry);
+                self.set_file_stats(params.notebook_document.uri.clone(), telemetry_event);
                 self.did_save(params.notebook_document.uri);
             }
             LspEvent::DidChangeWatchedFiles(params) => {
-                self.did_change_watched_files(params, telemetry);
+                self.did_change_watched_files(params, telemetry, telemetry_event);
             }
             LspEvent::DidChangeWorkspaceFolders(params) => {
                 self.workspace_folders_changed(params);
@@ -1031,7 +1041,7 @@ impl Server {
                 //
                 // Validating in-memory files is relatively cheap, since we only actually recheck open files which have
                 // changed file contents, so it's simpler to just always do it.
-                self.validate_in_memory_for_transaction(&mut transaction, telemetry);
+                self.validate_in_memory_for_transaction(&mut transaction, telemetry_event);
 
                 info!("Handling non-canceled request {} ({})", x.method, &x.id);
                 if let Some(params) = as_request::<GotoDefinition>(&x) {
@@ -1046,7 +1056,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         let default_response = GotoDefinitionResponse::Array(Vec::new());
                         self.send_response(new_response(
@@ -1068,7 +1078,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         let default_response = GotoDefinitionResponse::Array(Vec::new());
                         self.send_response(new_response(
@@ -1090,7 +1100,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         let default_response = GotoTypeDefinitionResponse::Array(Vec::new());
                         self.send_response(new_response(
@@ -1112,7 +1122,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         self.async_go_to_implementations(x.id, &transaction, params);
                     }
@@ -1122,7 +1132,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         self.send_response(new_response(
                             x.id,
                             Ok(self.code_action(&transaction, params).unwrap_or_default()),
@@ -1134,7 +1144,7 @@ impl Server {
                     {
                         self.set_file_stats(
                             params.text_document_position.text_document.uri.clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         self.send_response(new_response(
                             x.id,
@@ -1153,7 +1163,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         self.send_response(new_response(
                             x.id,
@@ -1170,7 +1180,7 @@ impl Server {
                     {
                         self.set_file_stats(
                             params.text_document_position.text_document.uri.clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         self.references(x.id, &transaction, params);
                     } else {
@@ -1185,7 +1195,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         self.send_response(new_response(
                             x.id,
                             Ok(self.prepare_rename(&transaction, params)),
@@ -1201,7 +1211,7 @@ impl Server {
                     {
                         self.set_file_stats(
                             params.text_document_position.text_document.uri.clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         // TODO(yangdanny) handle notebooks
                         // First check if rename is allowed via prepare_rename. If a rename is not allowed we
@@ -1234,7 +1244,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         self.send_response(new_response(
                             x.id,
@@ -1251,7 +1261,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         let default_response = Hover {
                             contents: HoverContents::Array(Vec::new()),
@@ -1268,7 +1278,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         self.send_response(new_response(
                             x.id,
                             Ok(self.inlay_hints(&transaction, params).unwrap_or_default()),
@@ -1280,7 +1290,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         let default_response = SemanticTokensResult::Tokens(SemanticTokens {
                             result_id: None,
                             data: Vec::new(),
@@ -1298,7 +1308,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         let default_response = SemanticTokensRangeResult::Tokens(SemanticTokens {
                             result_id: None,
                             data: Vec::new(),
@@ -1316,7 +1326,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         self.send_response(new_response(
                             x.id,
                             Ok(DocumentSymbolResponse::Nested(
@@ -1344,7 +1354,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         self.send_response(new_response(
                             x.id,
                             Ok(self.document_diagnostics(&transaction, params)),
@@ -1354,7 +1364,7 @@ impl Server {
                     if let Some(params) = self
                         .extract_request_params_or_send_err_response::<ProvideType>(params, &x.id)
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         self.send_response(new_response(
                             x.id,
                             Ok(self.provide_type(&mut transaction, params)),
@@ -1389,7 +1399,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.text_document.uri.clone(), telemetry);
+                        self.set_file_stats(params.text_document.uri.clone(), telemetry_event);
                         let result = self
                             .folding_ranges(&transaction, params)
                             .unwrap_or_default();
@@ -1407,7 +1417,7 @@ impl Server {
                                 .text_document
                                 .uri
                                 .clone(),
-                            telemetry,
+                            telemetry_event,
                         );
                         self.send_response(new_response(
                             x.id,
@@ -1420,7 +1430,7 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.item.uri.clone(), telemetry);
+                        self.set_file_stats(params.item.uri.clone(), telemetry_event);
                         self.async_call_hierarchy_incoming_calls(x.id, &transaction, params);
                     }
                 } else if let Some(params) = as_request::<CallHierarchyOutgoingCalls>(&x) {
@@ -1429,19 +1439,19 @@ impl Server {
                             params, &x.id,
                         )
                     {
-                        self.set_file_stats(params.item.uri.clone(), telemetry);
+                        self.set_file_stats(params.item.uri.clone(), telemetry_event);
                         self.async_call_hierarchy_outgoing_calls(x.id, &transaction, params);
                     }
                 } else if &x.method == "pyrefly/textDocument/docstringRanges" {
                     let text_document: TextDocumentIdentifier = serde_json::from_value(x.params)?;
-                    self.set_file_stats(text_document.uri.clone(), telemetry);
+                    self.set_file_stats(text_document.uri.clone(), telemetry_event);
                     let ranges = self
                         .docstring_ranges(&transaction, &text_document)
                         .unwrap_or_default();
                     self.send_response(new_response(x.id, Ok(ranges)));
                 } else if &x.method == "pyrefly/textDocument/typeErrorDisplayStatus" {
                     let text_document: TextDocumentIdentifier = serde_json::from_value(x.params)?;
-                    self.set_file_stats(text_document.uri.clone(), telemetry);
+                    self.set_file_stats(text_document.uri.clone(), telemetry_event);
                     if !self
                         .open_notebook_cells
                         .read()
@@ -1467,7 +1477,7 @@ impl Server {
                     ));
                     info!("Unhandled request: {x:?}");
                 }
-                ide_transaction_manager.save(transaction, telemetry);
+                ide_transaction_manager.save(transaction, telemetry_event);
             }
         }
         Ok(ProcessEvent::Continue)
@@ -2032,8 +2042,13 @@ impl Server {
 
     /// Attempts to requery any open sourced_dbs for open files, and if there are changes,
     /// invalidate find and perform a recheck.
-    fn queue_source_db_rebuild_and_recheck(&self, telemetry: &mut TelemetryEvent, force: bool) {
-        let run = move |server: &Server, telemetry: &mut TelemetryEvent| {
+    fn queue_source_db_rebuild_and_recheck(
+        &self,
+        _telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
+        force: bool,
+    ) {
+        let run = move |server: &Server, telemetry_event: &mut TelemetryEvent| {
             let mut configs_to_paths: SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>> =
                 SmallMap::new();
             let config_finder = server.state.config_finder();
@@ -2052,7 +2067,7 @@ impl Server {
             }
             let (new_invalidated_source_dbs, rebuild_stats) =
                 ConfigFile::query_source_db(&configs_to_paths, force);
-            telemetry.set_sourcedb_rebuild_stats(rebuild_stats);
+            telemetry_event.set_sourcedb_rebuild_stats(rebuild_stats);
             if !new_invalidated_source_dbs.is_empty() {
                 let mut lock = server.invalidated_source_dbs.lock();
                 for db in new_invalidated_source_dbs {
@@ -2063,7 +2078,7 @@ impl Server {
         };
 
         if self.build_system_blocking {
-            run(self, telemetry);
+            run(self, telemetry_event);
         } else {
             self.sourcedb_queue
                 .queue_task(TelemetryEventKind::SourceDbRebuild, Box::new(run));
@@ -2079,7 +2094,8 @@ impl Server {
     fn did_open<'a>(
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
-        telemetry: &mut TelemetryEvent,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
         subsequent_mutation: bool,
         url: Url,
         version: i32,
@@ -2108,7 +2124,7 @@ impl Server {
         };
         self.version_info.lock().insert(path.clone(), version);
         self.open_files.write().insert(path.clone(), contents);
-        self.queue_source_db_rebuild_and_recheck(telemetry, false);
+        self.queue_source_db_rebuild_and_recheck(telemetry, telemetry_event, false);
         if !subsequent_mutation {
             // In order to improve perceived startup perf, when a file is opened, we run a
             // non-committing transaction that indexes the file with default require level Exports.
@@ -2124,10 +2140,10 @@ impl Server {
                 "File {} opened, prepare to validate open files.",
                 path.display()
             );
-            self.validate_in_memory_without_committing(ide_transaction_manager, telemetry);
+            self.validate_in_memory_without_committing(ide_transaction_manager, telemetry_event);
         }
-        self.populate_project_files_if_necessary(config_to_populate_files, telemetry);
-        self.populate_workspace_files_if_necessary(telemetry);
+        self.populate_project_files_if_necessary(config_to_populate_files, telemetry_event);
+        self.populate_workspace_files_if_necessary(telemetry_event);
         // rewatch files in case we loaded or dropped any configs
         self.setup_file_watcher_if_necessary();
         Ok(())
@@ -2336,7 +2352,8 @@ impl Server {
     fn did_change_watched_files(
         &self,
         params: DidChangeWatchedFilesParams,
-        telemetry: &mut TelemetryEvent,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
     ) {
         let events = CategorizedEvents::new_lsp(params.changes);
         if events.is_empty() {
@@ -2356,11 +2373,17 @@ impl Server {
         // If no build system file was changed, then we should just not do anything. If
         // a build system file was changed, then the change should take effect soon.
         if should_requery_build_system {
-            self.queue_source_db_rebuild_and_recheck(telemetry, true);
+            self.queue_source_db_rebuild_and_recheck(telemetry, telemetry_event, true);
         }
     }
 
-    fn did_close(&self, url: Url, kind: DidCloseKind, telemetry: &mut TelemetryEvent) {
+    fn did_close(
+        &self,
+        url: Url,
+        kind: DidCloseKind,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
+    ) {
         let Some(path) = self.path_for_uri(&url) else {
             return;
         };
@@ -2405,7 +2428,7 @@ impl Server {
             },
         }
         self.unsaved_file_tracker.forget_uri_path(&url);
-        self.queue_source_db_rebuild_and_recheck(telemetry, false);
+        self.queue_source_db_rebuild_and_recheck(telemetry, telemetry_event, false);
         self.recheck_queue.queue_task(
             TelemetryEventKind::InvalidateOnClose,
             Box::new(move |server, telemetry| {
@@ -3908,7 +3931,8 @@ impl TspInterface for Server {
         &'a self,
         ide_transaction_manager: &mut TransactionManager<'a>,
         canceled_requests: &mut HashSet<RequestId>,
-        telemetry: &mut TelemetryEvent,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
         subsequent_mutation: bool,
         event: LspEvent,
     ) -> anyhow::Result<ProcessEvent> {
@@ -3916,6 +3940,7 @@ impl TspInterface for Server {
             ide_transaction_manager,
             canceled_requests,
             telemetry,
+            telemetry_event,
             subsequent_mutation,
             event,
         )
