@@ -941,6 +941,87 @@ del foo.y  # E: No attribute `y` in module `foo`
 );
 
 testcase!(
+    test_module_getattr_from_import,
+    TestEnv::one("foo", "def __getattr__(name: str) -> int: ..."),
+    r#"
+from typing import assert_type
+from foo import x, y
+assert_type(x, int)
+assert_type(y, int)
+    "#,
+);
+
+fn test_env_with_incomplete_module() -> TestEnv {
+    TestEnv::one_with_path(
+        "foo",
+        "foo.pyi",
+        r#"
+from _typeshed import Incomplete
+def __getattr__(name: str) -> Incomplete: ...
+"#,
+    )
+}
+
+testcase!(
+    test_module_getattr_stub_incomplete,
+    test_env_with_incomplete_module(),
+    r#"
+from typing import assert_type, Any
+from foo import x, y
+# Incomplete is essentially Any, so x and y should be Any
+assert_type(x, Any)
+assert_type(y, Any)
+    "#,
+);
+
+fn test_env_with_getattr_and_other_attribute() -> TestEnv {
+    TestEnv::one_with_path(
+        "foo",
+        "foo.pyi",
+        r#"
+x: str
+def __getattr__(name: str) -> int: ...
+"#,
+    )
+}
+
+testcase!(
+    test_module_getattr_explicit_export_priority,
+    test_env_with_getattr_and_other_attribute(),
+    r#"
+from typing import assert_type
+from foo import x, y
+# x is explicitly defined as str, should not use __getattr__
+assert_type(x, str)
+# y is not defined, should use __getattr__ and be int
+assert_type(y, int)
+    "#,
+);
+
+fn test_env_with_getattr_and_submodule() -> TestEnv {
+    let mut env = TestEnv::new();
+    env.add_with_path(
+        "foo",
+        "foo/__init__.pyi",
+        "def __getattr__(name: str) -> int: ...",
+    );
+    env.add_with_path("foo.bar", "foo/bar.pyi", "");
+    env
+}
+
+testcase!(
+    test_submodule_takes_precedence_over_module_getattr,
+    test_env_with_getattr_and_submodule(),
+    r#"
+from foo import bar  # submodule
+from foo import baz  # non-existent attribute, should fall back to __getattr__
+from typing import assert_type, reveal_type
+reveal_type(bar)  # E: Module[foo.bar]
+assert_type(baz, int)
+    "#,
+);
+
+testcase!(
     test_any_subclass,
     r#"
 from typing import Any, assert_type
