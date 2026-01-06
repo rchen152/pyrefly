@@ -1875,8 +1875,9 @@ impl Server {
                     if self.indexed_configs.lock().insert(config.dupe()) {
                         self.recheck_queue.queue_task(
                             TelemetryEventKind::PopulateProjectFiles,
-                            Box::new(move |server, telemetry| {
-                                server.populate_all_project_files_in_config(config, telemetry);
+                            Box::new(move |server, _telemetry, telemetry_event| {
+                                server
+                                    .populate_all_project_files_in_config(config, telemetry_event);
                             }),
                         );
                     }
@@ -1909,8 +1910,11 @@ impl Server {
                 drop(indexed_workspaces);
                 self.recheck_queue.queue_task(
                     TelemetryEventKind::PopulateWorkspaceFiles,
-                    Box::new(move |server, telemetry| {
-                        server.populate_all_workspaces_files(roots_to_populate_files, telemetry);
+                    Box::new(move |server, _telemetry, telemetry_event| {
+                        server.populate_all_workspaces_files(
+                            roots_to_populate_files,
+                            telemetry_event,
+                        );
                     }),
                 );
             }
@@ -1927,16 +1931,16 @@ impl Server {
     fn invalidate(&self, f: impl FnOnce(&mut Transaction) + Send + Sync + 'static) {
         self.recheck_queue.queue_task(
             TelemetryEventKind::Invalidate,
-            Box::new(move |server, telemetry| {
+            Box::new(move |server, _telemetry, telemetry_event| {
                 let mut transaction = server
                     .state
                     .new_committable_transaction(Require::indexing(), None);
 
                 let invalidate_start = Instant::now();
                 f(transaction.as_mut());
-                telemetry.set_invalidate_duration(invalidate_start.elapsed());
+                telemetry_event.set_invalidate_duration(invalidate_start.elapsed());
 
-                server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry);
+                server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry_event);
 
                 // Commit will be blocked until there are no ongoing reads.
                 // If we have some long running read jobs that can be cancelled, we should cancel them
@@ -1949,7 +1953,7 @@ impl Server {
                     transaction,
                     &[],
                     Require::Everything,
-                    Some(telemetry),
+                    Some(telemetry_event),
                 );
                 // After we finished a recheck asynchronously, we immediately send `RecheckFinished` to
                 // the main event loop of the server. As a result, the server can do a revalidation of
@@ -2044,11 +2048,13 @@ impl Server {
     /// invalidate find and perform a recheck.
     fn queue_source_db_rebuild_and_recheck(
         &self,
-        _telemetry: &impl Telemetry,
+        telemetry: &impl Telemetry,
         telemetry_event: &mut TelemetryEvent,
         force: bool,
     ) {
-        let run = move |server: &Server, telemetry_event: &mut TelemetryEvent| {
+        let run = move |server: &Server,
+                        _telemetry: &dyn Telemetry,
+                        telemetry_event: &mut TelemetryEvent| {
             let mut configs_to_paths: SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>> =
                 SmallMap::new();
             let config_finder = server.state.config_finder();
@@ -2078,7 +2084,7 @@ impl Server {
         };
 
         if self.build_system_blocking {
-            run(self, telemetry_event);
+            run(self, telemetry, telemetry_event);
         } else {
             self.sourcedb_queue
                 .queue_task(TelemetryEventKind::SourceDbRebuild, Box::new(run));
@@ -2431,7 +2437,7 @@ impl Server {
         self.queue_source_db_rebuild_and_recheck(telemetry, telemetry_event, false);
         self.recheck_queue.queue_task(
             TelemetryEventKind::InvalidateOnClose,
-            Box::new(move |server, telemetry| {
+            Box::new(move |server, _telemetry, telemetry_event| {
                 // Clear out the memory associated with this file.
                 // Not a race condition because we immediately call validate_in_memory to put back the open files as they are now.
                 // Having the extra file hanging around doesn't harm anything, but does use extra memory.
@@ -2439,10 +2445,11 @@ impl Server {
                     .state
                     .new_committable_transaction(Require::indexing(), None);
                 transaction.as_mut().set_memory(vec![(path, None)]);
-                let _ = server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry);
+                let _ = server
+                    .validate_in_memory_for_transaction(transaction.as_mut(), telemetry_event);
                 server
                     .state
-                    .commit_transaction(transaction, Some(telemetry));
+                    .commit_transaction(transaction, Some(telemetry_event));
             }),
         );
     }
@@ -2892,13 +2899,13 @@ impl Server {
         };
         self.find_reference_queue.queue_task(
             TelemetryEventKind::FindFromDefinition,
-            Box::new(move |server, telemetry| {
+            Box::new(move |server, _telemetry, telemetry_event| {
                 let mut transaction = server.state.cancellable_transaction();
                 server
                     .cancellation_handles
                     .lock()
                     .insert(request_id.clone(), transaction.get_cancellation_handle());
-                server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry);
+                server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry_event);
                 match find_fn(&mut transaction, &handle, definition) {
                     Ok(results) => {
                         server.cancellation_handles.lock().remove(&request_id);
@@ -3585,16 +3592,16 @@ impl Server {
     fn invalidate_config_and_validate_in_memory(&self) {
         self.recheck_queue.queue_task(
             TelemetryEventKind::InvalidateConfig,
-            Box::new(move |server, telemetry| {
+            Box::new(move |server, _telemetry, telemetry_event| {
                 let mut transaction = server
                     .state
                     .new_committable_transaction(Require::indexing(), None);
 
                 let invalidate_start = Instant::now();
                 transaction.as_mut().invalidate_config();
-                telemetry.set_invalidate_duration(invalidate_start.elapsed());
+                telemetry_event.set_invalidate_duration(invalidate_start.elapsed());
 
-                server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry);
+                server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry_event);
 
                 // Commit will be blocked until there are no ongoing reads.
                 // If we have some long running read jobs that can be cancelled, we should cancel them
@@ -3607,7 +3614,7 @@ impl Server {
                     transaction,
                     &[],
                     Require::Everything,
-                    Some(telemetry),
+                    Some(telemetry_event),
                 );
                 // After we finished a recheck asynchronously, we immediately send `RecheckFinished` to
                 // the main event loop of the server. As a result, the server can do a revalidation of

@@ -195,11 +195,18 @@ impl LspQueue {
     }
 }
 
-pub struct HeavyTask(Box<dyn FnOnce(&Server, &mut TelemetryEvent) + Send + Sync + 'static>);
+pub struct HeavyTask(
+    Box<dyn FnOnce(&Server, &dyn Telemetry, &mut TelemetryEvent) + Send + Sync + 'static>,
+);
 
 impl HeavyTask {
-    fn run(self, server: &Server, telemetry: &mut TelemetryEvent) {
-        self.0(server, telemetry);
+    fn run(
+        self,
+        server: &Server,
+        telemetry: &impl Telemetry,
+        telemetry_event: &mut TelemetryEvent,
+    ) {
+        self.0(server, telemetry, telemetry_event);
     }
 }
 
@@ -230,7 +237,7 @@ impl HeavyTaskQueue {
     pub fn queue_task(
         &self,
         kind: TelemetryEventKind,
-        f: Box<dyn FnOnce(&Server, &mut TelemetryEvent) + Send + Sync + 'static>,
+        f: Box<dyn FnOnce(&Server, &dyn Telemetry, &mut TelemetryEvent) + Send + Sync + 'static>,
     ) {
         self.task_sender
             .send((HeavyTask(f), kind, Instant::now()))
@@ -265,7 +272,7 @@ impl HeavyTaskQueue {
                         self.queue_name,
                         self.next_task_id.fetch_add(1, Ordering::Relaxed),
                     ));
-                    task.run(server, &mut telemetry_event);
+                    task.run(server, telemetry, &mut telemetry_event);
                     let process_duration = telemetry_event.finish_and_record(telemetry, None);
                     info!(
                         "Ran task on {} heavy task queue. Queue time: {:.2}, task time: {:.2}",
