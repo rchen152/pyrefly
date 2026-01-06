@@ -435,13 +435,25 @@ impl<'a> TypeDisplayContext<'a> {
                     }
                     Ok(())
                 } else {
-                    output.write_str("Overload[")?;
+                    if is_toplevel {
+                        output.write_str("Overload[\n  ")?;
+                    } else {
+                        output.write_str("Overload[")?;
+                    }
                     self.fmt_helper_generic(&overload.signatures.first().as_type(), false, output)?;
                     for sig in overload.signatures.iter().skip(1) {
-                        output.write_str(", ")?;
+                        if is_toplevel {
+                            output.write_str("\n  ")?;
+                        } else {
+                            output.write_str(", ")?;
+                        }
                         self.fmt_helper_generic(&sig.as_type(), false, output)?;
                     }
-                    output.write_str("]")
+                    if is_toplevel {
+                        output.write_str("\n]")
+                    } else {
+                        output.write_str("]")
+                    }
                 }
             }
             Type::ParamSpecValue(x) => {
@@ -519,7 +531,7 @@ impl<'a> TypeDisplayContext<'a> {
                         output.write_str("BoundMethod[")?;
                         self.fmt_helper_generic(obj, false, output)?;
                         output.write_str(", ")?;
-                        self.fmt_helper_generic(&func.clone().as_type(), false, output)?;
+                        self.fmt_helper_generic(&func.clone().as_type(), is_toplevel, output)?;
                         output.write_str("]")
                     }
                 }
@@ -1652,11 +1664,19 @@ pub mod tests {
             metadata: Box::new(sig1.metadata.clone()),
         });
 
-        // Test compact display mode (non-hover)
+        // Test compact display mode as toplevel type (non-hover)
         let ctx = TypeDisplayContext::new(&[&overload]);
         assert_eq!(
             ctx.display(&overload).to_string(),
-            "Overload[(x: Any) -> None, [T](x: Any, y: Any) -> None]"
+            "Overload[\n  (x: Any) -> None\n  [T](x: Any, y: Any) -> None\n]"
+        );
+
+        // Test compact display mode as non-toplevel type (non-hover)
+        let type_form_of_overload = Type::type_form(overload.clone());
+        let ctx = TypeDisplayContext::new(&[&type_form_of_overload]);
+        assert_eq!(
+            ctx.display(&type_form_of_overload).to_string(),
+            "type[Overload[(x: Any) -> None, [T](x: Any, y: Any) -> None]]"
         );
 
         // Test hover display mode (with @overload decorators)
@@ -1691,11 +1711,19 @@ def overloaded_func[T](
             }),
         }));
 
-        // Test compact display mode (non-hover)
+        // Test compact display mode as toplevel type (non-hover)
         let ctx = TypeDisplayContext::new(&[&bound_method_overload]);
         assert_eq!(
             ctx.display(&bound_method_overload).to_string(),
-            "BoundMethod[Any, Overload[(x: Any) -> None, [T](x: Any, y: Any) -> None]]"
+            "BoundMethod[Any, Overload[\n  (x: Any) -> None\n  [T](x: Any, y: Any) -> None\n]]"
+        );
+
+        // Test compact display mode as non-toplevel type (non-hover)
+        let type_form_of_bound_method_overload = Type::type_form(bound_method_overload.clone());
+        let ctx = TypeDisplayContext::new(&[&type_form_of_bound_method_overload]);
+        assert_eq!(
+            ctx.display(&type_form_of_bound_method_overload).to_string(),
+            "type[BoundMethod[Any, Overload[(x: Any) -> None, [T](x: Any, y: Any) -> None]]]"
         );
 
         // Test hover display mode (with @overload decorators)
