@@ -289,7 +289,7 @@ fn handle_require_absolute_import(config_finder: &ConfigFinder, handle: &Handle)
     ) {
         return true;
     }
-    let config = config_finder.python_file(handle.module(), handle.path());
+    let config = config_finder.python_file(handle.module_kind(), handle.path());
     config
         .search_path()
         .any(|search_path| handle.path().as_path().starts_with(search_path))

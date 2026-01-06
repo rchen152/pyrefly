@@ -29,6 +29,7 @@ use pyrefly_python::COMPILED_FILE_SUFFIXES;
 use pyrefly_python::PYTHON_EXTENSIONS;
 use pyrefly_python::ignore::Tool;
 use pyrefly_python::module_name::ModuleName;
+use pyrefly_python::module_name::ModuleNameWithKind;
 use pyrefly_python::module_path::ModulePath;
 use pyrefly_python::module_path::ModulePathBuf;
 use pyrefly_python::sys_info::PythonPlatform;
@@ -846,8 +847,10 @@ impl ConfigFile {
         {
             Some(handle) => handle.dupe(),
             None => {
-                let name = if fallback_search_path.is_empty() {
-                    ModuleName::from_path(module_path.as_path(), self.search_path())
+                let module_kind = if fallback_search_path.is_empty() {
+                    let name = ModuleName::from_path(module_path.as_path(), self.search_path())
+                        .unwrap_or_else(ModuleName::unknown);
+                    ModuleNameWithKind::guaranteed(name)
                 } else {
                     let fallback_paths =
                         fallback_search_path.for_directory(Some(module_path.as_path()));
@@ -856,9 +859,9 @@ impl ConfigFile {
                         self.search_path(),
                         fallback_paths.iter(),
                     )
-                }
-                .unwrap_or_else(ModuleName::unknown);
-                Handle::new(name, module_path, self.get_sys_info())
+                    .unwrap_or(ModuleNameWithKind::guaranteed(ModuleName::unknown()))
+                };
+                Handle::from_with_module_name_kind(module_kind, module_path, self.get_sys_info())
             }
         }
     }

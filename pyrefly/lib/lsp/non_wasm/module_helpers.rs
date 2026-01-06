@@ -11,6 +11,7 @@ use dupe::Dupe as _;
 use lsp_types::Url;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::module_name::ModuleName;
+use pyrefly_python::module_name::ModuleNameWithKind;
 use pyrefly_python::module_path::ModulePath;
 use pyrefly_python::module_path::ModulePathDetails;
 use pyrefly_util::absolutize::Absolutize as _;
@@ -27,7 +28,9 @@ pub fn module_info_to_uri(module_info: &ModuleInfo) -> Option<Url> {
 
 pub(in crate::lsp) fn handle_from_module_path(state: &State, path: ModulePath) -> Handle {
     let unknown = ModuleName::unknown();
-    let config = state.config_finder().python_file(unknown, &path);
+    let config = state
+        .config_finder()
+        .python_file(ModuleNameWithKind::guaranteed(unknown), &path);
     match path.details() {
         ModulePathDetails::BundledTypeshed(_) => {
             let module_name = to_real_path(&path)

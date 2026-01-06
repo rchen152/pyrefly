@@ -998,7 +998,7 @@ impl<'a> Transaction<'a> {
                 ArcId::new(m.clone_for_mutation())
             } else {
                 created = true;
-                let config = self.data.state.get_config(handle.module(), handle.path());
+                let config = self.data.state.get_config(handle);
                 ArcId::new(ModuleDataMut::new(
                     handle.dupe(),
                     require,
@@ -1387,7 +1387,7 @@ impl<'a> Transaction<'a> {
         // If they change, set find to dirty.
         let mut dirty_set = self.data.dirty.lock();
         for (handle, module_data) in self.data.updated_modules.iter_unordered() {
-            let config2 = self.data.state.get_config(handle.module(), handle.path());
+            let config2 = self.data.state.get_config(handle);
             if config2 != *module_data.config.read() {
                 *module_data.config.write() = config2;
                 module_data.state.write(Step::Load).unwrap().dirty.find = true;
@@ -1396,7 +1396,7 @@ impl<'a> Transaction<'a> {
         }
         for (handle, module_data) in self.readable.modules.iter() {
             if self.data.updated_modules.get(handle).is_none() {
-                let config2 = self.data.state.get_config(handle.module(), handle.path());
+                let config2 = self.data.state.get_config(handle);
                 if module_data.config != config2 {
                     let module_data = self.get_module(handle);
                     *module_data.config.write() = config2;
@@ -1783,11 +1783,15 @@ impl State {
         &self.config_finder
     }
 
-    fn get_config(&self, name: ModuleName, path: &ModulePath) -> ArcId<ConfigFile> {
-        if matches!(path.details(), ModulePathDetails::BundledTypeshed(_)) {
+    fn get_config(&self, handle: &Handle) -> ArcId<ConfigFile> {
+        if matches!(
+            handle.path().details(),
+            ModulePathDetails::BundledTypeshed(_)
+        ) {
             BundledTypeshedStdlib::config()
         } else {
-            self.config_finder.python_file(name, path)
+            self.config_finder
+                .python_file(handle.module_kind(), handle.path())
         }
     }
 

@@ -179,6 +179,7 @@ use pyrefly_config::config::ConfigSource;
 use pyrefly_python::PYTHON_EXTENSIONS;
 use pyrefly_python::module::TextRangeWithModule;
 use pyrefly_python::module_name::ModuleName;
+use pyrefly_python::module_name::ModuleNameWithKind;
 use pyrefly_python::module_path::ModulePath;
 use pyrefly_util::absolutize::Absolutize as _;
 use pyrefly_util::arc_id::ArcId;
@@ -1561,10 +1562,10 @@ impl Server {
 
     pub fn set_file_stats(&self, uri: Url, telemetry: &mut TelemetryEvent) {
         let config_root = if let Ok(path) = uri.to_file_path() {
-            let config = self
-                .state
-                .config_finder()
-                .python_file(ModuleName::unknown(), &ModulePath::filesystem(path));
+            let config = self.state.config_finder().python_file(
+                ModuleNameWithKind::guaranteed(ModuleName::unknown()),
+                &ModulePath::filesystem(path),
+            );
             config
                 .source
                 .root()
@@ -1628,10 +1629,10 @@ impl Server {
         if let Some(path) = to_real_path(e.path()) {
             // When no file covers this, we'll get the default configured config which includes "everything"
             // and excludes `.<file>`s.
-            let config = self
-                .state
-                .config_finder()
-                .python_file(ModuleName::unknown(), e.path());
+            let config = self.state.config_finder().python_file(
+                ModuleNameWithKind::guaranteed(ModuleName::unknown()),
+                e.path(),
+            );
 
             let type_error_status = self.type_error_display_status(e.path().as_path());
 
@@ -1694,7 +1695,7 @@ impl Server {
         let config = self
             .state
             .config_finder()
-            .python_file(handle.module(), handle.path());
+            .python_file(handle.module_kind(), handle.path());
         match self
             .workspaces
             .get_with(path.to_path_buf(), |(_, w)| w.display_type_errors)
@@ -1988,7 +1989,7 @@ impl Server {
             let path_config = self
                 .state
                 .config_finder()
-                .python_file(unknown, &module_path);
+                .python_file(ModuleNameWithKind::guaranteed(unknown), &module_path);
             if config != path_config {
                 continue;
             }
@@ -2066,7 +2067,7 @@ impl Server {
                 .map(|x| make_open_handle(&server.state, x))
                 .collect::<Vec<_>>();
             for handle in handles {
-                let config = config_finder.python_file(handle.module(), handle.path());
+                let config = config_finder.python_file(handle.module_kind(), handle.path());
                 configs_to_paths
                     .entry(config)
                     .or_default()

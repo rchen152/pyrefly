@@ -32,43 +32,92 @@ use crate::dunder;
 static MODULE_NAME_INTERNER: Interner<String> = Interner::new();
 
 /// The name of a python module. Examples: `foo.bar.baz`, `.foo.bar`.
+#[derive(Clone, Dupe, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct ModuleName(Intern<String>);
+
+/// Indicates whether a module name was found on the guaranteed search path
+/// or via fallback heuristics.
+#[derive(Clone, Dupe, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ModuleNameKind {
+    /// A module name found on the normal, configured search path.
+    /// This is reliable for determining project structure.
+    Guaranteed,
+    /// A module name inferred using fallback search path heuristics.
+    /// This may not be reliable for determining project structure.
+    Fallback,
+}
+
+/// A module name that tracks whether it was found on the guaranteed search path
+/// or via fallback heuristics.
 ///
-/// The `is_fallback` flag indicates whether this module name was inferred using
-/// fallback search path heuristics, and therefore may not be reliable for determining
-/// the project structure. Note that `is_fallback` is not used for equality, hashing,
-/// or ordering - only the module name string itself is considered for these operations.
-#[derive(Clone, Dupe, Copy)]
-pub struct ModuleName(Intern<String>, bool);
+/// Fallback module names may not be reliable for determining project structure,
+/// since they were inferred using heuristic search paths rather than explicit configuration.
+///
+/// Note: Equality, hashing, and ordering only consider the underlying ModuleName,
+/// not the kind. This ensures that modules with the same name are treated identically
+/// regardless of how their name was discovered.
+#[derive(Clone, Dupe, Copy, Debug)]
+pub struct ModuleNameWithKind {
+    name: ModuleName,
+    kind: ModuleNameKind,
+}
 
-// Custom trait implementations that only consider the module name string (first field),
-// not the is_fallback flag. This ensures:
-// 1. Two ModuleNames with the same string are equal regardless of the flag
-// 2. Hashing only uses the interned string, making it compatible with NoHash
-// 3. The is_fallback flag is preserved as metadata but doesn't affect identity
-
-impl Hash for ModuleName {
+impl Hash for ModuleNameWithKind {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.0.hash(state);
+        self.name.hash(state);
     }
 }
 
-impl PartialEq for ModuleName {
+impl PartialEq for ModuleNameWithKind {
     fn eq(&self, other: &Self) -> bool {
-        self.0 == other.0
+        self.name == other.name
     }
 }
 
-impl Eq for ModuleName {}
+impl Eq for ModuleNameWithKind {}
 
-impl PartialOrd for ModuleName {
+impl PartialOrd for ModuleNameWithKind {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.partial_cmp(&other.0)
+        Some(self.cmp(other))
     }
 }
 
-impl Ord for ModuleName {
+impl Ord for ModuleNameWithKind {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.0.cmp(&other.0)
+        self.name.cmp(&other.name)
+    }
+}
+
+impl ModuleNameWithKind {
+    /// Create a guaranteed module name.
+    pub fn guaranteed(name: ModuleName) -> Self {
+        Self {
+            name,
+            kind: ModuleNameKind::Guaranteed,
+        }
+    }
+
+    /// Create a fallback module name.
+    pub fn fallback(name: ModuleName) -> Self {
+        Self {
+            name,
+            kind: ModuleNameKind::Fallback,
+        }
+    }
+
+    /// Get the underlying module name, regardless of whether it's guaranteed or fallback.
+    pub fn name(&self) -> ModuleName {
+        self.name
+    }
+
+    /// Get the kind of this module name (Guaranteed or Fallback).
+    pub fn kind(&self) -> ModuleNameKind {
+        self.kind
+    }
+
+    /// Returns true if this module name was created using fallback heuristics.
+    pub fn is_fallback(&self) -> bool {
+        self.kind == ModuleNameKind::Fallback
     }
 }
 
@@ -240,23 +289,12 @@ impl ModuleName {
         Self::from_str("__unknown__")
     }
 
-    /// Returns true if this module name was created using fallback heuristics.
-    /// When true, the module name may not be reliable for determining project structure.
-    pub fn is_fallback(self) -> bool {
-        self.1
-    }
-
     pub fn from_str(x: &str) -> Self {
-        ModuleName(MODULE_NAME_INTERNER.intern(StrRef(x)), false)
+        ModuleName(MODULE_NAME_INTERNER.intern(StrRef(x)))
     }
 
     pub fn from_string(x: String) -> Self {
-        ModuleName(MODULE_NAME_INTERNER.intern(x), false)
-    }
-
-    /// Create a ModuleName with the fallback flag set.
-    fn from_string_fallback(x: String) -> Self {
-        ModuleName(MODULE_NAME_INTERNER.intern(x), true)
+        ModuleName(MODULE_NAME_INTERNER.intern(x))
     }
 
     pub fn from_name(x: &Name) -> Self {
@@ -376,31 +414,30 @@ impl ModuleName {
         path: &Path,
         includes: impl Iterator<Item = &'a PathBuf>,
     ) -> Option<ModuleName> {
-        Self::from_path_impl(path, includes, false)
+        Self::from_path_impl(path, includes)
     }
 
-    /// If the module is on the search path, return its name from that path.
-    /// If found using fallback paths, the returned ModuleName will have the fallback flag set.
+    /// If the module is on the search path or fallback search path, return its name from that path.
+    /// Returns a ModuleNameWithKind indicating whether the name was found on the normal search path
+    /// or using fallback paths.
     pub fn from_path_with_fallback<'a>(
         path: &Path,
         normal_includes: impl Iterator<Item = &'a PathBuf>,
         fallback_includes: impl Iterator<Item = &'a PathBuf>,
-    ) -> Option<ModuleName> {
-        // Try normal includes first (fallback = false)
-        if let Some(name) = Self::from_path_impl(path, normal_includes, false) {
-            return Some(name);
+    ) -> Option<ModuleNameWithKind> {
+        // Try normal includes first (guaranteed)
+        if let Some(name) = Self::from_path_impl(path, normal_includes) {
+            return Some(ModuleNameWithKind::guaranteed(name));
         }
-        // Try fallback includes (fallback = true)
-        Self::from_path_impl(path, fallback_includes, true)
+        // Try fallback includes
+        Self::from_path_impl(path, fallback_includes).map(ModuleNameWithKind::fallback)
     }
 
     fn from_path_impl<'a>(
         path: &Path,
         includes: impl Iterator<Item = &'a PathBuf>,
-        is_fallback: bool,
     ) -> Option<ModuleName> {
-        // Return a module name, and a boolean as to whether it is any good.
-        fn path_to_module(mut path: &Path, is_fallback: bool) -> Option<ModuleName> {
+        fn path_to_module(mut path: &Path) -> Option<ModuleName> {
             if path.file_stem() == Some(dunder::INIT.as_str().as_ref()) {
                 path = path.parent()?;
             }
@@ -416,18 +453,13 @@ impl ModuleName {
             if out.is_empty() {
                 None
             } else {
-                let name_str = itertools::join(out, ".");
-                Some(if is_fallback {
-                    ModuleName::from_string_fallback(name_str)
-                } else {
-                    ModuleName::from_string(name_str)
-                })
+                Some(ModuleName::from_parts(out))
             }
         }
 
         for include in includes {
             if let Ok(x) = path.strip_prefix(include)
-                && let Some(res) = path_to_module(x, is_fallback)
+                && let Some(res) = path_to_module(x)
             {
                 return Some(res);
             }
