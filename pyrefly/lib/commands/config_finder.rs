@@ -181,7 +181,7 @@ pub fn standard_config_finder(configure: Arc<dyn ConfigConfigurer>) -> ConfigFin
         Box::new(move |name, path| match path.root_of(name) {
             // We were able to walk up `path` and match each component of `name` to a directory until we ran out.
             // That means the resulting path is likely the root of the 'project', and should therefore be its `search_path`.
-            Some(path) => cache_one
+            Some(path) if !name.is_fallback() => cache_one
                 .lock()
                 .entry(path.clone())
                 .or_insert_with(|| {
@@ -198,7 +198,7 @@ pub fn standard_config_finder(configure: Arc<dyn ConfigConfigurer>) -> ConfigFin
 
             // We couldn't walk up and find a possible root of the project, so let's try to create a search
             // path that is still useful for this import by including all of its parents.
-            None => {
+            _ => {
                 let parent = match path.details() {
                     ModulePathDetails::FileSystem(x) | ModulePathDetails::Memory(x) => {
                         if let Some(path) = x.parent() {

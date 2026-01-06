@@ -831,13 +831,13 @@ impl ConfigFile {
     }
 
     pub fn handle_from_module_path(&self, module_path: ModulePath) -> Handle {
-        self.handle_from_module_path_with_fallback(module_path, std::iter::empty())
+        self.handle_from_module_path_with_fallback(module_path, &FallbackSearchPath::Empty)
     }
 
     pub fn handle_from_module_path_with_fallback<'a>(
         &'a self,
         module_path: ModulePath,
-        fallback_search_paths: impl Iterator<Item = &'a PathBuf>,
+        fallback_search_path: &FallbackSearchPath,
     ) -> Handle {
         match &self
             .source_db
@@ -846,10 +846,17 @@ impl ConfigFile {
         {
             Some(handle) => handle.dupe(),
             None => {
-                let name = ModuleName::from_path(
-                    module_path.as_path(),
-                    self.search_path().chain(fallback_search_paths),
-                )
+                let name = if fallback_search_path.is_empty() {
+                    ModuleName::from_path(module_path.as_path(), self.search_path())
+                } else {
+                    let fallback_paths =
+                        fallback_search_path.for_directory(Some(module_path.as_path()));
+                    ModuleName::from_path_with_fallback(
+                        module_path.as_path(),
+                        self.search_path(),
+                        fallback_paths.iter(),
+                    )
+                }
                 .unwrap_or_else(ModuleName::unknown);
                 Handle::new(name, module_path, self.get_sys_info())
             }

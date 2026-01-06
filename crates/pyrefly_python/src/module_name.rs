@@ -32,8 +32,45 @@ use crate::dunder;
 static MODULE_NAME_INTERNER: Interner<String> = Interner::new();
 
 /// The name of a python module. Examples: `foo.bar.baz`, `.foo.bar`.
-#[derive(Clone, Dupe, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
-pub struct ModuleName(Intern<String>);
+///
+/// The `is_fallback` flag indicates whether this module name was inferred using
+/// fallback search path heuristics, and therefore may not be reliable for determining
+/// the project structure. Note that `is_fallback` is not used for equality, hashing,
+/// or ordering - only the module name string itself is considered for these operations.
+#[derive(Clone, Dupe, Copy)]
+pub struct ModuleName(Intern<String>, bool);
+
+// Custom trait implementations that only consider the module name string (first field),
+// not the is_fallback flag. This ensures:
+// 1. Two ModuleNames with the same string are equal regardless of the flag
+// 2. Hashing only uses the interned string, making it compatible with NoHash
+// 3. The is_fallback flag is preserved as metadata but doesn't affect identity
+
+impl Hash for ModuleName {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl PartialEq for ModuleName {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl Eq for ModuleName {}
+
+impl PartialOrd for ModuleName {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.0.partial_cmp(&other.0)
+    }
+}
+
+impl Ord for ModuleName {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.0.cmp(&other.0)
+    }
+}
 
 impl<To: 'static> Visit<To> for ModuleName {
     const RECURSE_CONTAINS: bool = false;
@@ -203,12 +240,23 @@ impl ModuleName {
         Self::from_str("__unknown__")
     }
 
+    /// Returns true if this module name was created using fallback heuristics.
+    /// When true, the module name may not be reliable for determining project structure.
+    pub fn is_fallback(self) -> bool {
+        self.1
+    }
+
     pub fn from_str(x: &str) -> Self {
-        ModuleName(MODULE_NAME_INTERNER.intern(StrRef(x)))
+        ModuleName(MODULE_NAME_INTERNER.intern(StrRef(x)), false)
     }
 
     pub fn from_string(x: String) -> Self {
-        ModuleName(MODULE_NAME_INTERNER.intern(x))
+        ModuleName(MODULE_NAME_INTERNER.intern(x), false)
+    }
+
+    /// Create a ModuleName with the fallback flag set.
+    fn from_string_fallback(x: String) -> Self {
+        ModuleName(MODULE_NAME_INTERNER.intern(x), true)
     }
 
     pub fn from_name(x: &Name) -> Self {
@@ -328,8 +376,31 @@ impl ModuleName {
         path: &Path,
         includes: impl Iterator<Item = &'a PathBuf>,
     ) -> Option<ModuleName> {
+        Self::from_path_impl(path, includes, false)
+    }
+
+    /// If the module is on the search path, return its name from that path.
+    /// If found using fallback paths, the returned ModuleName will have the fallback flag set.
+    pub fn from_path_with_fallback<'a>(
+        path: &Path,
+        normal_includes: impl Iterator<Item = &'a PathBuf>,
+        fallback_includes: impl Iterator<Item = &'a PathBuf>,
+    ) -> Option<ModuleName> {
+        // Try normal includes first (fallback = false)
+        if let Some(name) = Self::from_path_impl(path, normal_includes, false) {
+            return Some(name);
+        }
+        // Try fallback includes (fallback = true)
+        Self::from_path_impl(path, fallback_includes, true)
+    }
+
+    fn from_path_impl<'a>(
+        path: &Path,
+        includes: impl Iterator<Item = &'a PathBuf>,
+        is_fallback: bool,
+    ) -> Option<ModuleName> {
         // Return a module name, and a boolean as to whether it is any good.
-        fn path_to_module(mut path: &Path) -> Option<ModuleName> {
+        fn path_to_module(mut path: &Path, is_fallback: bool) -> Option<ModuleName> {
             if path.file_stem() == Some(dunder::INIT.as_str().as_ref()) {
                 path = path.parent()?;
             }
@@ -345,13 +416,18 @@ impl ModuleName {
             if out.is_empty() {
                 None
             } else {
-                Some(ModuleName::from_parts(out))
+                let name_str = itertools::join(out, ".");
+                Some(if is_fallback {
+                    ModuleName::from_string_fallback(name_str)
+                } else {
+                    ModuleName::from_string(name_str)
+                })
             }
         }
 
         for include in includes {
             if let Ok(x) = path.strip_prefix(include)
-                && let Some(res) = path_to_module(x)
+                && let Some(res) = path_to_module(x, is_fallback)
             {
                 return Some(res);
             }
