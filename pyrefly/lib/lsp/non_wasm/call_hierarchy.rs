@@ -8,6 +8,7 @@
 use dupe::Dupe;
 use lsp_types::CallHierarchyIncomingCall;
 use lsp_types::CallHierarchyItem;
+use lsp_types::CallHierarchyOutgoingCall;
 use lsp_types::SymbolKind;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::ast::Ast;
@@ -122,6 +123,44 @@ pub fn transform_incoming_calls(
         }
     }
     incoming_calls
+}
+
+/// Converts raw outgoing call data to LSP CallHierarchyOutgoingCall items.
+///
+/// Takes the output from `find_global_outgoing_calls_from_function_definition`
+/// and transforms it into the LSP response format.
+pub fn transform_outgoing_calls(
+    callees: Vec<(Module, Vec<(TextRange, TextRange)>)>,
+    source_module: &Module,
+    fallback_uri: &lsp_types::Url,
+) -> Vec<CallHierarchyOutgoingCall> {
+    let mut outgoing_calls = Vec::new();
+    for (target_module, calls) in callees {
+        let target_uri = lsp_types::Url::from_file_path(target_module.path().as_path())
+            .unwrap_or_else(|()| fallback_uri.clone());
+
+        for (call_range, target_def_range) in calls {
+            let target_name_short = target_module.code_at(target_def_range);
+            let target_name = format!("{}.{}", target_module.name(), target_name_short);
+
+            let to = CallHierarchyItem {
+                name: target_name_short.to_owned(),
+                kind: SymbolKind::FUNCTION,
+                tags: None,
+                detail: Some(target_name),
+                uri: target_uri.clone(),
+                range: target_module.to_lsp_range(target_def_range),
+                selection_range: target_module.to_lsp_range(target_def_range),
+                data: None,
+            };
+
+            outgoing_calls.push(CallHierarchyOutgoingCall {
+                to,
+                from_ranges: vec![source_module.to_lsp_range(call_range)],
+            });
+        }
+    }
+    outgoing_calls
 }
 
 impl CancellableTransaction<'_> {

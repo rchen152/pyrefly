@@ -218,6 +218,7 @@ use crate::lsp::module_helpers::to_real_path;
 use crate::lsp::non_wasm::build_system::should_requery_build_system;
 use crate::lsp::non_wasm::call_hierarchy::find_function_at_position_in_ast;
 use crate::lsp::non_wasm::call_hierarchy::transform_incoming_calls;
+use crate::lsp::non_wasm::call_hierarchy::transform_outgoing_calls;
 use crate::lsp::non_wasm::lsp::apply_change_events;
 use crate::lsp::non_wasm::lsp::as_notification;
 use crate::lsp::non_wasm::lsp::as_request;
@@ -3788,33 +3789,7 @@ impl Server {
                 Ok((callees, definition.module))
             },
             move |(callees, source_module)| {
-                let mut outgoing_calls = Vec::new();
-                for (target_module, calls) in callees {
-                    let target_uri = lsp_types::Url::from_file_path(target_module.path().as_path())
-                        .unwrap_or_else(|()| uri_for_transform.clone());
-
-                    for (call_range, target_def_range) in calls {
-                        let target_name_short = target_module.code_at(target_def_range);
-                        let target_name = format!("{}.{}", target_module.name(), target_name_short);
-
-                        let to = lsp_types::CallHierarchyItem {
-                            name: target_name_short.to_owned(),
-                            kind: lsp_types::SymbolKind::FUNCTION,
-                            tags: None,
-                            detail: Some(target_name),
-                            uri: target_uri.clone(),
-                            range: target_module.to_lsp_range(target_def_range),
-                            selection_range: target_module.to_lsp_range(target_def_range),
-                            data: None,
-                        };
-
-                        outgoing_calls.push(lsp_types::CallHierarchyOutgoingCall {
-                            to,
-                            from_ranges: vec![source_module.to_lsp_range(call_range)],
-                        });
-                    }
-                }
-                outgoing_calls
+                transform_outgoing_calls(callees, &source_module, &uri_for_transform)
             },
         );
     }
