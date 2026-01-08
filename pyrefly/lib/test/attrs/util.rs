@@ -7,7 +7,6 @@
 
 use crate::test::util::TestEnv;
 
-#[allow(dead_code)]
 pub fn attrs_env() -> TestEnv {
     let path = std::env::var("ATTRS_TEST_PATH").expect("ATTRS_TEST_PATH must be set");
     TestEnv::new_with_site_package_path(&path)
