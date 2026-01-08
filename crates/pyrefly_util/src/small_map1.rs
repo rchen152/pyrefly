@@ -79,3 +79,14 @@ impl<'a, K, V> IntoIterator for &'a SmallMap1<K, V> {
         }
     }
 }
+
+impl<'a, K, V> IntoIterator for &'a mut SmallMap1<K, V> {
+    type Item = (&'a K, &'a mut V);
+    type IntoIter = Either<iter::Once<(&'a K, &'a mut V)>, small_map::IterMut<'a, K, V>>;
+    fn into_iter(self) -> Self::IntoIter {
+        match &mut self.0 {
+            SmallMap1Inner::One(key, value) => Either::Left(iter::once((key, value))),
+            SmallMap1Inner::Map(map) => Either::Right(map.iter_mut()),
+        }
+    }
+}
