@@ -87,6 +87,7 @@ use crate::binding::binding::KeyUndecoratedFunction;
 use crate::binding::binding::LastStmt;
 use crate::binding::binding::LinkedKey;
 use crate::binding::binding::NoneIfRecursive;
+use crate::binding::binding::PrivateAttributeAccessCheck;
 use crate::binding::binding::RaisedException;
 use crate::binding::binding::ReturnTypeKind;
 use crate::binding::binding::SizeExpectation;
@@ -1795,8 +1796,49 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 range,
                 errors,
             ),
+            BindingExpect::PrivateAttributeAccess(expectation) => {
+                self.check_private_attribute_access(expectation, errors);
+            }
         }
         Arc::new(EmptyAnswer)
+    }
+
+    fn check_private_attribute_access(
+        &self,
+        expect: &PrivateAttributeAccessCheck,
+        errors: &ErrorCollector,
+    ) {
+        let value_type = self.expr_infer(&expect.value, errors);
+        // Name mangling only occurs on attributes of classes.
+        if self.is_subset_eq(&value_type, &self.stdlib.module_type().clone().to_type()) {
+            return;
+        }
+        if let Some(class_idx) = expect.class_idx {
+            let class_binding = self.get_idx(class_idx);
+            let Some(owner) = class_binding.0.as_ref() else {
+                return;
+            };
+            if owner.contains(&expect.attr.id)
+                && self.is_subset_eq(
+                    &value_type,
+                    &self.union(Type::ClassDef(owner.dupe()), self.instantiate(owner)),
+                )
+            {
+                return; // Valid private attribute access
+            }
+        }
+        if !self.has_attr(&value_type, &expect.attr.id) {
+            return; // Don't report this error if the attribute doesn't exist
+        }
+        self.error(
+            errors,
+            expect.attr.range(),
+            ErrorInfo::Kind(ErrorKind::NoAccess),
+            format!(
+                "Private attribute `{}` cannot be accessed outside of its defining class",
+                expect.attr.id
+            ),
+        );
     }
 
     /// Check if a module path should be skipped for indexing purposes.

@@ -2161,6 +2161,22 @@ impl Scopes {
         }
     }
 
+    pub fn current_method_context(&self) -> Option<Idx<KeyClass>> {
+        let mut in_method_scope = false;
+        for scope in self.iter_rev() {
+            match &scope.kind {
+                ScopeKind::Method(_) => {
+                    in_method_scope = true;
+                }
+                ScopeKind::Class(class_scope) if in_method_scope => {
+                    return Some(class_scope.indices.class_idx);
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     /// Get the name of the (innermost) enclosing class, if any.
     pub fn enclosing_class_name(&self) -> Option<&Identifier> {
         for scope in self.iter_rev() {
