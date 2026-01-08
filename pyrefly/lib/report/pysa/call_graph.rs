@@ -2132,28 +2132,37 @@ impl<'a> CallGraphVisitor<'a> {
             })
             .map(|(function, context)| function.as_function_ref(&context))
         {
-            let callee_type = self.module_context.answers.get_type_trace(name.range());
-            let callee_expr = Some(AnyNodeRef::from(name));
-            let callee_expr_suffix = Some(name.id.as_str());
+            // Skip this path for constructor methods (__init__ and __new__) because they need
+            // special handling via resolve_constructor_callees to properly populate init_targets
+            // and new_targets. Constructor calls should fall through to the type-based
+            // resolution below.
+            let is_constructor_method = function_ref.function_name == dunder::INIT
+                || function_ref.function_name == dunder::NEW;
 
-            let callees =
-                CallCallees::new(Vec1::new(self.call_target_from_static_or_virtual_call(
-                    function_ref,
-                    callee_expr,
-                    callee_type.as_ref(),
-                    /* precise_receiver_type */ None,
-                    return_type,
-                    callee_expr_suffix,
-                    /* override_implicit_receiver*/ None,
-                    /* override_is_direct_call */ None,
-                    /* unknown_callee_as_direct_call */ true,
-                )));
+            if !is_constructor_method {
+                let callee_type = self.module_context.answers.get_type_trace(name.range());
+                let callee_expr = Some(AnyNodeRef::from(name));
+                let callee_expr_suffix = Some(name.id.as_str());
 
-            return IdentifierCallees {
-                if_called: callees,
-                global_targets: vec![],
-                nonlocal_targets: vec![],
-            };
+                let callees =
+                    CallCallees::new(Vec1::new(self.call_target_from_static_or_virtual_call(
+                        function_ref,
+                        callee_expr,
+                        callee_type.as_ref(),
+                        /* precise_receiver_type */ None,
+                        return_type,
+                        callee_expr_suffix,
+                        /* override_implicit_receiver*/ None,
+                        /* override_is_direct_call */ None,
+                        /* unknown_callee_as_direct_call */ true,
+                    )));
+
+                return IdentifierCallees {
+                    if_called: callees,
+                    global_targets: vec![],
+                    nonlocal_targets: vec![],
+                };
+            }
         }
 
         // Check if this is a global variable.
