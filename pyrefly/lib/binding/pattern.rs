@@ -38,7 +38,7 @@ use crate::binding::scope::FlowStyle;
 use crate::config::error_kind::ErrorKind;
 use crate::error::context::ErrorInfo;
 use crate::export::special::SpecialExport;
-use crate::types::facet::FacetKind;
+use crate::types::facet::UnresolvedFacetKind;
 
 impl<'a> BindingsBuilder<'a> {
     // Traverse a pattern and bind all the names; key is the reference for the value that's being matched on
@@ -152,7 +152,7 @@ impl<'a> BindingsBuilder<'a> {
                             );
                             let subject_for_subpattern = match_subject.clone().and_then(|s| {
                                 if !seen_star {
-                                    Some(s.with_facet(FacetKind::Index(i)))
+                                    Some(s.with_facet(UnresolvedFacetKind::Index(i)))
                                 } else {
                                     None
                                 }
@@ -200,7 +200,7 @@ impl<'a> BindingsBuilder<'a> {
                         let subject_at_key = key_name.and_then(|key| {
                             match_subject
                                 .clone()
-                                .map(|s| s.with_facet(FacetKind::Key(key)))
+                                .map(|s| s.with_facet(UnresolvedFacetKind::Key(key)))
                         });
                         narrow_ops.and_all(self.bind_pattern(
                             subject_at_key,
@@ -303,7 +303,7 @@ impl<'a> BindingsBuilder<'a> {
                      }| {
                         let subject_for_attr = match_subject
                             .clone()
-                            .map(|s| s.with_facet(FacetKind::Attribute(attr.id.clone())));
+                            .map(|s| s.with_facet(UnresolvedFacetKind::Attribute(attr.id.clone())));
                         let attr_key = self.insert_binding(
                             Key::Anon(attr.range()),
                             Binding::PatternMatchClassKeyword(x.cls.clone(), attr, subject_idx),

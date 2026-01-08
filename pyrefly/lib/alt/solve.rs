@@ -2347,8 +2347,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     attr.range,
                     errors,
                 );
-                if let Some((identifier, chain)) =
+                if let Some((identifier, unresolved_chain)) =
                     identifier_and_chain_for_expr(&Expr::Attribute(attr.clone()))
+                    && let Some(chain) = self.resolve_facet_chain(unresolved_chain)
                 {
                     // Note that the value we are doing `self.get` on is the same one we did in infer_expr, which is a bit sad.
                     // But avoiding the duplicate get/clone would require us to duplicate some of infer_expr here, which might
@@ -2358,11 +2359,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         .arc_clone();
                     type_info.update_for_assignment(chain.facets(), narrowed);
                     type_info
-                } else if let Some((identifier, facets)) =
+                } else if let Some((identifier, unresolved_facets)) =
                     identifier_and_chain_prefix_for_expr(&Expr::Attribute(attr.clone()))
                 {
                     // If the chain contains an unknown subscript index, we clear narrowing for
-                    // all indexes of its parent.
+                    // all indexes of its parent. If any facet in the prefix can't be resolved,
+                    // we give up on narrowing.
+                    let mut facets = Vec::new();
+                    for unresolved in unresolved_facets {
+                        if let Some(resolved) = self.resolve_facet_kind(unresolved) {
+                            facets.push(resolved)
+                        } else {
+                            break;
+                        }
+                    }
                     let mut type_info = self
                         .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
                         .arc_clone();
@@ -2382,19 +2392,29 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 } else {
                     Some(assigned_ty)
                 };
-                if let Some((identifier, chain)) =
+                if let Some((identifier, unresolved_chain)) =
                     identifier_and_chain_for_expr(&Expr::Subscript(subscript.clone()))
+                    && let Some(chain) = self.resolve_facet_chain(unresolved_chain)
                 {
                     let mut type_info = self
                         .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
                         .arc_clone();
                     type_info.update_for_assignment(chain.facets(), narrowed);
                     type_info
-                } else if let Some((identifier, facets)) =
+                } else if let Some((identifier, unresolved_facets)) =
                     identifier_and_chain_prefix_for_expr(&Expr::Subscript(subscript.clone()))
                 {
                     // If the chain contains an unknown subscript index, we clear narrowing for
-                    // all indexes of its parent.
+                    // all indexes of its parent. If any facet in the prefix can't be resolved,
+                    // we give up on narrowing.
+                    let mut facets = Vec::new();
+                    for unresolved in unresolved_facets {
+                        if let Some(resolved) = self.resolve_facet_kind(unresolved) {
+                            facets.push(resolved)
+                        } else {
+                            break;
+                        }
+                    }
                     let mut type_info = self
                         .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
                         .arc_clone();
