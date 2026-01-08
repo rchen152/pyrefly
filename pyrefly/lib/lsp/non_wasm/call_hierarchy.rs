@@ -20,6 +20,7 @@ use pyrefly_util::visit::Visit;
 use ruff_python_ast::AnyNodeRef;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ModModule;
+use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
@@ -28,6 +29,29 @@ use crate::lsp::non_wasm::module_helpers::module_info_to_uri;
 use crate::state::lsp::DefinitionMetadata;
 use crate::state::lsp::FindPreference;
 use crate::state::state::CancellableTransaction;
+
+/// Finds a function definition at a specific position in an AST.
+///
+/// This is used by call hierarchy to identify the function being queried.
+/// Returns None if no function is found at the position.
+///
+/// Uses `locate_node` for efficient single-pass traversal, consistent with
+/// other LSP position-based queries. Handles nested functions and methods.
+pub fn find_function_at_position_in_ast(
+    ast: &ModModule,
+    position: TextSize,
+) -> Option<&StmtFunctionDef> {
+    let covering_nodes = Ast::locate_node(ast, position);
+
+    // Find the first StmtFunctionDef in the covering nodes
+    // This returns the innermost function containing the position
+    for node in covering_nodes.iter() {
+        if let AnyNodeRef::StmtFunctionDef(func_def) = node {
+            return Some(func_def);
+        }
+    }
+    None
+}
 
 /// Creates call hierarchy information for the function containing a call site.
 ///
@@ -209,10 +233,9 @@ impl CancellableTransaction<'_> {
             return Ok(Vec::new());
         };
 
-        let Some(func_def) = CancellableTransaction::find_function_at_position_in_ast(
-            &target_ast,
-            target_def.definition_range.start(),
-        ) else {
+        let Some(func_def) =
+            find_function_at_position_in_ast(&target_ast, target_def.definition_range.start())
+        else {
             return Ok(Vec::new());
         };
 
@@ -297,5 +320,42 @@ class MyClass:
         let pos_in_method = TextSize::from(85);
         let (name, _) = find_containing_function_for_call(&handle, &ast, pos_in_method).unwrap();
         assert_eq!(name, "test.MyClass.method");
+    }
+
+    #[test]
+    fn test_find_function_at_position_in_ast() {
+        use super::find_function_at_position_in_ast;
+
+        let source = r#"
+def top_level():
+    pass
+
+class MyClass:
+    def method(self):
+        pass
+"#;
+        let (ast, _, _) = Ast::parse(source, PySourceType::Python);
+
+        // Finds top-level function
+        let pos_in_func = TextSize::from(5);
+        let result = find_function_at_position_in_ast(&ast, pos_in_func);
+        assert_eq!(result.unwrap().name.id.as_str(), "top_level");
+
+        // Finds class method
+        let pos_in_method = TextSize::from(50);
+        let result = find_function_at_position_in_ast(&ast, pos_in_method);
+        assert_eq!(result.unwrap().name.id.as_str(), "method");
+    }
+
+    #[test]
+    fn test_find_function_at_position_in_ast_returns_none_outside_functions() {
+        use super::find_function_at_position_in_ast;
+
+        let source = "x = 10\n";
+        let (ast, _, _) = Ast::parse(source, PySourceType::Python);
+
+        let pos_outside = TextSize::from(0);
+        let result = find_function_at_position_in_ast(&ast, pos_outside);
+        assert!(result.is_none());
     }
 }

@@ -216,6 +216,7 @@ use crate::config::config::ConfigFile;
 use crate::error::error::Error;
 use crate::lsp::module_helpers::to_real_path;
 use crate::lsp::non_wasm::build_system::should_requery_build_system;
+use crate::lsp::non_wasm::call_hierarchy::find_function_at_position_in_ast;
 use crate::lsp::non_wasm::call_hierarchy::transform_incoming_calls;
 use crate::lsp::non_wasm::lsp::apply_change_events;
 use crate::lsp::non_wasm::lsp::as_notification;
@@ -3861,10 +3862,7 @@ impl Server {
 
             // Look for function at the definition position, not the original cursor position
             if let Some(func_def) =
-                crate::state::state::CancellableTransaction::find_function_at_position_in_ast(
-                    &ast,
-                    def.definition_range.start(),
-                )
+                find_function_at_position_in_ast(&ast, def.definition_range.start())
             {
                 let name = func_def.name.id.to_string();
                 let detail = Some(format!("{}.{}", def.module.name(), name));
