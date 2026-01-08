@@ -216,6 +216,7 @@ use crate::config::config::ConfigFile;
 use crate::error::error::Error;
 use crate::lsp::module_helpers::to_real_path;
 use crate::lsp::non_wasm::build_system::should_requery_build_system;
+use crate::lsp::non_wasm::call_hierarchy::transform_incoming_calls;
 use crate::lsp::non_wasm::lsp::apply_change_events;
 use crate::lsp::non_wasm::lsp::as_notification;
 use crate::lsp::non_wasm::lsp::as_request;
@@ -3739,37 +3740,7 @@ impl Server {
                     &target_def,
                 )
             },
-            |callers| {
-                let mut incoming_calls = Vec::new();
-                for (caller_module, call_sites) in callers {
-                    for (call_range, caller_name, caller_def_range) in call_sites {
-                        let Some(caller_uri) = module_info_to_uri(&caller_module) else {
-                            continue;
-                        };
-
-                        let from = lsp_types::CallHierarchyItem {
-                            name: caller_name
-                                .split('.')
-                                .next_back()
-                                .unwrap_or(&caller_name)
-                                .to_owned(),
-                            kind: lsp_types::SymbolKind::FUNCTION,
-                            tags: None,
-                            detail: Some(caller_name),
-                            uri: caller_uri,
-                            range: caller_module.to_lsp_range(caller_def_range),
-                            selection_range: caller_module.to_lsp_range(caller_def_range),
-                            data: None,
-                        };
-
-                        incoming_calls.push(lsp_types::CallHierarchyIncomingCall {
-                            from,
-                            from_ranges: vec![caller_module.to_lsp_range(call_range)],
-                        });
-                    }
-                }
-                incoming_calls
-            },
+            transform_incoming_calls,
         );
     }
 
