@@ -148,7 +148,7 @@ impl MutableCaptureError {
     }
 }
 
-/// A name defined in a module, which needs to be convertable to an export.
+/// A name defined in a module, which needs to be convertible to an export.
 #[derive(Debug)]
 pub enum Exportable {
     /// The typical case: this name has key `Key` in the flow at the end of
@@ -346,8 +346,8 @@ impl Static {
                     //
                     // We try to handle parameters that are also bound by the body in the same way that `Definitions`
                     // would have handled an assignment that preceded all other definitions:
-                    // - A parameter that only gets deleted is similar to a single-assingment name.
-                    // - A mutable capture that is also a prameter is illegal, but for consistency
+                    // - A parameter that only gets deleted is similar to a single-assignment name.
+                    // - A mutable capture that is also a parameter is illegal, but for consistency
                     //   we treat it like a mutable capture.
                     match &style {
                         StaticStyle::Delete => {}
@@ -2782,7 +2782,7 @@ impl<'a> BindingsBuilder<'a> {
             if exclude_names.contains(name) {
                 continue;
             }
-            // We are promising to insert a bidning for this key when we merge the flow
+            // We are promising to insert a binding for this key when we merge the flow
             let phi_idx = self.idx_for_promise(Key::Phi(name.clone(), range));
             match &mut info.value {
                 Some(value) => {

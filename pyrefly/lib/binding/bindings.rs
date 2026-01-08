@@ -1365,7 +1365,7 @@ impl LegacyTParamCollector {
     }
 }
 
-/// The legacy-tparams-specifc logic is in a second impl because that lets us define it
+/// The legacy-tparams-specific logic is in a second impl because that lets us define it
 /// just under where the key data structures live.
 impl<'a> BindingsBuilder<'a> {
     /// Perform a lookup of a name used in either base classes of a class or
@@ -1482,7 +1482,7 @@ impl<'a> BindingsBuilder<'a> {
     ///
     /// To break down "when we cannot rule out":
     /// - We know for certain that a bare name whose binding is a legacy type
-    ///   variable *is* a legacy type varaible
+    ///   variable *is* a legacy type variable
     /// - We cannot be sure in a few cases:
     ///   - a bare name that is an imported name
     ///   - a `module.attr` name, where the base is an imported module

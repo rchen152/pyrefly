@@ -1434,7 +1434,7 @@ class B(A):
 );
 
 call_graph_testcase!(
-    test_overriden_repr_call,
+    test_overridden_repr_call,
     TEST_MODULE_NAME,
     r#"
 class C:

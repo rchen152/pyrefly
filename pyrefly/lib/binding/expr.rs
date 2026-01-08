@@ -83,7 +83,7 @@ pub enum Usage {
     ///   to ensure unpinned Vars cannot leak into the binding graph and cause
     ///   nondeterminism.
     ///
-    /// It carries an optional current idx so we could detect mutliple usages to
+    /// It carries an optional current idx so we could detect multiple usages to
     /// the same key within the same binding.
     Narrowing(Option<Idx<Key>>),
     /// I'm a usage in some context (a type variable declaration, an annotation,

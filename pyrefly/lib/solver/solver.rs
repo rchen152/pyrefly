@@ -68,7 +68,7 @@ enum Variable {
     /// Pyrefly only creates partial types for assignments, and will attempt to
     /// determine the type ("pin" it) using the first use of the name assigned.
     ///
-    /// It will attempt to infer the type from the first downsteam use; if the
+    /// It will attempt to infer the type from the first downstream use; if the
     /// type cannot be determined it becomes `Any`.
     PartialContained,
     /// A "partial type" (see above) representing a type variable that was not

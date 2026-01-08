@@ -1581,17 +1581,18 @@ impl<'a> CallGraphVisitor<'a> {
         override_implicit_receiver: Option<ImplicitReceiver>,
     ) -> CallTarget<FunctionRef> {
         let base_function = function_target.base_function().unwrap();
-        let function_definiton = self.get_base_definition(base_function);
-        let is_classmethod = function_definiton.is_some_and(|definition| definition.is_classmethod);
+        let function_definition = self.get_base_definition(base_function);
+        let is_classmethod =
+            function_definition.is_some_and(|definition| definition.is_classmethod);
         let is_staticmethod =
-            function_definiton.is_some_and(|definition| definition.is_staticmethod);
+            function_definition.is_some_and(|definition| definition.is_staticmethod);
         let (receiver_class, is_receiver_class_def) = match receiver_type {
             Some(receiver_type) => self.receiver_class_from_type(receiver_type, is_classmethod),
             None => (None, false),
         };
         CallTarget {
             implicit_receiver: override_implicit_receiver.unwrap_or(has_implicit_receiver(
-                function_definiton,
+                function_definition,
                 is_receiver_class_def,
             )),
             receiver_class,

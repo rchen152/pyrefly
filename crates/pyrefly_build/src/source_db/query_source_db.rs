@@ -274,7 +274,7 @@ impl SourceDatabase for QuerySourceDatabase {
             //    case we can return immediately. The build system will complain if
             //    multiple reachable targets have files that write to the same output
             //    location, so we don't need to check for/handle that.
-            // 3. a result that's a package file, which might refer to mulitple directories.
+            // 3. a result that's a package file, which might refer to multiple directories.
             //    In this case, we collect all possible results, and deterministically
             //    return one of them.
             for target in package_targets {

@@ -2200,7 +2200,7 @@ def f(x: A):
     "#,
 );
 
-// Regession test for https://github.com/facebook/pyrefly/issues/1642
+// Regression test for https://github.com/facebook/pyrefly/issues/1642
 testcase!(
     test_typed_dict_truthiness_narrowing,
     r#"
