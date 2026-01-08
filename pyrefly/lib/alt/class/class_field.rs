@@ -2182,6 +2182,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             DataclassMember::KwOnlyMarker
         } else if field.is_initialized_in_method() // This member is defined in a method without being declared on the class
             || field.is_class_var() // Class variables are not dataclass fields
+            || matches!(field.0, ClassFieldInner::Method { .. }) // Methods are not dataclass fields
             || (!field.has_explicit_annotation()
                 && self
                     .get_inherited_type_and_annotation(cls, name)
