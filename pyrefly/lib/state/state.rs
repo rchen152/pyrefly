@@ -760,6 +760,34 @@ impl<'a> Transaction<'a> {
         finish(&mut write);
     }
 
+    /// Try to mark a module as dirty due to dependency changes.
+    /// Returns true if the module was newly marked dirty.
+    fn try_mark_module_dirty(
+        &self,
+        module_data: &ArcId<ModuleDataMut>,
+        dirtied: &mut Vec<ArcId<ModuleDataMut>>,
+    ) -> bool {
+        loop {
+            let reader = module_data.state.read();
+            if reader.epochs.computed == self.data.now || reader.dirty.deps {
+                // Either doesn't need setting, or already set
+                return false;
+            }
+            // This can potentially race with `clean`, so make sure we use the `last` as our exclusive key,
+            // which importantly is a different key to the `first` that `clean` uses.
+            // Slight risk of a busy-loop, but better than a deadlock.
+            if let Some(exclusive) = reader.exclusive(Step::last()) {
+                if exclusive.epochs.computed == self.data.now || exclusive.dirty.deps {
+                    return false;
+                }
+                dirtied.push(module_data.dupe());
+                exclusive.write().dirty.deps = true;
+                return true;
+            }
+            // continue around the loop - failed to get the lock, but we really want it
+        }
+    }
+
     fn demand(&self, module_data: &ArcId<ModuleDataMut>, step: Step) {
         let mut computed = false;
         loop {
@@ -853,28 +881,7 @@ impl<'a> Transaction<'a> {
                     // We clone so we drop the lock immediately
                     let rdeps = module_data.rdeps.lock().iter().cloned().collect::<Vec<_>>();
                     for x in rdeps.iter().map(|handle| self.get_module(handle)) {
-                        loop {
-                            let reader = x.state.read();
-                            if reader.epochs.computed == self.data.now || reader.dirty.deps {
-                                // Either doesn't need setting, or already set
-                                break;
-                            }
-                            // This can potentially race with `clean`, so make sure we use the `last` as our exclusive key,
-                            // which importantly is a different key to the `first` that `clean` uses.
-                            // Slight risk of a busy-loop, but better than a deadlock.
-                            if let Some(exclusive) = reader.exclusive(Step::last()) {
-                                if exclusive.epochs.computed == self.data.now
-                                    || exclusive.dirty.deps
-                                {
-                                    break;
-                                }
-                                dirtied.push(x.dupe());
-                                let mut writer = exclusive.write();
-                                writer.dirty.deps = true;
-                                break;
-                            }
-                            // continue around the loop - failed to get the lock, but we really want it
-                        }
+                        self.try_mark_module_dirty(&x, &mut dirtied);
                     }
                     self.stats.lock().dirty_rdeps += dirtied.len();
                     self.data.dirty.lock().extend(dirtied);
