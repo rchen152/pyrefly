@@ -163,6 +163,30 @@ pub fn transform_outgoing_calls(
     outgoing_calls
 }
 
+/// Prepares a CallHierarchyItem for a function definition.
+///
+/// Creates the LSP CallHierarchyItem representation for a function,
+/// including its name, fully qualified detail, and range information.
+pub fn prepare_call_hierarchy_item(
+    func_def: &StmtFunctionDef,
+    module: &Module,
+    uri: lsp_types::Url,
+) -> CallHierarchyItem {
+    let name = func_def.name.id.to_string();
+    let detail = Some(format!("{}.{}", module.name(), name));
+
+    CallHierarchyItem {
+        name,
+        kind: SymbolKind::FUNCTION,
+        tags: None,
+        detail,
+        uri,
+        range: module.to_lsp_range(func_def.range()),
+        selection_range: module.to_lsp_range(func_def.name.range()),
+        data: None,
+    }
+}
+
 impl CancellableTransaction<'_> {
     /// Finds all incoming calls (functions that call this function) of a function across the entire codebase.
     ///

@@ -217,6 +217,7 @@ use crate::error::error::Error;
 use crate::lsp::module_helpers::to_real_path;
 use crate::lsp::non_wasm::build_system::should_requery_build_system;
 use crate::lsp::non_wasm::call_hierarchy::find_function_at_position_in_ast;
+use crate::lsp::non_wasm::call_hierarchy::prepare_call_hierarchy_item;
 use crate::lsp::non_wasm::call_hierarchy::transform_incoming_calls;
 use crate::lsp::non_wasm::call_hierarchy::transform_outgoing_calls;
 use crate::lsp::non_wasm::lsp::apply_change_events;
@@ -3805,10 +3806,6 @@ impl Server {
         transaction: &Transaction<'_>,
         params: lsp_types::CallHierarchyPrepareParams,
     ) -> Option<Vec<lsp_types::CallHierarchyItem>> {
-        use lsp_types::CallHierarchyItem;
-        use lsp_types::SymbolKind;
-        use ruff_text_size::Ranged;
-
         let uri = &params.text_document_position_params.text_document.uri;
         let handle = self.make_handle_if_enabled(uri, None)?;
         let module_info = transaction.get_module_info(&handle)?;
@@ -3839,23 +3836,8 @@ impl Server {
             if let Some(func_def) =
                 find_function_at_position_in_ast(&ast, def.definition_range.start())
             {
-                let name = func_def.name.id.to_string();
-                let detail = Some(format!("{}.{}", def.module.name(), name));
-                let kind = SymbolKind::FUNCTION;
-
-                let range = def.module.to_lsp_range(func_def.range());
-                let selection_range = def.module.to_lsp_range(func_def.name.range());
-
-                return Some(vec![CallHierarchyItem {
-                    name,
-                    kind,
-                    tags: None,
-                    detail,
-                    uri: def_uri,
-                    range,
-                    selection_range,
-                    data: None,
-                }]);
+                let item = prepare_call_hierarchy_item(func_def, &def.module, def_uri);
+                return Some(vec![item]);
             }
         }
         None
