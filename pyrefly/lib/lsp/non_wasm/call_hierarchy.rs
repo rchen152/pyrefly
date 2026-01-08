@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use dupe::Dupe;
 use lsp_types::CallHierarchyIncomingCall;
 use lsp_types::CallHierarchyItem;
 use lsp_types::SymbolKind;
@@ -12,6 +13,7 @@ use pyrefly_build::handle::Handle;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::module::Module;
 use pyrefly_python::module::TextRangeWithModule;
+use pyrefly_python::module_path::ModulePath;
 use pyrefly_python::sys_info::SysInfo;
 use pyrefly_util::task_heap::Cancelled;
 use pyrefly_util::visit::Visit;
@@ -24,6 +26,7 @@ use ruff_text_size::TextSize;
 
 use crate::lsp::non_wasm::module_helpers::module_info_to_uri;
 use crate::state::lsp::DefinitionMetadata;
+use crate::state::lsp::FindPreference;
 use crate::state::state::CancellableTransaction;
 
 /// Creates call hierarchy information for the function containing a call site.
@@ -167,6 +170,90 @@ impl CancellableTransaction<'_> {
         )?;
 
         Ok(results)
+    }
+
+    /// Finds outgoing calls (functions called by) of a function, resolving across files.
+    ///
+    /// Given a function definition, this method finds all Call expressions within
+    /// that function's body and resolves each call target to its definition,
+    /// which may be in other files.
+    ///
+    /// Returns a vector of tuples containing:
+    /// - Target module (where the callee is defined)
+    /// - Vector of (call_site_range, callee_definition_range)
+    ///
+    /// Results are grouped by target module for consistency with find_global_callers_from_definition.
+    ///
+    /// Returns Err if the request is canceled during execution.
+    pub fn find_global_outgoing_calls_from_function_definition(
+        &mut self,
+        handle: &Handle,
+        position: TextSize,
+    ) -> Result<Vec<(Module, Vec<(TextRange, TextRange)>)>, Cancelled> {
+        // Resolve cursor position to function definition (handles both definitions and call sites)
+        let definitions =
+            self.as_ref()
+                .find_definition(handle, position, FindPreference::default());
+        let Some(target_def) = definitions.into_iter().next() else {
+            return Ok(Vec::new());
+        };
+
+        // Get handle for module where target function is defined (may differ from original handle)
+        let target_handle = Handle::new(
+            target_def.module.name(),
+            target_def.module.path().dupe(),
+            handle.sys_info().dupe(),
+        );
+
+        let Some(target_ast) = self.as_ref().get_ast(&target_handle) else {
+            return Ok(Vec::new());
+        };
+
+        let Some(func_def) = CancellableTransaction::find_function_at_position_in_ast(
+            &target_ast,
+            target_def.definition_range.start(),
+        ) else {
+            return Ok(Vec::new());
+        };
+
+        let mut callees_by_module: std::collections::HashMap<
+            ModulePath,
+            (Module, Vec<(TextRange, TextRange)>),
+        > = std::collections::HashMap::new();
+
+        for stmt in &func_def.body {
+            stmt.visit(&mut |expr| {
+                if let Expr::Call(call) = expr {
+                    let call_pos = call
+                        .func
+                        .range()
+                        .end()
+                        .checked_sub(TextSize::from(1))
+                        .unwrap_or(call.func.range().start());
+
+                    let definitions = self.as_ref().find_definition(
+                        &target_handle,
+                        call_pos,
+                        FindPreference::default(),
+                    );
+
+                    for def in definitions {
+                        let module_path = def.module.path().dupe();
+                        callees_by_module
+                            .entry(module_path)
+                            .or_insert_with(|| (def.module.clone(), Vec::new()))
+                            .1
+                            .push((call.range(), def.definition_range));
+                    }
+                }
+            });
+        }
+
+        let mut result: Vec<(Module, Vec<(TextRange, TextRange)>)> =
+            callees_by_module.into_values().collect();
+        result.sort_by_key(|(module, _)| module.path().dupe());
+
+        Ok(result)
     }
 }
 
