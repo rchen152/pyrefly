@@ -1418,3 +1418,35 @@ for _ in []:
         continue
     "#,
 );
+
+testcase!(
+    bug = "Pyrefly doesn't understand termination from NoReturn - see https://github.com/facebook/pyrefly/issues/361",
+    test_noreturn_branch_termination,
+    r#"
+from typing import NoReturn, assert_type
+
+def raises() -> NoReturn:
+    raise Exception()
+
+def f(x: str | bytes | bool) -> str | bytes:
+    if isinstance(x, str):
+        pass
+    elif isinstance(x, bytes):
+        pass
+    else:
+        raises()
+    return x  # E: Returned type `bool | bytes | str`
+
+def g(x: str | None) -> str:
+    if x is None:
+        raises()
+    return x  # E: Returned type `str | None`
+
+def h(x: int | str) -> None:
+    if isinstance(x, int):
+        y = x + 1
+    else:
+        raises()
+    assert_type(y, int)  # E: `y` may be uninitialized
+"#,
+);
