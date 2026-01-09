@@ -3388,7 +3388,6 @@ name = "tsp_types"
 version = "0.47.0"
 dependencies = [
  "lsp-server",
- "lsp-types",
  "serde",
  "serde_json",
 ]
