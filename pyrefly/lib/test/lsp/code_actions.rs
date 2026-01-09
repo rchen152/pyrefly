@@ -13,6 +13,7 @@ use ruff_text_size::TextSize;
 
 use crate::module::module_info::ModuleInfo;
 use crate::state::lsp::ImportFormat;
+use crate::state::lsp::LocalRefactorCodeAction;
 use crate::state::require::Require;
 use crate::state::state::State;
 use crate::test::util::get_batched_lsp_operations_report_allow_error;
@@ -74,8 +75,10 @@ fn apply_refactor_edits_for_module(
 }
 
 fn find_marked_range(source: &str) -> TextRange {
-    let start_marker = "# EXTRACT-START";
-    let end_marker = "# EXTRACT-END";
+    find_marked_range_with(source, "# EXTRACT-START", "# EXTRACT-END")
+}
+
+fn find_marked_range_with(source: &str, start_marker: &str, end_marker: &str) -> TextRange {
     let start_idx = source
         .find(start_marker)
         .expect("missing start marker for extract refactor test");
@@ -108,7 +111,7 @@ fn compute_extract_actions(
     let handle = handles.get("main").unwrap();
     let transaction = state.transaction();
     let module_info = transaction.get_module_info(handle).unwrap();
-    let selection = find_marked_range(module_info.contents());
+    let selection = find_marked_range(code);
     let actions = transaction
         .extract_function_code_actions(handle, selection)
         .unwrap_or_default();
@@ -136,7 +139,7 @@ fn compute_extract_variable_actions(
     let handle = handles.get("main").unwrap();
     let transaction = state.transaction();
     let module_info = transaction.get_module_info(handle).unwrap();
-    let selection = find_marked_range(module_info.contents());
+    let selection = find_marked_range(code);
     let actions = transaction
         .extract_variable_code_actions(handle, selection)
         .unwrap_or_default();
@@ -168,6 +171,57 @@ fn assert_no_extract_action(code: &str) {
         "expected no extract-function actions, found {}",
         actions.len()
     );
+}
+
+fn compute_move_actions(
+    code: &str,
+    selection: TextRange,
+    compute: impl Fn(
+        &crate::state::state::Transaction<'_>,
+        &Handle,
+        TextRange,
+    ) -> Option<Vec<LocalRefactorCodeAction>>,
+) -> (
+    ModuleInfo,
+    Vec<Vec<(Module, TextRange, String)>>,
+    Vec<String>,
+) {
+    let (handles, state) =
+        mk_multi_file_state_assert_no_errors(&[("main", code)], Require::Everything);
+    let handle = handles.get("main").unwrap();
+    let transaction = state.transaction();
+    let module_info = transaction.get_module_info(handle).unwrap();
+    let actions = compute(&transaction, handle, selection).unwrap_or_default();
+    let edit_sets: Vec<Vec<(Module, TextRange, String)>> =
+        actions.iter().map(|action| action.edits.clone()).collect();
+    let titles = actions.iter().map(|action| action.title.clone()).collect();
+    (module_info, edit_sets, titles)
+}
+
+fn compute_pull_up_actions(
+    code: &str,
+) -> (
+    ModuleInfo,
+    Vec<Vec<(Module, TextRange, String)>>,
+    Vec<String>,
+) {
+    let selection = find_marked_range_with(code, "# MOVE-START", "# MOVE-END");
+    compute_move_actions(code, selection, |transaction, handle, selection| {
+        transaction.pull_members_up_code_actions(handle, selection)
+    })
+}
+
+fn compute_push_down_actions(
+    code: &str,
+) -> (
+    ModuleInfo,
+    Vec<Vec<(Module, TextRange, String)>>,
+    Vec<String>,
+) {
+    let selection = find_marked_range_with(code, "# MOVE-START", "# MOVE-END");
+    compute_move_actions(code, selection, |transaction, handle, selection| {
+        transaction.push_members_down_code_actions(handle, selection)
+    })
 }
 
 #[test]
@@ -748,6 +802,316 @@ def process(data):
     return total
 "#;
     assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn pull_member_up_basic() {
+    let code = r#"
+class Super:
+    pass
+
+class Sub(Super):
+    # MOVE-START
+    def foo(self):
+        return 1
+    # MOVE-END
+"#;
+    let (module_info, actions, titles) = compute_pull_up_actions(code);
+    assert_eq!(vec!["Pull `foo` up to `Super`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Super:
+    def foo(self):
+        return 1
+
+class Sub(Super):
+    # MOVE-START
+    pass
+    # MOVE-END
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn push_member_down_basic() {
+    let code = r#"
+class Base:
+    # MOVE-START
+    def foo(self):
+        pass
+    # MOVE-END
+
+class Child(Base):
+    pass
+"#;
+    let (module_info, actions, titles) = compute_push_down_actions(code);
+    assert_eq!(vec!["Push `foo` down to `Child`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Base:
+    # MOVE-START
+    pass
+    # MOVE-END
+
+class Child(Base):
+    def foo(self):
+        pass
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn push_member_down_all_subclasses() {
+    let code = r#"
+class Base:
+    # MOVE-START
+    def foo(self):
+        pass
+    # MOVE-END
+
+class ChildA(Base):
+    pass
+
+class ChildB(Base):
+    pass
+"#;
+    let (module_info, actions, titles) = compute_push_down_actions(code);
+    assert_eq!(
+        vec![
+            "Push `foo` down to `ChildA`",
+            "Push `foo` down to `ChildB`",
+            "Push `foo` down to all subclasses",
+        ],
+        titles
+    );
+    let all_idx = titles
+        .iter()
+        .position(|title| title == "Push `foo` down to all subclasses")
+        .expect("missing all-subclasses action");
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[all_idx]);
+    let expected = r#"
+class Base:
+    # MOVE-START
+    pass
+    # MOVE-END
+
+class ChildA(Base):
+    def foo(self):
+        pass
+
+class ChildB(Base):
+    def foo(self):
+        pass
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn pull_member_up_with_docstring_replaces_pass() {
+    let code = r#"
+class Super:
+    """Super docstring."""
+    pass
+
+class Sub(Super):
+    # MOVE-START
+    def foo(self):
+        return 1
+    # MOVE-END
+"#;
+    let (module_info, actions, titles) = compute_pull_up_actions(code);
+    assert_eq!(vec!["Pull `foo` up to `Super`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Super:
+    """Super docstring."""
+    def foo(self):
+        return 1
+
+class Sub(Super):
+    # MOVE-START
+    pass
+    # MOVE-END
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn push_member_down_preserves_origin_docstring() {
+    let code = r#"
+class Base:
+    """Base docstring."""
+    # MOVE-START
+    def foo(self):
+        return 1
+    # MOVE-END
+
+class Child(Base):
+    """Child docstring."""
+    pass
+"#;
+    let (module_info, actions, titles) = compute_push_down_actions(code);
+    assert_eq!(vec!["Push `foo` down to `Child`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Base:
+    """Base docstring."""
+    # MOVE-START
+    pass
+    # MOVE-END
+
+class Child(Base):
+    """Child docstring."""
+    def foo(self):
+        return 1
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn pull_member_up_nested_class() {
+    let code = r#"
+class Outer:
+    class Base:
+        pass
+
+    class Child(Base):
+        # MOVE-START
+        def foo(self):
+            return 1
+        # MOVE-END
+"#;
+    let (module_info, actions, titles) = compute_pull_up_actions(code);
+    assert_eq!(vec!["Pull `foo` up to `Base`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Outer:
+    class Base:
+        def foo(self):
+            return 1
+
+    class Child(Base):
+        # MOVE-START
+        pass
+        # MOVE-END
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn push_member_down_nested_class() {
+    let code = r#"
+class Outer:
+    class Base:
+        # MOVE-START
+        def foo(self):
+            return 1
+        # MOVE-END
+
+    class Child(Base):
+        pass
+"#;
+    let (module_info, actions, titles) = compute_push_down_actions(code);
+    assert_eq!(vec!["Push `foo` down to `Child`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Outer:
+    class Base:
+        # MOVE-START
+        pass
+        # MOVE-END
+
+    class Child(Base):
+        def foo(self):
+            return 1
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn pull_up_class_attribute() {
+    let code = r#"
+class Base:
+    pass
+
+class Child(Base):
+    # MOVE-START
+    FLAG = 1
+    # MOVE-END
+"#;
+    let (module_info, actions, titles) = compute_pull_up_actions(code);
+    assert_eq!(vec!["Pull `FLAG` up to `Base`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Base:
+    FLAG = 1
+
+class Child(Base):
+    # MOVE-START
+    pass
+    # MOVE-END
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn push_down_class_attribute() {
+    let code = r#"
+class Base:
+    # MOVE-START
+    FLAG: int = 1
+    # MOVE-END
+
+class Child(Base):
+    pass
+"#;
+    let (module_info, actions, titles) = compute_push_down_actions(code);
+    assert_eq!(vec!["Push `FLAG` down to `Child`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class Base:
+    # MOVE-START
+    pass
+    # MOVE-END
+
+class Child(Base):
+    FLAG: int = 1
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn no_pull_up_when_member_exists_in_base() {
+    let code = r#"
+class Base:
+    def foo(self):
+        pass
+
+class Child(Base):
+    # MOVE-START
+    def foo(self):
+        pass
+    # MOVE-END
+"#;
+    let (_module_info, _actions, titles) = compute_pull_up_actions(code);
+    assert!(titles.is_empty(), "expected no pull-up actions");
+}
+
+#[test]
+fn no_push_down_when_member_exists_in_subclass() {
+    let code = r#"
+class Base:
+    # MOVE-START
+    def foo(self):
+        pass
+    # MOVE-END
+
+class Child(Base):
+    def foo(self):
+        pass
+"#;
+    let (_module_info, _actions, titles) = compute_push_down_actions(code);
+    assert!(titles.is_empty(), "expected no push-down actions");
 }
 
 #[test]
