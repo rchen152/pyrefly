@@ -364,6 +364,9 @@ impl<'a> BindingsBuilder<'a> {
     pub fn stmt(&mut self, x: Stmt, parent: &NestingContext) {
         self.with_semantic_checker(|semantic, context| semantic.visit_stmt(&x, context));
 
+        // Clear last_stmt_expr at the start - will be set again if this is a StmtExpr
+        self.scopes.set_last_stmt_expr(None);
+
         match x {
             Stmt::FunctionDef(x) => {
                 self.function_def(x, parent);
@@ -1088,7 +1091,11 @@ impl<'a> BindingsBuilder<'a> {
                 } else {
                     None
                 };
-                self.insert_binding_current(current, Binding::StmtExpr(*x.value, special_export));
+                let key = self
+                    .insert_binding_current(current, Binding::StmtExpr(*x.value, special_export));
+                // Track this StmtExpr as the trailing statement for type-based termination
+                self.scopes.set_last_stmt_expr(Some(key));
+                // TODO(stroxler): PytestNoReturn may now be redundant given type-based termination
                 if special_export == Some(SpecialExport::PytestNoReturn) {
                     self.scopes.mark_flow_termination(false);
                 }

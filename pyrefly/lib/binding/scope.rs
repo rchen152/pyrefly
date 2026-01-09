@@ -443,7 +443,6 @@ pub struct Flow {
     is_definitely_unreachable: bool,
     /// The key for the last `Binding::StmtExpr` in this flow, if any.
     /// Used to check for type-based termination (NoReturn/Never) at solve time.
-    #[expect(dead_code)]
     last_stmt_expr: Option<Idx<Key>>,
 }
 
@@ -1960,6 +1959,16 @@ impl Scopes {
     /// Check if the current flow has definitely terminated (e.g., after a return, raise, break, or continue)
     pub fn is_definitely_unreachable(&self) -> bool {
         self.current().flow.is_definitely_unreachable
+    }
+
+    /// Set or clear the last statement expression key for the current flow.
+    ///
+    /// This is used for type-based termination (accounting for flows that
+    /// ended in a `Never` or `NoReturn` value) in Phi-nodes when merging flows.
+    ///
+    /// Should be set to Some(key) for StmtExpr, and None for other statements.
+    pub fn set_last_stmt_expr(&mut self, key: Option<Idx<Key>>) {
+        self.current_mut().flow.last_stmt_expr = key;
     }
 
     /// Whenever we enter the scope of a method *and* we see a matching
