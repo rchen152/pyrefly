@@ -1420,7 +1420,6 @@ for _ in []:
 );
 
 testcase!(
-    bug = "Pyrefly doesn't understand termination from NoReturn - see https://github.com/facebook/pyrefly/issues/361",
     test_noreturn_branch_termination,
     r#"
 from typing import NoReturn, assert_type
@@ -1435,18 +1434,18 @@ def f(x: str | bytes | bool) -> str | bytes:
         pass
     else:
         raises()
-    return x  # E: Returned type `bool | bytes | str`
+    return x  # Should be ok - x is str | bytes here
 
 def g(x: str | None) -> str:
     if x is None:
         raises()
-    return x  # E: Returned type `str | None`
+    return x  # Should be ok - x is str here
 
 def h(x: int | str) -> None:
     if isinstance(x, int):
         y = x + 1
     else:
         raises()
-    assert_type(y, int)  # E: `y` may be uninitialized
+    assert_type(y, int)  # y should be int, not str | int
 "#,
 );
