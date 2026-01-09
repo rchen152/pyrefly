@@ -441,6 +441,10 @@ pub struct Flow {
     // - Static tests based on stuff like sys.version_info don't exclude branches at runtime, since the program may execute in different environments
     // - With-blocks may swallow exceptions, so we cannot guarantee that future blocks are definitely unreachable
     is_definitely_unreachable: bool,
+    /// The key for the last `Binding::StmtExpr` in this flow, if any.
+    /// Used to check for type-based termination (NoReturn/Never) at solve time.
+    #[expect(dead_code)]
+    last_stmt_expr: Option<Idx<Key>>,
 }
 
 impl Flow {
@@ -2795,6 +2799,7 @@ impl<'a> BindingsBuilder<'a> {
             info: merged_flow_infos,
             has_terminated,
             is_definitely_unreachable: all_are_unreachable,
+            last_stmt_expr: None,
         };
         self.scopes.current_mut().flow = flow
     }
