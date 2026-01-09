@@ -916,7 +916,7 @@ impl ConfigFile {
                 .push((config, files));
             // Files can be uniquely tied to a config, so we will be counting each file at most
             // once here.
-            stats.files += files.len();
+            stats.common.files += files.len();
         }
 
         stats.count = sourcedb_configs.len();
@@ -944,7 +944,7 @@ impl ConfigFile {
                 }
             }
             if changed {
-                stats.changed = true;
+                stats.common.changed = true;
                 debug!(
                     "Performed grouped source db query for configs at {:?}",
                     configs_and_files

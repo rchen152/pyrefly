@@ -44,6 +44,7 @@ pub struct TelemetryEvent {
     pub file_stats: Option<TelemetryFileStats>,
     pub task_id: Option<TelemetryTaskId>,
     pub sourcedb_rebuild_stats: Option<TelemetrySourceDbRebuildStats>,
+    pub sourcedb_rebuild_instance_stats: Option<TelemetrySourceDbRebuildInstanceStats>,
 }
 
 pub struct TelemetryFileStats {
@@ -79,11 +80,21 @@ impl TelemetryTaskId {
 }
 
 #[derive(Default)]
-pub struct TelemetrySourceDbRebuildStats {
-    pub count: usize,
+pub struct TelemetryCommonSourceDbStats {
     pub files: usize,
     pub changed: bool,
+}
+
+#[derive(Default)]
+pub struct TelemetrySourceDbRebuildStats {
+    pub count: usize,
     pub had_error: bool,
+    pub common: TelemetryCommonSourceDbStats,
+}
+
+#[derive(Default)]
+pub struct TelemetrySourceDbRebuildInstanceStats {
+    pub common: TelemetryCommonSourceDbStats,
 }
 
 impl TelemetryEvent {
@@ -107,9 +118,31 @@ impl TelemetryEvent {
                 file_stats: None,
                 task_id: None,
                 sourcedb_rebuild_stats: None,
+                sourcedb_rebuild_instance_stats: None,
             },
             queue,
         )
+    }
+
+    pub fn new_task(
+        kind: TelemetryEventKind,
+        server_state: TelemetryServerState,
+        task_id: TelemetryTaskId,
+    ) -> Self {
+        Self {
+            kind,
+            queue: None,
+            start: Instant::now(),
+            error: None,
+            invalidate: None,
+            validate: None,
+            transaction_stats: None,
+            server_state,
+            file_stats: None,
+            task_id: Some(task_id),
+            sourcedb_rebuild_stats: None,
+            sourcedb_rebuild_instance_stats: None,
+        }
     }
 
     pub fn set_invalidate_duration(&mut self, duration: Duration) {
@@ -134,6 +167,13 @@ impl TelemetryEvent {
 
     pub fn set_sourcedb_rebuild_stats(&mut self, stats: TelemetrySourceDbRebuildStats) {
         self.sourcedb_rebuild_stats = Some(stats);
+    }
+
+    pub fn set_sourcedb_rebuild_instance_stats(
+        &mut self,
+        stats: TelemetrySourceDbRebuildInstanceStats,
+    ) {
+        self.sourcedb_rebuild_instance_stats = Some(stats);
     }
 
     pub fn finish_and_record(self, telemetry: &impl Telemetry, error: Option<&Error>) -> Duration {
