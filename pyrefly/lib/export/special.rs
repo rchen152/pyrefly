@@ -61,7 +61,6 @@ pub enum SpecialExport {
     TypingList,
     BuiltinsTuple,
     TypingTuple,
-    PytestNoReturn,
     BuiltinsInt,
     BuiltinsStr,
     BuiltinsBytes,
@@ -122,7 +121,6 @@ impl SpecialExport {
             "List" => Some(Self::TypingList),
             "tuple" => Some(Self::BuiltinsTuple),
             "Tuple" => Some(Self::TypingTuple),
-            "fail" | "xfail" | "skip" => Some(Self::PytestNoReturn),
             "int" => Some(Self::BuiltinsInt),
             "str" => Some(Self::BuiltinsStr),
             "bytes" => Some(Self::BuiltinsBytes),
@@ -195,7 +193,6 @@ impl SpecialExport {
                 m.as_str(),
                 "typing" | "typing_extensions" | "collections.abc"
             ),
-            Self::PytestNoReturn => matches!(m.as_str(), "pytest"),
             Self::Deprecated => matches!(m.as_str(), "warnings" | "typing_extensions"),
         }
     }
