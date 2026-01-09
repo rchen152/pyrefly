@@ -82,7 +82,7 @@ pub trait SourceDbQuerier: Send + Sync + fmt::Debug {
             .write_all(argfile_args.as_encoded_bytes())
             .with_context(|| "Could not write to argfile when querying source DB".to_owned())?;
 
-        let mut cmd = self.construct_command();
+        let mut cmd = self.construct_command(None);
         cmd.arg(format!("@{}", argfile.path().display()));
         cmd.current_dir(cwd);
 
@@ -134,7 +134,7 @@ pub trait SourceDbQuerier: Send + Sync + fmt::Debug {
         }
     }
 
-    fn construct_command(&self) -> Command;
+    fn construct_command(&self, build_id_file: Option<&Path>) -> Command;
 }
 
 #[derive(Debug, PartialEq, Eq, Deserialize, Clone)]

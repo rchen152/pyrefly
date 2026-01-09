@@ -445,7 +445,7 @@ mod tests {
             Ok(TargetManifestDatabase::get_test_database())
         }
 
-        fn construct_command(&self) -> std::process::Command {
+        fn construct_command(&self, _: Option<&Path>) -> std::process::Command {
             panic!("We shouldn't be calling this...");
         }
     }
