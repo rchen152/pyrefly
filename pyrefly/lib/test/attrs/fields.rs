@@ -24,3 +24,20 @@ class C:
 c = C() # E: Missing argument `a` in function `C.__init__`
 "#,
 );
+
+attrs_testcase!(
+    bug = "Recognize validator decorator",
+    field_validator_decorator,
+    r#"
+from attrs import define, field
+
+@define
+class C:
+    x: int = field()
+
+    @x.validator # E: Object of class `int` has no attribute `validator`
+    def _check_x(self, attribute, value):
+        if value < 0:
+            raise ValueError("x must be non-negative")
+"#,
+);
