@@ -1313,6 +1313,16 @@ pub enum FirstUse {
     UsedBy(Idx<Key>),
 }
 
+/// Information about a branch in a Phi node.
+#[derive(Clone, Debug)]
+pub struct BranchInfo {
+    /// The type key from this branch.
+    pub value_key: Idx<Key>,
+    /// The last `Binding::StmtExpr` in this branch, if any.
+    /// Used to check for type-based termination (NoReturn/Never) at solve time.
+    pub termination_key: Option<Idx<Key>>,
+}
+
 #[derive(Clone, Debug)]
 pub enum Binding {
     /// An expression, optionally with a Key saying what the type must be.
@@ -1389,7 +1399,8 @@ pub enum Binding {
     /// A forward reference to another binding.
     Forward(Idx<Key>),
     /// A phi node, representing the union of several alternative keys.
-    Phi(JoinStyle<Idx<Key>>, SmallSet<Idx<Key>>),
+    /// Each BranchInfo contains the value key and optional termination key from one branch.
+    Phi(JoinStyle<Idx<Key>>, Vec<BranchInfo>),
     /// A phi node for a name that was defined above a loop. This can involve recursion
     /// due to reassingment in the loop, so we provide a prior idx of the type from above
     /// the loop, which can be used if the resulting Var is forced.
@@ -1609,11 +1620,13 @@ impl DisplayWith<Bindings> for Binding {
                     }
                 )
             }
-            Self::Phi(style, xs) => {
+            Self::Phi(style, branches) => {
                 write!(
                     f,
                     "Phi({style:?}, {})",
-                    intersperse_iter("; ", || xs.iter().map(|x| ctx.display(*x))),
+                    intersperse_iter("; ", || branches
+                        .iter()
+                        .map(|branch| ctx.display(branch.value_key))),
                 )
             }
             Self::LoopPhi(k, xs) => {

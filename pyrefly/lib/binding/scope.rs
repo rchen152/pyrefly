@@ -41,6 +41,7 @@ use starlark_map::small_set::SmallSet;
 use vec1::Vec1;
 
 use crate::binding::binding::Binding;
+use crate::binding::binding::BranchInfo;
 use crate::binding::binding::ClassFieldDefinition;
 use crate::binding::binding::ExprOrBinding;
 use crate::binding::binding::Key;
@@ -2564,7 +2565,15 @@ impl<'a> BindingsBuilder<'a> {
             self.insert_binding_idx(phi_idx, Binding::LoopPhi(loop_prior, branch_idxs));
             phi_idx
         } else {
-            self.insert_binding_idx(phi_idx, Binding::Phi(join_style, branch_idxs));
+            // TODO(Step 8): Build proper BranchInfo with termination keys
+            let branch_infos: Vec<BranchInfo> = branch_idxs
+                .iter()
+                .map(|&value_key| BranchInfo {
+                    value_key,
+                    termination_key: None,
+                })
+                .collect();
+            self.insert_binding_idx(phi_idx, Binding::Phi(join_style, branch_infos));
             phi_idx
         }
     }
@@ -2950,6 +2959,8 @@ impl<'a> BindingsBuilder<'a> {
         let fork = scope.forks.last_mut().unwrap();
         fork.branch_started = true;
         scope.flow = fork.base.clone();
+        // Clear last_stmt_expr so this branch tracks only its own terminal statement
+        scope.flow.last_stmt_expr = None;
     }
 
     /// Abandon a branch we began without including it in the merge. Used for a few cases

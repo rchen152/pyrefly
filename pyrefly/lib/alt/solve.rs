@@ -2303,14 +2303,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Binding::Narrow(k, op, range) => {
                 self.narrow(self.get_idx(*k).as_ref(), op, range.range(), errors)
             }
-            Binding::Phi(join_style, ks) => {
-                if ks.len() == 1 {
-                    self.get_idx(*ks.first().unwrap()).arc_clone()
+            Binding::Phi(join_style, branches) => {
+                if branches.len() == 1 {
+                    self.get_idx(branches[0].value_key).arc_clone()
                 } else {
-                    let type_infos = ks
+                    // TODO(Step 9): Implement termination-based filtering
+                    let type_infos = branches
                         .iter()
-                        .filter_map(|k| {
-                            let t: Arc<TypeInfo> = self.get_idx(*k);
+                        .filter_map(|branch| {
+                            let t: Arc<TypeInfo> = self.get_idx(branch.value_key);
                             // Filter out all `@overload`-decorated types except the one that
                             // accumulates all signatures into a Type::Overload.
                             if matches!(t.ty(), Type::Overload(_)) || !t.ty().is_overload() {

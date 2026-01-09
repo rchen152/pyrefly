@@ -52,6 +52,7 @@ use crate::binding::binding::Binding;
 use crate::binding::binding::BindingAnnotation;
 use crate::binding::binding::BindingExport;
 use crate::binding::binding::BindingLegacyTypeParam;
+use crate::binding::binding::BranchInfo;
 use crate::binding::binding::FirstUse;
 use crate::binding::binding::FunctionParameter;
 use crate::binding::binding::Key;
@@ -557,11 +558,16 @@ impl BindingTable {
     /// insert the Anywhere.
     fn record_bind_in_anywhere(&mut self, name: Name, range: TextRange, idx: Idx<Key>) {
         let phi_idx = self.types.0.insert(Key::Anywhere(name, range));
-        match self.types.1.insert_if_missing(phi_idx, || {
-            Binding::Phi(JoinStyle::SimpleMerge, SmallSet::new())
-        }) {
-            Binding::Phi(_, phi) => {
-                phi.insert(idx);
+        match self
+            .types
+            .1
+            .insert_if_missing(phi_idx, || Binding::Phi(JoinStyle::SimpleMerge, vec![]))
+        {
+            Binding::Phi(_, branches) => {
+                branches.push(BranchInfo {
+                    value_key: idx,
+                    termination_key: None,
+                });
             }
             _ => unreachable!(),
         }
