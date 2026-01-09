@@ -338,7 +338,7 @@ impl SourceDatabase for QuerySourceDatabase {
         }
         *includes = new_includes;
         info!("Querying Buck for source DB");
-        let raw_db = self.querier.query_source_db(&includes, &self.cwd)?;
+        let raw_db = self.querier.query_source_db(&includes, &self.cwd).0?;
         info!("Finished querying Buck for source DB");
         Ok(self.update_with_target_manifest(raw_db))
     }
@@ -441,8 +441,8 @@ mod tests {
             &self,
             _: &SmallSet<Include>,
             _: &Path,
-        ) -> anyhow::Result<TargetManifestDatabase> {
-            Ok(TargetManifestDatabase::get_test_database())
+        ) -> (anyhow::Result<TargetManifestDatabase>, Option<String>) {
+            (Ok(TargetManifestDatabase::get_test_database()), None)
         }
 
         fn construct_command(&self, _: Option<&Path>) -> std::process::Command {
