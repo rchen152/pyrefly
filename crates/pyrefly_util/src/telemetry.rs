@@ -129,19 +129,20 @@ impl TelemetryEvent {
     pub fn new_task(
         kind: TelemetryEventKind,
         server_state: TelemetryServerState,
-        task_id: TelemetryTaskId,
+        task_id: Option<TelemetryTaskId>,
+        start: Instant,
     ) -> Self {
         Self {
             kind,
             queue: None,
-            start: Instant::now(),
+            start,
             error: None,
             invalidate: None,
             validate: None,
             transaction_stats: None,
             server_state,
             file_stats: None,
-            task_id: Some(task_id),
+            task_id,
             sourcedb_rebuild_stats: None,
             sourcedb_rebuild_instance_stats: None,
         }
@@ -178,7 +179,7 @@ impl TelemetryEvent {
         self.sourcedb_rebuild_instance_stats = Some(stats);
     }
 
-    pub fn finish_and_record(self, telemetry: &impl Telemetry, error: Option<&Error>) -> Duration {
+    pub fn finish_and_record(self, telemetry: &dyn Telemetry, error: Option<&Error>) -> Duration {
         let process = self.start.elapsed();
         telemetry.record_event(self, process, error);
         process
