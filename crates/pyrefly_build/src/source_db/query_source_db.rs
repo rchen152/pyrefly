@@ -330,8 +330,12 @@ impl SourceDatabase for QuerySourceDatabase {
         ))
     }
 
-    fn query_source_db(&self, files: SmallSet<ModulePathBuf>, force: bool) -> anyhow::Result<bool> {
-        let mut _stats = TelemetrySourceDbRebuildInstanceStats::default();
+    fn query_source_db(
+        &self,
+        files: SmallSet<ModulePathBuf>,
+        force: bool,
+    ) -> (anyhow::Result<bool>, TelemetrySourceDbRebuildInstanceStats) {
+        let mut stats = TelemetrySourceDbRebuildInstanceStats::default();
         let run = || {
             let new_includes = files.into_iter().map(Include::path).collect();
             let mut includes = self.includes.lock();
@@ -342,12 +346,12 @@ impl SourceDatabase for QuerySourceDatabase {
             *includes = new_includes;
             info!("Querying Buck for source DB");
             let (raw_db, build_id) = self.querier.query_source_db(&includes, &self.cwd);
-            _stats.build_id = build_id;
+            stats.build_id = build_id;
             let raw_db = raw_db?;
             info!("Finished querying Buck for source DB");
             Ok(self.update_with_target_manifest(raw_db))
         };
-        run()
+        (run(), stats)
     }
 
     fn get_paths_to_watch<'a>(&'a self) -> SmallSet<WatchPattern<'a>> {

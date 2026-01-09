@@ -926,7 +926,8 @@ impl ConfigFile {
                 .flat_map(|x| x.1.iter())
                 .map(|p| p.module_path_buf())
                 .collect::<SmallSet<_>>();
-            let changed = match source_db.query_source_db(all_files, force) {
+            let (sourcedb_rebuild, _stats) = source_db.query_source_db(all_files, force);
+            let changed = match sourcedb_rebuild {
                 Err(error) => {
                     error!("Error reloading source database for config: {error:?}");
                     stats.had_error = true;
