@@ -18,6 +18,7 @@ use pyrefly_python::module_path::ModulePathBuf;
 use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_util::lock::Mutex;
 use pyrefly_util::lock::RwLock;
+use pyrefly_util::telemetry::TelemetrySourceDbRebuildInstanceStats;
 use pyrefly_util::watch_pattern::WatchPattern;
 use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
@@ -330,17 +331,23 @@ impl SourceDatabase for QuerySourceDatabase {
     }
 
     fn query_source_db(&self, files: SmallSet<ModulePathBuf>, force: bool) -> anyhow::Result<bool> {
-        let new_includes = files.into_iter().map(Include::path).collect();
-        let mut includes = self.includes.lock();
-        if *includes == new_includes && !force {
-            debug!("Not querying Buck source DB, since no inputs have changed");
-            return Ok(false);
-        }
-        *includes = new_includes;
-        info!("Querying Buck for source DB");
-        let raw_db = self.querier.query_source_db(&includes, &self.cwd).0?;
-        info!("Finished querying Buck for source DB");
-        Ok(self.update_with_target_manifest(raw_db))
+        let mut _stats = TelemetrySourceDbRebuildInstanceStats::default();
+        let run = || {
+            let new_includes = files.into_iter().map(Include::path).collect();
+            let mut includes = self.includes.lock();
+            if *includes == new_includes && !force {
+                debug!("Not querying Buck source DB, since no inputs have changed");
+                return Ok(false);
+            }
+            *includes = new_includes;
+            info!("Querying Buck for source DB");
+            let (raw_db, build_id) = self.querier.query_source_db(&includes, &self.cwd);
+            _stats.build_id = build_id;
+            let raw_db = raw_db?;
+            info!("Finished querying Buck for source DB");
+            Ok(self.update_with_target_manifest(raw_db))
+        };
+        run()
     }
 
     fn get_paths_to_watch<'a>(&'a self) -> SmallSet<WatchPattern<'a>> {

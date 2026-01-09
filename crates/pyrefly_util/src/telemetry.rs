@@ -95,6 +95,7 @@ pub struct TelemetrySourceDbRebuildStats {
 #[derive(Default)]
 pub struct TelemetrySourceDbRebuildInstanceStats {
     pub common: TelemetryCommonSourceDbStats,
+    pub build_id: Option<String>,
 }
 
 impl TelemetryEvent {
