@@ -29,6 +29,7 @@ pub enum TelemetryEventKind {
     PopulateProjectFiles,
     PopulateWorkspaceFiles,
     SourceDbRebuild,
+    SourceDbRebuildInstance,
     FindFromDefinition,
 }
 
