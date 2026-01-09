@@ -304,7 +304,7 @@ enum ClassFieldInner {
 /// checks. This information is not needed to understand the class field, it is
 /// only used for efficiency.
 #[derive(Debug, Clone, TypeEq, PartialEq, Eq, VisitMut)]
-pub enum IsInherited {
+enum IsInherited {
     No,
     Maybe,
 }
