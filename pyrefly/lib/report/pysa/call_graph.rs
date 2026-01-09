@@ -104,6 +104,8 @@ pub enum OriginKind {
     SubscriptSetItem,
     BinaryOperator,
     AugmentedAssignDunderCall,
+    AugmentedAssignRHS,
+    AugmentedAssignStatement,
     ForIter,
     ForNext,
     ReprCall,
@@ -131,6 +133,8 @@ impl std::fmt::Display for OriginKind {
             Self::SubscriptSetItem => write!(f, "subscript-set-item"),
             Self::BinaryOperator => write!(f, "binary"),
             Self::AugmentedAssignDunderCall => write!(f, "augmented-assign-dunder-call"),
+            Self::AugmentedAssignRHS => write!(f, "augmented-assign-rhs"),
+            Self::AugmentedAssignStatement => write!(f, "augmented-assign-statement"),
             Self::ForIter => write!(f, "for-iter"),
             Self::ForNext => write!(f, "for-next"),
             Self::ReprCall => write!(f, "repr-call"),
@@ -2945,7 +2949,10 @@ impl<'a> CallGraphVisitor<'a> {
             Some(Stmt::AugAssign(assign)) if assign.target.range() == subscript_range => (
                 dunder::SETITEM,
                 Origin {
-                    kind: OriginKind::SubscriptSetItem,
+                    kind: OriginKind::Nested {
+                        head: Box::new(OriginKind::SubscriptSetItem),
+                        tail: Box::new(OriginKind::AugmentedAssignStatement),
+                    },
                     location: self.pysa_location(assign.range()),
                 },
             ),
@@ -2965,12 +2972,9 @@ impl<'a> CallGraphVisitor<'a> {
             ),
         };
         let value_range = subscript.value.range();
+        let value_type = self.module_context.answers.get_type_trace(value_range);
         let DunderAttrCallees { callees, .. } = self.call_targets_from_magic_dunder_attr(
-            /* base */
-            self.module_context
-                .answers
-                .get_type_trace(value_range)
-                .as_ref(),
+            /* base */ value_type.as_ref(),
             /* attribute */ Some(&callee_name),
             value_range,
             /* callee_expr */ None,
@@ -2979,7 +2983,32 @@ impl<'a> CallGraphVisitor<'a> {
             /* exclude_object_methods */ false,
         );
         let identifier = ExpressionIdentifier::ArtificialCall(origin);
-        self.add_callees(identifier, ExpressionCallees::Call(callees))
+        self.add_callees(identifier, ExpressionCallees::Call(callees));
+
+        // For subscripts in augmented assignments, such as d[i] += j, we need to
+        // add another call graph edge for the implicit `__getitem__` call.
+        match current_statement {
+            Some(Stmt::AugAssign(assign)) if assign.target.range() == subscript_range => {
+                let DunderAttrCallees { callees, .. } = self.call_targets_from_magic_dunder_attr(
+                    /* base */ value_type.as_ref(),
+                    /* attribute */ Some(&dunder::GETITEM),
+                    value_range,
+                    /* callee_expr */ None,
+                    /* unknown_callee_as_direct_call */ true,
+                    "resolve_expression_for_augmented_assign_subscript",
+                    /* exclude_object_methods */ false,
+                );
+                let identifier = ExpressionIdentifier::ArtificialCall(Origin {
+                    kind: OriginKind::Nested {
+                        head: Box::new(OriginKind::SubscriptGetItem),
+                        tail: Box::new(OriginKind::AugmentedAssignRHS),
+                    },
+                    location: self.pysa_location(subscript.range()),
+                });
+                self.add_callees(identifier, ExpressionCallees::Call(callees))
+            }
+            _ => (),
+        }
     }
 
     fn distribute_over_union(
