@@ -2501,9 +2501,19 @@ impl MergeStyle {
     }
 }
 
+/// Information about a single branch being merged, including both the flow info
+/// for a specific name and the termination key from the flow this branch came from.
+struct MergeBranch {
+    flow_info: FlowInfo,
+    /// The last StmtExpr in the flow this branch came from, if any.
+    /// Used for type-based termination checking at solve time.
+    #[expect(dead_code)]
+    termination_key: Option<Idx<Key>>,
+}
+
 struct MergeItem {
     base: Option<FlowInfo>,
-    branches: Vec<FlowInfo>,
+    branches: Vec<MergeBranch>,
 }
 
 struct MergeItems(SmallMap<Name, MergeItem>);
@@ -2526,9 +2536,14 @@ impl MergeItems {
     pub fn add_branch_flow_info(
         &mut self,
         name: Hashed<Name>,
-        branch: FlowInfo,
+        flow_info: FlowInfo,
+        termination_key: Option<Idx<Key>>,
         n_branches: usize,
     ) {
+        let branch = MergeBranch {
+            flow_info,
+            termination_key,
+        };
         match self.0.entry_hashed(name) {
             Entry::Vacant(e) => {
                 let mut branches = Vec::with_capacity(n_branches);
@@ -2551,6 +2566,7 @@ impl<'a> BindingsBuilder<'a> {
         phi_idx: Idx<Key>,
         loop_prior: Option<Idx<Key>>,
         join_style: JoinStyle<Idx<Key>>,
+        branch_infos: Vec<BranchInfo>,
     ) -> Idx<Key> {
         if branch_idxs.len() == 1 {
             // We hit this case if any of these are true:
@@ -2565,14 +2581,6 @@ impl<'a> BindingsBuilder<'a> {
             self.insert_binding_idx(phi_idx, Binding::LoopPhi(loop_prior, branch_idxs));
             phi_idx
         } else {
-            // TODO(Step 8): Build proper BranchInfo with termination keys
-            let branch_infos: Vec<BranchInfo> = branch_idxs
-                .iter()
-                .map(|&value_key| BranchInfo {
-                    value_key,
-                    termination_key: None,
-                })
-                .collect();
             self.insert_binding_idx(phi_idx, Binding::Phi(join_style, branch_infos));
             phi_idx
         }
@@ -2597,9 +2605,9 @@ impl<'a> BindingsBuilder<'a> {
         n_branches: usize,
     ) -> FlowInfo {
         let base_idx = merge_item.base.as_ref().map(|base| base.idx());
-        let mut flow_infos = merge_item.branches;
+        let mut merge_branches = merge_item.branches;
         // Track the number of branch values before adding base (for LoopDefinitelyRuns)
-        let n_branch_flow_infos = flow_infos.len();
+        let n_branch_flow_infos = merge_branches.len();
         // Track if base has a value for this name (for LoopDefinitelyRuns init check)
         let base_has_value = merge_item.base.as_ref().is_some_and(|b| b.value.is_some());
         // If this is a loop, we want to use the current default in any phis we produce,
@@ -2608,7 +2616,10 @@ impl<'a> BindingsBuilder<'a> {
             && let Some(base) = merge_item.base
         {
             let loop_prior = base.loop_prior;
-            flow_infos.push(base);
+            merge_branches.push(MergeBranch {
+                flow_info: base,
+                termination_key: None,
+            });
             Some(loop_prior)
         } else {
             None
@@ -2639,11 +2650,12 @@ impl<'a> BindingsBuilder<'a> {
         // We keep track separately of `value_idxs` and `branch_idxs` so that
         // we know whether to treat the Phi binding as a value or a narrow - it's
         // a narrow only when all the value idxs are the same.
-        let mut value_idxs = SmallSet::with_capacity(flow_infos.len());
-        let mut branch_idxs = SmallSet::with_capacity(flow_infos.len());
-        let mut styles = Vec::with_capacity(flow_infos.len());
+        let mut value_idxs = SmallSet::with_capacity(merge_branches.len());
+        let mut branch_idxs = SmallSet::with_capacity(merge_branches.len());
+        let mut styles = Vec::with_capacity(merge_branches.len());
         let mut n_values = 0;
-        for flow_info in flow_infos.into_iter() {
+        for merge_branch in merge_branches.into_iter() {
+            let flow_info = merge_branch.flow_info;
             let branch_idx = flow_info.idx();
             if let Some(v) = flow_info.value {
                 n_values += 1;
@@ -2658,6 +2670,16 @@ impl<'a> BindingsBuilder<'a> {
             }
             branch_idxs.insert(branch_idx);
         }
+        // Build branch_infos from branch_idxs (matching old behavior).
+        // For now, termination_key is always None - the next commit will
+        // wire this up properly once we're ready to use it.
+        let branch_infos: Vec<BranchInfo> = branch_idxs
+            .iter()
+            .map(|&value_key| BranchInfo {
+                value_key,
+                termination_key: None,
+            })
+            .collect();
         // For LoopDefinitelyRuns, a name is always defined if:
         // - It was defined before the loop (base_has_value), OR
         // - It's defined in all loop body branches (since the loop definitely runs at least once)
@@ -2676,6 +2698,7 @@ impl<'a> BindingsBuilder<'a> {
                     phi_idx,
                     loop_prior,
                     base_idx.map_or(JoinStyle::SimpleMerge, JoinStyle::NarrowOf),
+                    branch_infos.clone(),
                 );
                 FlowInfo {
                     value: None,
@@ -2693,6 +2716,7 @@ impl<'a> BindingsBuilder<'a> {
                     phi_idx,
                     loop_prior,
                     base_idx.map_or(JoinStyle::SimpleMerge, JoinStyle::NarrowOf),
+                    branch_infos.clone(),
                 );
                 FlowInfo {
                     value: Some(FlowValue {
@@ -2717,6 +2741,7 @@ impl<'a> BindingsBuilder<'a> {
                     phi_idx,
                     loop_prior,
                     base_idx.map_or(JoinStyle::SimpleMerge, JoinStyle::ReassignmentOf),
+                    branch_infos,
                 );
                 FlowInfo {
                     value: Some(FlowValue {
@@ -2797,8 +2822,9 @@ impl<'a> BindingsBuilder<'a> {
             merge_items.add_base_flow_info(name, info, n_branches)
         }
         for flow in flows {
+            let termination_key = flow.last_stmt_expr;
             for (name, info) in flow.info.into_iter_hashed() {
-                merge_items.add_branch_flow_info(name, info, n_branches)
+                merge_items.add_branch_flow_info(name, info, termination_key, n_branches)
             }
         }
 
