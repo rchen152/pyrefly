@@ -1402,7 +1402,7 @@ def g(x: type) -> None: ...
 f(int)
 f(Type)
 f(type)
-f(42)  # E: not assignable to parameter `x` with type `type[Unknown]`
+f(42)  # E: not assignable to parameter `x` with type `type[Any]`
 
 g(int)
 g(Type)

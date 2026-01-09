@@ -9931,8 +9931,8 @@
     {
       "code": -2,
       "column": 1,
-      "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Unknown]]] (trying to access unknown)",
-      "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Unknown]]] (trying to access unknown)",
+      "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Any]]] (trying to access unknown)",
+      "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Any]]] (trying to access unknown)",
       "line": 143,
       "name": "missing-attribute",
       "severity": "error",
