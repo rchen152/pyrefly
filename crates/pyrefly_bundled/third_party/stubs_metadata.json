@@ -22,13 +22,6 @@
       "version": "1.59.0a4",
       "notes": "Type stubs for Conan package manager (pulled from PyPI, no public source commit)"
     },
-    "matplotlib-stubs": {
-      "source": "PyPI",
-      "repository": "https://github.com/hoel-bagard/matplotlib-stubs",
-      "pypi": "https://pypi.org/project/matplotlib-stubs/",
-      "commit": "59fdaf216331aa54996e5f1149e6ee096ca63557",
-      "notes": "Unofficial type stubs for matplotlib, derived from Microsoft's python-type-stubs"
-    },
     "pandas-stubs": {
       "source": "PyPI",
       "repository": "https://github.com/pandas-dev/pandas-stubs",
