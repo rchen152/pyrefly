@@ -320,6 +320,43 @@ impl NarrowOp {
             _ => *self = Self::Or(vec![self.clone(), other]),
         }
     }
+
+    pub fn rebase_subject(&self, subject: &NarrowingSubject) -> Self {
+        match self {
+            Self::Atomic(prop, op) => {
+                Self::Atomic(rebase_facet_subject(subject, prop.as_ref()), op.clone())
+            }
+            Self::And(ops) => Self::And(ops.map(|op| op.rebase_subject(subject))),
+            Self::Or(ops) => Self::Or(ops.map(|op| op.rebase_subject(subject))),
+        }
+    }
+}
+
+fn rebase_facet_subject(
+    subject: &NarrowingSubject,
+    prop: Option<&FacetSubject>,
+) -> Option<FacetSubject> {
+    match (subject, prop) {
+        (NarrowingSubject::Name(_), None) => None,
+        (NarrowingSubject::Name(_), Some(facet)) => Some(facet.clone()),
+        (NarrowingSubject::Facets(_, base_facet), None) => Some(base_facet.clone()),
+        (NarrowingSubject::Facets(_, base_facet), Some(facet)) => {
+            Some(merge_facet_subjects(base_facet, facet))
+        }
+    }
+}
+
+fn merge_facet_subjects(base: &FacetSubject, extra: &FacetSubject) -> FacetSubject {
+    let mut chain = base.chain.facets().clone();
+    chain.extend(extra.chain.facets().clone());
+    let origin = match (base.origin, extra.origin) {
+        (FacetOrigin::GetMethod, _) | (_, FacetOrigin::GetMethod) => FacetOrigin::GetMethod,
+        _ => FacetOrigin::Direct,
+    };
+    FacetSubject {
+        chain: UnresolvedFacetChain::new(chain),
+        origin,
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -328,6 +365,19 @@ pub struct NarrowOps(pub SmallMap<Name, (NarrowOp, TextRange)>);
 impl NarrowOps {
     pub fn new() -> Self {
         Self(SmallMap::new())
+    }
+
+    pub fn and_for_subject(&mut self, subject: &NarrowingSubject, op: NarrowOp, range: TextRange) {
+        let name = subject.name().clone();
+        match self.0.entry(name) {
+            Entry::Occupied(mut entry) => {
+                entry.get_mut().0.and(op);
+                entry.get_mut().1 = range;
+            }
+            Entry::Vacant(entry) => {
+                entry.insert((op, range));
+            }
+        }
     }
 
     pub fn negate(&self) -> Self {
