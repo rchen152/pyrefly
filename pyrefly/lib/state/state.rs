@@ -788,6 +788,13 @@ impl<'a> Transaction<'a> {
         }
     }
 
+    /// Compute a module up to the given step, performing single-level fine-grained
+    /// invalidation of direct dependents when exports change.
+    ///
+    /// When a module's exports change during the Solutions step, this function
+    /// invalidates only those direct rdeps that import the specific names that changed.
+    /// This is the normal incremental path. For transitive invalidation (used when
+    /// mutable dependency cycles are detected), see `invalidate_rdeps`.
     fn demand(&self, module_data: &ArcId<ModuleDataMut>, step: Step) {
         let mut computed = false;
         loop {
@@ -1236,6 +1243,11 @@ impl<'a> Transaction<'a> {
         }
     }
 
+    /// Transitively invalidate all modules in the dependency chain of the changed modules.
+    ///
+    /// This is called from `run_internal` when a mutable dependency cycle is detected
+    /// (i.e., the same module changes twice in one run), as a fallback to ensure all
+    /// cyclic modules reach a stable state.
     fn invalidate_rdeps(&mut self, changed: &[ArcId<ModuleDataMut>]) {
         // Those that I have yet to follow
         let mut follow: Vec<ArcId<ModuleDataMut>> = changed.iter().map(|x| x.dupe()).collect();
