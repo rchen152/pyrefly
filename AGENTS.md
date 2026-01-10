@@ -75,3 +75,23 @@ Coding style: All code must be clean, documented and minimal. That means:
   changes
 - `./test.py` will run the linters and tests, but it is very heavyweight so only
   run it when you are confident the feature is complete
+
+## The `bug` marker in tests
+
+The `testcase!` macro supports a `bug = "<description>"` marker to indicate that
+a test captures undesirable behavior. Important points:
+
+- **Tests with `bug` must pass.** The marker documents that the *behavior* is
+  wrong, not that the test itself should fail. Do not expect a `bug`-marked test
+  to be a failing test.
+- **Workflow for documenting known issues:** Add a passing test that shows the
+  undesired behavior, using `bug = "..."` to explain what's wrong. This can be
+  done to track issues or as part of a stack where a later diff fixes the bug.
+- **Workflow for fixing bugs:** When the bug is fixed, remove the `bug` marker
+  and update the test expectations to reflect the correct behavior.
+- **Partial fixes:** If a test shows multiple undesired behaviors and a diff
+  fixes only some of them, keep the `bug` marker but update the message if it
+  has become stale.
+- **Message length:** Keep the `bug` message concise. For complicated bugs, add
+  detailed explanations as comments inside the test body rather than making the
+  marker message very long.
