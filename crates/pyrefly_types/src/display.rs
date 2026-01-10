@@ -256,7 +256,9 @@ impl<'a> TypeDisplayContext<'a> {
         output: &mut impl TypeOutput,
     ) -> fmt::Result {
         if self.always_display_module_name {
-            output.write_str(&format!("{}.{}", module, name))
+            output.write_str(module)?;
+            output.write_str(".")?;
+            output.write_str(name)
         } else {
             output.write_str(name)
         }
@@ -500,7 +502,7 @@ impl<'a> TypeDisplayContext<'a> {
                                 output.write_str("def ")?;
                                 output.write_str(func_name.as_ref().as_str())?;
                                 output.write_str("[")?;
-                                output.write_str(&format!("{}", commas_iter(|| tparams.iter())))?;
+                                write!(output, "{}", commas_iter(|| tparams.iter()))?;
                                 output.write_str("]")?;
                                 match self.lsp_display_mode {
                                     LspDisplayMode::Hover => {
@@ -656,14 +658,14 @@ impl<'a> TypeDisplayContext<'a> {
             }) => {
                 if self.lsp_display_mode == LspDisplayMode::Hover && is_toplevel {
                     output.write_str("[")?;
-                    output.write_str(&format!("{}", commas_iter(|| tparams.iter())))?;
+                    write!(output, "{}", commas_iter(|| tparams.iter()))?;
                     output.write_str("]")?;
                     c.fmt_with_type_with_newlines(output, &|t, o| {
                         self.fmt_helper_generic(t, false, o)
                     })
                 } else {
                     output.write_str("[")?;
-                    output.write_str(&format!("{}", commas_iter(|| tparams.iter())))?;
+                    write!(output, "{}", commas_iter(|| tparams.iter()))?;
                     output.write_str("]")?;
                     self.fmt_helper_generic(&body.clone().as_type(), false, output)
                 }
@@ -682,7 +684,7 @@ impl<'a> TypeDisplayContext<'a> {
                     output.write_str("def ")?;
                     output.write_str(func_name.as_ref().as_str())?;
                     output.write_str("[")?;
-                    output.write_str(&format!("{}", commas_iter(|| tparams.iter())))?;
+                    write!(output, "{}", commas_iter(|| tparams.iter()))?;
                     output.write_str("]")?;
                     match self.lsp_display_mode {
                         LspDisplayMode::Hover => {
@@ -701,7 +703,7 @@ impl<'a> TypeDisplayContext<'a> {
                 }
                 _ => {
                     output.write_str("[")?;
-                    output.write_str(&format!("{}", commas_iter(|| tparams.iter())))?;
+                    write!(output, "{}", commas_iter(|| tparams.iter()))?;
                     output.write_str("]")?;
                     self.fmt_helper_generic(&body.clone().as_type(), false, output)
                 }
@@ -751,42 +753,43 @@ impl<'a> TypeDisplayContext<'a> {
             Type::Concatenate(args, pspec) => {
                 self.maybe_fmt_with_module("typing", "Concatenate", output)?;
                 output.write_str("[")?;
-                output.write_str(&format!(
+                write!(
+                    output,
                     "{}",
                     commas_iter(|| append(args.iter().map(|x| x.0.clone()), [pspec]))
-                ))?;
+                )?;
                 output.write_str("]")
             }
             Type::Module(m) => {
                 output.write_str("Module[")?;
-                output.write_str(&format!("{m}"))?;
+                write!(output, "{m}")?;
                 output.write_str("]")
             }
-            Type::Var(var) => output.write_str(&format!("{var}")),
-            Type::Quantified(var) => output.write_str(&format!("{var}")),
-            Type::QuantifiedValue(var) => output.write_str(&format!("{var}")),
-            Type::ElementOfTypeVarTuple(var) => output.write_str(&format!("ElementOf[{var}]")),
+            Type::Var(var) => write!(output, "{var}"),
+            Type::Quantified(var) => write!(output, "{var}"),
+            Type::QuantifiedValue(var) => write!(output, "{var}"),
+            Type::ElementOfTypeVarTuple(var) => write!(output, "ElementOf[{var}]"),
             Type::Args(q) => {
                 output.write_str("Args[")?;
-                output.write_str(&format!("{q}"))?;
+                write!(output, "{q}")?;
                 output.write_str("]")
             }
             Type::Kwargs(q) => {
                 output.write_str("Kwargs[")?;
-                output.write_str(&format!("{q}"))?;
+                write!(output, "{q}")?;
                 output.write_str("]")
             }
             Type::ArgsValue(q) => {
                 output.write_str("ArgsValue[")?;
-                output.write_str(&format!("{q}"))?;
+                write!(output, "{q}")?;
                 output.write_str("]")
             }
             Type::KwargsValue(q) => {
                 output.write_str("KwargsValue[")?;
-                output.write_str(&format!("{q}"))?;
+                write!(output, "{q}")?;
                 output.write_str("]")
             }
-            Type::SpecialForm(x) => output.write_str(&format!("{x}")),
+            Type::SpecialForm(x) => write!(output, "{x}"),
             Type::Ellipsis => output.write_str("Ellipsis"),
             Type::Any(style) => match style {
                 AnyStyle::Explicit => self.maybe_fmt_with_module("typing", "Any", output),

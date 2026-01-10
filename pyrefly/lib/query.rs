@@ -1097,13 +1097,15 @@ impl Query {
             type_cache: &TypeCache,
         ) {
             let type_string = type_to_string(ty);
+            // Only clone ty if not already in cache
+            type_cache
+                .cache
+                .entry(type_string.clone())
+                .or_insert_with(|| ty.clone());
             res.push((
                 python_ast_range_for_expr(module_info, range, e, parent),
-                type_string.clone(),
+                type_string,
             ));
-
-            // Pre-warm the cache with this type
-            type_cache.insert(type_string, ty.clone());
         }
         fn try_find_key_for_name(name: &ExprName, bindings: &Bindings) -> Option<Key> {
             let key = Key::BoundName(ShortIdentifier::expr_name(name));
