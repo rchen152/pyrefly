@@ -64,17 +64,44 @@ Coding style: All code must be clean, documented and minimal. That means:
   times they are parsed. Generally, this means extracting semantic information
   as early as possible.
 
+## Development environments
+
+There are three possible development environments:
+
+1. **External/GitHub checkout**: Only `cargo` is available. The `buck` and `arc`
+   commands do not exist.
+2. **Internal on-demand**: Only `buck` is available. The `cargo` command may not
+   be configured.
+3. **Internal devserver with cargo**: Both `buck` and `cargo` are available.
+
+**How to detect the environment:** Check for the presence of a `BUCK` file in
+the project root. BUCK files are not exported to GitHub, so:
+- If `BUCK` exists → internal checkout, `buck` and `arc` are available
+- If `BUCK` does not exist → GitHub checkout, only `cargo` works
+
 ## Feature guidelines
 
 - When working on a feature, the first commit should be a failing test if
   possible
-- Tests should be run with buck when developing internally
-  (`buck test pyrefly:pyrefly_library -- <name of test>` from within the project
-  folder)
-- If you make a change to a buck file, run `arc autocargo` to validate the
-  changes
-- `./test.py` will run the linters and tests, but it is very heavyweight so only
-  run it when you are confident the feature is complete
+
+### Running tests
+
+- **With buck (internal):** `buck test pyrefly:pyrefly_library -- <name of test>`
+  (from within the project folder)
+- **With cargo (external):** `cargo test <name of test>`
+
+### Running the full test suite
+
+- `./test.py` runs linters and tests. It is heavyweight, so only run it when
+  you are confident the feature is complete.
+- By default, `test.py` auto-detects the build tool based on BUCK file presence.
+  You can override this with `--mode buck` or `--mode cargo`.
+- To run just formatting and linting (much faster than running tests):
+  `./test.py --no-test --no-conformance`
+
+### After modifying BUCK files (internal only)
+
+- Run `arc autocargo` to regenerate Cargo.toml files and validate changes
 
 ## The `bug` marker in tests
 
