@@ -963,17 +963,26 @@ impl Type {
     }
 
     pub fn contains_type_variable(&self) -> bool {
-        match self {
-            // In `A[X]`, the only part we need to check for type variables is `X`.
-            Self::ClassType(cls) => cls
-                .targs()
-                .as_slice()
-                .iter()
-                .any(|t| t.contains_type_variable()),
-            Self::Union(x) => x.members.iter().any(|t| t.contains_type_variable()),
-            Self::Intersect(x) => x.0.iter().any(|t| t.contains_type_variable()),
-            _ => self.any(Type::is_type_variable),
+        fn f(ty: &Type, seen: &mut bool) {
+            if ty.is_type_variable() {
+                *seen = true;
+                return;
+            }
+            let mut recurse_targs = |targs: &TArgs| {
+                for targ in targs.as_slice().iter() {
+                    f(targ, seen);
+                }
+            };
+            match ty {
+                // In `A[X]`, the only part we need to check for type variables is `X`.
+                Type::ClassType(cls) => recurse_targs(cls.targs()),
+                Type::TypedDict(TypedDict::TypedDict(td)) => recurse_targs(td.targs()),
+                _ => ty.recurse(&mut |ty| f(ty, seen)),
+            }
         }
+        let mut seen = false;
+        f(self, &mut seen);
+        seen
     }
 
     pub fn is_kind_param_spec(&self) -> bool {
