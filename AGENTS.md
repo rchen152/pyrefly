@@ -103,6 +103,22 @@ the project root. BUCK files are not exported to GitHub, so:
 
 - Run `arc autocargo` to regenerate Cargo.toml files and validate changes
 
+### Before committing
+
+**Always run formatting and linting before committing, updating a commit, or
+handing code off to a human for review:**
+`./test.py --no-test --no-conformance`
+
+This applies whether you are committing autonomously or preparing code for a
+human to commit. Do not skip this step during human-in-the-loop iteration.
+
+- Running full tests before committing is ideal but optional since CI will run
+  them. However, you must never skip formatting and linting.
+- Lints may not always be fully clean due to pre-existing issues. The key
+  requirement is: do not introduce *new* lint errors. If linting fails, check
+  whether the errors are in code you modified. If so, fix them before
+  committing.
+
 ## The `bug` marker in tests
 
 The `testcase!` macro supports a `bug = "<description>"` marker to indicate that
