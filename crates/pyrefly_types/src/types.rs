@@ -955,11 +955,9 @@ impl Type {
 
     pub fn is_type_variable(&self) -> bool {
         match self {
-            Type::Var(_)
-            | Type::Quantified(_)
-            | Type::TypeVarTuple(_)
-            | Type::TypeVar(_)
-            | Type::ParamSpec(_) => true,
+            Type::Quantified(_) | Type::TypeVarTuple(_) | Type::TypeVar(_) | Type::ParamSpec(_) => {
+                true
+            }
             _ => false,
         }
     }
