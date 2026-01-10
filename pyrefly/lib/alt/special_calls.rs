@@ -434,23 +434,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ErrorInfo::Kind(ErrorKind::InvalidArgument),
                     format!("Expected class object, got `{}`", self.for_display(ty)),
                 );
+            } else if let Type::Type(box Type::SpecialForm(SpecialForm::Callable)) = &ty {
+                // Callable is a special form that is not a `type` but can be used in `isinstance` checks
             } else {
-                if let Type::Type(box Type::SpecialForm(SpecialForm::Callable)) = &ty {
-                    // Callable is a special form that is not a `type` but can be used in `isinstance` checks
-                } else {
-                    self.check_type(
-                        &ty,
-                        &self.stdlib.builtins_type().clone().to_type(),
-                        range,
-                        errors,
-                        &|| {
-                            TypeCheckContext::of_kind(TypeCheckKind::CallArgument(
-                                Some(Name::new_static("class_or_tuple")),
-                                Some(func_kind.clone()),
-                            ))
-                        },
-                    );
-                }
+                self.check_type(
+                    &ty,
+                    &self.stdlib.builtins_type().clone().to_type(),
+                    range,
+                    errors,
+                    &|| {
+                        TypeCheckContext::of_kind(TypeCheckKind::CallArgument(
+                            Some(Name::new_static("class_or_tuple")),
+                            Some(func_kind.clone()),
+                        ))
+                    },
+                );
             }
         }
     }
