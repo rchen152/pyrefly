@@ -2276,3 +2276,43 @@ def g(b: B):
         reveal_type(b)  # E: A & B
     "#,
 );
+
+testcase!(
+    test_typeguard_return_without_annotation,
+    r#"
+from typing import TypeGuard
+
+def is_int(x: int | str) -> TypeGuard[int]:
+    return isinstance(x, int)
+
+class X:
+    def __init__(self, param: int | str) -> None:
+        self.param = param
+
+    # This function returns a TypeGuard value but does not have a TypeGuard annotation,
+    # so it should not be validated as a TypeGuard function.
+    # No "Type guard functions must accept at least one positional argument" error expected.
+    def has_int(self):
+        return is_int(self.param)
+    "#,
+);
+
+testcase!(
+    test_typeis_return_without_annotation,
+    r#"
+from typing import TypeIs
+
+def is_int(x: int | str) -> TypeIs[int]:
+    return isinstance(x, int)
+
+class X:
+    def __init__(self, param: int | str) -> None:
+        self.param = param
+
+    # This function returns a TypeIs value but does not have a TypeIs annotation,
+    # so it should not be validated as a TypeIs function.
+    # No "Type guard functions must accept at least one positional argument" error expected.
+    def has_int(self):
+        return is_int(self.param)
+    "#,
+);
