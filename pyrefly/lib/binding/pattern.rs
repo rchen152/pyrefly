@@ -95,7 +95,7 @@ impl<'a> BindingsBuilder<'a> {
                     {
                         narrow_ops.and_for_subject(
                             original_subject,
-                            alias_op.rebase_subject(original_subject),
+                            alias_op.for_subject(original_subject),
                             range,
                         );
                     }

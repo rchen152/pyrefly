@@ -321,41 +321,47 @@ impl NarrowOp {
         }
     }
 
-    pub fn rebase_subject(&self, subject: &NarrowingSubject) -> Self {
+    /// Transforms this narrowing operation to apply to a different subject.
+    ///
+    /// Used when a match pattern creates an alias (e.g., `case Foo() as x:`) and we need
+    /// to mirror the narrowing from the alias back to the original match subject. The
+    /// transformation merges facet chains: if the new subject has facets (e.g., `obj.attr`)
+    /// and this operation has facets, they are concatenated.
+    pub fn for_subject(&self, subject: &NarrowingSubject) -> Self {
+        fn merge_facet_subjects(base: &FacetSubject, extra: &FacetSubject) -> FacetSubject {
+            let mut chain = base.chain.facets().clone();
+            chain.extend(extra.chain.facets().clone());
+            let origin = match (base.origin, extra.origin) {
+                (FacetOrigin::GetMethod, _) | (_, FacetOrigin::GetMethod) => FacetOrigin::GetMethod,
+                _ => FacetOrigin::Direct,
+            };
+            FacetSubject {
+                chain: UnresolvedFacetChain::new(chain),
+                origin,
+            }
+        }
+
+        fn for_facet_subject(
+            subject: &NarrowingSubject,
+            prop: Option<&FacetSubject>,
+        ) -> Option<FacetSubject> {
+            match (subject, prop) {
+                (NarrowingSubject::Name(_), None) => None,
+                (NarrowingSubject::Name(_), Some(facet)) => Some(facet.clone()),
+                (NarrowingSubject::Facets(_, base_facet), None) => Some(base_facet.clone()),
+                (NarrowingSubject::Facets(_, base_facet), Some(facet)) => {
+                    Some(merge_facet_subjects(base_facet, facet))
+                }
+            }
+        }
+
         match self {
             Self::Atomic(prop, op) => {
-                Self::Atomic(rebase_facet_subject(subject, prop.as_ref()), op.clone())
+                Self::Atomic(for_facet_subject(subject, prop.as_ref()), op.clone())
             }
-            Self::And(ops) => Self::And(ops.map(|op| op.rebase_subject(subject))),
-            Self::Or(ops) => Self::Or(ops.map(|op| op.rebase_subject(subject))),
+            Self::And(ops) => Self::And(ops.map(|op| op.for_subject(subject))),
+            Self::Or(ops) => Self::Or(ops.map(|op| op.for_subject(subject))),
         }
-    }
-}
-
-fn rebase_facet_subject(
-    subject: &NarrowingSubject,
-    prop: Option<&FacetSubject>,
-) -> Option<FacetSubject> {
-    match (subject, prop) {
-        (NarrowingSubject::Name(_), None) => None,
-        (NarrowingSubject::Name(_), Some(facet)) => Some(facet.clone()),
-        (NarrowingSubject::Facets(_, base_facet), None) => Some(base_facet.clone()),
-        (NarrowingSubject::Facets(_, base_facet), Some(facet)) => {
-            Some(merge_facet_subjects(base_facet, facet))
-        }
-    }
-}
-
-fn merge_facet_subjects(base: &FacetSubject, extra: &FacetSubject) -> FacetSubject {
-    let mut chain = base.chain.facets().clone();
-    chain.extend(extra.chain.facets().clone());
-    let origin = match (base.origin, extra.origin) {
-        (FacetOrigin::GetMethod, _) | (_, FacetOrigin::GetMethod) => FacetOrigin::GetMethod,
-        _ => FacetOrigin::Direct,
-    };
-    FacetSubject {
-        chain: UnresolvedFacetChain::new(chain),
-        origin,
     }
 }
 
@@ -367,6 +373,11 @@ impl NarrowOps {
         Self(SmallMap::new())
     }
 
+    /// Adds or merges a narrowing operation for the given subject.
+    ///
+    /// If the subject's name already has a narrowing operation, combines them with AND.
+    /// Otherwise, inserts a new entry. Used when rebasing alias narrowing operations
+    /// back onto the original match subject.
     pub fn and_for_subject(&mut self, subject: &NarrowingSubject, op: NarrowOp, range: TextRange) {
         let name = subject.name().clone();
         match self.0.entry(name) {
