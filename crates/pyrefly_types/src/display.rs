@@ -356,7 +356,12 @@ impl<'a> TypeDisplayContext<'a> {
                     output.write_targs(inner.targs())
                 }
                 TypedDict::Anonymous(inner) => {
-                    output.write_str("dict[str, ")?;
+                    let dict_qname = self.stdlib.map(|s| s.dict_object().qname());
+                    output.write_builtin("dict", dict_qname)?;
+                    output.write_str("[")?;
+                    let str_qname = self.stdlib.map(|s| s.str().qname());
+                    output.write_builtin("str", str_qname)?;
+                    output.write_str(", ")?;
                     self.fmt_helper_generic(&inner.value_type, false, output)?;
                     output.write_str("]")
                 }
@@ -367,7 +372,12 @@ impl<'a> TypeDisplayContext<'a> {
                     output.write_targs(inner.targs())
                 }
                 TypedDict::Anonymous(inner) => {
-                    output.write_str("dict[str, ")?;
+                    let dict_qname = self.stdlib.map(|s| s.dict_object().qname());
+                    output.write_builtin("dict", dict_qname)?;
+                    output.write_str("[")?;
+                    let str_qname = self.stdlib.map(|s| s.str().qname());
+                    output.write_builtin("str", str_qname)?;
+                    output.write_str(", ")?;
                     self.fmt_helper_generic(&inner.value_type, false, output)?;
                     output.write_str("]")
                 }

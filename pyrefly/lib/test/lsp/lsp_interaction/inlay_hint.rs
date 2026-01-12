@@ -588,7 +588,7 @@ fn test_inlay_hint_class_based_typed_dict_has_location() {
 }
 
 #[test]
-fn test_inlay_hint_anonymous_typed_dict_has_no_location() {
+fn test_inlay_hint_anonymous_typed_dict_has_location() {
     let root = get_test_files_root();
     let mut interaction = LspInteraction::new();
     interaction.set_root(root.path().to_path_buf());
@@ -623,7 +623,10 @@ fn test_inlay_hint_anonymous_typed_dict_has_no_location() {
                 hint,
                 &[
                     (" -> ", false),
-                    ("dict[str, ", false),
+                    ("dict", true),
+                    ("[", false),
+                    ("str", true),
+                    (", ", false),
                     ("int", true),
                     (" | ", false),
                     ("str", true),
