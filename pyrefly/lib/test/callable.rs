@@ -37,6 +37,30 @@ reveal_type(f(1))  # E: revealed type: int
 );
 
 testcase!(
+    test_callable_variable_multiple_typevars,
+    r#"
+from typing import Callable, TypeVar, reveal_type
+T = TypeVar("T")
+U = TypeVar("U")
+f: Callable[[T, U], T] = lambda x, y: x
+reveal_type(f)  # E: revealed type: [T, U](T, U) -> T
+reveal_type(f(1, "a"))  # E: revealed type: int
+"#,
+);
+
+testcase!(
+    test_callable_variable_bounded_typevar,
+    r#"
+from typing import Callable, TypeVar, reveal_type
+T = TypeVar("T", bound=int)
+f: Callable[[T], T] = lambda x: x
+reveal_type(f)  # E: revealed type: [T](T) -> T
+reveal_type(f(1))  # E: revealed type: int
+f("hello")  # E: `str` is not assignable to upper bound `int` of type variable `T`
+"#,
+);
+
+testcase!(
     test_callable_ellipsis_upper_bound,
     r#"
 from typing import Callable
