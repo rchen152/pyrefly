@@ -858,7 +858,7 @@ _ComplexOrFloatT = TypeVar("_ComplexOrFloatT", bound=ComplexFloatingOrFloat)
 testcase!(
     test_default_is_typevar_in_default,
     r#"
-from typing import Any, Generic, TypeAlias, TypeVar
+from typing import Any, Callable, Generic, TypeAlias, TypeVar
 
 _NBit1 = TypeVar("_NBit1", default=Any)
 _NBit2 = TypeVar("_NBit2", default=_NBit1)
@@ -870,8 +870,9 @@ ComplexFloatingOrFloat: TypeAlias = complexfloating[Any, Any] | float
 
 T1 = TypeVar("T1", default=complexfloating[Any, complexfloating[Any, Any]])
 T2 = TypeVar("T2", default=ComplexFloatingOrFloat)
+T3 = TypeVar("T3", default=Callable[..., complexfloating[Any, Any]])
 
-class LinearTimeInvariant(Generic[T1, T2]):
+class LinearTimeInvariant(Generic[T1, T2, T3]):
     pass
     "#,
 );
