@@ -387,7 +387,9 @@ impl<'a> TypeDisplayContext<'a> {
                 output.write_str("]")
             }
             Type::ParamSpec(t) => {
-                output.write_str("ParamSpec[")?;
+                let param_spec_qname = self.stdlib.map(|s| s.param_spec().qname());
+                output.write_builtin("ParamSpec", param_spec_qname)?;
+                output.write_str("[")?;
                 output.write_qname(t.qname())?;
                 output.write_str("]")
             }
