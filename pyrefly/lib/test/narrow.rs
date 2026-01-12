@@ -2316,3 +2316,24 @@ class X:
         return is_int(self.param)
     "#,
 );
+
+testcase!(
+    test_isinstance_invalid_special_form,
+    r#"
+from typing import Final
+
+def f(x: object):
+    isinstance(x, Final)  # E: Expected class object, got special form `Final`
+    "#,
+);
+
+testcase!(
+    test_isinstance_valid_special_form,
+    r#"
+from typing import Protocol
+
+def f(x: object):
+    if isinstance(x, Protocol):
+        pass  # No error - Protocol is valid for isinstance
+    "#,
+);
