@@ -213,6 +213,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 None
             };
 
+        // Check if this class inherits from marshmallow.Schema
+        let is_marshmallow_schema =
+            bases_with_metadata
+                .iter()
+                .any(|(base_class_object, metadata)| {
+                    base_class_object
+                        .has_toplevel_qname(ModuleName::marshmallow_schema().as_str(), "Schema")
+                        || metadata.is_marshmallow_schema()
+                });
+
         // Compute various pieces of special metadata.
         let has_base_any = contains_base_class_any
             || bases_with_metadata
@@ -359,6 +369,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             dataclass_transform_metadata,
             pydantic_model_kind,
             django_model_metadata,
+            is_marshmallow_schema,
         )
     }
 

@@ -40,6 +40,7 @@ mod incremental;
 mod inference;
 mod literal;
 mod lsp;
+mod marshmallow;
 mod mro;
 mod named_tuple;
 mod narrow;

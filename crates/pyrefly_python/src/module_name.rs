@@ -279,6 +279,10 @@ impl ModuleName {
         Self::from_str("django.utils.functional")
     }
 
+    pub fn marshmallow_schema() -> Self {
+        Self::from_str("marshmallow.schema")
+    }
+
     pub fn pydantic_types() -> Self {
         Self::from_str("pydantic.types")
     }
