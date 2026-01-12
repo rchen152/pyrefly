@@ -373,7 +373,9 @@ impl<'a> TypeDisplayContext<'a> {
                 }
             },
             Type::TypeVar(t) => {
-                output.write_str("TypeVar[")?;
+                let type_var_qname = self.stdlib.map(|s| s.type_var().qname());
+                output.write_builtin("TypeVar", type_var_qname)?;
+                output.write_str("[")?;
                 output.write_qname(t.qname())?;
                 output.write_str("]")
             }
@@ -1858,17 +1860,6 @@ def overloaded_func[T](
         assert_eq!(parts[0].0, "Foo");
         assert_part_has_location(&parts, "Foo", "test.module", 10);
         assert!(parts.iter().any(|(s, _)| s == "Bar"), "Should have Bar");
-    }
-
-    #[test]
-    fn test_get_types_with_location_typevar() {
-        let tvar = fake_tyvar("T", "test.module", 15);
-        let t = tvar.to_type();
-        let parts = get_parts(&t);
-
-        assert_eq!(parts[0].0, "TypeVar[");
-        assert!(parts[0].1.is_none(), "TypeVar[ should not have location");
-        assert_part_has_location(&parts, "T", "test.module", 15);
     }
 
     #[test]

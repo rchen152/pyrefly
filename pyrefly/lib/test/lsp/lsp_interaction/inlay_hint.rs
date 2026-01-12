@@ -436,3 +436,40 @@ fn test_inlay_hint_tuple_type_has_location() {
 
     interaction.shutdown().unwrap();
 }
+
+#[test]
+fn test_inlay_hint_typevar_has_location() {
+    let root = get_test_files_root();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.path().to_path_buf());
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .unwrap();
+
+    interaction.client.did_open("typevar_inlay_hint_test.py");
+
+    interaction
+        .client
+        .inlay_hint("typevar_inlay_hint_test.py", 0, 0, 100, 0)
+        .expect_response_with(|result| {
+            let hints = match result {
+                Some(hints) => hints,
+                None => return false,
+            };
+            if hints.len() != 1 {
+                return false;
+            }
+
+            let hint = &hints[0];
+            if hint.position.line != 10 || hint.position.character != 14 {
+                return false;
+            }
+            check_inlay_hint_label_values(hint, &[(" -> ", false), ("TypeVar", true)])
+        })
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
