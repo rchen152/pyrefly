@@ -990,6 +990,37 @@ impl Type {
         seen
     }
 
+    pub fn collect_type_variables(&self, acc: &mut Vec<Name>) {
+        match self {
+            Type::ClassType(cls) => {
+                // In `A[X]`, `X` is the only part we need to check for type params.
+                for t in cls.targs().as_slice() {
+                    t.collect_type_variables(acc);
+                }
+            }
+            Type::Union(x) => {
+                for t in x.members.iter() {
+                    t.collect_type_variables(acc);
+                }
+            }
+            Type::Intersect(x) => {
+                for t in x.0.iter() {
+                    t.collect_type_variables(acc);
+                }
+            }
+            _ => self.universe(&mut |t| {
+                let name = match t {
+                    Type::TypeVar(t) => t.qname().id(),
+                    Type::TypeVarTuple(t) => t.qname().id(),
+                    Type::ParamSpec(p) => p.qname().id(),
+                    Type::Quantified(q) => q.name(),
+                    _ => return,
+                };
+                acc.push(name.clone());
+            }),
+        }
+    }
+
     pub fn is_kind_param_spec(&self) -> bool {
         match self {
             Type::Ellipsis

@@ -1473,36 +1473,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn collect_type_params(ty: &Type, acc: &mut Vec<Name>) {
-        match ty {
-            Type::ClassType(cls) => {
-                // In `A[X]`, `X` is the only part we need to check for type params.
-                for t in cls.targs().as_slice() {
-                    Self::collect_type_params(t, acc);
-                }
-            }
-            Type::Union(x) => {
-                for t in x.members.iter() {
-                    Self::collect_type_params(t, acc);
-                }
-            }
-            Type::Intersect(x) => {
-                for t in x.0.iter() {
-                    Self::collect_type_params(t, acc);
-                }
-            }
-            _ => ty.universe(&mut |t| {
-                let name = match t {
-                    Type::TypeVar(t) => t.qname().id(),
-                    Type::TypeVarTuple(t) => t.qname().id(),
-                    Type::ParamSpec(p) => p.qname().id(),
-                    _ => return,
-                };
-                acc.push(name.clone());
-            }),
-        }
-    }
-
     fn validate_type_params(
         &self,
         range: TextRange,
@@ -1534,7 +1504,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             if let Some(default) = tparam.quantified.default() {
                 let mut out_of_scope_names = Vec::new();
-                Self::collect_type_params(default, &mut out_of_scope_names);
+                default.collect_type_variables(&mut out_of_scope_names);
                 out_of_scope_names.retain(|name| !seen.contains(name));
                 if !out_of_scope_names.is_empty() {
                     self.error(errors, range, ErrorInfo::Kind(ErrorKind::InvalidTypeVar), format!(
