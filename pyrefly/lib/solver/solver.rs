@@ -1495,7 +1495,19 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                             Err(e) => Err(e),
                         }
                     }
-                    Variable::PartialContained | Variable::Unwrap | Variable::Recursive => {
+                    Variable::PartialContained => {
+                        // Promote LiteralStr to str when pinning a partial type.
+                        // TODO(stroxler): should we be promoting other literal types here?
+                        // See: https://github.com/facebook/pyrefly/issues/2068
+                        let t2_p = match t2 {
+                            Type::LiteralString => self.type_order.stdlib().str().clone().to_type(),
+                            _ => t2.clone(),
+                        };
+                        drop(v1_ref);
+                        variables.update(*v1, Variable::Answer(t2_p));
+                        Ok(())
+                    }
+                    Variable::Unwrap | Variable::Recursive => {
                         drop(v1_ref);
                         variables.update(*v1, Variable::Answer(t2.clone()));
                         Ok(())
