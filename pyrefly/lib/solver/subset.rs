@@ -1076,18 +1076,14 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
 
             // Callable is not allowed as an argument to type.
             // https://typing.python.org/en/latest/spec/special-types.html#type
-            (
-                Type::Type(box (Type::Callable(_) | Type::SpecialForm(SpecialForm::Callable))),
-                Type::ClassType(cls),
-            ) if cls.is_builtin("type") => Err(SubsetError::TypeCannotAcceptSpecialForms(
-                SpecialForm::Callable,
-            )),
-            (
-                Type::Type(box (Type::Callable(_) | Type::SpecialForm(SpecialForm::Callable))),
-                Type::Type(_),
-            ) => Err(SubsetError::TypeCannotAcceptSpecialForms(
-                SpecialForm::Callable,
-            )),
+            (Type::Type(box Type::Callable(_)), Type::ClassType(cls)) if cls.is_builtin("type") => {
+                Err(SubsetError::TypeCannotAcceptSpecialForms(
+                    SpecialForm::Callable,
+                ))
+            }
+            (Type::Type(box Type::Callable(_)), Type::Type(_)) => Err(
+                SubsetError::TypeCannotAcceptSpecialForms(SpecialForm::Callable),
+            ),
 
             (Type::TypedDict(got), Type::TypedDict(want)) => self.is_subset_typed_dict(got, want),
             (Type::TypedDict(got), Type::PartialTypedDict(want)) => {
@@ -1334,6 +1330,15 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             }
             (Type::LiteralString, _) => {
                 self.is_subset_eq(&self.type_order.stdlib().str().clone().to_type(), want)
+            }
+
+            (Type::Type(box Type::SpecialForm(special_form)), Type::ClassType(cls))
+                if cls.is_builtin("type") =>
+            {
+                Err(SubsetError::TypeCannotAcceptSpecialForms(*special_form))
+            }
+            (Type::Type(box Type::SpecialForm(special_form)), Type::Type(_)) => {
+                Err(SubsetError::TypeCannotAcceptSpecialForms(*special_form))
             }
             (Type::Type(l), Type::Type(u)) => self.is_subset_eq(l, u),
             (Type::Type(_), _) => self.is_subset_eq(

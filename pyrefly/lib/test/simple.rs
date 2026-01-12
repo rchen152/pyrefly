@@ -1404,12 +1404,12 @@ def f(x: Type) -> None: ...
 def g(x: type) -> None: ...
 
 f(int)
-f(Type)
+f(Type)  # E: not assignable to parameter `x` with type `type[Any]`
 f(type)
 f(42)  # E: not assignable to parameter `x` with type `type[Any]`
 
 g(int)
-g(Type)
+g(Type)  # E: not assignable to parameter `x` with type `type`
 g(type)
 g(42)  # E: not assignable to parameter `x` with type `type`
 "#,
