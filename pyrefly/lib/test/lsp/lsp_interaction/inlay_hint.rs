@@ -549,3 +549,89 @@ fn test_inlay_hint_paramspec_has_location() {
 
     interaction.shutdown().unwrap();
 }
+
+#[test]
+fn test_inlay_hint_class_based_typed_dict_has_location() {
+    let root = get_test_files_root();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.path().to_path_buf());
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .unwrap();
+
+    interaction.client.did_open("typed_dict_inlay_hint_test.py");
+
+    interaction
+        .client
+        .inlay_hint("typed_dict_inlay_hint_test.py", 0, 0, 100, 0)
+        .expect_response_with(|result| {
+            let hints = match result {
+                Some(hints) => hints,
+                None => return false,
+            };
+            if hints.len() != 1 {
+                return false;
+            }
+
+            let hint = &hints[0];
+            if hint.position.line != 13 || hint.position.character != 24 {
+                return false;
+            }
+            check_inlay_hint_label_values(hint, &[(" -> ", false), ("MyTypedDict", true)])
+        })
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
+
+#[test]
+fn test_inlay_hint_anonymous_typed_dict_has_no_location() {
+    let root = get_test_files_root();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.path().to_path_buf());
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .unwrap();
+
+    interaction
+        .client
+        .did_open("anonymous_typed_dict_inlay_hint_test.py");
+
+    interaction
+        .client
+        .inlay_hint("anonymous_typed_dict_inlay_hint_test.py", 0, 0, 100, 0)
+        .expect_response_with(|result| {
+            let hints = match result {
+                Some(hints) => hints,
+                None => return false,
+            };
+            if hints.len() != 1 {
+                return false;
+            }
+
+            let hint = &hints[0];
+            if hint.position.line != 6 || hint.position.character != 34 {
+                return false;
+            }
+            check_inlay_hint_label_values(
+                hint,
+                &[
+                    (" -> ", false),
+                    ("dict[str, ", false),
+                    ("int", true),
+                    (" | ", false),
+                    ("str", true),
+                    ("]", false),
+                ],
+            )
+        })
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
