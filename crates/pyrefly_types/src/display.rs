@@ -26,6 +26,7 @@ use starlark_map::smallmap;
 use crate::callable::Function;
 use crate::class::Class;
 use crate::literal::Lit;
+use crate::stdlib::Stdlib;
 use crate::tuple::Tuple;
 use crate::type_output::DisplayOutput;
 use crate::type_output::OutputWithLocations;
@@ -106,6 +107,8 @@ pub struct TypeDisplayContext<'a> {
     lsp_display_mode: LspDisplayMode,
     always_display_module_name: bool,
     always_display_expanded_unions: bool,
+    /// Optional stdlib reference for resolving builtin type locations
+    stdlib: Option<&'a Stdlib>,
 }
 
 impl<'a> TypeDisplayContext<'a> {
@@ -170,6 +173,10 @@ impl<'a> TypeDisplayContext<'a> {
     /// Set the context to display in LSP.
     pub fn set_lsp_display_mode(&mut self, display_mode: LspDisplayMode) {
         self.lsp_display_mode = display_mode;
+    }
+
+    pub fn set_stdlib(&mut self, stdlib: &'a Stdlib) {
+        self.stdlib = Some(stdlib);
     }
 
     pub fn display(&'a self, t: &'a Type) -> impl Display + 'a {
@@ -650,7 +657,10 @@ impl<'a> TypeDisplayContext<'a> {
             }
             Type::Intersect(x) => self.fmt_type_sequence(x.0.iter(), " & ", true, output),
             Type::Tuple(t) => {
-                t.fmt_with_type(output, &|ty, o| self.fmt_helper_generic(ty, false, o))
+                let tuple_qname = self.stdlib.map(|s| s.tuple_object().qname());
+                t.fmt_with_type(output, tuple_qname, &|ty, o| {
+                    self.fmt_helper_generic(ty, false, o)
+                })
             }
             Type::Forall(box Forall {
                 tparams,
@@ -892,8 +902,14 @@ impl Type {
         rendered
     }
 
-    pub fn get_types_with_locations(&self) -> Vec<(String, Option<TextRangeWithModule>)> {
-        let ctx = TypeDisplayContext::new(&[self]);
+    pub fn get_types_with_locations(
+        &self,
+        stdlib: Option<&Stdlib>,
+    ) -> Vec<(String, Option<TextRangeWithModule>)> {
+        let mut ctx = TypeDisplayContext::new(&[self]);
+        if let Some(s) = stdlib {
+            ctx.set_stdlib(s);
+        }
         let mut output = OutputWithLocations::new(&ctx);
         ctx.fmt_helper_generic(self, false, &mut output).unwrap();
         output.parts().to_vec()

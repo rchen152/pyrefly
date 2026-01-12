@@ -46,7 +46,7 @@ fn test_inlay_hint_default_config() {
                 hint0,
                 &[
                     (" -> ", false),
-                    ("tuple", false),
+                    ("tuple", true),
                     ("[", false),
                     ("Literal", false),
                     ("[", false),
@@ -71,7 +71,7 @@ fn test_inlay_hint_default_config() {
                 hint1,
                 &[
                     (": ", false),
-                    ("tuple", false),
+                    ("tuple", true),
                     ("[", false),
                     ("Literal", false),
                     ("[", false),
@@ -213,7 +213,7 @@ fn test_inlay_hint_disable_variables() {
                 hint0,
                 &[
                     (" -> ", false),
-                    ("tuple", false),
+                    ("tuple", true),
                     ("[", false),
                     ("Literal", false),
                     ("[", false),
@@ -290,7 +290,7 @@ fn test_inlay_hint_disable_returns() {
                 hint,
                 &[
                     (": ", false),
-                    ("tuple", false),
+                    ("tuple", true),
                     ("[", false),
                     ("Literal", false),
                     ("[", false),
@@ -365,7 +365,7 @@ fn test_inlay_hint_labels_support_goto_type_definition() {
 }
 
 #[test]
-fn test_inlay_hint_tuple_type_does_not_have_location() {
+fn test_inlay_hint_tuple_type_has_location() {
     let root = get_test_files_root();
     let mut interaction = LspInteraction::new();
     interaction.set_root(root.path().to_path_buf());
@@ -386,20 +386,51 @@ fn test_inlay_hint_tuple_type_does_not_have_location() {
                 Some(hints) => hints,
                 None => return false,
             };
-
-            for hint in hints {
-                match &hint.label {
-                    lsp_types::InlayHintLabel::LabelParts(parts) => {
-                        for part in parts {
-                            if part.value == "tuple" && part.location.is_some() {
-                                return false;
-                            }
-                        }
-                    }
-                    _ => return false,
-                }
+            if hints.len() != 3 {
+                return false;
             }
-            true
+
+            let hint0 = &hints[0];
+            if !check_inlay_hint_label_values(
+                hint0,
+                &[
+                    (" -> ", false),
+                    ("tuple", true),
+                    ("[", false),
+                    ("Literal", false),
+                    ("[", false),
+                    ("1", false),
+                    ("]", false),
+                    (", ", false),
+                    ("Literal", false),
+                    ("[", false),
+                    ("2", false),
+                    ("]", false),
+                    ("]", false),
+                ],
+            ) {
+                return false;
+            }
+
+            let hint1 = &hints[1];
+            check_inlay_hint_label_values(
+                hint1,
+                &[
+                    (": ", false),
+                    ("tuple", true),
+                    ("[", false),
+                    ("Literal", false),
+                    ("[", false),
+                    ("1", false),
+                    ("]", false),
+                    (", ", false),
+                    ("Literal", false),
+                    ("[", false),
+                    ("2", false),
+                    ("]", false),
+                    ("]", false),
+                ],
+            )
         })
         .unwrap();
 

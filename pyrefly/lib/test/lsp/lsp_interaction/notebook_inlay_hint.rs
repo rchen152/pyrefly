@@ -48,7 +48,7 @@ fn test_inlay_hints() {
                 hint,
                 &[
                     (" -> ", false),
-                    ("tuple", false),
+                    ("tuple", true),
                     ("[", false),
                     ("Literal", false),
                     ("[", false),
@@ -83,7 +83,7 @@ fn test_inlay_hints() {
                 hint,
                 &[
                     (": ", false),
-                    ("tuple", false),
+                    ("tuple", true),
                     ("[", false),
                     ("Literal", false),
                     ("[", false),
