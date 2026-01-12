@@ -7,28 +7,8 @@
 
 use crate::test::lsp::lsp_interaction::object_model::InitializeSettings;
 use crate::test::lsp::lsp_interaction::object_model::LspInteraction;
+use crate::test::lsp::lsp_interaction::util::check_inlay_hint_label_values;
 use crate::test::lsp::lsp_interaction::util::get_test_files_root;
-
-fn check_inlay_hint_label_values(hint: &lsp_types::InlayHint, expected: &[(&str, bool)]) -> bool {
-    match &hint.label {
-        lsp_types::InlayHintLabel::LabelParts(parts) => {
-            if parts.len() != expected.len() {
-                return false;
-            }
-            for (part, (expected_value, should_have_location)) in parts.iter().zip(expected.iter())
-            {
-                if part.value != *expected_value {
-                    return false;
-                }
-                if *should_have_location && part.location.is_none() {
-                    return false;
-                }
-            }
-            true
-        }
-        _ => false,
-    }
-}
 
 #[test]
 fn test_inlay_hints() {
