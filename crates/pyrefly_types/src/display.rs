@@ -380,7 +380,9 @@ impl<'a> TypeDisplayContext<'a> {
                 output.write_str("]")
             }
             Type::TypeVarTuple(t) => {
-                output.write_str("TypeVarTuple[")?;
+                let type_var_tuple_qname = self.stdlib.map(|s| s.type_var_tuple().qname());
+                output.write_builtin("TypeVarTuple", type_var_tuple_qname)?;
+                output.write_str("[")?;
                 output.write_qname(t.qname())?;
                 output.write_str("]")
             }
