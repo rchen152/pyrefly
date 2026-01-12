@@ -325,3 +325,45 @@ fn test_inlay_hint_labels_support_goto_type_definition() {
 
     interaction.shutdown().unwrap();
 }
+
+#[test]
+fn test_inlay_hint_tuple_type_does_not_have_location() {
+    let root = get_test_files_root();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.path().to_path_buf());
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .unwrap();
+
+    interaction.client.did_open("inlay_hint_test.py");
+
+    interaction
+        .client
+        .inlay_hint("inlay_hint_test.py", 0, 0, 100, 0)
+        .expect_response_with(|result| {
+            let hints = match result {
+                Some(hints) => hints,
+                None => return false,
+            };
+
+            for hint in hints {
+                match &hint.label {
+                    lsp_types::InlayHintLabel::LabelParts(parts) => {
+                        for part in parts {
+                            if part.value == "tuple" && part.location.is_some() {
+                                return false;
+                            }
+                        }
+                    }
+                    _ => return false,
+                }
+            }
+            true
+        })
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
