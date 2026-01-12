@@ -962,26 +962,31 @@ impl Type {
         }
     }
 
-    pub fn contains_type_variable(&self) -> bool {
-        fn f(ty: &Type, seen: &mut bool) {
+    fn visit_type_variables(&self, f: &mut dyn FnMut(&Type)) {
+        fn visit(ty: &Type, f: &mut dyn FnMut(&Type)) {
             if ty.is_type_variable() {
-                *seen = true;
+                f(ty);
                 return;
             }
             let mut recurse_targs = |targs: &TArgs| {
                 for targ in targs.as_slice().iter() {
-                    f(targ, seen);
+                    visit(targ, f);
                 }
             };
             match ty {
                 // In `A[X]`, the only part we need to check for type variables is `X`.
                 Type::ClassType(cls) => recurse_targs(cls.targs()),
                 Type::TypedDict(TypedDict::TypedDict(td)) => recurse_targs(td.targs()),
-                _ => ty.recurse(&mut |ty| f(ty, seen)),
+                _ => ty.recurse(&mut |ty| visit(ty, f)),
             }
         }
+        visit(self, f)
+    }
+
+    pub fn contains_type_variable(&self) -> bool {
         let mut seen = false;
-        f(self, &mut seen);
+        let mut f = |_: &Type| seen = true;
+        self.visit_type_variables(&mut f);
         seen
     }
 
