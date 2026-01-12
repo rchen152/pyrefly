@@ -1473,22 +1473,22 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn collect_unseen_type_params(ty: &Type, seen: &SmallSet<Name>, unseen: &mut Vec<Name>) {
+    fn collect_type_params(ty: &Type, acc: &mut Vec<Name>) {
         match ty {
             Type::ClassType(cls) => {
                 // In `A[X]`, `X` is the only part we need to check for type params.
                 for t in cls.targs().as_slice() {
-                    Self::collect_unseen_type_params(t, seen, unseen);
+                    Self::collect_type_params(t, acc);
                 }
             }
             Type::Union(x) => {
                 for t in x.members.iter() {
-                    Self::collect_unseen_type_params(t, seen, unseen);
+                    Self::collect_type_params(t, acc);
                 }
             }
             Type::Intersect(x) => {
                 for t in x.0.iter() {
-                    Self::collect_unseen_type_params(t, seen, unseen);
+                    Self::collect_type_params(t, acc);
                 }
             }
             _ => ty.universe(&mut |t| {
@@ -1498,9 +1498,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Type::ParamSpec(p) => p.qname().id(),
                     _ => return,
                 };
-                if !seen.contains(name) {
-                    unseen.push(name.clone());
-                }
+                acc.push(name.clone());
             }),
         }
     }
@@ -1536,7 +1534,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             if let Some(default) = tparam.quantified.default() {
                 let mut out_of_scope_names = Vec::new();
-                Self::collect_unseen_type_params(default, &seen, &mut out_of_scope_names);
+                Self::collect_type_params(default, &mut out_of_scope_names);
+                out_of_scope_names.retain(|name| !seen.contains(name));
                 if !out_of_scope_names.is_empty() {
                     self.error(errors, range, ErrorInfo::Kind(ErrorKind::InvalidTypeVar), format!(
                         "Default of type parameter `{}` refers to out-of-scope type parameter{} {}",
