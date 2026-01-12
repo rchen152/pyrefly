@@ -999,11 +999,8 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             (l, Type::Union(box Union { members: us, .. })) => {
                 // Check var and non-var elements separately, so that if we match a non-var, we
                 // don't pin the vars.
-                let (vars, nonvars): (Vec<_>, Vec<_>) = us.iter().partition(|u| {
-                    let mut contains_var = false;
-                    u.universe(&mut |t| contains_var |= matches!(t, Type::Var(_)));
-                    contains_var
-                });
+                let (vars, nonvars): (Vec<_>, Vec<_>) =
+                    us.iter().partition(|u| u.may_contain_quantified_var());
                 any(nonvars.iter(), |u| self.is_subset_eq(l, u))
                     .or_else(|_| any(vars.iter(), |u| self.is_subset_eq(l, u)))
             }
