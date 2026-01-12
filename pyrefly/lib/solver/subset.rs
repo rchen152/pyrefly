@@ -415,18 +415,12 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             return Ok(());
         }
 
-        // For class-level coinductive reasoning: when we're in a nested protocol check
-        // (recursive_assumptions.len() > 1), track (got_class, protocol_class) pairs to
-        // detect cycles that would otherwise be missed due to fresh Var creation when
-        // checking Forall types against protocols. We only do this for nested checks
-        // because the top-level check doesn't have fresh Vars yet.
-        //
-        // TODO: At some point we should audit this more closely, it's not entirely clear
-        // this is the exact right recursive condition to handle `Var` synthesis in `Forall`,
-        // it may be possible to get false positives on concrete types here. See
-        // D90129077 and D89604001 for context.
-        let class_check = if self.recursive_assumptions.len() > 1
-            && let Type::ClassType(got_class) = &got
+        // For class-level coinductive reasoning: if the `got` type's type arguments
+        // contain Vars, we're likely in a recursive pattern (e.g., checking method return
+        // types that reference the same classes). Use (Class, Class) matching to detect
+        // cycles that would otherwise be missed due to fresh Var creation.
+        let class_check = if let Type::ClassType(got_class) = &got
+            && got.may_contain_quantified_var()
         {
             let key = (
                 got_class.class_object().clone(),
