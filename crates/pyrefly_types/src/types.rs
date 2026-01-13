@@ -1744,6 +1744,35 @@ impl Type {
     }
 }
 
+/// Various type-variable-like things
+#[expect(dead_code)]
+enum TypeVariable<'a> {
+    /// A function or class type parameter created from a reference to an in-scope legacy or scoped type variable
+    Quantified(&'a Quantified),
+    /// A legacy typing.TypeVar appearing in a position where it is not resolved to an in-scope type variable
+    LegacyTypeVar(&'a TypeVar),
+    /// A legacy typing.TypeVarTuple appearing in a position where it is not resolved to an in-scope type variable
+    LegacyTypeVarTuple(&'a TypeVarTuple),
+    /// A legacy typing.ParamSpec appearing in a position where it is not resolved to an in-scope type variable
+    LegacyParamSpec(&'a ParamSpec),
+    /// A placeholder type that may have been instantiated from a Quantified
+    Var,
+}
+
+impl<'a> TypeVariable<'a> {
+    #[expect(dead_code)]
+    fn new(ty: &'a Type) -> Option<Self> {
+        match ty {
+            Type::Quantified(q) => Some(Self::Quantified(q)),
+            Type::TypeVar(t) => Some(Self::LegacyTypeVar(t)),
+            Type::TypeVarTuple(t) => Some(Self::LegacyTypeVarTuple(t)),
+            Type::ParamSpec(p) => Some(Self::LegacyParamSpec(p)),
+            Type::Var(_) => Some(Self::Var),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::literal::Lit;
