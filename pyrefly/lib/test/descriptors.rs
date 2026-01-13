@@ -201,15 +201,77 @@ C().d = 42  # E:  Attribute `d` of class `C` is a read-only descriptor with no `
     "#,
 );
 
+// Test that instance-only attributes with descriptor types are not treated as descriptors.
+// Descriptor protocol only applies to class-body initialized attributes; both annotation-only
+// and method-initialized attributes should allow assignment.
 testcase!(
-    test_annotation_only_descriptor_allows_assignment,
+    test_instance_only_attribute_does_not_have_descriptor_semantics,
     r#"
+from typing import assert_type
+
 class Device:
     def __get__(self, obj, classobj) -> int: ...
-class C:
+
+class AnnotationOnly:
     device: Device
-def f(c: C) -> None:
-    c.device = Device()
+
+class MethodInitialized:
+    device: Device
+    def __init__(self) -> None:
+        self.device = Device()
+
+def f(a: AnnotationOnly, m: MethodInitialized) -> None:
+    # Writes should be allowed (not treated as read-only descriptor)
+    a.device = Device()  # OK: annotation-only, not a descriptor
+    m.device = Device()  # OK: method-initialized, not a descriptor
+    # Reads should return Device, not int (descriptor __get__ not invoked)
+    assert_type(a.device, Device)
+    assert_type(m.device, Device)
+    "#,
+);
+
+// Test that ClassVar annotations with descriptor types should have descriptor semantics
+// even without initialization, since ClassVar implies class-level attribute.
+testcase!(
+    bug = "ClassVar[Descriptor] should have descriptor semantics even without initialization",
+    test_classvar_descriptor_without_initialization,
+    r#"
+from typing import ClassVar, assert_type
+
+class ReadOnlyDescriptor:
+    def __get__(self, obj, classobj) -> int: ...
+
+# BUG: ClassVar implies class-level attribute, so descriptor semantics should apply.
+# Reading C.value should invoke __get__ and return int, but returns ReadOnlyDescriptor.
+class C:
+    value: ClassVar[ReadOnlyDescriptor]
+
+def f() -> None:
+    assert_type(C.value, ReadOnlyDescriptor)
+    "#,
+);
+
+// Test that annotation-only fields in child classes still inherit
+// parent descriptor behavior (the descriptor is not "shadowed" by the annotation).
+testcase!(
+    bug = "Child should inherit parent's read-only descriptor, but the annotation shadows it",
+    test_annotation_only_child_inherits_parent_descriptor,
+    r#"
+from typing import assert_type
+
+class ReadOnlyDescriptor:
+    def __get__(self, obj, classobj) -> int: ...
+
+class Parent:
+    value: ReadOnlyDescriptor = ReadOnlyDescriptor()  # actual descriptor
+
+# BUG: Child should inherit parent's descriptor behavior.
+# Reading c.value should invoke __get__ and return int, but returns ReadOnlyDescriptor.
+class Child(Parent):
+    value: ReadOnlyDescriptor  # E: Class member `Child.value` overrides parent class `Parent` in an inconsistent manner
+
+def f(c: Child) -> None:
+    assert_type(c.value, ReadOnlyDescriptor)
     "#,
 );
 
