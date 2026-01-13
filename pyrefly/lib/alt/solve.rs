@@ -2719,28 +2719,31 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     fn promote_callable_legacy_typevars(&self, callable: &mut Callable) -> Vec<TParam> {
-        let mut seen_type_vars: SmallMap<TypeVar, Quantified> = SmallMap::new();
+        let mut seen_type_vars = SmallMap::new();
         let mut tparams = Vec::new();
         callable.visit_mut(&mut |ty| {
-            if let Type::TypeVar(tv) = ty {
-                let q = seen_type_vars
-                    .entry(tv.dupe())
-                    .or_insert_with(|| {
-                        let q = Quantified::type_var(
-                            tv.qname().id().clone(),
-                            self.uniques,
-                            tv.default().cloned(),
-                            tv.restriction().clone(),
-                        );
-                        tparams.push(TParam {
-                            quantified: q.clone(),
-                            variance: tv.variance(),
-                        });
-                        q
-                    })
-                    .clone();
-                *ty = Type::Quantified(Box::new(q));
-            }
+            ty.transform_raw_legacy_type_variables(&mut |ty| {
+                if let Type::TypeVar(tv) = ty {
+                    let q = seen_type_vars
+                        .entry(tv.dupe())
+                        .or_insert_with(|| {
+                            let q = Quantified::type_var(
+                                tv.qname().id().clone(),
+                                self.uniques,
+                                tv.default().cloned(),
+                                tv.restriction().clone(),
+                            );
+                            tparams.push(TParam {
+                                quantified: q.clone(),
+                                variance: tv.variance(),
+                            });
+                            q
+                        })
+                        .clone();
+                    *ty = Type::Quantified(Box::new(q));
+                }
+                // TODO: handle TypeVarTuple and ParamSpec
+            });
         });
         tparams
     }
