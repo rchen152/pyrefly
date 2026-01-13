@@ -41,6 +41,7 @@ use pyrefly_util::task_heap::Cancelled;
 use pyrefly_util::visit::Visit;
 use ruff_python_ast::Alias;
 use ruff_python_ast::AnyNodeRef;
+use ruff_python_ast::CmpOp;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprAttribute;
 use ruff_python_ast::ExprCall;
@@ -1297,6 +1298,15 @@ impl<'a> Transaction<'a> {
             covering_nodes.iter().find_map(|node| match node {
                 AnyNodeRef::ExprCompare(compare) => {
                     for op in &compare.ops {
+                        // Handle membership test operators (in/not in) - uses __contains__ on the right operand
+                        if matches!(op, CmpOp::In | CmpOp::NotIn)
+                            && let Some(answers) = self.get_answers(handle)
+                            && let Some(right_type) =
+                                answers.get_type_trace(compare.comparators.first()?.range())
+                        {
+                            return Some((right_type, dunder::CONTAINS));
+                        }
+                        // Handle rich comparison operators
                         if let Some(dunder_name) = dunder::rich_comparison_dunder(*op)
                             && let Some(answers) = self.get_answers(handle)
                             && let Some(left_type) = answers.get_type_trace(compare.left.range())
@@ -1342,6 +1352,24 @@ impl<'a> Transaction<'a> {
                         && let Some(base_type) = answers.get_type_trace(subscript.value.range())
                     {
                         return Some((base_type, dunder_name));
+                    }
+                    None
+                }
+                // Handle iteration `in` keyword in for loops
+                AnyNodeRef::StmtFor(stmt_for) => {
+                    if let Some(answers) = self.get_answers(handle)
+                        && let Some(iter_type) = answers.get_type_trace(stmt_for.iter.range())
+                    {
+                        return Some((iter_type, dunder::ITER));
+                    }
+                    None
+                }
+                // Handle iteration `in` keyword in comprehensions
+                AnyNodeRef::Comprehension(comp) => {
+                    if let Some(answers) = self.get_answers(handle)
+                        && let Some(iter_type) = answers.get_type_trace(comp.iter.range())
+                    {
+                        return Some((iter_type, dunder::ITER));
                     }
                     None
                 }

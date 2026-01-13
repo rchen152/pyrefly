@@ -903,3 +903,41 @@ from mymod.submod.deep import Bar
         "Expected hover to show full module name 'mymod.submod.deep', got: {report}"
     );
 }
+
+#[test]
+fn hover_over_in_operator_shows_contains_dunder() {
+    let code = r#"
+class Container:
+    def __contains__(self, item: int) -> bool: ...
+
+c = Container()
+1 in c
+# ^
+"#;
+    let report = get_batched_lsp_operations_report(&[("main", code)], get_test_report);
+    // The hover should show the __contains__ method signature
+    assert!(
+        report.contains("__contains__") && report.contains("self: Container"),
+        "Expected hover to show __contains__ method signature, got: {report}"
+    );
+}
+
+/// Test for the exact example from issue #1926: [x for x in x if x in [1]]
+/// For the membership `in`, hover shows __contains__ method.
+/// Note: Hover over iteration `in` (for loops/comprehensions) doesn't show __iter__ because
+/// keywords don't have types, but goto-definition works. See the definition.rs tests.
+#[test]
+fn hover_over_in_keyword_issue_1926_membership() {
+    // The membership `in` shows __contains__ method
+    let code_membership = r#"
+x = [1, 2, 3]
+result = [x for x in x if x in [1]]
+#                           ^
+"#;
+    let report = get_batched_lsp_operations_report(&[("main", code_membership)], get_test_report);
+    // For membership test, we expect to see __contains__
+    assert!(
+        report.contains("__contains__"),
+        "Membership 'in' should show __contains__ hover, got: {report}"
+    );
+}
