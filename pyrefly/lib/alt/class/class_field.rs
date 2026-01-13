@@ -1004,7 +1004,15 @@ impl ClassField {
     fn dataclass_flags_of(&self) -> DataclassFieldKeywords {
         match &self.0 {
             ClassFieldInner::Property { .. } => DataclassFieldKeywords::new(),
-            ClassFieldInner::Descriptor { .. } => DataclassFieldKeywords::new(),
+            // Descriptors are always initialized in the class body (otherwise they wouldn't
+            // be detected as descriptors), so they have a default value (the descriptor instance).
+            // For data descriptors, this is sound because assignments go through __set__.
+            // For non-data descriptors, we separately emit an error in check_dataclass_non_data_descriptors.
+            ClassFieldInner::Descriptor { .. } => {
+                let mut kws = DataclassFieldKeywords::new();
+                kws.default = Some(Type::any_implicit());
+                kws
+            }
             ClassFieldInner::Method { .. } => DataclassFieldKeywords::new(),
             ClassFieldInner::NestedClass { .. } => DataclassFieldKeywords::new(),
             ClassFieldInner::ClassAttribute { initialization, .. } => match initialization {

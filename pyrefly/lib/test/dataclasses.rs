@@ -1583,7 +1583,6 @@ C()
 );
 
 testcase!(
-    bug = "The analysis is incomplete - there's a FP on a call to `__init__` that succeeds at runtime",
     test_non_data_descriptor_in_dataclass,
     r#"
 from dataclasses import dataclass
@@ -1601,7 +1600,32 @@ class Desc:
 class C:
     x: Desc = Desc()  # E: Non-data descriptor `x` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.
 
-# TODO(stroxler): This is a false positive, at runtime the default is the result of `__get__`
-c = C()  # E: Missing argument `x` in function `C.__init__`
+# Despite the error, the descriptor still has a default value
+c = C()
+    "#,
+);
+
+testcase!(
+    test_data_descriptor_in_dataclass,
+    r#"
+from dataclasses import dataclass
+from typing import assert_type
+
+# Data descriptors (have __set__) in dataclasses work correctly because
+# assignments go through the descriptor protocol rather than shadowing.
+class Desc:
+    def __get__(self, obj, cls) -> int: ...
+    def __set__(self, obj, value: int) -> None: ...
+
+@dataclass
+class C:
+    x: Desc = Desc()
+
+# The field has a default, and accepts the `__set__` type if provided.
+c = C()
+c = C(42)
+
+# Reading should return the __get__ return type
+assert_type(c.x, int)
     "#,
 );
