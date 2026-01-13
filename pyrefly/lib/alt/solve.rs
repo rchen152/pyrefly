@@ -2705,21 +2705,22 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         })
     }
 
-    fn wrap_callable_legacy_typevars(&self, ty: Type) -> Type {
-        match ty {
+    fn wrap_callable_legacy_typevars(&self, mut ty: Type) -> Type {
+        match &mut ty {
             Type::Callable(callable) => {
-                let (callable, tparams) = self.promote_callable_legacy_typevars(*callable);
-                if tparams.is_empty() {
-                    Type::Callable(Box::new(callable))
+                let tparams = self.promote_callable_legacy_typevars(callable);
+                if !tparams.is_empty() {
+                    Forallable::Callable((**callable).clone())
+                        .forall(Arc::new(TParams::new(tparams)))
                 } else {
-                    Forallable::Callable(callable).forall(Arc::new(TParams::new(tparams)))
+                    ty
                 }
             }
             _ => ty,
         }
     }
 
-    fn promote_callable_legacy_typevars(&self, mut callable: Callable) -> (Callable, Vec<TParam>) {
+    fn promote_callable_legacy_typevars(&self, callable: &mut Callable) -> Vec<TParam> {
         let mut seen_type_vars: SmallMap<TypeVar, Quantified> = SmallMap::new();
         let mut tparams = Vec::new();
         callable.visit_mut(&mut |ty| {
@@ -2743,7 +2744,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 *ty = Type::Quantified(Box::new(q));
             }
         });
-        (callable, tparams)
+        tparams
     }
 
     fn check_implicit_return_against_annotation(
