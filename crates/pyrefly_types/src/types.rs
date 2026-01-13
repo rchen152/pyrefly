@@ -1001,13 +1001,15 @@ impl Type {
         seen
     }
 
-    pub fn collect_type_variables(&self, acc: &mut Vec<Name>) {
+    /// Collect unreplaced references to legacy type variables. Note that references to in-scope
+    /// legacy type variables in functions and classes are replaced with Quantified, so unreplaced
+    /// references only appear in cases like a TypeVar definition or an out-of-scope type variable.
+    pub fn collect_raw_legacy_type_variables(&self, acc: &mut Vec<Name>) {
         let mut f = |t| {
             let name = match t {
                 TypeVariable::LegacyTypeVar(t) => t.qname().id(),
                 TypeVariable::LegacyTypeVarTuple(t) => t.qname().id(),
                 TypeVariable::LegacyParamSpec(p) => p.qname().id(),
-                TypeVariable::Quantified(q) => q.name(),
                 _ => return,
             };
             acc.push(name.clone());
@@ -1756,6 +1758,7 @@ impl Type {
 }
 
 /// Various type-variable-like things
+#[expect(dead_code)]
 enum TypeVariable<'a> {
     /// A function or class type parameter created from a reference to an in-scope legacy or scoped type variable
     Quantified(&'a Quantified),

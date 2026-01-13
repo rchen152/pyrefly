@@ -1505,7 +1505,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             if let Some(default) = tparam.quantified.default() {
                 let mut out_of_scope_names = Vec::new();
-                default.collect_type_variables(&mut out_of_scope_names);
+                default.collect_raw_legacy_type_variables(&mut out_of_scope_names);
                 out_of_scope_names.retain(|name| !seen.contains(name));
                 if !out_of_scope_names.is_empty() {
                     self.error(errors, range, ErrorInfo::Kind(ErrorKind::InvalidTypeVar), format!(
