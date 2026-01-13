@@ -1008,9 +1008,20 @@ impl Type {
         });
     }
 
+    /// Checks if the type contains any reference to a type variable. This may be a reference that
+    /// has been resolved to a function- or class-scoped type parameter (i.e., a Quantified) or an
+    /// unresolved reference to a legacy type variable.
     pub fn contains_type_variable(&self) -> bool {
         let mut seen = false;
-        let mut f = |t| seen |= !matches!(t, TypeVariable::Var);
+        let mut f = |t| {
+            seen |= matches!(
+                t,
+                TypeVariable::Quantified(_)
+                    | TypeVariable::LegacyTypeVar(_)
+                    | TypeVariable::LegacyTypeVarTuple(_)
+                    | TypeVariable::LegacyParamSpec(_)
+            )
+        };
         self.visit_type_variables(&mut f);
         seen
     }
