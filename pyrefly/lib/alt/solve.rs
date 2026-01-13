@@ -2705,19 +2705,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         })
     }
 
-    fn wrap_callable_legacy_typevars(&self, mut ty: Type) -> Type {
-        match &mut ty {
+    fn wrap_callable_legacy_typevars(&self, ty: Type) -> Type {
+        ty.transform(&mut |ty| match ty {
             Type::Callable(callable) => {
                 let tparams = self.promote_callable_legacy_typevars(callable);
                 if !tparams.is_empty() {
-                    Forallable::Callable((**callable).clone())
-                        .forall(Arc::new(TParams::new(tparams)))
-                } else {
-                    ty
+                    *ty = Forallable::Callable((**callable).clone())
+                        .forall(Arc::new(TParams::new(tparams)));
                 }
             }
-            _ => ty,
-        }
+            _ => {}
+        })
     }
 
     fn promote_callable_legacy_typevars(&self, callable: &mut Callable) -> Vec<TParam> {

@@ -61,6 +61,17 @@ f("hello")  # E: `str` is not assignable to upper bound `int` of type variable `
 );
 
 testcase!(
+    test_list_of_callables_variable_typevar_annotation,
+    r#"
+from typing import Callable, TypeVar, assert_type, reveal_type
+T = TypeVar("T")
+f: list[Callable[[T], T]] = [lambda x: x]
+reveal_type(f)  # E: revealed type: list[[T](T) -> T]
+assert_type(f[0](1), int)
+"#,
+);
+
+testcase!(
     test_callable_ellipsis_upper_bound,
     r#"
 from typing import Callable
