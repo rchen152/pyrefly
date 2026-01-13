@@ -994,6 +994,20 @@ impl Type {
         visit(self, f)
     }
 
+    pub fn for_each_quantified<'a>(&'a self, f: &mut impl FnMut(&'a Quantified)) {
+        self.visit_type_variables(&mut |x| {
+            if let TypeVariable::Quantified(x) = x {
+                f(x);
+            }
+        })
+    }
+
+    pub fn collect_quantifieds<'a>(&'a self, acc: &mut SmallSet<&'a Quantified>) {
+        self.for_each_quantified(&mut |q| {
+            acc.insert(q);
+        });
+    }
+
     pub fn contains_type_variable(&self) -> bool {
         let mut seen = false;
         let mut f = |t| seen |= !matches!(t, TypeVariable::Var);
@@ -1140,20 +1154,6 @@ impl Type {
                 *t = replacement.clone();
             }
         })
-    }
-
-    pub fn for_each_quantified<'a>(&'a self, f: &mut impl FnMut(&'a Quantified)) {
-        self.visit_type_variables(&mut |x| {
-            if let TypeVariable::Quantified(x) = x {
-                f(x);
-            }
-        })
-    }
-
-    pub fn collect_quantifieds<'a>(&'a self, acc: &mut SmallSet<&'a Quantified>) {
-        self.for_each_quantified(&mut |q| {
-            acc.insert(q);
-        });
     }
 
     pub fn any(&self, mut predicate: impl FnMut(&Type) -> bool) -> bool {
