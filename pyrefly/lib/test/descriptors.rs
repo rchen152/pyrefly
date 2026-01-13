@@ -469,3 +469,40 @@ class A:
         return self.d
     "#,
 );
+
+testcase!(
+    bug = "Setting descriptor on class should be allowed if type is compatible",
+    test_set_descriptor_on_class,
+    r#"
+from typing import overload
+
+class D:
+    @overload
+    def __get__(self, obj: None, classobj: type) -> "D": ...
+    @overload
+    def __get__(self, obj: object, classobj: type) -> int: ...
+    def __get__(self, obj: object | None, classobj: type) -> "D | int":
+        if obj is None:
+            return self
+        return 42
+
+    def __set__(self, obj: object, value: int) -> None: ...
+
+class C:
+    d: D = D()
+
+    @classmethod
+    def reset(cls) -> None:
+        # Setting a descriptor on a class object (not an instance) should be
+        # allowed because __set__ only intercepts instance assignments. Class
+        # assignments bypass the descriptor protocol and write directly to
+        # the class __dict__.
+        cls.d = D()  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+
+# Static context: setting descriptor on class should also be allowed
+C.d = D()  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+
+# Wrong type should still error, but as a type mismatch
+C.d = "wrong"  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+    "#,
+);
