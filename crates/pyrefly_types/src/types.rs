@@ -967,28 +967,25 @@ impl Type {
         )
     }
 
-    fn is_type_variable(&self) -> bool {
-        match self {
-            Type::Quantified(_) | Type::TypeVarTuple(_) | Type::TypeVar(_) | Type::ParamSpec(_) => {
-                true
-            }
-            _ => false,
-        }
-    }
-
-    fn visit_type_variables(&self, f: &mut dyn FnMut(&Type)) {
-        fn visit(ty: &Type, f: &mut dyn FnMut(&Type)) {
-            if ty.is_type_variable() {
-                f(ty);
+    fn visit_type_variables<'a>(&'a self, f: &mut dyn FnMut(TypeVariable<'a>)) {
+        fn visit<'a>(ty: &'a Type, f: &mut dyn FnMut(TypeVariable<'a>)) {
+            if let Some(tv) = TypeVariable::new(ty) {
+                f(tv);
                 return;
             }
-            let mut recurse_targs = |targs: &TArgs| {
+            let mut recurse_targs = |targs: &'a TArgs| {
                 for targ in targs.as_slice().iter() {
                     visit(targ, f);
                 }
             };
             match ty {
-                // In `A[X]`, the only part we need to check for type variables is `X`.
+                // In `A[X]`, we only check `X` for a couple reasons:
+                // * If we were to blindly visit the entire ClassType, we would find Quantifieds in
+                //   the definition of the class, which is almost never what we want: we want to
+                //   know if `X` contains any references to Quantifieds, not whether `A` is generic.
+                //   See https://github.com/facebook/pyrefly/issues/1962.
+                // * Not checking the rest of the ClassType is a critical performance optimization
+                //   when visiting Vars. See https://github.com/facebook/pyrefly/issues/2016.
                 Type::ClassType(cls) => recurse_targs(cls.targs()),
                 Type::TypedDict(TypedDict::TypedDict(td)) => recurse_targs(td.targs()),
                 _ => ty.recurse(&mut |ty| visit(ty, f)),
@@ -999,18 +996,18 @@ impl Type {
 
     pub fn contains_type_variable(&self) -> bool {
         let mut seen = false;
-        let mut f = |_: &Type| seen = true;
+        let mut f = |t| seen |= !matches!(t, TypeVariable::Var);
         self.visit_type_variables(&mut f);
         seen
     }
 
     pub fn collect_type_variables(&self, acc: &mut Vec<Name>) {
-        let mut f = |t: &Type| {
+        let mut f = |t| {
             let name = match t {
-                Type::TypeVar(t) => t.qname().id(),
-                Type::TypeVarTuple(t) => t.qname().id(),
-                Type::ParamSpec(p) => p.qname().id(),
-                Type::Quantified(q) => q.name(),
+                TypeVariable::LegacyTypeVar(t) => t.qname().id(),
+                TypeVariable::LegacyTypeVarTuple(t) => t.qname().id(),
+                TypeVariable::LegacyParamSpec(p) => p.qname().id(),
+                TypeVariable::Quantified(q) => q.name(),
                 _ => return,
             };
             acc.push(name.clone());
@@ -1759,7 +1756,6 @@ impl Type {
 }
 
 /// Various type-variable-like things
-#[expect(dead_code)]
 enum TypeVariable<'a> {
     /// A function or class type parameter created from a reference to an in-scope legacy or scoped type variable
     Quantified(&'a Quantified),
