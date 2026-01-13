@@ -1084,6 +1084,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 else {
                     return type_info.clone();
                 };
+                let Some(op_for_narrow) = (match op {
+                    AtomicNarrowOp::Call(func, args) => {
+                        self.resolve_narrowing_call(func.as_ref(), args, errors)
+                    }
+                    AtomicNarrowOp::NotCall(func, args) => self
+                        .resolve_narrowing_call(func.as_ref(), args, errors)
+                        .map(|resolved_op| resolved_op.negate()),
+                    _ => Some(op.clone()),
+                }) else {
+                    return type_info.clone();
+                };
                 if facet_subject.origin == FacetOrigin::GetMethod
                     && !self.supports_dict_get_subject(type_info, facet_subject, range)
                 {
@@ -1091,7 +1102,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 let ty = self.atomic_narrow(
                     &self.get_facet_chain_type(type_info, &resolved_chain, range),
-                    op,
+                    &op_for_narrow,
                     range,
                     errors,
                 );
@@ -1105,26 +1116,36 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             let prefix_chain = FacetChain::new(prefix_facets);
                             let base_ty =
                                 self.get_facet_chain_type(type_info, &prefix_chain, range);
-                            let dict_get_key_falsy = matches!(op, AtomicNarrowOp::IsFalsy)
-                                && matches!(last, FacetKind::Key(_));
+                            let dict_get_key_falsy =
+                                matches!(op_for_narrow, AtomicNarrowOp::IsFalsy)
+                                    && matches!(last, FacetKind::Key(_));
                             if dict_get_key_falsy {
                                 narrowed.update_for_assignment(resolved_chain.facets(), None);
-                            } else if let Some(narrowed_ty) =
-                                self.atomic_narrow_for_facet(&base_ty, last, op, range, errors)
-                                && narrowed_ty != base_ty
+                            } else if let Some(narrowed_ty) = self.atomic_narrow_for_facet(
+                                &base_ty,
+                                last,
+                                &op_for_narrow,
+                                range,
+                                errors,
+                            ) && narrowed_ty != base_ty
                             {
                                 narrowed = narrowed.with_narrow(prefix_chain.facets(), narrowed_ty);
                             }
                         }
                         _ => {
                             let base_ty = type_info.ty();
-                            let dict_get_key_falsy = matches!(op, AtomicNarrowOp::IsFalsy)
-                                && matches!(last, FacetKind::Key(_));
+                            let dict_get_key_falsy =
+                                matches!(op_for_narrow, AtomicNarrowOp::IsFalsy)
+                                    && matches!(last, FacetKind::Key(_));
                             if dict_get_key_falsy {
                                 narrowed.update_for_assignment(resolved_chain.facets(), None);
-                            } else if let Some(narrowed_ty) =
-                                self.atomic_narrow_for_facet(base_ty, last, op, range, errors)
-                                && narrowed_ty != *base_ty
+                            } else if let Some(narrowed_ty) = self.atomic_narrow_for_facet(
+                                base_ty,
+                                last,
+                                &op_for_narrow,
+                                range,
+                                errors,
+                            ) && narrowed_ty != *base_ty
                             {
                                 narrowed = narrowed.clone().with_ty(narrowed_ty);
                             }
