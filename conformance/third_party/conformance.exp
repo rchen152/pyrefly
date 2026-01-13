@@ -3303,6 +3303,17 @@
   "dataclasses_descriptors.py": [
     {
       "code": -2,
+      "column": 5,
+      "concise_description": "Non-data descriptor `z` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.",
+      "description": "Non-data descriptor `z` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.",
+      "line": 58,
+      "name": "bad-class-definition",
+      "severity": "error",
+      "stop_column": 6,
+      "stop_line": 58
+    },
+    {
+      "code": -2,
       "column": 12,
       "concise_description": "assert_type(Desc2[int], list[int]) failed",
       "description": "assert_type(Desc2[int], list[int]) failed",

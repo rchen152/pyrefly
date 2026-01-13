@@ -88,7 +88,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let metadata = self.get_metadata_for_class(cls);
         let dataclass = metadata.dataclass_metadata()?;
         let mut fields = SmallMap::new();
-
+        self.check_dataclass_non_data_descriptors(cls, dataclass, errors);
         if dataclass.kws.init {
             let init_method = if let Some((root_model_type, has_strict)) =
                 self.get_pydantic_root_model_type_via_mro(cls, &metadata)
@@ -185,6 +185,36 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.get_dataclass_replace(cls, dataclass, errors),
         );
         Some(ClassSynthesizedFields::new(fields))
+    }
+
+    /// Check for non-data descriptors in dataclass fields and emit errors.
+    ///
+    /// Non-data descriptors (having __get__ but no __set__) are unsound in dataclasses
+    /// because the dataclass __init__ writes to the instance dict, shadowing the
+    /// class-level descriptor.
+    fn check_dataclass_non_data_descriptors(
+        &self,
+        cls: &Class,
+        dataclass: &DataclassMetadata,
+        errors: &ErrorCollector,
+    ) {
+        for name in dataclass.fields.iter() {
+            if let DataclassMember::Field(field, _) = self.get_dataclass_member(cls, name)
+                && let Some(range) = field.value.non_data_descriptor_range()
+            {
+                self.error(
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::BadClassDefinition),
+                    format!(
+                        "Non-data descriptor `{name}` in dataclass is unsound. \
+                         The dataclass __init__ writes to the instance dict, \
+                         shadowing the descriptor. Add a __set__ method to make \
+                         it a data descriptor."
+                    ),
+                );
+            }
+        }
     }
 
     pub fn call_dataclasses_replace(

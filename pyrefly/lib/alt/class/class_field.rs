@@ -957,6 +957,25 @@ impl ClassField {
         }
     }
 
+    /// Check if this field is a non-data descriptor (has __get__ but no __set__).
+    /// Used for detecting possible soundness problems in dataclasses.
+    pub fn is_non_data_descriptor(&self) -> bool {
+        matches!(
+            &self.0,
+            ClassFieldInner::Descriptor { descriptor, .. } if !descriptor.setter
+        )
+    }
+
+    /// Get the range for a non-data descriptor, if this field is one; used for error reporting.
+    pub fn non_data_descriptor_range(&self) -> Option<TextRange> {
+        match &self.0 {
+            ClassFieldInner::Descriptor { descriptor, .. } if !descriptor.setter => {
+                Some(descriptor.range)
+            }
+            _ => None,
+        }
+    }
+
     pub fn has_explicit_annotation(&self) -> bool {
         match &self.0 {
             ClassFieldInner::Property { .. } => false,

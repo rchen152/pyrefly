@@ -1581,3 +1581,27 @@ class C:
 C()
     "#,
 );
+
+testcase!(
+    bug = "The analysis is incomplete - there's a FP on a call to `__init__` that succeeds at runtime",
+    test_non_data_descriptor_in_dataclass,
+    r#"
+from dataclasses import dataclass
+from typing import assert_type
+
+# Non-data descriptors (only __get__, no __set__) in dataclasses are unsound:
+# The dataclass __init__ writes to the instance dict, shadowing the class-level
+# descriptor. This means the static type (from __get__) doesn't match the runtime
+# type (the raw descriptor object in the instance dict).
+class Desc:
+    def __get__(self, obj, cls) -> int: ...
+    # No __set__ - non-data descriptor
+
+@dataclass
+class C:
+    x: Desc = Desc()  # E: Non-data descriptor `x` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.
+
+# TODO(stroxler): This is a false positive, at runtime the default is the result of `__get__`
+c = C()  # E: Missing argument `x` in function `C.__init__`
+    "#,
+);
