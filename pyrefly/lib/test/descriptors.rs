@@ -196,7 +196,7 @@ class C:
     d = D()
 assert_type(C.d, int)
 assert_type(C().d, int)
-C.d = 42  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+C.d = 42  # E: `Literal[42]` is not assignable to attribute `d` with type `D`
 C().d = 42  # E:  Attribute `d` of class `C` is a read-only descriptor with no `__set__` and cannot be set
     "#,
 );
@@ -283,7 +283,7 @@ class C:
     d = D()
 assert_type(C.d, D)
 assert_type(C().d, D)
-C.d = 42  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+C.d = 42  # E: `Literal[42]` is not assignable to attribute `d` with type `D`
 C().d = 42
     "#,
 );
@@ -299,7 +299,7 @@ class C:
     d = D()
 assert_type(C.d, int)
 assert_type(C().d, int)
-C.d = "42"  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+C.d = "42"  # E: `Literal['42']` is not assignable to attribute `d` with type `D`
 C().d = "42"
     "#,
 );
@@ -352,7 +352,7 @@ class C:
         return 42
 assert_type(C.cp, int)
 assert_type(C().cp, int)
-C.cp = 42  # E: Attribute `cp` of class `C` is a descriptor, which may not be overwritten
+C.cp = 42  # E: `Literal[42]` is not assignable to attribute `cp` with type `classproperty[C, int]`
 C().cp = 42  # E:  Attribute `cp` of class `C` is a read-only descriptor with no `__set__` and cannot be set
     "#,
 );
@@ -471,7 +471,6 @@ class A:
 );
 
 testcase!(
-    bug = "Setting descriptor on class should be allowed if type is compatible",
     test_set_descriptor_on_class,
     r#"
 from typing import overload
@@ -497,12 +496,12 @@ class C:
         # allowed because __set__ only intercepts instance assignments. Class
         # assignments bypass the descriptor protocol and write directly to
         # the class __dict__.
-        cls.d = D()  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+        cls.d = D()
 
 # Static context: setting descriptor on class should also be allowed
-C.d = D()  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+C.d = D()
 
-# Wrong type should still error, but as a type mismatch
-C.d = "wrong"  # E: Attribute `d` of class `C` is a descriptor, which may not be overwritten
+# Wrong type should still error as a type mismatch
+C.d = "wrong"  # E: `Literal['wrong']` is not assignable to attribute `d` with type `D`
     "#,
 );

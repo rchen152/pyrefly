@@ -3814,13 +3814,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             e.to_error_msg(attr_name),
                         );
                     }
-                    DescriptorBase::ClassDef(class) => {
-                        let e = NoAccessReason::SettingDescriptorOnClass(class.dupe());
-                        self.error(
-                            errors,
+                    DescriptorBase::ClassDef(_) => {
+                        // Class-level assignment bypasses the descriptor protocol.
+                        // __set__ only intercepts instance assignments, so we check
+                        // that the value is assignable to the descriptor type.
+                        let attr_ty = x.cls.to_type();
+                        self.check_set_read_write_and_infer_narrow(
+                            attr_ty,
+                            attr_name,
+                            got,
                             range,
-                            ErrorInfo::new(ErrorKind::NoAccess, context),
-                            e.to_error_msg(attr_name),
+                            errors,
+                            context,
+                            false,
+                            narrowed_types,
                         );
                     }
                 };
