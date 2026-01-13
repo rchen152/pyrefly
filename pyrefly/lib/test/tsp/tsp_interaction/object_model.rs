@@ -16,8 +16,6 @@ use std::thread::{self};
 use std::time::Duration;
 
 use crossbeam_channel::RecvTimeoutError;
-use crossbeam_channel::bounded;
-use lsp_server::Connection;
 use lsp_server::Message;
 use lsp_server::Notification;
 use lsp_server::Request;
@@ -35,6 +33,7 @@ use serde_json::Value;
 use crate::commands::lsp::IndexingMode;
 use crate::commands::tsp::TspArgs;
 use crate::commands::tsp::run_tsp;
+use crate::lsp::non_wasm::server::Connection;
 use crate::test::util::init_test;
 
 #[derive(Default)]
@@ -323,34 +322,29 @@ impl TspInteraction {
     pub fn new() -> Self {
         init_test();
 
-        let (language_client_sender, language_client_receiver) = bounded::<Message>(0);
-        let (language_server_sender, language_server_receiver) = bounded::<Message>(0);
+        let (conn_server, conn_client) = Connection::memory();
 
         let args = TspArgs {
             indexing_mode: IndexingMode::LazyBlocking,
             workspace_indexing_limit: 0,
-        };
-        let connection = Connection {
-            sender: language_client_sender,
-            receiver: language_server_receiver,
         };
 
         let args = args.clone();
 
         let request_idx = Arc::new(Mutex::new(0));
 
-        let mut server = TestTspServer::new(language_server_sender, request_idx.clone());
+        let mut server = TestTspServer::new(conn_client.sender, request_idx.clone());
 
         // Spawn the server thread and store its handle
         let thread_handle = thread::spawn(move || {
-            run_tsp(connection, args, &NoTelemetry)
+            run_tsp(conn_server, args, &NoTelemetry)
                 .map(|_| ())
                 .map_err(|e| std::io::Error::other(e.to_string()))
         });
 
         server.server_thread = Some(thread_handle);
 
-        let client = TestTspClient::new(language_client_receiver);
+        let client = TestTspClient::new(conn_client.receiver);
 
         Self { server, client }
     }

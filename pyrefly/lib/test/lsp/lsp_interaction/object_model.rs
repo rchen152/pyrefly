@@ -16,7 +16,6 @@ use std::thread::{self};
 use std::time::Duration;
 
 use crossbeam_channel::RecvTimeoutError;
-use lsp_server::Connection;
 use lsp_server::Message;
 use lsp_server::Notification;
 use lsp_server::Request;
@@ -73,6 +72,7 @@ use serde_json::json;
 use crate::commands::lsp::IndexingMode;
 use crate::commands::lsp::LspArgs;
 use crate::commands::lsp::run_lsp;
+use crate::lsp::non_wasm::server::Connection;
 use crate::lsp::wasm::provide_type::ProvideType;
 use crate::test::util::init_test;
 

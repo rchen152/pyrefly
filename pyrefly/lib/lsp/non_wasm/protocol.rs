@@ -9,9 +9,6 @@
 // notifications. The 3rd party "lsp-server" crate doesn't know about this field, so we need to define
 // out own message types and LSP protocol implementation.
 
-// Used in next diff
-#![allow(unused)]
-
 use std::io;
 
 use lsp_server::Message;
