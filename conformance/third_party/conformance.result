@@ -83,6 +83,7 @@
   ],
   "constructors_consistency.py": [],
   "dataclasses_descriptors.py": [
+    "Line 32: Unexpected errors ['Data descriptor `y` has incompatible default: `__get__` returns `Desc1 | int` which is not assignable to `__set__` value type `int`. The class-level descriptor value cannot be used as a default.']",
     "Line 58: Unexpected errors ['Non-data descriptor `z` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.']",
     "Line 61: Unexpected errors ['assert_type(Desc2[int], list[int]) failed']",
     "Line 62: Unexpected errors ['assert_type(Desc2[str], list[str]) failed']",

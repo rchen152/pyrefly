@@ -1487,7 +1487,7 @@ class Desc:
     def __set__(self, obj, value: str) -> None: ...
 @dataclass
 class C:
-    x: Desc = Desc()
+    x: Desc = Desc()  # E: Data descriptor `x` has incompatible default
 c = C('')
 assert_type(c.x, int)
 c.x = 'cat'
@@ -1619,21 +1619,29 @@ testcase!(
 from dataclasses import dataclass
 from typing import assert_type
 
-# Data descriptors (have __set__) in dataclasses work correctly because
+# Data descriptors (have __set__) in dataclasses may work correctly because
 # assignments go through the descriptor protocol rather than shadowing.
-class Desc:
+class DescA:
     def __get__(self, obj, cls) -> int: ...
     def __set__(self, obj, value: int) -> None: ...
 
+# But if the `__get__` type does not match `__set__` then the default is
+# incorrectly typed.
+class DescB:
+    def __get__(self, obj, cls) -> int: ...
+    def __set__(self, obj, value: str) -> None: ...
+
 @dataclass
 class C:
-    x: Desc = Desc()
+    x: DescA = DescA()
+    y: DescB = DescB()  # E: Data descriptor `y` has incompatible default: `__get__` returns `int` which is not assignable to `__set__` value type `str`. The class-level descriptor value cannot be used as a default.
 
 # The field has a default, and accepts the `__set__` type if provided.
 c = C()
-c = C(42)
+c = C(x=42, y='42')
 
 # Reading should return the __get__ return type
 assert_type(c.x, int)
+assert_type(c.y, int)
     "#,
 );

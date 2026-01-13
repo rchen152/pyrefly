@@ -978,6 +978,18 @@ impl ClassField {
         }
     }
 
+    /// For a data descriptor (has both `__get__` and `__set__`), get the descriptor range
+    /// and class type. Used for dataclass validation to check that the class-level `__get__`
+    /// return type is compatible with `__set__`.
+    pub fn data_descriptor_info(&self) -> Option<(TextRange, ClassType)> {
+        match &self.0 {
+            ClassFieldInner::Descriptor { descriptor, .. } if descriptor.setter => {
+                Some((descriptor.range, descriptor.cls.clone()))
+            }
+            _ => None,
+        }
+    }
+
     pub fn has_explicit_annotation(&self) -> bool {
         match &self.0 {
             ClassFieldInner::Property { .. } => false,

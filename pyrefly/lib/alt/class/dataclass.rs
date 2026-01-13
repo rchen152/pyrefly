@@ -89,6 +89,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let dataclass = metadata.dataclass_metadata()?;
         let mut fields = SmallMap::new();
         self.check_dataclass_non_data_descriptors(cls, dataclass, errors);
+        self.check_dataclass_data_descriptor_defaults(cls, dataclass, errors);
         if dataclass.kws.init {
             let init_method = if let Some((root_model_type, has_strict)) =
                 self.get_pydantic_root_model_type_via_mro(cls, &metadata)
@@ -229,6 +230,70 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                          it a data descriptor."
                     ),
                 );
+            }
+        }
+    }
+
+    /// Check that data descriptor defaults are type-safe in dataclass fields.
+    ///
+    /// For a data descriptor (having both __get__ and __set__), the "default" value
+    /// when the field is not provided to __init__ is the class-level descriptor.
+    /// Reading the field returns the `__get__` return type, but setting the field
+    /// expects the `__set__` value parameter type. For the default to be type-safe,
+    /// the `__get__` return type must be assignable to the `__set__` value type.
+    fn check_dataclass_data_descriptor_defaults(
+        &self,
+        cls: &Class,
+        dataclass: &DataclassMetadata,
+        errors: &ErrorCollector,
+    ) {
+        for name in dataclass.fields.iter() {
+            if let DataclassMember::Field(field, _) = self.get_dataclass_member(cls, name)
+                && let Some((range, descriptor_cls)) = field.value.data_descriptor_info()
+            {
+                // Get the __get__ method's return type from the descriptor class.
+                let get_return_ty = self
+                    .get_class_member(descriptor_cls.class_object(), &dunder::GET)
+                    .and_then(|get_field| get_field.ty().callable_return_type());
+
+                // Get the __set__ method and extract the value parameter type (3rd param).
+                let set_value_ty = self
+                    .get_class_member(descriptor_cls.class_object(), &dunder::SET)
+                    .and_then(|set_field| {
+                        set_field
+                            .ty()
+                            .callable_signatures()
+                            .first()
+                            .and_then(|sig| {
+                                if let Params::List(params) = &sig.params {
+                                    match params.items().get(2) {
+                                        Some(Param::Pos(_, t, _) | Param::PosOnly(_, t, _)) => {
+                                            Some(t.clone())
+                                        }
+                                        _ => None,
+                                    }
+                                } else {
+                                    None
+                                }
+                            })
+                    });
+
+                if let (Some(get_ty), Some(set_ty)) = (get_return_ty, set_value_ty) {
+                    // Check if the __get__ return type is assignable to the __set__ value type.
+                    if !self.is_subset_eq(&get_ty, &set_ty) {
+                        self.error(
+                            errors,
+                            range,
+                            ErrorInfo::Kind(ErrorKind::BadClassDefinition),
+                            format!(
+                                "Data descriptor `{name}` has incompatible default: \
+                                 `__get__` returns `{get_ty}` which is not assignable to \
+                                 `__set__` value type `{set_ty}`. The class-level descriptor \
+                                 value cannot be used as a default."
+                            ),
+                        );
+                    }
+                }
             }
         }
     }

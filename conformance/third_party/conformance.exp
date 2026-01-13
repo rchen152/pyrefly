@@ -3304,6 +3304,17 @@
     {
       "code": -2,
       "column": 5,
+      "concise_description": "Data descriptor `y` has incompatible default: `__get__` returns `Desc1 | int` which is not assignable to `__set__` value type `int`. The class-level descriptor value cannot be used as a default.",
+      "description": "Data descriptor `y` has incompatible default: `__get__` returns `Desc1 | int` which is not assignable to `__set__` value type `int`. The class-level descriptor value cannot be used as a default.",
+      "line": 32,
+      "name": "bad-class-definition",
+      "severity": "error",
+      "stop_column": 6,
+      "stop_line": 32
+    },
+    {
+      "code": -2,
+      "column": 5,
       "concise_description": "Non-data descriptor `z` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.",
       "description": "Non-data descriptor `z` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.",
       "line": 58,
