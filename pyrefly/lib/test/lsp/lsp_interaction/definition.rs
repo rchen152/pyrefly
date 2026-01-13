@@ -7,8 +7,6 @@
 
 use std::path::PathBuf;
 
-use lsp_server::Message;
-use lsp_server::Request;
 use lsp_server::RequestId;
 use lsp_types::GotoDefinitionResponse;
 use lsp_types::Location;
@@ -16,6 +14,8 @@ use lsp_types::Url;
 use serde_json::json;
 use tempfile::TempDir;
 
+use crate::lsp::non_wasm::protocol::Message;
+use crate::lsp::non_wasm::protocol::Request;
 use crate::test::lsp::lsp_interaction::object_model::InitializeSettings;
 use crate::test::lsp::lsp_interaction::object_model::LspInteraction;
 use crate::test::lsp::lsp_interaction::util::bundled_typeshed_path;

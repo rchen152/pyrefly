@@ -16,11 +16,7 @@ use std::thread::{self};
 use std::time::Duration;
 
 use crossbeam_channel::RecvTimeoutError;
-use lsp_server::Message;
-use lsp_server::Notification;
-use lsp_server::Request;
 use lsp_server::RequestId;
-use lsp_server::Response;
 use lsp_types::Url;
 use lsp_types::notification::Exit;
 use lsp_types::notification::Notification as _;
@@ -33,6 +29,11 @@ use serde_json::Value;
 use crate::commands::lsp::IndexingMode;
 use crate::commands::tsp::TspArgs;
 use crate::commands::tsp::run_tsp;
+use crate::lsp::non_wasm::protocol::JsonRpcMessage;
+use crate::lsp::non_wasm::protocol::Message;
+use crate::lsp::non_wasm::protocol::Notification;
+use crate::lsp::non_wasm::protocol::Request;
+use crate::lsp::non_wasm::protocol::Response;
 use crate::lsp::non_wasm::server::Connection;
 use crate::test::util::init_test;
 
@@ -69,12 +70,12 @@ impl TestTspServer {
     }
 
     /// Send a message to this server
-    pub fn send_message(&self, message: Message) {
+    pub fn send_message(&self, msg: Message) {
         eprintln!(
             "client--->server {}",
-            serde_json::to_string(&message).unwrap()
+            serde_json::to_string(&JsonRpcMessage::from_message(msg.clone())).unwrap()
         );
-        if let Err(err) = self.sender.send_timeout(message.clone(), self.timeout) {
+        if let Err(err) = self.sender.send_timeout(msg, self.timeout) {
             panic!("Failed to send message to TSP server: {err:?}");
         }
     }
@@ -247,30 +248,33 @@ impl TestTspClient {
         }
     }
 
-    pub fn expect_message_helper<F>(&self, expected_message: Message, should_skip: F)
+    pub fn expect_message_helper<F>(&self, expected_msg: Message, should_skip: F)
     where
         F: Fn(&Message) -> bool,
     {
         loop {
             match self.receiver.recv_timeout(self.timeout) {
                 Ok(msg) => {
-                    eprintln!("client<---server {}", serde_json::to_string(&msg).unwrap());
+                    let actual_str =
+                        serde_json::to_string(&JsonRpcMessage::from_message(msg.clone())).unwrap();
+
+                    eprintln!("client<---server {}", actual_str);
 
                     if should_skip(&msg) {
                         continue;
                     }
 
-                    let expected_str = serde_json::to_string(&expected_message).unwrap();
-                    let actual_str = serde_json::to_string(&msg).unwrap();
-
+                    let expected_str =
+                        serde_json::to_string(&JsonRpcMessage::from_message(expected_msg.clone()))
+                            .unwrap();
                     assert_eq!(&expected_str, &actual_str, "Response mismatch");
                     return;
                 }
                 Err(RecvTimeoutError::Timeout) => {
-                    panic!("Timeout waiting for response. Expected: {expected_message:?}");
+                    panic!("Timeout waiting for response. Expected: {expected_msg:?}");
                 }
                 Err(RecvTimeoutError::Disconnected) => {
-                    panic!("Channel disconnected. Expected: {expected_message:?}");
+                    panic!("Channel disconnected. Expected: {expected_msg:?}");
                 }
             }
         }
@@ -285,7 +289,10 @@ impl TestTspClient {
     pub fn expect_any_message(&self) {
         match self.receiver.recv_timeout(self.timeout) {
             Ok(msg) => {
-                eprintln!("client<---server {}", serde_json::to_string(&msg).unwrap());
+                eprintln!(
+                    "client<---server {}",
+                    serde_json::to_string(&JsonRpcMessage::from_message(msg.clone())).unwrap()
+                );
             }
             Err(RecvTimeoutError::Timeout) => {
                 panic!("Timeout waiting for response");
@@ -300,7 +307,10 @@ impl TestTspClient {
     pub fn receive_any_message(&self) -> Message {
         match self.receiver.recv_timeout(self.timeout) {
             Ok(msg) => {
-                eprintln!("client<---server {}", serde_json::to_string(&msg).unwrap());
+                eprintln!(
+                    "client<---server {}",
+                    serde_json::to_string(&JsonRpcMessage::from_message(msg.clone())).unwrap()
+                );
                 msg
             }
             Err(RecvTimeoutError::Timeout) => {

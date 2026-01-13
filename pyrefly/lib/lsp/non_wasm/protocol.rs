@@ -11,14 +11,77 @@
 
 use std::io;
 
-use lsp_server::Message;
-use lsp_server::Notification;
-use lsp_server::Request;
 use lsp_server::RequestId;
-use lsp_server::Response;
 use lsp_server::ResponseError;
 use serde::Deserialize;
 use serde::Serialize;
+
+#[derive(Debug, Clone)]
+pub enum Message {
+    Request(Request),
+    Response(Response),
+    Notification(Notification),
+}
+
+#[derive(Debug, Clone)]
+pub struct Request {
+    pub id: RequestId,
+    pub method: String,
+    pub params: serde_json::Value,
+}
+
+#[derive(Debug, Clone)]
+pub struct Response {
+    pub id: RequestId,
+    pub result: Option<serde_json::Value>,
+    pub error: Option<ResponseError>,
+}
+
+#[derive(Debug, Clone)]
+pub struct Notification {
+    pub method: String,
+    pub params: serde_json::Value,
+}
+
+impl From<Request> for Message {
+    fn from(request: Request) -> Message {
+        Message::Request(request)
+    }
+}
+
+impl From<Response> for Message {
+    fn from(response: Response) -> Message {
+        Message::Response(response)
+    }
+}
+
+impl From<Notification> for Message {
+    fn from(notification: Notification) -> Message {
+        Message::Notification(notification)
+    }
+}
+
+impl Response {
+    pub fn new_ok<R: Serialize>(id: RequestId, result: R) -> Response {
+        Response {
+            id,
+            result: Some(serde_json::to_value(result).unwrap()),
+            error: None,
+        }
+    }
+    pub fn new_err(id: RequestId, code: i32, message: String) -> Response {
+        let error = ResponseError {
+            code,
+            message,
+            data: None,
+        };
+        Response {
+            id,
+            result: None,
+            error: Some(error),
+        }
+    }
+}
 
 const JSONRPC_2_0: &str = "2.0";
 const CONTENT_LENGTH: &[u8] = b"Content-Length: ";
@@ -70,7 +133,7 @@ impl<'a> JsonRpcMessage<'a> {
         }
     }
 
-    fn from_message(msg: Message) -> Self {
+    pub fn from_message(msg: Message) -> Self {
         match msg {
             Message::Request(Request { id, method, params }) => JsonRpcMessage {
                 jsonrpc: JSONRPC_2_0,
