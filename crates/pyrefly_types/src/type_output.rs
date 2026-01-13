@@ -560,7 +560,7 @@ mod tests {
         // Expected future behavior: [("Literal", Some(location)), ("[", None), ("1", None), ("]", None)]
 
         // Create Literal[1] type
-        let literal_type = Type::Literal(Lit::Int(LitInt::new(1)));
+        let literal_type = LitInt::new(1).to_type();
 
         let ctx = TypeDisplayContext::new(&[&literal_type]);
         let mut output = OutputWithLocations::new(&ctx);

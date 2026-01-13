@@ -1009,5 +1009,5 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 }
 
 fn name_to_literal_type(name: &Name) -> Type {
-    Type::Literal(Lit::Str(name.as_str().into()))
+    Lit::Str(name.as_str().into()).to_type()
 }

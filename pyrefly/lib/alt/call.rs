@@ -1112,7 +1112,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         let call_target =
             self.as_call_target_or_error(getattr_ty, CallStyle::FreeForm, range, errors, context);
-        let attr_name_ty = Type::Literal(Lit::Str(attr_name.as_str().into()));
+        let attr_name_ty = Lit::Str(attr_name.as_str().into()).to_type();
         self.call_infer(
             call_target,
             &[CallArg::ty(&attr_name_ty, range)],
@@ -1136,7 +1136,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         let call_target =
             self.as_call_target_or_error(setattr_ty, CallStyle::FreeForm, range, errors, context);
-        let attr_name_ty = Type::Literal(Lit::Str(attr_name.as_str().into()));
+        let attr_name_ty = Lit::Str(attr_name.as_str().into()).to_type();
         self.call_infer(
             call_target,
             &[CallArg::ty(&attr_name_ty, range), arg],

@@ -94,8 +94,8 @@ impl Lit {
     pub fn positive(&self) -> Option<Type> {
         match self {
             Lit::Int(_) => Some(self.clone().to_type()),
-            Lit::Bool(true) => Some(Lit::Int(LitInt::new(1)).to_type()),
-            Lit::Bool(false) => Some(Lit::Int(LitInt::new(0)).to_type()),
+            Lit::Bool(true) => Some(LitInt::new(1).to_type()),
+            Lit::Bool(false) => Some(LitInt::new(0).to_type()),
             _ => None,
         }
     }

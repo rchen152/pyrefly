@@ -861,7 +861,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     if field_flags.is_kw_only() || !field_flags.init {
                         None
                     } else {
-                        Some(Type::Literal(Lit::Str(name.as_str().into())))
+                        Some(Lit::Str(name.as_str().into()).to_type())
                     }
                 })
                 .collect()
@@ -878,7 +878,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let filtered_fields = self.iter_fields(cls, dataclass, false);
         let ts = filtered_fields
             .iter()
-            .map(|(name, _, _)| Type::Literal(Lit::Str(name.as_str().into())))
+            .map(|(name, _, _)| Lit::Str(name.as_str().into()).to_type())
             .collect();
         let ty = Type::concrete_tuple(ts);
         ClassSynthesizedField::new(ty)

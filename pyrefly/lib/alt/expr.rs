@@ -1168,7 +1168,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         Lit::Bool(target).to_type()
                     } else if i != last_index && t == self.stdlib.int().clone().to_type() && !target
                     {
-                        Lit::Int(LitInt::new(0)).to_type()
+                        LitInt::new(0).to_type()
                     } else if i != last_index && t == self.stdlib.str().clone().to_type() && !target
                     {
                         Lit::Str(Default::default()).to_type()
@@ -1993,7 +1993,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         && self.get_enum_from_class(cls).is_some() =>
                 {
                     if let Some(member) = self.get_enum_member(cls, &Name::new(key.to_str())) {
-                        Type::Literal(member)
+                        member.to_type()
                     } else {
                         self.error(
                             errors,
@@ -2136,7 +2136,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.stdlib.str().clone().to_type()
                 }
                 Type::Literal(Lit::Str(ref value)) if xs.len() <= 3 => {
-                    let base_ty = Type::Literal(Lit::Str(value.clone()));
+                    let base_ty = Lit::Str(value.clone()).to_type();
                     let context = || ErrorContext::Index(self.for_display(base_ty.clone()));
                     self.subscript_str_literal(
                         value.as_str(),

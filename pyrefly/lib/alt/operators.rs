@@ -478,7 +478,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.check_dunder_bool_is_callable(t, x.range, errors);
                 match t.as_bool() {
                     None => self.stdlib.bool().clone().to_type(),
-                    Some(b) => Type::Literal(Lit::Bool(!b)),
+                    Some(b) => Lit::Bool(!b).to_type(),
                 }
             }
             UnaryOp::Invert => {
