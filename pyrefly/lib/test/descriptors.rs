@@ -230,10 +230,9 @@ def f(a: AnnotationOnly, m: MethodInitialized) -> None:
     "#,
 );
 
-// Test that ClassVar annotations with descriptor types should have descriptor semantics
+// Test that ClassVar annotations with descriptor types have descriptor semantics
 // even without initialization, since ClassVar implies class-level attribute.
 testcase!(
-    bug = "ClassVar[Descriptor] should have descriptor semantics even without initialization",
     test_classvar_descriptor_without_initialization,
     r#"
 from typing import ClassVar, assert_type
@@ -241,13 +240,13 @@ from typing import ClassVar, assert_type
 class ReadOnlyDescriptor:
     def __get__(self, obj, classobj) -> int: ...
 
-# BUG: ClassVar implies class-level attribute, so descriptor semantics should apply.
-# Reading C.value should invoke __get__ and return int, but returns ReadOnlyDescriptor.
+# ClassVar implies class-level attribute, so descriptor semantics apply.
+# Reading C.value invokes __get__ and returns int.
 class C:
     value: ClassVar[ReadOnlyDescriptor]
 
 def f() -> None:
-    assert_type(C.value, ReadOnlyDescriptor)
+    assert_type(C.value, int)
     "#,
 );
 

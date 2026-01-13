@@ -1572,17 +1572,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
         // Identify whether this is a descriptor
         let mut descriptor = None;
-        if matches!(initialization, ClassFieldInitialization::ClassBody(_)) {
+        // Descriptor semantics apply when:
+        // 1. The field is initialized in the class body (class-level attribute), or
+        // 2. The field is annotated with ClassVar (explicitly class-level, even without initialization)
+        let is_classvar = direct_annotation
+            .as_ref()
+            .is_some_and(|annot| annot.has_qualifier(&Qualifier::ClassVar));
+        if matches!(initialization, ClassFieldInitialization::ClassBody(_)) || is_classvar {
             match &ty {
                 // TODO(stroxler): This works for simple descriptors. There are known gaps:
                 // - Gracefully handle instance-only `__get__`/`__set__`. Descriptors only seem to be detected
                 //   when the descriptor attribute is initialized on the class body of the descriptor.
                 // - Do we care about distributing descriptor behavior over unions? If so, what about the case when
                 //   the raw class field is a union of a descriptor and a non-descriptor? Do we want to allow this?
-                // Note: The ClassBody guard above prevents both annotation-only and method-initialized fields
-                // from being treated as descriptors, which is correct for instance attributes. However, there
-                // are cases where we should still apply descriptor semantics:
-                // - ClassVar annotations should assume class-level semantics even without initialization
                 // - Child classes with annotation-only overrides should inherit parent descriptor behavior
                 Type::ClassType(cls) => {
                     let getter = self
