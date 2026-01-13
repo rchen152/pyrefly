@@ -953,7 +953,21 @@ impl Type {
         }
     }
 
-    pub fn is_type_variable(&self) -> bool {
+    /// Is this type an unreplaced reference to a legacy type variable? Note that references to
+    /// in-scope legacy type variables in functions and classes are replaced with Quantified, so
+    /// this type only appears in cases like a TypeVar definition or an out-of-scope type variable.
+    pub fn is_raw_legacy_type_variable(&self) -> bool {
+        matches!(
+            TypeVariable::new(self),
+            Some(
+                TypeVariable::LegacyTypeVar(_)
+                    | TypeVariable::LegacyTypeVarTuple(_)
+                    | TypeVariable::LegacyParamSpec(_)
+            )
+        )
+    }
+
+    fn is_type_variable(&self) -> bool {
         match self {
             Type::Quantified(_) | Type::TypeVarTuple(_) | Type::TypeVar(_) | Type::ParamSpec(_) => {
                 true
@@ -1760,7 +1774,6 @@ enum TypeVariable<'a> {
 }
 
 impl<'a> TypeVariable<'a> {
-    #[expect(dead_code)]
     fn new(ty: &'a Type) -> Option<Self> {
         match ty {
             Type::Quantified(q) => Some(Self::Quantified(q)),
