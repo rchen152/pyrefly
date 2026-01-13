@@ -1042,6 +1042,29 @@ impl Type {
         self.visit_type_variables(&mut f)
     }
 
+    /// Transform unreplaced references to legacy type variables. Note that references to in-scope
+    /// legacy type variables in functions and classes are replaced with Quantified, so unreplaced
+    /// references only appear in cases like a TypeVar definition or an out-of-scope type variable.
+    pub fn transform_raw_legacy_type_variables(&mut self, f: &mut dyn FnMut(&mut Type)) {
+        fn visit(ty: &mut Type, f: &mut dyn FnMut(&mut Type)) {
+            if ty.is_raw_legacy_type_variable() {
+                f(ty);
+                return;
+            }
+            let mut recurse_targs = |targs: &mut TArgs| {
+                for targ in targs.as_mut().iter_mut() {
+                    visit(targ, f);
+                }
+            };
+            match ty {
+                Type::ClassType(cls) => recurse_targs(cls.targs_mut()),
+                Type::TypedDict(TypedDict::TypedDict(td)) => recurse_targs(td.targs_mut()),
+                _ => ty.recurse_mut(&mut |ty| visit(ty, f)),
+            }
+        }
+        visit(self, f)
+    }
+
     /// Check if the type contains a Var that may have been instantiated from a Quantified.
     pub fn may_contain_quantified_var(&self) -> bool {
         let mut seen = false;
