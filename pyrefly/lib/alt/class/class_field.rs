@@ -966,11 +966,13 @@ impl ClassField {
         )
     }
 
-    /// Get the range for a non-data descriptor, if this field is one; used for error reporting.
-    pub fn non_data_descriptor_range(&self) -> Option<TextRange> {
+    /// For a `__get__`-only descriptor, get the descriptor range and type. Used for
+    /// dataclass validation, where we typically disallow non-data descriptors but certain
+    /// edge cases (where instance shadows are assignable to the `__get__` return type) are ok.
+    pub fn non_data_descriptor_info(&self) -> Option<(TextRange, ClassType)> {
         match &self.0 {
             ClassFieldInner::Descriptor { descriptor, .. } if !descriptor.setter => {
-                Some(descriptor.range)
+                Some((descriptor.range, descriptor.cls.clone()))
             }
             _ => None,
         }

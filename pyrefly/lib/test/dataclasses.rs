@@ -1586,21 +1586,29 @@ testcase!(
     test_non_data_descriptor_in_dataclass,
     r#"
 from dataclasses import dataclass
-from typing import assert_type
+from typing import assert_type, Self
 
 # Non-data descriptors (only __get__, no __set__) in dataclasses are unsound:
 # The dataclass __init__ writes to the instance dict, shadowing the class-level
 # descriptor. This means the static type (from __get__) doesn't match the runtime
 # type (the raw descriptor object in the instance dict).
-class Desc:
+class DescA:
     def __get__(self, obj, cls) -> int: ...
     # No __set__ - non-data descriptor
 
+# If the result of `__get__` is `Self`, then the shadowing described above doesn't cause
+# any static typing issues. Because this pattern does sometimes occur (e.g. Pytorch Device is a
+# Self-returning descriptor), we allow it.
+class DescB:
+    def __get__(self, obj, cls) -> Self: ...
+    # No __set__ - non-data descriptor, but __get__ returns Self
+
 @dataclass
 class C:
-    x: Desc = Desc()  # E: Non-data descriptor `x` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.
+    x: DescA = DescA()  # E: Non-data descriptor `x` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.
+    y: DescB = DescB()
 
-# Despite the error, the descriptor still has a default value
+# Regardless of any errors, any descriptors assigned in the class body do have default values.
 c = C()
     "#,
 );
