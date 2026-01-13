@@ -1143,8 +1143,8 @@ impl Type {
     }
 
     pub fn for_each_quantified<'a>(&'a self, f: &mut impl FnMut(&'a Quantified)) {
-        self.universe(&mut |x| {
-            if let Type::Quantified(x) = x {
+        self.visit_type_variables(&mut |x| {
+            if let TypeVariable::Quantified(x) = x {
                 f(x);
             }
         })
@@ -1758,7 +1758,6 @@ impl Type {
 }
 
 /// Various type-variable-like things
-#[expect(dead_code)]
 enum TypeVariable<'a> {
     /// A function or class type parameter created from a reference to an in-scope legacy or scoped type variable
     Quantified(&'a Quantified),
