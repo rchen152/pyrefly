@@ -86,6 +86,7 @@ impl TestTspServer {
             id,
             method: "initialize".to_owned(),
             params,
+            activity_key: None,
         }))
     }
 
@@ -93,6 +94,7 @@ impl TestTspServer {
         self.send_message(Message::Notification(Notification {
             method: "initialized".to_owned(),
             params: serde_json::json!({}),
+            activity_key: None,
         }));
     }
 
@@ -101,6 +103,7 @@ impl TestTspServer {
             id,
             method: lsp_types::request::Shutdown::METHOD.to_owned(),
             params: serde_json::json!(null),
+            activity_key: None,
         }));
     }
 
@@ -108,6 +111,7 @@ impl TestTspServer {
         self.send_message(Message::Notification(Notification {
             method: Exit::METHOD.to_owned(),
             params: serde_json::json!(null),
+            activity_key: None,
         }));
     }
 
@@ -117,6 +121,7 @@ impl TestTspServer {
             id,
             method: "typeServer/getSupportedProtocolVersion".to_owned(),
             params: serde_json::json!(null),
+            activity_key: None,
         }));
     }
 
@@ -126,6 +131,7 @@ impl TestTspServer {
             id,
             method: "typeServer/getSnapshot".to_owned(),
             params: serde_json::json!(null),
+            activity_key: None,
         }));
     }
 
@@ -141,6 +147,7 @@ impl TestTspServer {
                     "text": read_to_string(&path).unwrap(),
                 },
             }),
+            activity_key: None,
         }));
     }
 
@@ -157,6 +164,7 @@ impl TestTspServer {
                     "text": content
                 }]
             }),
+            activity_key: None,
         }));
     }
 
@@ -176,6 +184,7 @@ impl TestTspServer {
                     "type": file_change_type
                 }]
             }),
+            activity_key: None,
         }));
     }
 

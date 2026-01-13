@@ -244,6 +244,7 @@ fn test_unknown_request() {
         id: RequestId::from(1),
         method: "fake-method".to_owned(),
         params: json!(null),
+        activity_key: None,
     }));
     interaction
         .client

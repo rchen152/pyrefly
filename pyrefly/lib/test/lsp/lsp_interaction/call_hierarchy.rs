@@ -60,6 +60,7 @@ fn test_prepare_call_hierarchy_on_function() {
                 "character": 5
             }
         }),
+        activity_key: None,
     }));
 
     // Expect a successful response with a CallHierarchyItem for the function
@@ -129,6 +130,7 @@ fn test_prepare_call_hierarchy_on_call_site() {
                 "character": 6  // On "my_function"
             }
         }),
+        activity_key: None,
     }));
 
     // Should return the CallHierarchyItem for the function definition in callee.py

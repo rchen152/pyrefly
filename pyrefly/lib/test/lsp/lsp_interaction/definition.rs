@@ -278,6 +278,7 @@ fn malformed_missing_position() {
                 "uri": Url::from_file_path(root.path().join("basic/foo.py")).unwrap().to_string()
             },
         }),
+        activity_key: None,
     }));
     interaction
         .client

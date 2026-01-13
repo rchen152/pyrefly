@@ -78,6 +78,7 @@ where
     Notification {
         method: T::METHOD.to_owned(),
         params: serde_json::to_value(&params).unwrap(),
+        activity_key: None,
     }
 }
 

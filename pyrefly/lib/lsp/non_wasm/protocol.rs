@@ -28,6 +28,7 @@ pub struct Request {
     pub id: RequestId,
     pub method: String,
     pub params: serde_json::Value,
+    pub activity_key: Option<ActivityKey>,
 }
 
 #[derive(Debug, Clone)]
@@ -41,6 +42,13 @@ pub struct Response {
 pub struct Notification {
     pub method: String,
     pub params: serde_json::Value,
+    pub activity_key: Option<ActivityKey>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActivityKey {
+    pub id: String,
+    pub name: String,
 }
 
 impl From<Request> for Message {
@@ -113,6 +121,9 @@ pub struct JsonRpcMessage<'a> {
     result: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<ResponseError>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "activityKey")]
+    activity_key: Option<ActivityKey>,
 }
 
 impl<'a> JsonRpcMessage<'a> {
@@ -124,24 +135,40 @@ impl<'a> JsonRpcMessage<'a> {
             params,
             result,
             error,
+            activity_key,
         } = self;
         match (id, method) {
-            (Some(id), Some(method)) => Some(Message::Request(Request { id, method, params })),
+            (Some(id), Some(method)) => Some(Message::Request(Request {
+                id,
+                method,
+                params,
+                activity_key,
+            })),
             (Some(id), None) => Some(Message::Response(Response { id, result, error })),
-            (None, Some(method)) => Some(Message::Notification(Notification { method, params })),
+            (None, Some(method)) => Some(Message::Notification(Notification {
+                method,
+                params,
+                activity_key,
+            })),
             (None, None) => None,
         }
     }
 
     pub fn from_message(msg: Message) -> Self {
         match msg {
-            Message::Request(Request { id, method, params }) => JsonRpcMessage {
+            Message::Request(Request {
+                id,
+                method,
+                params,
+                activity_key,
+            }) => JsonRpcMessage {
                 jsonrpc: JSONRPC_2_0,
                 id: Some(id),
                 method: Some(method),
                 params,
                 result: None,
                 error: None,
+                activity_key,
             },
             Message::Response(Response { id, result, error }) => JsonRpcMessage {
                 jsonrpc: JSONRPC_2_0,
@@ -150,14 +177,20 @@ impl<'a> JsonRpcMessage<'a> {
                 params: serde_json::Value::Null,
                 result,
                 error,
+                activity_key: None,
             },
-            Message::Notification(Notification { method, params }) => JsonRpcMessage {
+            Message::Notification(Notification {
+                method,
+                params,
+                activity_key,
+            }) => JsonRpcMessage {
                 jsonrpc: JSONRPC_2_0,
                 id: None,
                 method: Some(method),
                 params,
                 result: None,
                 error: None,
+                activity_key,
             },
         }
     }
@@ -327,13 +360,20 @@ mod tests {
         .unwrap();
         let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
         let msg = read_lsp_message(msg.as_bytes()).unwrap().unwrap();
-        let Message::Request(Request { id, method, params }) = msg else {
+        let Message::Request(Request {
+            id,
+            method,
+            params,
+            activity_key,
+        }) = msg
+        else {
             panic!("unexpected message")
         };
 
         assert_eq!(id, RequestId::from(1));
         assert_eq!(method, "foo");
         assert_eq!(params, json!({ "bar": "baz" }));
+        assert_eq!(activity_key, None);
     }
 
     #[test]
@@ -365,12 +405,18 @@ mod tests {
         .unwrap();
         let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
         let msg = read_lsp_message(msg.as_bytes()).unwrap().unwrap();
-        let Message::Notification(Notification { method, params }) = msg else {
+        let Message::Notification(Notification {
+            method,
+            params,
+            activity_key,
+        }) = msg
+        else {
             panic!("unexpected message")
         };
 
         assert_eq!(method, "foo");
-        assert_eq!(params, json!({ "bar": "baz" }))
+        assert_eq!(params, json!({ "bar": "baz" }));
+        assert_eq!(activity_key, None);
     }
 
     #[test]
@@ -383,13 +429,39 @@ mod tests {
         .unwrap();
         let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
         let msg = read_lsp_message(msg.as_bytes()).unwrap().unwrap();
-        let Message::Request(Request { id, method, params }) = msg else {
+        let Message::Request(Request {
+            id,
+            method,
+            params,
+            activity_key,
+        }) = msg
+        else {
             panic!("unexpected message")
         };
 
         assert_eq!(id, RequestId::from(1));
         assert_eq!(method, "foo");
-        assert_eq!(params, json!({ "bar": "baz" }))
+        assert_eq!(params, json!({ "bar": "baz" }));
+        assert_eq!(activity_key, None);
+    }
+
+    #[test]
+    fn test_activity_key() {
+        let body = serde_json::to_string(&json!({
+            "jsonrpc": JSONRPC_2_0,
+            "id": 1,
+            "method": "foo",
+            "activityKey": { "id": "bar", "name": "baz" },
+        }))
+        .unwrap();
+        let msg = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+        let msg = read_lsp_message(msg.as_bytes()).unwrap().unwrap();
+        let Message::Request(x) = msg else {
+            panic!("unexpected message")
+        };
+        let activity_key = x.activity_key.unwrap();
+        assert_eq!(activity_key.id, "bar");
+        assert_eq!(activity_key.name, "baz");
     }
 
     #[test]
@@ -401,18 +473,26 @@ mod tests {
                 id: RequestId::from(1),
                 method: "foo".to_owned(),
                 params: json!({ "bar": "baz" }),
+                activity_key: None,
             }),
         )
         .unwrap();
 
         let msg = read_lsp_message(msg.as_slice()).unwrap().unwrap();
-        let Message::Request(Request { id, method, params }) = msg else {
+        let Message::Request(Request {
+            id,
+            method,
+            params,
+            activity_key,
+        }) = msg
+        else {
             panic!("unexpected message")
         };
 
         assert_eq!(id, RequestId::from(1));
         assert_eq!(method, "foo");
         assert_eq!(params, json!({ "bar": "baz" }));
+        assert_eq!(activity_key, None);
     }
 
     #[test]
@@ -446,17 +526,24 @@ mod tests {
             Message::Notification(Notification {
                 method: "foo".to_owned(),
                 params: json!({ "bar": "baz" }),
+                activity_key: None,
             }),
         )
         .unwrap();
 
         let msg = read_lsp_message(msg.as_slice()).unwrap().unwrap();
-        let Message::Notification(Notification { method, params }) = msg else {
+        let Message::Notification(Notification {
+            method,
+            params,
+            activity_key,
+        }) = msg
+        else {
             panic!("unexpected message")
         };
 
         assert_eq!(method, "foo");
         assert_eq!(params, json!({ "bar": "baz" }));
+        assert_eq!(activity_key, None);
     }
 
     #[test]
@@ -468,6 +555,7 @@ mod tests {
             params: json!({"bar": "baz"}),
             result: None,
             error: None,
+            activity_key: None,
         })
         .unwrap();
         assert_eq!(
@@ -490,6 +578,7 @@ mod tests {
             params: serde_json::Value::Null,
             result: None,
             error: None,
+            activity_key: None,
         })
         .unwrap();
         assert_eq!(
@@ -511,6 +600,7 @@ mod tests {
             params: serde_json::Value::Null,
             result: Some(json!({"foo": "bar"})),
             error: None,
+            activity_key: None,
         })
         .unwrap();
         assert_eq!(
@@ -532,6 +622,7 @@ mod tests {
             params: json!({"bar": "baz"}),
             result: None,
             error: None,
+            activity_key: None,
         })
         .unwrap();
         assert_eq!(
@@ -553,6 +644,7 @@ mod tests {
             params: serde_json::Value::Null,
             result: None,
             error: None,
+            activity_key: None,
         })
         .unwrap();
         assert_eq!(

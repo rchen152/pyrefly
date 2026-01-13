@@ -811,13 +811,16 @@ fn test_publish_diagnostics_version_numbers_only_go_up() {
     let create_version_validator = |expected_version: i64| {
         let actual_uri = uri.as_str();
         move |msg: Message| match msg {
-            Message::Notification(Notification { method, params })
-                if let Some((expected_uri, actual_version)) = params
-                    .get("uri")
-                    .and_then(|uri| uri.as_str())
-                    .zip(params.get("version").and_then(|version| version.as_i64()))
-                    && expected_uri == actual_uri
-                    && method == "textDocument/publishDiagnostics" =>
+            Message::Notification(Notification {
+                method,
+                params,
+                activity_key: None,
+            }) if let Some((expected_uri, actual_version)) = params
+                .get("uri")
+                .and_then(|uri| uri.as_str())
+                .zip(params.get("version").and_then(|version| version.as_i64()))
+                && expected_uri == actual_uri
+                && method == "textDocument/publishDiagnostics" =>
             {
                 assert!(
                     actual_version == expected_version,
@@ -872,6 +875,7 @@ fn test_publish_diagnostics_version_numbers_only_go_up() {
                     "version": 3
                 },
             }),
+            activity_key: None,
         }));
 
     let version = 3;

@@ -303,6 +303,7 @@ impl TestClient {
             id: id.clone(),
             method: R::METHOD.to_owned(),
             params: serde_json::to_value(params).unwrap(),
+            activity_key: None,
         }));
         ClientRequestHandle {
             id,
@@ -330,6 +331,7 @@ impl TestClient {
         self.send_message(Message::Notification(Notification {
             method: N::METHOD.to_owned(),
             params: serde_json::to_value(params).unwrap(),
+            activity_key: None,
         }));
     }
 

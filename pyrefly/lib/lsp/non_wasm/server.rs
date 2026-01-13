@@ -1673,6 +1673,7 @@ impl Server {
             id: id.clone(),
             method: T::METHOD.to_owned(),
             params: serde_json::to_value(params).unwrap(),
+            activity_key: None,
         };
         self.connection.send(Message::Request(request.clone()));
         self.outgoing_requests.lock().insert(id, request);
