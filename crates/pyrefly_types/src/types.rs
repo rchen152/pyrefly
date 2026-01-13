@@ -1044,29 +1044,8 @@ impl Type {
 
     /// Check if the type contains a Var that may have been instantiated from a Quantified.
     pub fn may_contain_quantified_var(&self) -> bool {
-        fn f(ty: &Type, seen: &mut bool) {
-            if *seen || matches!(ty, Type::Var(_)) {
-                *seen = true;
-                return;
-            }
-            let mut recurse_targs = |targs: &TArgs| {
-                for targ in targs.as_slice().iter() {
-                    f(targ, seen);
-                    if *seen {
-                        break;
-                    }
-                }
-            };
-            match ty {
-                // Vars created by instantiate_fresh_class() would only appear in targs,
-                // so we can skip checking the rest of the type.
-                Type::ClassType(cls) => recurse_targs(cls.targs()),
-                Type::TypedDict(TypedDict::TypedDict(td)) => recurse_targs(td.targs()),
-                _ => ty.recurse(&mut |ty| f(ty, seen)),
-            }
-        }
         let mut seen = false;
-        f(self, &mut seen);
+        self.visit_type_variables(&mut |t| seen |= matches!(t, TypeVariable::Var));
         seen
     }
 
