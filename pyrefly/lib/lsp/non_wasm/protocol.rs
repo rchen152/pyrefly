@@ -13,6 +13,7 @@ use std::io;
 
 use lsp_server::RequestId;
 use lsp_server::ResponseError;
+use pyrefly_util::telemetry::ActivityKey;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -43,12 +44,6 @@ pub struct Notification {
     pub method: String,
     pub params: serde_json::Value,
     pub activity_key: Option<ActivityKey>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ActivityKey {
-    pub id: String,
-    pub name: String,
 }
 
 impl From<Request> for Message {

@@ -1083,7 +1083,9 @@ impl Server {
                     info!("Response for unknown request: {x:?}");
                 }
             }
-            LspEvent::LspRequest(x) => {
+            LspEvent::LspRequest(mut x) => {
+                telemetry_event.set_activity_key(std::mem::take(&mut x.activity_key));
+
                 // These are messages where VS Code will use results from previous document versions,
                 // we really don't want to implicitly cancel those.
                 const ONLY_ONCE: &[&str] = &[
