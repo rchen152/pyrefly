@@ -250,10 +250,9 @@ def f() -> None:
     "#,
 );
 
-// Test that annotation-only fields in child classes still inherit
-// parent descriptor behavior (the descriptor is not "shadowed" by the annotation).
+// Test that annotation-only fields in child classes inherit parent descriptor behavior
+// when the annotation type is compatible with the parent's descriptor type.
 testcase!(
-    bug = "Child should inherit parent's read-only descriptor, but the annotation shadows it",
     test_annotation_only_child_inherits_parent_descriptor,
     r#"
 from typing import assert_type
@@ -264,13 +263,13 @@ class ReadOnlyDescriptor:
 class Parent:
     value: ReadOnlyDescriptor = ReadOnlyDescriptor()  # actual descriptor
 
-# BUG: Child should inherit parent's descriptor behavior.
-# Reading c.value should invoke __get__ and return int, but returns ReadOnlyDescriptor.
+# Child inherits parent's descriptor behavior since annotation type matches.
+# Reading c.value invokes __get__ and returns int.
 class Child(Parent):
-    value: ReadOnlyDescriptor  # E: Class member `Child.value` overrides parent class `Parent` in an inconsistent manner
+    value: ReadOnlyDescriptor
 
 def f(c: Child) -> None:
-    assert_type(c.value, ReadOnlyDescriptor)
+    assert_type(c.value, int)
     "#,
 );
 

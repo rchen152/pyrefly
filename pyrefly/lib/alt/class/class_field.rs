@@ -1352,6 +1352,44 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         ) = match field_definition {
             ClassFieldDefinition::DeclaredByAnnotation { annotation: annot } => {
                 let direct_annotation = Some(self.get_idx(*annot).annotation.clone());
+
+                // Check if there's an inherited descriptor from a parent class.
+                // If the child has an annotation-only field with a compatible type, inherit the
+                // parent's descriptor so that descriptor semantics are preserved.
+                if !Ast::is_mangled_attr(name)
+                    && let Some(parent_field) = self.get_field_from_ancestors(
+                        class,
+                        self.get_mro_for_class(class).ancestors(self.stdlib),
+                        name,
+                        &|cls, name| self.get_field_from_current_class_only(cls, name),
+                    )
+                    && let ClassField(
+                        ClassFieldInner::Descriptor {
+                            descriptor:
+                                Descriptor {
+                                    cls: parent_cls, ..
+                                },
+                            ..
+                        },
+                        ..,
+                    ) = &*parent_field.value
+                    && let Some(child_ty) = direct_annotation.as_ref().and_then(|a| a.ty.as_ref())
+                    && self.is_subset_eq(child_ty, &Type::ClassType(parent_cls.clone()))
+                {
+                    // Check if the child's annotation type is compatible with the parent's
+                    // descriptor type. We inherit if:
+                    // 1. The types are the same, or
+                    // 2. The child type is a subtype (though the parent's initial value
+                    //    won't match - see TODO below)
+                    //
+                    // TODO(stroxler): If the child annotation is a strict subtype of the
+                    // parent descriptor type, we silently inherit the parent's descriptor.
+                    // This may not be fully sound since the parent's initial value doesn't
+                    // match the child's declared type. Consider whether we should warn or
+                    // error in this case.
+                    return Arc::unwrap_or_clone(parent_field.value);
+                }
+
                 let initialization = if class.module_path().is_interface()
                     || direct_annotation
                         .as_ref()
@@ -2366,7 +2404,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // If the field is a dunder or ClassVar[Callable] & the assigned value is a callable, we replace it with a named function
                 // so that it gets treated as a bound method.
                 //
-                // Both of these are heuristics that aren't guaranteed to be correct, but the dunder heuristic has useability benefits
+                // Both of these are heuristics that aren't guaranteed to be correct, but the dunder heuristic has usability benefits
                 // and the ClassVar heuristic aligns us with existing type checkers.
                 if let Type::Callable(box callable) = ty {
                     let module = self.module();
