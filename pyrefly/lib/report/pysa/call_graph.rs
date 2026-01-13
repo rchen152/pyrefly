@@ -109,6 +109,9 @@ pub enum OriginKind {
     ForIter,
     ForNext,
     ReprCall,
+    AbsCall,
+    IterCall,
+    NextCall,
     StrCallToDunderMethod,
     Slice,
     ChainedAssign {
@@ -138,6 +141,9 @@ impl std::fmt::Display for OriginKind {
             Self::ForIter => write!(f, "for-iter"),
             Self::ForNext => write!(f, "for-next"),
             Self::ReprCall => write!(f, "repr-call"),
+            Self::AbsCall => write!(f, "abs-call"),
+            Self::IterCall => write!(f, "iter-call"),
+            Self::NextCall => write!(f, "next-call"),
             Self::StrCallToDunderMethod => write!(f, "str-call-to-dunder-method"),
             Self::Slice => write!(f, "slice"),
             Self::ChainedAssign { index } => write!(f, "chained-assign:{}", index),
@@ -2701,28 +2707,30 @@ impl<'a> CallGraphVisitor<'a> {
         self.add_callees(expression_identifier, callees);
     }
 
-    fn resolve_and_register_repr(
+    fn resolve_and_register_implicit_dunder_call(
         &mut self,
         call: &ExprCall,
         argument: &Expr,
+        method_name: &Name,
         return_type: ScalarTypeProperties,
+        origin_kind: OriginKind,
     ) {
         let argument_type = self.module_context.answers.get_type_trace(argument.range());
         let callees = self.call_targets_from_method_name(
-            &dunder::REPR,
+            method_name,
             argument_type.as_ref(),
             /* callee_expr */ None,
             /* callee_type */ None,
             return_type,
             /* is_bound_method */ true,
-            /* callee_expr_suffix */ Some(&dunder::REPR),
+            /* callee_expr_suffix */ None,
             /* override_implicit_receiver */ None,
             /* override_is_direct_call */ None,
             /* unknown_callee_as_direct_call */ true,
             /* exclude_object_methods */ false,
         );
         let expression_identifier = ExpressionIdentifier::ArtificialCall(Origin {
-            kind: OriginKind::ReprCall,
+            kind: origin_kind,
             location: self.pysa_location(call.range()),
         });
         self.add_callees(
@@ -2787,7 +2795,13 @@ impl<'a> CallGraphVisitor<'a> {
             Expr::Name(name) if name.id == "repr" && call.arguments.len() == 1 => {
                 let argument = call.arguments.find_positional(0);
                 match argument {
-                    Some(argument) => self.resolve_and_register_repr(call, argument, return_type),
+                    Some(argument) => self.resolve_and_register_implicit_dunder_call(
+                        call,
+                        argument,
+                        &dunder::REPR,
+                        return_type,
+                        OriginKind::ReprCall,
+                    ),
                     _ => (),
                 }
             }
@@ -2795,6 +2809,58 @@ impl<'a> CallGraphVisitor<'a> {
                 let argument = call.arguments.find_positional(0);
                 match argument {
                     Some(argument) => self.resolve_and_register_str(call, argument),
+                    _ => (),
+                }
+            }
+            Expr::Name(name) if name.id == "abs" && call.arguments.len() == 1 => {
+                let argument = call.arguments.find_positional(0);
+                match argument {
+                    Some(argument) => self.resolve_and_register_implicit_dunder_call(
+                        call,
+                        argument,
+                        &dunder::ABS,
+                        return_type,
+                        OriginKind::AbsCall,
+                    ),
+                    _ => (),
+                }
+            }
+            Expr::Name(name) if name.id == "iter" && call.arguments.len() == 1 => {
+                let argument = call.arguments.find_positional(0);
+                match argument {
+                    Some(argument) => self.resolve_and_register_implicit_dunder_call(
+                        call,
+                        argument,
+                        &dunder::ITER,
+                        return_type,
+                        OriginKind::IterCall,
+                    ),
+                    _ => (),
+                }
+            }
+            Expr::Name(name) if name.id == "next" && call.arguments.len() == 1 => {
+                let argument = call.arguments.find_positional(0);
+                match argument {
+                    Some(argument) => self.resolve_and_register_implicit_dunder_call(
+                        call,
+                        argument,
+                        &dunder::NEXT,
+                        return_type,
+                        OriginKind::NextCall,
+                    ),
+                    _ => (),
+                }
+            }
+            Expr::Name(name) if name.id == "anext" && call.arguments.len() == 1 => {
+                let argument = call.arguments.find_positional(0);
+                match argument {
+                    Some(argument) => self.resolve_and_register_implicit_dunder_call(
+                        call,
+                        argument,
+                        &dunder::ANEXT,
+                        return_type,
+                        OriginKind::NextCall,
+                    ),
                     _ => (),
                 }
             }
@@ -3665,6 +3731,9 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
     }
 
     fn visit_statement(&mut self, stmt: &Stmt, _scopes: &Scopes) {
+        if self.current_function.is_none() {
+            return;
+        }
         match stmt {
             Stmt::FunctionDef(function_def) => self.resolve_and_register_function_def(function_def),
             Stmt::With(stmt_with) => self.resolve_and_register_with_statement(stmt_with),
