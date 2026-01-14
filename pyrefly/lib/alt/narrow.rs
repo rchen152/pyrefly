@@ -624,6 +624,30 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 };
                 self.narrow_length_less_than(ty, len + 1)
             }
+            AtomicNarrowOp::IsSequence => {
+                // Narrow to only sequence types (for sequence pattern matching)
+                self.distribute_over_union(ty, |t| {
+                    if self.is_sequence_for_pattern(t) {
+                        t.clone()
+                    } else {
+                        Type::never()
+                    }
+                })
+            }
+            AtomicNarrowOp::IsNotSequence => {
+                // Narrow to exclude sequence types (negation of sequence pattern)
+                // Note: Any and classes that extend Any must be preserved (not narrowed to Never)
+                // since we can't know at static analysis time whether they're sequences or not
+                self.distribute_over_union(ty, |t| {
+                    if self.behaves_like_any(t) {
+                        t.clone()
+                    } else if self.is_sequence_for_pattern(t) {
+                        Type::never()
+                    } else {
+                        t.clone()
+                    }
+                })
+            }
             AtomicNarrowOp::In(v) => {
                 let exprs = match v {
                     Expr::List(list) => Some(list.elts.clone()),
