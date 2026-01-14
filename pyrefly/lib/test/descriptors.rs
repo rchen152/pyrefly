@@ -505,3 +505,49 @@ C.d = D()
 C.d = "wrong"  # E: `Literal['wrong']` is not assignable to attribute `d` with type `D`
     "#,
 );
+
+// Regression test for https://github.com/facebook/pyrefly/issues/1792
+testcase!(
+    test_descriptor_in_dataclass_transform,
+    r#"
+from typing import Any, dataclass_transform
+
+class Mapped[T]:
+    def __get__(self, obj, classobj) -> T: ...
+    def __set__(self, obj, value: T) -> None: ...
+
+def mapped_column(*args: Any, **kw: Any) -> Any: ...
+
+@dataclass_transform(
+    field_specifiers=(mapped_column,),
+)
+class DCTransformDeclarative(type):
+    """metaclass that includes @dataclass_transforms"""
+
+class MappedAsDataclass(metaclass=DCTransformDeclarative):
+    pass
+
+class DatasetMetadata(MappedAsDataclass):
+    id: Mapped[str] = mapped_column(init=False)
+
+DatasetMetadata()
+    "#,
+);
+
+// Regression test for https://github.com/facebook/pyrefly/issues/1803
+testcase!(
+    test_set_instance_attribute,
+    r#"
+from typing import assert_type
+
+class MyDescriptor:
+    def __get__(self, instance, owner=None):
+        return 42
+
+class A:
+    def __init__(self):
+        self.a = MyDescriptor()
+
+assert_type(A().a, MyDescriptor)
+    "#,
+);
