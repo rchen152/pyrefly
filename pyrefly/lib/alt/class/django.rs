@@ -45,6 +45,8 @@ const PK: Name = Name::new_static("pk");
 const AUTO_FIELD: Name = Name::new_static("AutoField");
 const FOREIGN_KEY: Name = Name::new_static("ForeignKey");
 const NULL: Name = Name::new_static("null");
+const BLANK: Name = Name::new_static("blank");
+const CHAR_FIELD: Name = Name::new_static("CharField");
 const MANY_TO_MANY_FIELD: Name = Name::new_static("ManyToManyField");
 const MODEL: Name = Name::new_static("Model");
 const MANYRELATEDMANAGER: Name = Name::new_static("ManyRelatedManager");
@@ -126,13 +128,36 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .map(|field| field.ty())
         })?;
 
+        let maybe_narrowed_type =
+            self.narrow_charfield_choices(field, initial_value_expr, base_type);
+
         if let Some(e) = initial_value_expr
             && let Some(call_expr) = e.as_call_expr()
             && self.is_django_field_nullable(call_expr)
         {
-            Some(self.union(base_type, Type::None))
+            Some(self.union(maybe_narrowed_type, Type::None))
         } else {
-            Some(base_type)
+            Some(maybe_narrowed_type)
+        }
+    }
+
+    /// Narrow CharField with inline choices to a Literal type.
+    /// Only blank=False is supported for now.
+    fn narrow_charfield_choices(
+        &self,
+        field: &Class,
+        initial_value_expr: Option<&Expr>,
+        base_type: Type,
+    ) -> Type {
+        if let Some(e) = initial_value_expr
+            && let Some(call_expr) = e.as_call_expr()
+            && self.is_char_field(field)
+            && !self.is_django_field_blank(call_expr)
+            && let Some(literal_type) = self.extract_charfield_choices_literal_type(call_expr)
+        {
+            literal_type
+        } else {
+            base_type
         }
     }
 
@@ -399,6 +424,64 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .as_ref()
                 .is_some_and(|name| name.as_str() == CHOICES.as_str())
         })
+    }
+
+    /// Check if a Django field has `blank=True`.
+    fn is_django_field_blank(&self, call_expr: &ExprCall) -> bool {
+        call_expr.arguments.keywords.iter().any(|keyword| {
+            keyword
+                .arg
+                .as_ref()
+                .is_some_and(|name| name.as_str() == BLANK.as_str())
+                && matches!(
+                    &keyword.value,
+                    Expr::BooleanLiteral(bool_lit) if bool_lit.value
+                )
+        })
+    }
+
+    /// Check if a Django field is a CharField.
+    fn is_char_field(&self, field: &Class) -> bool {
+        field.has_toplevel_qname(
+            ModuleName::django_models_fields().as_str(),
+            CHAR_FIELD.as_str(),
+        )
+    }
+
+    /// Extract a Literal type from CharField choices.
+    ///
+    /// Only supports inline tuple-of-tuples: choices=(("A", "Label A"), ("B", "Label B"), ...)
+    /// Returns None if:
+    /// - choices is not found
+    /// - format is not the simple inline tuple-of-tuples
+    /// - any value is not a string literal
+    fn extract_charfield_choices_literal_type(&self, call_expr: &ExprCall) -> Option<Type> {
+        let choices_value = call_expr.arguments.keywords.iter().find_map(|keyword| {
+            if keyword
+                .arg
+                .as_ref()
+                .is_some_and(|name| name.as_str() == CHOICES.as_str())
+            {
+                Some(&keyword.value)
+            } else {
+                None
+            }
+        })?;
+
+        let elements = &choices_value.as_tuple_expr()?.elts;
+
+        let mut choice_literals = Vec::new();
+        for element in elements {
+            let inner_tuple = element.as_tuple_expr()?;
+            let string_lit = inner_tuple.elts.first()?.as_string_literal_expr()?;
+            choice_literals.push(Lit::from_string_literal(string_lit).to_type());
+        }
+
+        if choice_literals.is_empty() {
+            None
+        } else {
+            Some(self.unions(choice_literals))
+        }
     }
 
     /// Create a get_FOO_display method signature for a field with choices.

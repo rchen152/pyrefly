@@ -48,7 +48,6 @@ assert_type(p.get_shirt_size_display(), str)
 );
 
 django_testcase!(
-    bug = "Consider adding limited support for tuple choices; issue https://github.com/facebook/pyrefly/issues/2099",
     test_charfield_choices_inline_tuple,
     r#"
 from typing import assert_type, Literal
@@ -67,7 +66,7 @@ class Card(models.Model):
     )
 
 card = Card(suit="CLUBS")
-assert_type(card.suit, Literal["CLUBS", "SPADES", "HEARTS", "DIAMONDS"]) # E: assert_type(str, Literal['CLUBS', 'DIAMONDS', 'HEARTS', 'SPADES']) failed 
+assert_type(card.suit, Literal["CLUBS", "SPADES", "HEARTS", "DIAMONDS"])
 "#,
 );
 
