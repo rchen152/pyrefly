@@ -105,6 +105,7 @@ pub struct TelemetrySourceDbRebuildInstanceStats {
     pub build_time: Option<Duration>,
     pub parse_time: Option<Duration>,
     pub process_time: Option<Duration>,
+    pub raw_size: Option<usize>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -64,6 +64,7 @@ pub struct QueryResult {
     pub build_id: Option<String>,
     pub build_duration: Option<Duration>,
     pub parse_duration: Option<Duration>,
+    pub stdout_size: Option<usize>,
 }
 
 pub trait SourceDbQuerier: Send + Sync + fmt::Debug {
@@ -81,6 +82,7 @@ pub trait SourceDbQuerier: Send + Sync + fmt::Debug {
                 build_id: None,
                 build_duration: None,
                 parse_duration: None,
+                stdout_size: None,
             };
         }
 
@@ -90,6 +92,7 @@ pub trait SourceDbQuerier: Send + Sync + fmt::Debug {
 
         let mut build_duration = None;
         let mut parse_duration = None;
+        let mut stdout_size = None;
 
         let db = (|| {
             let mut argfile =
@@ -126,6 +129,7 @@ pub trait SourceDbQuerier: Send + Sync + fmt::Debug {
                     "Source DB query failed...\nSTDOUT: {stdout}\nSTDERR: {stderr}"
                 ));
             }
+            stdout_size = Some(result.stdout.len());
 
             let parse_result = match serde_json::from_slice(&result.stdout)
                 .with_context(|| {
@@ -186,6 +190,7 @@ pub trait SourceDbQuerier: Send + Sync + fmt::Debug {
             build_id,
             build_duration,
             parse_duration,
+            stdout_size,
         }
     }
 

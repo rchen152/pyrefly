@@ -356,10 +356,12 @@ impl SourceDatabase for QuerySourceDatabase {
                 build_id,
                 build_duration,
                 parse_duration,
+                stdout_size,
             } = self.querier.query_source_db(&includes, &self.cwd);
             stats.build_id = build_id;
             stats.build_time = build_duration;
             stats.parse_time = parse_duration;
+            stats.raw_size = stdout_size;
             let raw_db = raw_db?;
             info!("Finished querying Buck for source DB");
             let (changed, process_duration) = self.update_with_target_manifest(raw_db);
@@ -471,6 +473,7 @@ mod tests {
                 build_id: None,
                 build_duration: None,
                 parse_duration: None,
+                stdout_size: None,
             }
         }
 
