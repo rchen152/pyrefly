@@ -88,6 +88,7 @@ impl TelemetryTaskId {
 pub struct TelemetryCommonSourceDbStats {
     pub files: usize,
     pub changed: bool,
+    pub forced: bool,
 }
 
 #[derive(Default)]

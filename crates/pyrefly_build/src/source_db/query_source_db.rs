@@ -336,6 +336,7 @@ impl SourceDatabase for QuerySourceDatabase {
         force: bool,
     ) -> (anyhow::Result<bool>, TelemetrySourceDbRebuildInstanceStats) {
         let mut stats = TelemetrySourceDbRebuildInstanceStats::default();
+        stats.common.forced = force;
         let run = || {
             let new_includes = files.into_iter().map(Include::path).collect();
             let mut includes = self.includes.lock();

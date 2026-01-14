@@ -909,6 +909,7 @@ impl ConfigFile {
         TelemetrySourceDbRebuildStats,
     ) {
         let mut stats: TelemetrySourceDbRebuildStats = Default::default();
+        stats.common.forced = force;
         let mut reloaded_source_dbs = SmallSet::new();
         let mut sourcedb_configs: SmallMap<_, Vec<_>> = SmallMap::new();
         for (config, files) in configs_to_files {
