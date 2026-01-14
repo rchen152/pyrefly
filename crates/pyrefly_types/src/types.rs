@@ -47,6 +47,7 @@ use crate::class::ClassType;
 use crate::keywords::DataclassTransformMetadata;
 use crate::keywords::KwCall;
 use crate::literal::Lit;
+use crate::literal::LitStyle;
 use crate::literal::Literal;
 use crate::module::ModuleType;
 use crate::param_spec::ParamSpec;
@@ -1530,6 +1531,14 @@ impl Type {
         self.transform(&mut |ty| {
             if let Type::Any(style) = ty {
                 *style = AnyStyle::Explicit;
+            }
+        })
+    }
+
+    pub fn explicit_literals(self) -> Self {
+        self.transform(&mut |ty| {
+            if let Type::Literal(lit) = ty {
+                lit.style = LitStyle::Explicit;
             }
         })
     }

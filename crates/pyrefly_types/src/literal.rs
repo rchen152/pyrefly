@@ -33,6 +33,14 @@ assert_words!(Lit, 3);
 #[derive(Visit, VisitMut, TypeEq)]
 pub struct Literal {
     pub value: Lit,
+    pub style: LitStyle,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Visit, VisitMut, TypeEq)]
+pub enum LitStyle {
+    Implicit,
+    Explicit,
 }
 
 /// A literal value.
@@ -155,7 +163,10 @@ impl Lit {
 
     /// Convert a literal to a `Type::Literal`.
     pub fn to_type(self) -> Type {
-        Type::Literal(Box::new(Literal { value: self }))
+        Type::Literal(Box::new(Literal {
+            value: self,
+            style: LitStyle::Implicit,
+        }))
     }
 
     /// Convert a literal to a `ClassType` that is the general class_type of the literal.
