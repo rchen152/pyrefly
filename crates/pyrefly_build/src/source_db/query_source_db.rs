@@ -10,6 +10,8 @@ use std::mem;
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
+use std::time::Instant;
 
 use dupe::Dupe as _;
 use pyrefly_python::module_name::ModuleName;
@@ -117,12 +119,13 @@ impl QuerySourceDatabase {
         }
     }
 
-    fn update_with_target_manifest(&self, raw_db: TargetManifestDatabase) -> bool {
+    fn update_with_target_manifest(&self, raw_db: TargetManifestDatabase) -> (bool, Duration) {
+        let start = Instant::now();
         let new_db = raw_db.produce_map();
         let read = self.inner.read();
         if new_db == read.db {
             debug!("No source DB changes from Buck query");
-            return false;
+            return (false, start.elapsed());
         }
         drop(read);
         let mut path_lookup: SmallMap<ModulePathBuf, Target> = SmallMap::new();
@@ -162,7 +165,7 @@ impl QuerySourceDatabase {
         let _old_known_modules = mem::replace(&mut write.known_modules, known_modules);
         drop(write);
         debug!("Finished updating source DB with Buck response");
-        true
+        (true, start.elapsed())
     }
 
     /// Attempts to search in the given [`PythonLibraryManifest`] for the import,
@@ -359,8 +362,9 @@ impl SourceDatabase for QuerySourceDatabase {
             stats.parse_time = parse_duration;
             let raw_db = raw_db?;
             info!("Finished querying Buck for source DB");
-            let changed = self.update_with_target_manifest(raw_db);
+            let (changed, process_duration) = self.update_with_target_manifest(raw_db);
             stats.common.changed = changed;
+            stats.process_time = Some(process_duration);
             Ok(changed)
         };
         (run(), stats)
@@ -829,7 +833,7 @@ mod tests {
         let (db, root) = get_db();
         let manifest = TargetManifestDatabase::get_test_database();
 
-        assert!(!db.update_with_target_manifest(manifest));
+        assert!(!db.update_with_target_manifest(manifest).0);
 
         let manifest = TargetManifestDatabase::new(
             smallmap! {
@@ -889,7 +893,7 @@ mod tests {
             root.clone(),
         );
         let manifest_db = manifest.clone().produce_map();
-        assert!(db.update_with_target_manifest(manifest));
+        assert!(db.update_with_target_manifest(manifest).0);
         let inner = db.inner.read();
         assert_eq!(inner.db, manifest_db);
         let expected_path_lookup = smallmap! {
