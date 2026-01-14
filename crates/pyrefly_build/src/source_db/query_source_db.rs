@@ -337,6 +337,7 @@ impl SourceDatabase for QuerySourceDatabase {
     ) -> (anyhow::Result<bool>, TelemetrySourceDbRebuildInstanceStats) {
         let mut stats = TelemetrySourceDbRebuildInstanceStats::default();
         stats.common.forced = force;
+        stats.common.files = files.len();
         let run = || {
             let new_includes = files.into_iter().map(Include::path).collect();
             let mut includes = self.includes.lock();
@@ -350,7 +351,9 @@ impl SourceDatabase for QuerySourceDatabase {
             stats.build_id = build_id;
             let raw_db = raw_db?;
             info!("Finished querying Buck for source DB");
-            Ok(self.update_with_target_manifest(raw_db))
+            let changed = self.update_with_target_manifest(raw_db);
+            stats.common.changed = changed;
+            Ok(changed)
         };
         (run(), stats)
     }
