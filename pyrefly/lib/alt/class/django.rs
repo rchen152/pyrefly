@@ -21,7 +21,6 @@ use pyrefly_types::types::Union;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprCall;
 use ruff_python_ast::ExprStringLiteral;
-use ruff_python_ast::Keyword;
 use ruff_python_ast::name::Name;
 use ruff_text_size::TextRange;
 use starlark_map::small_map::SmallMap;
@@ -52,12 +51,20 @@ const MANY_TO_MANY_FIELD: Name = Name::new_static("ManyToManyField");
 const MODEL: Name = Name::new_static("Model");
 const MANYRELATEDMANAGER: Name = Name::new_static("ManyRelatedManager");
 
+/// Find a keyword argument by name and return its value expression.
+fn find_keyword<'a>(call_expr: &'a ExprCall, name: &Name) -> Option<&'a Expr> {
+    call_expr
+        .arguments
+        .keywords
+        .iter()
+        .find(|kw| kw.arg.as_ref().is_some_and(|n| n.as_str() == name.as_str()))
+        .map(|kw| &kw.value)
+}
+
 /// Check if a keyword argument with the given name exists and has value `True`.
-fn has_keyword_true(keywords: &[Keyword], name: &Name) -> bool {
-    keywords.iter().any(|kw| {
-        kw.arg.as_ref().is_some_and(|n| n.as_str() == name.as_str())
-            && matches!(&kw.value, Expr::BooleanLiteral(lit) if lit.value)
-    })
+fn has_keyword_true(call_expr: &ExprCall, name: &Name) -> bool {
+    find_keyword(call_expr, name)
+        .is_some_and(|v| matches!(v, Expr::BooleanLiteral(lit) if lit.value))
 }
 
 impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
@@ -413,22 +420,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     fn is_django_field_nullable(&self, call_expr: &ExprCall) -> bool {
-        has_keyword_true(&call_expr.arguments.keywords, &NULL)
+        has_keyword_true(call_expr, &NULL)
     }
 
     /// Check if a Django field has a `choices` argument.
     pub fn has_django_field_choices(&self, call_expr: &ExprCall) -> bool {
-        call_expr.arguments.keywords.iter().any(|keyword| {
-            keyword
-                .arg
-                .as_ref()
-                .is_some_and(|name| name.as_str() == CHOICES.as_str())
-        })
+        find_keyword(call_expr, &CHOICES).is_some()
     }
 
     /// Check if a Django field has `blank=True`.
     fn is_django_field_blank(&self, call_expr: &ExprCall) -> bool {
-        has_keyword_true(&call_expr.arguments.keywords, &BLANK)
+        has_keyword_true(call_expr, &BLANK)
     }
 
     /// Check if a Django field is a CharField.
@@ -447,17 +449,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// - format is not the simple inline tuple-of-tuples
     /// - any value is not a string literal
     fn extract_charfield_choices_literal_type(&self, call_expr: &ExprCall) -> Option<Type> {
-        let choices_value = call_expr.arguments.keywords.iter().find_map(|keyword| {
-            if keyword
-                .arg
-                .as_ref()
-                .is_some_and(|name| name.as_str() == CHOICES.as_str())
-            {
-                Some(&keyword.value)
-            } else {
-                None
-            }
-        })?;
+        let choices_value = find_keyword(call_expr, &CHOICES)?;
 
         let elements = &choices_value.as_tuple_expr()?.elts;
 
