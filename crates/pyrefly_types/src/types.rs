@@ -1487,7 +1487,7 @@ impl Type {
         sigs
     }
 
-    pub fn promote_literals(mut self, stdlib: &Stdlib) -> Type {
+    pub fn promote_implicit_literals(mut self, stdlib: &Stdlib) -> Type {
         fn g(ty: &mut Type, f: &mut dyn FnMut(&mut Type)) {
             ty.recurse_mut(&mut |ty| g(ty, f));
             f(ty);

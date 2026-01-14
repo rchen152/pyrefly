@@ -1651,7 +1651,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             && matches!(read_only_reason, None | Some(ReadOnlyReason::NamedTuple))
             && has_implicit_literal
         {
-            value_ty.promote_literals(self.stdlib)
+            value_ty.promote_implicit_literals(self.stdlib)
         } else {
             value_ty
         };

@@ -298,7 +298,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Some(
                         elements[elements.len() - 1]
                             .clone()
-                            .promote_literals(self.stdlib),
+                            .promote_implicit_literals(self.stdlib),
                     )
                 } else {
                     None

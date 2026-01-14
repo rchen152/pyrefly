@@ -636,7 +636,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         {
             want.ty().clone()
         } else {
-            ty.promote_literals(self.stdlib)
+            ty.promote_implicit_literals(self.stdlib)
         }
     }
 

@@ -780,7 +780,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.uniques,
                 self.get_idx(*prior_idx)
                     .arc_clone_ty()
-                    .promote_literals(self.stdlib),
+                    .promote_implicit_literals(self.stdlib),
             ),
             _ => self.solver().fresh_recursive(self.uniques),
         }

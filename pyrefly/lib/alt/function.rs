@@ -783,7 +783,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         *var,
                         self.union(
                             Type::any_implicit(),
-                            default_ty.clone().promote_literals(self.stdlib),
+                            default_ty.clone().promote_implicit_literals(self.stdlib),
                         ),
                     );
                 }
