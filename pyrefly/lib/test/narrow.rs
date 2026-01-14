@@ -2360,3 +2360,16 @@ def f(x: object):
         pass  # No error - Protocol is valid for isinstance
     "#,
 );
+
+testcase!(
+    test_narrow_to_unknown_name,
+    r#"
+class C:
+    # expected error, leading to Unknown type
+    x: XXX | None  # E: Could not find name `XXX`
+
+def f(o: C):
+    if o.x is not None:
+        o.x.foo
+    "#,
+);
