@@ -1096,7 +1096,31 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 // Allow substituting a TypedDict for Self when we call methods
                 Ok(())
             }
-            (Type::TypedDict(td), _) => {
+            (Type::TypedDict(td @ TypedDict::Anonymous(_)), _) => {
+                let stdlib = self.type_order.stdlib();
+                self.is_subset_eq(
+                    &stdlib
+                        .dict(
+                            stdlib.str().clone().to_type(),
+                            self.type_order.get_typed_dict_value_type(td),
+                        )
+                        .to_type(),
+                    want,
+                )
+            }
+            (_, Type::TypedDict(td @ TypedDict::Anonymous(_))) => {
+                let stdlib = self.type_order.stdlib();
+                self.is_subset_eq(
+                    got,
+                    &stdlib
+                        .dict(
+                            stdlib.str().clone().to_type(),
+                            self.type_order.get_typed_dict_value_type(td),
+                        )
+                        .to_type(),
+                )
+            }
+            (Type::TypedDict(td @ TypedDict::TypedDict(_)), _) => {
                 let stdlib = self.type_order.stdlib();
                 if let Some(value_type) = self
                     .type_order
@@ -1105,16 +1129,6 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                     self.is_subset_eq(
                         &stdlib
                             .dict(stdlib.str().clone().to_type(), value_type)
-                            .to_type(),
-                        want,
-                    )
-                } else if matches!(td, TypedDict::Anonymous(_)) {
-                    self.is_subset_eq(
-                        &stdlib
-                            .dict(
-                                stdlib.str().clone().to_type(),
-                                self.type_order.get_typed_dict_value_type(td),
-                            )
                             .to_type(),
                         want,
                     )
