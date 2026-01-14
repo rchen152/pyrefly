@@ -1761,6 +1761,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             | Type::Literal(box Literal {
                 value: Lit::Str(_), ..
             }) => acc.push(AttributeBase1::LiteralString),
+            Type::Type(box Type::LiteralString(_)) => acc.push(AttributeBase1::ClassObject(
+                ClassBase::ClassType(self.stdlib.str().clone()),
+            )),
+            Type::Type(box Type::Literal(lit)) => acc.push(AttributeBase1::ClassObject(
+                ClassBase::ClassType(lit.value.general_class_type(self.stdlib).clone()),
+            )),
             Type::Literal(box Literal {
                 value: Lit::Enum(lit_enum),
                 ..
