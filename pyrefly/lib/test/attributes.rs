@@ -2224,3 +2224,19 @@ def f() -> list[dict[str, Any]]:
     return pets
     "#,
 );
+
+// Regression test for https://github.com/facebook/pyrefly/issues/1341
+testcase!(
+    test_optional_type_truthiness,
+    r#"
+class A[T]:
+    def __init__(self):
+        self.foo: T | None = None
+
+class B(A[None]):
+    def m(self, x: int | None):
+        foo = self.foo
+        if not foo:
+            pass
+    "#,
+);
