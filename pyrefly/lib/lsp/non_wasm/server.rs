@@ -2524,6 +2524,7 @@ impl Server {
                 }
             },
         }
+        drop(open_files);
         self.unsaved_file_tracker.forget_uri_path(&url);
         self.queue_source_db_rebuild_and_recheck(telemetry, telemetry_event, false);
         self.recheck_queue.queue_task(
