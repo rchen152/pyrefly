@@ -1485,14 +1485,8 @@ impl Type {
 
     pub fn promote_literals(mut self, stdlib: &Stdlib) -> Type {
         fn g(ty: &mut Type, f: &mut dyn FnMut(&mut Type)) {
-            // This isn't quite right: we should decide whether to promote a literal based on
-            // whether it is inferred or annotated. But we don't have an easy way to track that
-            // right now, and promoting literals in callable signatures is always wrong, so let's
-            // special-case callables for now.
-            if !ty.is_toplevel_callable() {
-                ty.recurse_mut(&mut |ty| g(ty, f));
-                f(ty);
-            }
+            ty.recurse_mut(&mut |ty| g(ty, f));
+            f(ty);
         }
         g(&mut self, &mut |ty| match &ty {
             Type::Literal(lit) if lit.style == LitStyle::Implicit => {
