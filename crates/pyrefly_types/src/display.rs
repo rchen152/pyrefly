@@ -424,7 +424,13 @@ impl<'a> TypeDisplayContext<'a> {
                 output.write_lit(&lit.value)?;
                 output.write_str("]")
             }
-            Type::LiteralString(_) => self.maybe_fmt_with_module("typing", "LiteralString", output),
+            Type::LiteralString(_) => {
+                if self.always_display_module_name {
+                    output.write_str("typing.")?;
+                }
+                let qname = self.get_special_form_qname("LiteralString");
+                output.write_builtin("LiteralString", qname)
+            }
             Type::Callable(box c) => {
                 if self.lsp_display_mode == LspDisplayMode::Hover && is_toplevel {
                     c.fmt_with_type_with_newlines(output, &|t, o| {
