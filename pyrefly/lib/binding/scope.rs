@@ -607,8 +607,13 @@ pub enum FlowStyle {
     /// would get `foo.bar` here.
     ImportAs(ModuleName),
     /// Am I a function definition? Used to chain overload definitions.
-    /// If so, does my return type have an explicit annotation?
-    FunctionDef(Idx<KeyDecoratedFunction>, bool),
+    /// Track whether the return type has an explicit annotation and whether this
+    /// definition is marked as an overload.
+    FunctionDef {
+        function_idx: Idx<KeyDecoratedFunction>,
+        has_return_annotation: bool,
+        is_overload: bool,
+    },
     /// Am I a class definition?
     ClassDef,
     /// The name is possibly uninitialized (perhaps due to merging branches)
@@ -1267,7 +1272,9 @@ impl Scopes {
         name: &Name,
     ) -> Option<(Idx<Key>, Idx<KeyDecoratedFunction>)> {
         if let Some(value) = self.current().flow.get_value(name)
-            && let FlowStyle::FunctionDef(fidx, _) = value.style
+            && let FlowStyle::FunctionDef {
+                function_idx: fidx, ..
+            } = value.style
         {
             return Some((value.idx, fidx));
         }
@@ -2103,7 +2110,10 @@ impl Scopes {
                 // Mutable captures are not actually owned by the class scope, and do not become attributes.
             } else if let Some(value) = class_body.flow.get_info_hashed(name).and_then(|flow| flow.value()) {
                 let definition = match &value.style {
-                    FlowStyle::FunctionDef(_, has_return_annotation) => ClassFieldDefinition::MethodLike {
+                    FlowStyle::FunctionDef {
+                        has_return_annotation,
+                        ..
+                    } => ClassFieldDefinition::MethodLike {
                         definition: value.idx,
                         has_return_annotation: *has_return_annotation,
                     },
@@ -2281,12 +2291,58 @@ impl Scopes {
     /// Look up the information needed to create a `Usage` binding for a read of a name
     /// in the current scope stack.
     pub fn look_up_name_for_read(&self, name: Hashed<&Name>) -> NameReadInfo {
+        self.look_up_name_for_read_impl(name, false)
+    }
+
+    /// Look up a name for a static type context (annotations, type aliases, etc).
+    ///
+    /// Skips class-scope overload definitions so that annotations in overload signatures are not
+    /// accidentally resolved to other overloads. That is, in:
+    ///     class A: ...
+    ///     class B: ...
+    ///         @overload
+    ///         def A(self) -> A: ...
+    ///         @overload
+    ///         def A(self) -> A: ...
+    ///         def A(self): ...
+    /// we want the `A` return annotation in the second overload signature to resolve to class `A`,
+    /// not the first overload.
+    ///
+    /// Note that this is intentionally divergent from the runtime and different from how name
+    /// lookup usually works. In all other cases, if the name of a type is locally shadowed by a
+    /// non-type definition, we error if it is then used in an annotation.
+    pub fn look_up_name_for_read_in_static_type_context(
+        &self,
+        name: Hashed<&Name>,
+    ) -> NameReadInfo {
+        self.look_up_name_for_read_impl(name, true)
+    }
+
+    fn look_up_name_for_read_impl(
+        &self,
+        name: Hashed<&Name>,
+        skip_class_overload_function_definitions: bool,
+    ) -> NameReadInfo {
         self.visit_scopes(|_, scope, flow_barrier| {
             let is_class = matches!(scope.kind, ScopeKind::Class(_));
 
             if let Some(flow_info) = scope.flow.get_info_hashed(name)
                 && flow_barrier < FlowBarrier::BlockFlow
             {
+                if skip_class_overload_function_definitions
+                    && is_class
+                    && flow_info.value().is_some_and(|value| {
+                        matches!(
+                            value.style,
+                            FlowStyle::FunctionDef {
+                                is_overload: true,
+                                ..
+                            }
+                        )
+                    })
+                {
+                    return None;
+                }
                 let initialized = if flow_barrier == FlowBarrier::AllowFlowUnchecked {
                     // Just assume the name is initialized without checking.
                     InitializedInFlow::Yes
