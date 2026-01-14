@@ -43,6 +43,7 @@ use pyrefly_util::globs::Glob;
 use pyrefly_util::globs::Globs;
 use pyrefly_util::lock::RwLock;
 use pyrefly_util::prelude::VecExt;
+use pyrefly_util::telemetry::SubTaskTelemetry;
 use pyrefly_util::telemetry::TelemetrySourceDbRebuildStats;
 use pyrefly_util::watch_pattern::WatchPattern;
 use serde::Deserialize;
@@ -899,6 +900,7 @@ impl ConfigFile {
     pub fn query_source_db(
         configs_to_files: &SmallMap<ArcId<ConfigFile>, SmallSet<ModulePath>>,
         force: bool,
+        _telemetry: Option<SubTaskTelemetry>,
     ) -> (
         SmallSet<ArcId<Box<dyn SourceDatabase + 'static>>>,
         TelemetrySourceDbRebuildStats,
