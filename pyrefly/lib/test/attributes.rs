@@ -2199,8 +2199,7 @@ def f(a: A):
 );
 
 testcase!(
-    bug = "Anonymous TypedDict is promoted inconsistently",
-    test_always_promote_anonymous_typeddict,
+    test_top_level_anonymous_typeddict,
     r#"
 from typing import NotRequired, TypedDict
 class TD(TypedDict):
@@ -2210,9 +2209,18 @@ class A:
         self.x = {"x": 0}
         self.y = {"x": 0} if check else 42
 def f(a: A):
-    # We want the anonymous TypedDict in `x` and `y` to be promoted to `dict[str, int]`,
-    # so the correct behavior is to NOT match `TD`.
     x: TD = a.x
-    y: TD | int = a.y  # E: not assignable
+    y: TD | int = a.y
+    "#,
+);
+
+testcase!(
+    test_nested_anonymous_typeddict,
+    r#"
+from typing import Any
+
+def f() -> list[dict[str, Any]]:
+    pets = [{"name": "Carmen", "age": 3}]
+    return pets
     "#,
 );
