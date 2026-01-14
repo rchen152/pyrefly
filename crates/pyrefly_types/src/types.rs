@@ -888,7 +888,7 @@ impl Type {
     }
 
     pub fn is_literal(&self) -> bool {
-        matches!(self, Type::Literal(_))
+        matches!(self, Type::Literal(_) | Type::LiteralString(_))
     }
 
     pub fn is_literal_string(&self) -> bool {

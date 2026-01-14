@@ -2184,7 +2184,6 @@ def f(a: A):
 );
 
 testcase!(
-    bug = "LiteralString is promoted inconsistently",
     test_always_promote_inferred_literalstring,
     r#"
 from typing import assert_type
@@ -2194,7 +2193,7 @@ class A:
         self.x = f"{greeting} world"
         self.y = f"{greeting} world" if greeting == "hello" else 42
 def f(a: A):
-    assert_type(a.x, str)  # E: assert_type(LiteralString, str)
+    assert_type(a.x, str)
     assert_type(a.y, int | str)
     "#,
 );
