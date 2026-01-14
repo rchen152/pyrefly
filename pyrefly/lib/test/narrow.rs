@@ -1608,6 +1608,19 @@ def test(x: tuple[int, int], y: tuple[int, *tuple[int, ...], int], z: tuple[int,
 "#,
 );
 
+// Regression test for https://github.com/facebook/pyrefly/issues/1616
+testcase!(
+    test_dict_literal_key_isinstance_narrowing,
+    r#"
+from typing import Literal, reveal_type
+def get_value(x: dict[Literal["value"], int] | int) -> int | None:
+    if isinstance(x, dict):
+        return x.get("value")
+    reveal_type(x) # E: revealed type: int
+    return x
+    "#,
+);
+
 testcase!(
     test_isinstance_loop,
     r#"
