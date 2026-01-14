@@ -194,6 +194,7 @@ mod tests {
     use crate::class::ClassType;
     use crate::lit_int::LitInt;
     use crate::literal::LitEnum;
+    use crate::literal::LitStyle;
     use crate::quantified::Quantified;
     use crate::quantified::QuantifiedKind;
     use crate::tuple::Tuple;
@@ -356,7 +357,11 @@ mod tests {
         let tparams = Arc::new(TParams::new(vec![tparam1, tparam2, tparam3]));
         let targs = TArgs::new(
             tparams,
-            vec![Type::None, Type::LiteralString, Type::any_explicit()],
+            vec![
+                Type::None,
+                Type::LiteralString(LitStyle::Implicit),
+                Type::any_explicit(),
+            ],
         );
 
         output.write_targs(&targs).unwrap();
@@ -397,7 +402,9 @@ mod tests {
         assert_eq!(output.parts()[0].0, "None");
         assert!(output.parts()[0].1.is_none());
 
-        output.write_type(&Type::LiteralString).unwrap();
+        output
+            .write_type(&Type::LiteralString(LitStyle::Implicit))
+            .unwrap();
         assert_eq!(output.parts().len(), 2);
         assert_eq!(output.parts()[1].0, "LiteralString");
         assert!(output.parts()[1].1.is_none());

@@ -415,7 +415,7 @@ impl<'a> TypeDisplayContext<'a> {
                 output.write_lit(&lit.value)?;
                 output.write_str("]")
             }
-            Type::LiteralString => self.maybe_fmt_with_module("typing", "LiteralString", output),
+            Type::LiteralString(_) => self.maybe_fmt_with_module("typing", "LiteralString", output),
             Type::Callable(box c) => {
                 if self.lsp_display_mode == LspDisplayMode::Hover && is_toplevel {
                     c.fmt_with_type_with_newlines(output, &|t, o| {
@@ -977,6 +977,7 @@ pub mod tests {
     use crate::class::ClassType;
     use crate::literal::Lit;
     use crate::literal::LitEnum;
+    use crate::literal::LitStyle;
     use crate::quantified::Quantified;
     use crate::quantified::QuantifiedKind;
     use crate::tuple::Tuple;
@@ -1246,7 +1247,8 @@ pub mod tests {
         let mut ctx = TypeDisplayContext::new(&[&t]);
         assert_eq!(ctx.display(&t).to_string(), "foo");
         assert_eq!(
-            ctx.display(&Type::LiteralString).to_string(),
+            ctx.display(&Type::LiteralString(LitStyle::Implicit))
+                .to_string(),
             "LiteralString"
         );
         assert_eq!(ctx.display(&Type::any_explicit()).to_string(), "Any");
@@ -1255,7 +1257,8 @@ pub mod tests {
         ctx.always_display_module_name();
         assert_eq!(ctx.display(&t).to_string(), "mod.ule.foo");
         assert_eq!(
-            ctx.display(&Type::LiteralString).to_string(),
+            ctx.display(&Type::LiteralString(LitStyle::Implicit))
+                .to_string(),
             "typing.LiteralString"
         );
         assert_eq!(ctx.display(&Type::any_explicit()).to_string(), "typing.Any");
@@ -1349,7 +1352,7 @@ pub mod tests {
         let lit1 = Lit::Bool(true).to_implicit_type();
         let lit2 = Lit::Str("test".into()).to_implicit_type();
         let nonlit1 = Type::None;
-        let nonlit2 = Type::LiteralString;
+        let nonlit2 = Type::LiteralString(LitStyle::Implicit);
 
         assert_eq!(
             Type::union(vec![nonlit1.clone(), nonlit2.clone()]).to_string(),
@@ -1783,7 +1786,7 @@ def overloaded_func[T](
     #[test]
     fn test_intersection() {
         let x = Type::Intersect(Box::new((
-            vec![Type::LiteralString, Type::None],
+            vec![Type::LiteralString(LitStyle::Implicit), Type::None],
             Type::any_implicit(),
         )));
         let ctx = TypeDisplayContext::new(&[&x]);
@@ -1794,7 +1797,10 @@ def overloaded_func[T](
     fn test_union_of_intersection() {
         let x = Type::union(vec![
             Type::Intersect(Box::new((
-                vec![Type::any_explicit(), Type::LiteralString],
+                vec![
+                    Type::any_explicit(),
+                    Type::LiteralString(LitStyle::Implicit),
+                ],
                 Type::any_implicit(),
             ))),
             Type::None,

@@ -1188,7 +1188,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 }
             }
             (
-                Type::LiteralString
+                Type::LiteralString(_)
                 | Type::Literal(box Literal {
                     value: Lit::Str(_), ..
                 }),
@@ -1319,7 +1319,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 self.is_subset_eq(middle, want)?;
                 Ok(())
             }
-            (Type::Literal(lit), Type::LiteralString) => {
+            (Type::Literal(lit), Type::LiteralString(_)) => {
                 ok_or(lit.value.is_string(), SubsetError::Other)
             }
             (Type::Literal(lit), t @ Type::ClassType(_)) => self.is_subset_eq(
@@ -1337,7 +1337,8 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             {
                 Ok(())
             }
-            (Type::LiteralString, _) => {
+            (Type::LiteralString(_), Type::LiteralString(_)) => Ok(()),
+            (Type::LiteralString(_), _) => {
                 self.is_subset_eq(&self.type_order.stdlib().str().clone().to_type(), want)
             }
 

@@ -1756,7 +1756,7 @@ impl<'a> CallGraphVisitor<'a> {
                 // a function.
                 MaybeResolved::Unresolved(UnresolvedReason::UnsupportedFunctionTarget)
             }
-            Some(Type::LiteralString) => {
+            Some(Type::LiteralString(_)) => {
                 let str_class = self.module_context.stdlib.str().class_object();
                 call_targets_from_method_name_with_class(str_class)
             }

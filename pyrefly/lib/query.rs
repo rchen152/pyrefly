@@ -677,7 +677,7 @@ impl<'a> CalleesWithLocation<'a> {
             Type::Literal(box Literal {
                 value: Lit::Str(_), ..
             })
-            | Type::LiteralString => {
+            | Type::LiteralString(_) => {
                 vec![(String::from("builtins.str"), false)]
             }
             Type::Literal(lit) if let Lit::Int(_) = lit.value => {

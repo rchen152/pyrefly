@@ -105,7 +105,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     fn intersect_impl(&self, left: &Type, right: &Type, fallback: &dyn Fn() -> Type) -> Type {
         let is_literal =
-            |t: &Type| matches!(t, Type::Literal(_) | Type::LiteralString | Type::None);
+            |t: &Type| matches!(t, Type::Literal(_) | Type::LiteralString(_) | Type::None);
         if self.is_subset_eq(right, left) {
             if left.is_toplevel_callable()
                 && right.is_toplevel_callable()

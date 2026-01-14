@@ -7,6 +7,7 @@
 
 use pyrefly_graph::index::Idx;
 use pyrefly_python::dunder;
+use pyrefly_types::literal::LitStyle;
 use ruff_python_ast::CmpOp;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprBinOp;
@@ -264,10 +265,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 {
                     Type::type_form(self.union(l, r))
                 } else if x.op == Operator::Add
-                    && ((*lhs == Type::LiteralString && rhs.is_literal_string())
-                        || (*rhs == Type::LiteralString && lhs.is_literal_string()))
+                    && ((matches!(lhs, Type::LiteralString(_)) && rhs.is_literal_string())
+                        || (matches!(rhs, Type::LiteralString(_)) && lhs.is_literal_string()))
                 {
-                    Type::LiteralString
+                    Type::LiteralString(LitStyle::Implicit)
                 } else if x.op == Operator::Add
                     && let Type::Tuple(l) = lhs
                     && let Type::Tuple(r) = rhs
@@ -313,7 +314,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     && base.is_literal_string()
                     && rhs.is_literal_string()
                 {
-                    Type::LiteralString
+                    Type::LiteralString(LitStyle::Implicit)
                 } else if x.op == Operator::Add
                     && let Type::Tuple(ref l) = base
                     && let Type::Tuple(r) = rhs

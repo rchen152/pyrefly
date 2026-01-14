@@ -17,6 +17,7 @@ use pyrefly_python::dunder;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_types::callable::FunctionKind;
+use pyrefly_types::literal::LitStyle;
 use pyrefly_types::typed_dict::AnonymousTypedDictInner;
 use pyrefly_types::typed_dict::ExtraItems;
 use pyrefly_types::typed_dict::TypedDict;
@@ -576,7 +577,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 });
                 match Lit::from_fstring(x) {
                     Some(lit) => lit.to_implicit_type(),
-                    _ if all_literal_strings => Type::LiteralString,
+                    _ if all_literal_strings => Type::LiteralString(LitStyle::Implicit),
                     _ => self.stdlib.str().clone().to_type(),
                 }
             }
@@ -2138,7 +2139,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     range,
                     Some(&|| ErrorContext::Index(self.for_display(base.clone()))),
                 ),
-                Type::LiteralString if xs.len() <= 3 => {
+                Type::LiteralString(_) if xs.len() <= 3 => {
                     // We could have a more precise type here, but this matches Pyright.
                     self.stdlib.str().clone().to_type()
                 }

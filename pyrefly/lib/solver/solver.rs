@@ -1500,7 +1500,9 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                         // TODO(stroxler): should we be promoting other literal types here?
                         // See: https://github.com/facebook/pyrefly/issues/2068
                         let t2_p = match t2 {
-                            Type::LiteralString => self.type_order.stdlib().str().clone().to_type(),
+                            Type::LiteralString(_) => {
+                                self.type_order.stdlib().str().clone().to_type()
+                            }
                             _ => t2.clone(),
                         };
                         drop(v1_ref);

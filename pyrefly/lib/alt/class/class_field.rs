@@ -21,6 +21,7 @@ use pyrefly_types::callable::FuncId;
 use pyrefly_types::callable::FunctionKind;
 use pyrefly_types::callable::ParamList;
 use pyrefly_types::callable::Params;
+use pyrefly_types::literal::LitStyle;
 use pyrefly_types::quantified::QuantifiedKind;
 use pyrefly_types::read_only::IsFinalVariableInitialized;
 use pyrefly_types::simplify::unions;
@@ -1154,7 +1155,7 @@ impl<'a> Instance<'a> {
             }
             InstanceKind::Protocol(self_type) => self_type.clone(),
             InstanceKind::Metaclass(cls) => cls.clone().to_type(),
-            InstanceKind::LiteralString => Type::LiteralString,
+            InstanceKind::LiteralString => Type::LiteralString(LitStyle::Implicit),
         }
     }
 

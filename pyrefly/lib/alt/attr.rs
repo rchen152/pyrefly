@@ -1757,7 +1757,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::Tuple(tuple) => {
                 acc.push(AttributeBase1::ClassInstance(self.erase_tuple_type(tuple)))
             }
-            Type::LiteralString
+            Type::LiteralString(_)
             | Type::Literal(box Literal {
                 value: Lit::Str(_), ..
             }) => acc.push(AttributeBase1::LiteralString),

@@ -169,7 +169,7 @@ fn collapse_literals(
     // inserting them all.
     for t in types.iter() {
         match t {
-            Type::LiteralString => {
+            Type::LiteralString(_) => {
                 has_literal_string = true;
                 literal_types.insert(stdlib.str().clone(), false);
             }
@@ -224,7 +224,7 @@ fn collapse_literals(
     {
         // We actually have some things to delete
         types.retain(|x| match x {
-            Type::LiteralString => literal_types.get(stdlib.str()) == Some(&false),
+            Type::LiteralString(_) => literal_types.get(stdlib.str()) == Some(&false),
             Type::Literal(x) => {
                 match &x.value {
                     Lit::Bool(_) if has_true && has_false => return false,

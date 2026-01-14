@@ -4157,7 +4157,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     .class_object()
                     .clone(),
             ),
-            Type::LiteralString => Type::ClassDef(self.stdlib.str().class_object().clone()),
+            Type::LiteralString(_) => Type::ClassDef(self.stdlib.str().class_object().clone()),
             Type::None => Type::ClassDef(self.stdlib.none_type().class_object().clone()),
             Type::Tuple(_) => Type::ClassDef(self.stdlib.tuple_object().clone()),
             Type::TypedDict(_) | Type::PartialTypedDict(_) => {
