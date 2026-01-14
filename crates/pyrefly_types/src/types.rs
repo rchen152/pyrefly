@@ -1495,8 +1495,11 @@ impl Type {
             }
         }
         g(&mut self, &mut |ty| match &ty {
-            Type::Literal(lit) => *ty = lit.value.general_class_type(stdlib).clone().to_type(),
-            Type::LiteralString(_) => *ty = stdlib.str().clone().to_type(),
+            Type::Literal(lit) if lit.style == LitStyle::Implicit => {
+                *ty = lit.value.general_class_type(stdlib).clone().to_type()
+            }
+            Type::LiteralString(LitStyle::Implicit) => *ty = stdlib.str().clone().to_type(),
+            // Anonymous typed dicts are always inferred, so we always promote them.
             Type::TypedDict(TypedDict::Anonymous(inner)) => {
                 *ty = stdlib
                     .dict(stdlib.str().clone().to_type(), inner.value_type.clone())

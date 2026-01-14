@@ -285,7 +285,12 @@
   ],
   "specialtypes_none.py": [],
   "specialtypes_promotions.py": [],
-  "specialtypes_type.py": [],
+  "specialtypes_type.py": [
+    "Line 84: Unexpected errors ['assert_type(type, type[Any]) failed']",
+    "Line 99: Unexpected errors ['Object of class `type` has no attribute `unknown`']",
+    "Line 100: Unexpected errors ['Object of class `type` has no attribute `unknown`']",
+    "Line 139: Unexpected errors ['assert_type(type, type[Any]) failed']"
+  ],
   "tuples_type_compat.py": [],
   "tuples_type_form.py": [],
   "tuples_unpacked.py": [],

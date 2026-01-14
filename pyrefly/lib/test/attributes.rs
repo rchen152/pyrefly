@@ -2145,3 +2145,15 @@ def f(a: A):
     assert_type(a.y, None)
     "#,
 );
+
+testcase!(
+    test_do_not_promote_explicit_literal_param,
+    r#"
+from typing import Literal, assert_type
+class A:
+    def __init__(self, answer: Literal[42]):
+        self.answer = answer
+def f(a: A):
+    assert_type(a.answer, Literal[42])
+    "#,
+);

@@ -1,9 +1,9 @@
 {
   "total": 138,
-  "pass": 106,
-  "fail": 32,
-  "pass_rate": 0.77,
-  "differences": 133,
+  "pass": 105,
+  "fail": 33,
+  "pass_rate": 0.76,
+  "differences": 137,
   "passing": [
     "aliases_explicit.py",
     "aliases_newtype.py",
@@ -93,7 +93,6 @@
     "specialtypes_any.py",
     "specialtypes_none.py",
     "specialtypes_promotions.py",
-    "specialtypes_type.py",
     "tuples_type_compat.py",
     "tuples_type_form.py",
     "tuples_unpacked.py",
@@ -144,7 +143,8 @@
     "protocols_variance.py": 7,
     "qualifiers_annotated.py": 6,
     "qualifiers_final_annotation.py": 7,
-    "specialtypes_never.py": 1
+    "specialtypes_never.py": 1,
+    "specialtypes_type.py": 4
   },
   "comment": "@generated"
 }
