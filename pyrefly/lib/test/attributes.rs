@@ -2157,3 +2157,28 @@ def f(a: A):
     assert_type(a.answer, Literal[42])
     "#,
 );
+
+testcase!(
+    test_do_not_promote_explicit_literal_union,
+    r#"
+from typing import Literal, assert_type
+class File:
+    def __init__(self, mode: Literal["read", "write"]):
+        self.mode = mode
+def f(fi: File):
+    assert_type(fi.mode, Literal["read", "write"])
+    "#,
+);
+
+testcase!(
+    test_unannotated_attribute_tuple_literal_promotion,
+    r#"
+from typing import assert_type
+class A:
+    def __init__(self):
+        self.x = (42, 42)
+def f(a: A):
+    assert_type(a.x, tuple[int, int])
+    a.x = (0, 0)
+    "#,
+);
