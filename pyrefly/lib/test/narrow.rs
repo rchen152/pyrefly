@@ -1019,6 +1019,29 @@ def f(x: int):
 );
 
 testcase!(
+    test_issubclass_bare_type,
+    r#"
+from typing import assert_type, Any
+
+class Foo: ...
+
+def test_bare_type(x: type) -> None:
+    # `type` is equivalent to `type[Any]`, so issubclass can narrow it
+    if issubclass(x, Foo):
+        assert_type(x, type[Foo])
+
+def test_type_any(x: type[Any]) -> None:
+    if issubclass(x, Foo):
+        assert_type(x, type[Foo])
+
+def test_isinstance_then_issubclass(x: object) -> None:
+    # Common pattern: check if x is a class, then check if it's a subclass of Foo
+    if isinstance(x, type) and issubclass(x, Foo):
+        assert_type(x, type[Foo])
+    "#,
+);
+
+testcase!(
     test_issubclass_typevar_object,
     r#"
 from typing import TypeVar

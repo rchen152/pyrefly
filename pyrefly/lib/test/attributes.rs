@@ -1937,7 +1937,7 @@ def get_type_t[T]() -> type[T]:
     return cast(type[T], 0)
 def foo[T](x: type[T]):
     # mypy reveals the same thing we do (the type of `type.__new__`), while pyright reveals `Unknown`.
-    reveal_type(get_type_t().__new__)  # E: Overload[\n  [Self@type](cls: type[Self@type], o: object, /) -> type\n  [Self](cls: type[Self], name: str, bases: tuple[type, ...], namespace: dict[str, Any], /, **kwds: Any) -> Self\n]
+    reveal_type(get_type_t().__new__)  # E: Overload[\n  [Self@type](cls: type[Self@type], o: object, /) -> type[Any]\n  [Self](cls: type[Self], name: str, bases: tuple[type[Any], ...], namespace: dict[str, Any], /, **kwds: Any) -> Self\n]
     "#,
 );
 
@@ -2000,7 +2000,7 @@ testcase!(
     r#"
 from typing import Never, assert_type, reveal_type
 def f() -> type[Never]: ...
-reveal_type(f().mro) # E: BoundMethod[type, (self: type) -> list[type]]
+reveal_type(f().mro) # E: BoundMethod[type, (self: type) -> list[type[Any]]]
 assert_type(f().wut, Never)
     "#,
 );

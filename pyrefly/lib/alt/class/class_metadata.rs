@@ -923,6 +923,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                 }
             }
+            Type::Type(box Type::Any(_)) => {
+                // `type[Any]` is equivalent to `type` or `Type`
+                let type_obj = self.stdlib.builtins_type().class_object();
+                let metadata = self.get_metadata_for_class(type_obj);
+                BaseClassParseResult::Parsed(ParsedBaseClass {
+                    class_object: type_obj.dupe(),
+                    range,
+                    metadata,
+                })
+            }
             _ => {
                 if is_new_type || !ty.is_any() {
                     BaseClassParseResult::InvalidType(ty, range)

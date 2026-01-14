@@ -1308,11 +1308,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 if cls.is_builtin("tuple") {
                     Self::add_implicit_any_error(errors, range, "tuple", None);
                     *ty = Type::type_form(Type::unbounded_tuple(Type::Any(AnyStyle::Implicit)));
+                } else if cls.is_builtin("type") {
+                    // `type`` is equivalent to `type[Any]`. As a result, the class def itself
+                    // has type `type[type[Any]]`.
+                    *ty = Type::type_form(Type::type_form(Type::Any(AnyStyle::Implicit)));
                 } else if cls.has_toplevel_qname("typing", "Any") {
                     *ty = Type::type_form(Type::any_explicit())
                 } else {
                     *ty = Type::type_form(self.promote(cls, range, errors));
                 }
+            }
+            Type::ClassType(cls) if cls.is_builtin("type") => {
+                *ty = Type::type_form(Type::Any(AnyStyle::Implicit));
             }
             _ => {}
         })
