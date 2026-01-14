@@ -89,7 +89,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         dict_items.iter().for_each(|x| match &x.key {
             Some(key) => {
                 let key_type = self.expr_infer(key, item_errors);
-                if let Type::Literal(Lit::Str(name)) = key_type {
+                if let Type::Literal(lit) = &key_type
+                    && let Lit::Str(name) = &lit.value
+                {
                     let key_name = Name::new(name);
                     match fields.get(&key_name) {
                         Some(field) if is_update && field.is_read_only() => {

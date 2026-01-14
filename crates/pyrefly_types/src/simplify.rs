@@ -174,7 +174,7 @@ fn collapse_literals(
                 literal_types.insert(stdlib.str().clone(), false);
             }
             Type::Literal(x) => {
-                match x {
+                match &x.value {
                     Lit::Bool(true) => has_true = true,
                     Lit::Bool(false) => has_false = true,
                     Lit::Str(_) => has_specific_str = true,
@@ -184,7 +184,7 @@ fn collapse_literals(
                     }
                     _ => {}
                 }
-                literal_types.insert(x.general_class_type(stdlib).clone(), false);
+                literal_types.insert(x.value.general_class_type(stdlib).clone(), false);
             }
             Type::ClassType(class)
                 if !literal_types.is_empty()
@@ -226,7 +226,7 @@ fn collapse_literals(
         types.retain(|x| match x {
             Type::LiteralString => literal_types.get(stdlib.str()) == Some(&false),
             Type::Literal(x) => {
-                match x {
+                match &x.value {
                     Lit::Bool(_) if has_true && has_false => return false,
                     Lit::Str(_) if has_literal_string => return false,
                     Lit::Enum(lit_enum) if enums_to_delete.contains(&lit_enum.class) => {
@@ -236,7 +236,7 @@ fn collapse_literals(
                     }
                     _ => {}
                 }
-                literal_types.get(x.general_class_type(stdlib)) == Some(&false)
+                literal_types.get(x.value.general_class_type(stdlib)) == Some(&false)
             }
             Type::Any(style) => !any_styles.contains(style),
             Type::Never(style) => !never_styles.contains(style),

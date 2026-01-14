@@ -29,6 +29,12 @@ use crate::types::Type;
 
 assert_words!(Lit, 3);
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Visit, VisitMut, TypeEq)]
+pub struct Literal {
+    pub value: Lit,
+}
+
 /// A literal value.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Visit, VisitMut, TypeEq)]
@@ -149,7 +155,7 @@ impl Lit {
 
     /// Convert a literal to a `Type::Literal`.
     pub fn to_type(self) -> Type {
-        Type::Literal(self)
+        Type::Literal(Box::new(Literal { value: self }))
     }
 
     /// Convert a literal to a `ClassType` that is the general class_type of the literal.

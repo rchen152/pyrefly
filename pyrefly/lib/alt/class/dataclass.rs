@@ -641,7 +641,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 if alias.is_none() && Some(name) == alias_keyword {
                     self.fill_in_literal(alias, ty, default_ty, |ty| match ty {
-                        Type::Literal(Lit::Str(s)) => Some(Name::new(s)),
+                        Type::Literal(lit) if let Lit::Str(s) = &lit.value => Some(Name::new(s)),
                         _ => None,
                     });
                 }

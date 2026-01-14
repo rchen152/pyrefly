@@ -476,7 +476,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let mut extra_items = None;
             for (name, value) in keywords {
                 match (name.as_str(), value.get_type()) {
-                    ("total", Type::Literal(Lit::Bool(false))) => {
+                    ("total", Type::Literal(lit)) if matches!(lit.value, Lit::Bool(false)) => {
                         is_total = false;
                     }
                     ("closed" | "extra_items", _) if extra_items.is_some() => {
@@ -488,10 +488,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 .to_owned(),
                         );
                     }
-                    ("closed", Type::Literal(Lit::Bool(true))) => {
+                    ("closed", Type::Literal(lit)) if matches!(lit.value, Lit::Bool(true)) => {
                         extra_items = Some(ExtraItems::Closed);
                     }
-                    ("closed", Type::Literal(Lit::Bool(false))) => {
+                    ("closed", Type::Literal(lit)) if matches!(lit.value, Lit::Bool(false)) => {
                         // Note that we need to distinguish between explicitly setting and
                         // implicitly defaulting to `closed=False` in order to catch illegal
                         // attempts to open a closed TypedDict.
@@ -508,7 +508,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         });
                         extra_items = Some(ExtraItems::extra(ty, &value.qualifiers));
                     }
-                    ("total", Type::Literal(Lit::Bool(_))) => {}
+                    ("total", Type::Literal(lit)) if matches!(lit.value, Lit::Bool(_)) => {}
                     ("total" | "closed", value_ty) => {
                         self.error(
                             errors,

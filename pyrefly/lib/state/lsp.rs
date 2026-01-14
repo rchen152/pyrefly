@@ -2764,9 +2764,9 @@ impl<'a> Transaction<'a> {
         match param_type {
             Type::Literal(lit) => {
                 // TODO: Pass the flag correctly for whether literal string is single quoted or double quoted
-                let label = lit.to_string_escaped(true);
+                let label = lit.value.to_string_escaped(true);
                 let insert_text = if in_string_literal {
-                    if let Lit::Str(s) = lit {
+                    if let Lit::Str(s) = &lit.value {
                         s.to_string()
                     } else {
                         label.clone()

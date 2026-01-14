@@ -47,6 +47,7 @@ use crate::class::ClassType;
 use crate::keywords::DataclassTransformMetadata;
 use crate::keywords::KwCall;
 use crate::literal::Lit;
+use crate::literal::Literal;
 use crate::module::ModuleType;
 use crate::param_spec::ParamSpec;
 use crate::quantified::Quantified;
@@ -646,7 +647,7 @@ impl VisitMut<Type> for Union {
 // optimisations in `unions_with_literals`.
 #[derive(Debug, Clone, PartialEq, Eq, TypeEq, PartialOrd, Ord, Hash)]
 pub enum Type {
-    Literal(Lit),
+    Literal(Box<Literal>),
     LiteralString,
     /// typing.Callable
     Callable(Box<Callable>),
@@ -892,7 +893,7 @@ impl Type {
     pub fn is_literal_string(&self) -> bool {
         match self {
             Type::LiteralString => true,
-            Type::Literal(l) if l.is_string() => true,
+            Type::Literal(l) if l.value.is_string() => true,
             _ => false,
         }
     }
@@ -1493,7 +1494,7 @@ impl Type {
             }
         }
         g(&mut self, &mut |ty| match &ty {
-            Type::Literal(lit) => *ty = lit.general_class_type(stdlib).clone().to_type(),
+            Type::Literal(lit) => *ty = lit.value.general_class_type(stdlib).clone().to_type(),
             Type::LiteralString => *ty = stdlib.str().clone().to_type(),
             Type::TypedDict(TypedDict::Anonymous(inner)) => {
                 *ty = stdlib
@@ -1694,7 +1695,7 @@ impl Type {
             Type::TypeVarTuple(t) => Some(t.qname()),
             Type::ParamSpec(t) => Some(t.qname()),
             Type::SelfType(cls) => Some(cls.qname()),
-            Type::Literal(Lit::Enum(e)) => Some(e.class.qname()),
+            Type::Literal(lit) if let Lit::Enum(e) = &lit.value => Some(e.class.qname()),
             _ => None,
         }
     }
@@ -1702,10 +1703,10 @@ impl Type {
     // The result of calling bool() on a value of this type if we can get a definitive answer, None otherwise.
     pub fn as_bool(&self) -> Option<bool> {
         match self {
-            Type::Literal(Lit::Bool(x)) => Some(*x),
-            Type::Literal(Lit::Int(x)) => Some(x.as_bool()),
-            Type::Literal(Lit::Bytes(x)) => Some(!x.is_empty()),
-            Type::Literal(Lit::Str(x)) => Some(!x.is_empty()),
+            Type::Literal(lit) if let Lit::Bool(x) = &lit.value => Some(*x),
+            Type::Literal(lit) if let Lit::Int(x) = &lit.value => Some(x.as_bool()),
+            Type::Literal(lit) if let Lit::Bytes(x) = &lit.value => Some(!x.is_empty()),
+            Type::Literal(lit) if let Lit::Str(x) = &lit.value => Some(!x.is_empty()),
             Type::None => Some(false),
             Type::Tuple(Tuple::Concrete(elements)) => Some(!elements.is_empty()),
             Type::Union(box Union { members, .. }) => {

@@ -2630,11 +2630,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             ClassFieldInner::ClassAttribute {
                 ty: Type::Literal(mut lit),
                 ..
-            } if matches!(&lit, Lit::Enum(lit_enum) if lit_enum.class.class_object() == enum_cls) =>
+            } if matches!(&lit.value, Lit::Enum(lit_enum) if lit_enum.class.class_object() == enum_cls) =>
             {
                 let replacement = self.instantiate(enum_cls);
-                lit.visit_mut(&mut |ty| ty.subst_self_type_mut(&replacement));
-                Some(lit)
+                lit.value
+                    .visit_mut(&mut |ty| ty.subst_self_type_mut(&replacement));
+                Some(lit.value)
             }
             _ => None,
         }

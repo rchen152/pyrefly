@@ -49,6 +49,7 @@ use crate::types::callable::FunctionKind;
 use crate::types::class::ClassType;
 use crate::types::lit_int::LitInt;
 use crate::types::literal::Lit;
+use crate::types::literal::Literal;
 use crate::types::tuple::Tuple;
 use crate::types::type_info::TypeInfo;
 use crate::types::types::CalleeKind;
@@ -329,7 +330,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn narrow_length_greater(&self, ty: &Type, len: usize) -> Type {
         self.distribute_over_union(ty, |ty| match ty {
             Type::Tuple(Tuple::Concrete(elts)) if elts.len() <= len => Type::never(),
-            Type::Literal(Lit::Str(x)) if x.len() <= len => Type::never(),
+            Type::Literal(lit)
+                if let Lit::Str(x) = &lit.value
+                    && x.len() <= len =>
+            {
+                Type::never()
+            }
             Type::ClassType(class)
                 if let Some(Tuple::Concrete(elts)) = self.as_tuple(class)
                     && elts.len() <= len =>
@@ -387,7 +393,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         range,
                     );
                     match right {
-                        Type::None | Type::Literal(Lit::Bool(_)) | Type::Literal(Lit::Enum(_)) => {
+                        Type::None
+                        | Type::Literal(box Literal {
+                            value: Lit::Bool(_) | Lit::Enum(_),
+                            ..
+                        }) => {
                             if self.is_subset_eq(&right, &facet_ty) {
                                 t.clone()
                             } else {
@@ -409,8 +419,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     );
                     match (&facet_ty, &right) {
                         (
-                            Type::None | Type::Literal(Lit::Bool(_)) | Type::Literal(Lit::Enum(_)),
-                            Type::None | Type::Literal(Lit::Bool(_)) | Type::Literal(Lit::Enum(_)),
+                            Type::None
+                            | Type::Literal(box Literal {
+                                value: Lit::Bool(_) | Lit::Enum(_),
+                                ..
+                            }),
+                            Type::None
+                            | Type::Literal(box Literal {
+                                value: Lit::Bool(_) | Lit::Enum(_),
+                                ..
+                            }),
                         ) if right == facet_ty => Type::never(),
                         _ => t.clone(),
                     }
@@ -471,7 +489,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             AtomicNarrowOp::Placeholder => ty.clone(),
             AtomicNarrowOp::LenEq(v) => {
                 let right = self.expr_infer(v, errors);
-                let Type::Literal(Lit::Int(lit)) = &right else {
+                let Type::Literal(box Literal {
+                    value: Lit::Int(lit),
+                    ..
+                }) = &right
+                else {
                     return ty.clone();
                 };
                 let Some(len) = lit.as_i64().and_then(|i| i.to_usize()) else {
@@ -519,7 +541,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             AtomicNarrowOp::LenNotEq(v) => {
                 let right = self.expr_infer(v, errors);
-                let Type::Literal(Lit::Int(lit)) = &right else {
+                let Type::Literal(box Literal {
+                    value: Lit::Int(lit),
+                    ..
+                }) = &right
+                else {
                     return ty.clone();
                 };
                 let Some(len) = lit.as_i64().and_then(|i| i.to_usize()) else {
@@ -538,7 +564,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             AtomicNarrowOp::LenGt(v) => {
                 let right = self.expr_infer(v, errors);
-                let Type::Literal(Lit::Int(lit)) = &right else {
+                let Type::Literal(box Literal {
+                    value: Lit::Int(lit),
+                    ..
+                }) = &right
+                else {
                     return ty.clone();
                 };
                 let Some(len) = lit.as_i64().and_then(|i| i.to_usize()) else {
@@ -548,7 +578,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             AtomicNarrowOp::LenGte(v) => {
                 let right = self.expr_infer(v, errors);
-                let Type::Literal(Lit::Int(lit)) = &right else {
+                let Type::Literal(box Literal {
+                    value: Lit::Int(lit),
+                    ..
+                }) = &right
+                else {
                     return ty.clone();
                 };
                 let Some(len) = lit.as_i64().and_then(|i| i.to_usize()) else {
@@ -561,7 +595,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             AtomicNarrowOp::LenLt(v) => {
                 let right = self.expr_infer(v, errors);
-                let Type::Literal(Lit::Int(lit)) = &right else {
+                let Type::Literal(box Literal {
+                    value: Lit::Int(lit),
+                    ..
+                }) = &right
+                else {
                     return ty.clone();
                 };
                 let Some(len) = lit.as_i64().and_then(|i| i.to_usize()) else {
@@ -574,7 +612,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             AtomicNarrowOp::LenLte(v) => {
                 let right = self.expr_infer(v, errors);
-                let Type::Literal(Lit::Int(lit)) = &right else {
+                let Type::Literal(box Literal {
+                    value: Lit::Int(lit),
+                    ..
+                }) = &right
+                else {
                     return ty.clone();
                 };
                 let Some(len) = lit.as_i64().and_then(|i| i.to_usize()) else {
@@ -629,13 +671,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             (_, _) if t == right => {
                                 result = Type::never();
                             }
-                            (Type::ClassType(cls), Type::Literal(Lit::Bool(b)))
-                                if cls.is_builtin("bool") =>
+                            (Type::ClassType(cls), Type::Literal(lit))
+                                if cls.is_builtin("bool")
+                                    && let Lit::Bool(b) = &lit.value =>
                             {
                                 result = Lit::Bool(!b).to_type();
                             }
-                            (Type::ClassType(left_cls), Type::Literal(Lit::Enum(right)))
-                                if left_cls == &right.class =>
+                            (Type::ClassType(left_cls), Type::Literal(right))
+                                if let Lit::Enum(right) = &right.value
+                                    && left_cls == &right.class =>
                             {
                                 result = self.subtract_enum_member(left_cls, &right.member);
                             }
@@ -658,15 +702,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     match (t, &right) {
                         (
                             _,
-                            Type::None | Type::Literal(Lit::Bool(_)) | Type::Literal(Lit::Enum(_)),
+                            Type::None
+                            | Type::Literal(box Literal {
+                                value: Lit::Bool(_) | Lit::Enum(_),
+                                ..
+                            }),
                         ) if *t == right => Type::never(),
-                        (Type::ClassType(cls), Type::Literal(Lit::Bool(b)))
-                            if cls.is_builtin("bool") =>
+                        (Type::ClassType(cls), Type::Literal(lit))
+                            if cls.is_builtin("bool")
+                                && let Lit::Bool(b) = &lit.value =>
                         {
                             Lit::Bool(!b).to_type()
                         }
-                        (Type::ClassType(left_cls), Type::Literal(Lit::Enum(right)))
-                            if left_cls == &right.class =>
+                        (Type::ClassType(left_cls), Type::Literal(right))
+                            if let Lit::Enum(right) = &right.value
+                                && left_cls == &right.class =>
                         {
                             self.subtract_enum_member(left_cls, &right.member)
                         }
@@ -805,13 +855,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 if matches!(right, Type::Literal(_) | Type::None) {
                     self.distribute_over_union(ty, |t| match (t, &right) {
                         (_, _) if *t == right => Type::never(),
-                        (Type::ClassType(cls), Type::Literal(Lit::Bool(b)))
-                            if cls.is_builtin("bool") =>
+                        (Type::ClassType(cls), Type::Literal(lit))
+                            if cls.is_builtin("bool")
+                                && let Lit::Bool(b) = &lit.value =>
                         {
                             Lit::Bool(!b).to_type()
                         }
-                        (Type::ClassType(left_cls), Type::Literal(Lit::Enum(right)))
-                            if left_cls == &right.class =>
+                        (Type::ClassType(left_cls), Type::Literal(right))
+                            if let Lit::Enum(right) = &right.value
+                                && left_cls == &right.class =>
                         {
                             self.subtract_enum_member(left_cls, &right.member)
                         }
@@ -1230,7 +1282,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         fn collect_cases(ty: &Type, acc: &mut Vec<String>) -> bool {
             match ty {
                 Type::Literal(lit) => {
-                    acc.push(format!("{}", lit));
+                    acc.push(format!("{}", lit.value));
                     true
                 }
                 Type::Union(union) => {
@@ -1332,12 +1384,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             UnresolvedFacetKind::VariableSubscript(expr_name) => {
                 let suppress_errors = self.error_swallower();
                 let ty = self.expr_infer(&Expr::Name(expr_name), &suppress_errors);
-                match ty {
-                    Type::Literal(Lit::Int(lit_int)) => lit_int
+                match &ty {
+                    Type::Literal(lit) if let Lit::Int(lit_int) = &lit.value => lit_int
                         .as_i64()
                         .and_then(|i| i.to_usize())
                         .map(FacetKind::Index),
-                    Type::Literal(Lit::Str(s)) => Some(FacetKind::Key(s.to_string())),
+                    Type::Literal(lit) if let Lit::Str(s) = &lit.value => {
+                        Some(FacetKind::Key(s.to_string()))
+                    }
                     _ => None,
                 }
             }

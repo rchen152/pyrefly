@@ -76,7 +76,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Option<Type> {
         let idx_type = self.expr_infer(index, errors);
         match &idx_type {
-            Type::Literal(lit) if let Some(idx) = lit.as_index_i64() => match tuple {
+            Type::Literal(lit) if let Some(idx) = lit.value.as_index_i64() => match tuple {
                 Tuple::Concrete(elts) => {
                     self.infer_concrete_index(elts, idx, index.range(), errors)
                 }
@@ -96,7 +96,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if let Some(expr) = expr {
             let literal_type = self.expr_infer(expr, &self.error_swallower());
             match &literal_type {
-                Type::Literal(lit) => Ok(lit.as_index_i64()),
+                Type::Literal(lit) => Ok(lit.value.as_index_i64()),
                 _ => Err(()),
             }
         } else {
@@ -285,7 +285,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
         let literal_index = |expr: &Expr| -> Option<i64> {
             match self.expr_infer(expr, errors) {
-                Type::Literal(ref lit) => lit.as_index_i64(),
+                Type::Literal(ref lit) => lit.value.as_index_i64(),
                 _ => None,
             }
         };
@@ -419,7 +419,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             let idx_ty = self.expr_infer(index_expr, errors);
             if let Type::Literal(lit) = idx_ty
-                && let Some(idx) = lit.as_index_i64()
+                && let Some(idx) = lit.value.as_index_i64()
             {
                 let normalized = if idx < 0 { len + idx } else { idx };
                 if normalized >= 0 && normalized < len {
@@ -454,7 +454,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let index_ty = self.expr_infer(index_expr, errors);
         match &index_ty {
             Type::Literal(lit) => {
-                if let Some(idx) = lit.as_index_i64() {
+                if let Some(idx) = lit.value.as_index_i64() {
                     if idx >= 0
                         && let Some(byte) = idx.to_usize().and_then(|idx| bytes.get(idx))
                     {

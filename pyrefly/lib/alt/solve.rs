@@ -2641,7 +2641,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.distribute_over_union(&base, |base| {
             self.distribute_over_union(&slice_ty, |key| {
                 match (base, key) {
-                    (Type::TypedDict(typed_dict), Type::Literal(Lit::Str(field_name))) => {
+                    (Type::TypedDict(typed_dict), Type::Literal(lit))
+                        if let Lit::Str(field_name) = &lit.value =>
+                    {
                         let field_name = Name::new(field_name);
                         self.check_assign_to_typed_dict_literal_subscript(
                             typed_dict,
@@ -3051,7 +3053,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 match match_args {
                     Type::Tuple(Tuple::Concrete(ts)) => {
                         if *idx < ts.len() {
-                            if let Some(Type::Literal(Lit::Str(attr_name))) = ts.get(*idx) {
+                            if let Some(Type::Literal(lit)) = ts.get(*idx)
+                                && let Lit::Str(attr_name) = &lit.value
+                            {
                                 self.attr_infer(
                                     &binding,
                                     &Name::new(attr_name),
@@ -3445,7 +3449,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // https://typing.python.org/en/latest/spec/exceptions.html#context-managers.
                 let context_catch = |x: &Type| -> bool {
                     match x {
-                        Type::Literal(Lit::Bool(b)) => *b,
+                        Type::Literal(lit) if let Lit::Bool(b) = lit.value => b,
                         Type::ClassType(cls) => cls == self.stdlib.bool(),
                         _ => false, // Default to assuming exceptions are not suppressed
                     }
@@ -4147,9 +4151,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::ClassType(cls) | Type::SelfType(cls) => {
                 Type::ClassDef(cls.class_object().clone())
             }
-            Type::Literal(lit) => {
-                Type::ClassDef(lit.general_class_type(self.stdlib).class_object().clone())
-            }
+            Type::Literal(lit) => Type::ClassDef(
+                lit.value
+                    .general_class_type(self.stdlib)
+                    .class_object()
+                    .clone(),
+            ),
             Type::LiteralString => Type::ClassDef(self.stdlib.str().class_object().clone()),
             Type::None => Type::ClassDef(self.stdlib.none_type().class_object().clone()),
             Type::Tuple(_) => Type::ClassDef(self.stdlib.tuple_object().clone()),
@@ -4387,7 +4394,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let slice_ty = self.expr_infer(&x.slice, errors);
                 self.map_over_union(&base, |base| {
                     self.map_over_union(&slice_ty, |key| match (base, key) {
-                        (Type::TypedDict(typed_dict), Type::Literal(Lit::Str(field_name))) => {
+                        (Type::TypedDict(typed_dict), Type::Literal(lit))
+                            if let Lit::Str(field_name) = &lit.value =>
+                        {
                             let field_name = Name::new(field_name);
                             self.check_del_typed_dict_literal_key(
                                 typed_dict,

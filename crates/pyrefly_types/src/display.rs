@@ -412,7 +412,7 @@ impl<'a> TypeDisplayContext<'a> {
             Type::Literal(lit) => {
                 self.maybe_fmt_with_module("typing", "Literal", output)?;
                 output.write_str("[")?;
-                output.write_lit(lit)?;
+                output.write_lit(&lit.value)?;
                 output.write_str("]")
             }
             Type::LiteralString => self.maybe_fmt_with_module("typing", "LiteralString", output),
@@ -593,7 +593,7 @@ impl<'a> TypeDisplayContext<'a> {
                                 // placeholder position and output the combined literal instead.
                                 union_members.push(&Type::None);
                             }
-                            literals.push(lit)
+                            literals.push(&lit.value)
                         }
                         Type::Callable(_) | Type::Function(_) | Type::Intersect(_) => {
                             // These types need parentheses in union context

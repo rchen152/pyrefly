@@ -1266,7 +1266,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             let swallower = self.error_swallower();
             match self.expr_infer(slice, &swallower) {
-                Type::Literal(Lit::Str(value)) => {
+                Type::Literal(ref lit) if let Lit::Str(value) = &lit.value => {
                     TypeInfo::at_facet(base, &FacetKind::Key(value.to_string()), || {
                         self.subscript_infer_for_type(base.ty(), slice, range, errors)
                     })
@@ -1328,7 +1328,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn literal_bool_infer(&self, x: &Expr, errors: &ErrorCollector) -> bool {
         let ty = self.expr_infer(x, errors);
         match ty {
-            Type::Literal(Lit::Bool(b)) => b,
+            Type::Literal(lit) if let Lit::Bool(b) = lit.value => b,
             _ => {
                 self.error(
                     errors,
@@ -2131,7 +2131,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Some(&|| ErrorContext::Index(self.for_display(base.clone()))),
                 ),
                 Type::Any(style) => style.propagate(),
-                Type::Literal(Lit::Bytes(ref bytes)) => self.subscript_bytes_literal(
+                Type::Literal(ref lit) if let Lit::Bytes(ref bytes) = lit.value => self.subscript_bytes_literal(
                     bytes,
                     slice,
                     errors,
@@ -2142,7 +2142,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     // We could have a more precise type here, but this matches Pyright.
                     self.stdlib.str().clone().to_type()
                 }
-                Type::Literal(Lit::Str(ref value)) if xs.len() <= 3 => {
+                Type::Literal(ref lit) if let Lit::Str(ref value) = lit.value && xs.len() <= 3 => {
                     let base_ty = Lit::Str(value.clone()).to_type();
                     let context = || ErrorContext::Index(self.for_display(base_ty.clone()));
                     self.subscript_str_literal(
@@ -2218,7 +2218,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     // Don't warn on anonymous typed dicts
                     let warn_on_not_required_access = matches!(typed_dict, TypedDict::TypedDict(_));
                     self.distribute_over_union(&key_ty, |ty| match ty {
-                        Type::Literal(Lit::Str(field_name)) => {
+                        Type::Literal(lit) if let Lit::Str(field_name) = &lit.value => {
                             let fields = self.typed_dict_fields(&typed_dict);
                             let key_name = Name::new(field_name);
                             if let Some(field) = fields.get(&key_name) {
@@ -2297,16 +2297,22 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Return the reason why we think `ty` is suspicious to use as a branching condition
     fn get_condition_redundant_reason(&self, ty: &Type) -> Option<ConditionRedundantReason> {
         match ty {
-            Type::Literal(Lit::Bool(_)) => None,
-            Type::Literal(Lit::Int(i)) => Some(ConditionRedundantReason::IntLiteral(i.as_bool())),
-            Type::Literal(Lit::Str(s)) => Some(ConditionRedundantReason::StrLiteral(!s.is_empty())),
-            Type::Literal(Lit::Bytes(s)) => {
+            Type::Literal(lit) if let Lit::Bool(_) = lit.value => None,
+            Type::Literal(lit) if let Lit::Int(i) = &lit.value => {
+                Some(ConditionRedundantReason::IntLiteral(i.as_bool()))
+            }
+            Type::Literal(lit) if let Lit::Str(s) = &lit.value => {
+                Some(ConditionRedundantReason::StrLiteral(!s.is_empty()))
+            }
+            Type::Literal(lit) if let Lit::Bytes(s) = &lit.value => {
                 Some(ConditionRedundantReason::BytesLiteral(!s.is_empty()))
             }
-            Type::Literal(Lit::Enum(e)) => Some(ConditionRedundantReason::EnumLiteral(
-                e.class.class_object().name().clone(),
-                e.member.clone(),
-            )),
+            Type::Literal(lit) if let Lit::Enum(e) = &lit.value => {
+                Some(ConditionRedundantReason::EnumLiteral(
+                    e.class.class_object().name().clone(),
+                    e.member.clone(),
+                ))
+            }
             Type::Function(f) => Some(ConditionRedundantReason::Function(
                 self.module().name(),
                 f.metadata.kind.clone(),

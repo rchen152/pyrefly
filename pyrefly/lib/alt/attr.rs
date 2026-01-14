@@ -52,6 +52,7 @@ use crate::types::callable::PropertyRole;
 use crate::types::class::Class;
 use crate::types::class::ClassType;
 use crate::types::literal::Lit;
+use crate::types::literal::Literal;
 use crate::types::module::ModuleType;
 use crate::types::quantified::Quantified;
 use crate::types::quantified::QuantifiedKind;
@@ -1756,12 +1757,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::Tuple(tuple) => {
                 acc.push(AttributeBase1::ClassInstance(self.erase_tuple_type(tuple)))
             }
-            Type::LiteralString | Type::Literal(Lit::Str(_)) => {
-                acc.push(AttributeBase1::LiteralString)
-            }
-            Type::Literal(Lit::Enum(lit_enum)) => acc.push(AttributeBase1::EnumLiteral(*lit_enum)),
+            Type::LiteralString
+            | Type::Literal(box Literal {
+                value: Lit::Str(_), ..
+            }) => acc.push(AttributeBase1::LiteralString),
+            Type::Literal(box Literal {
+                value: Lit::Enum(lit_enum),
+                ..
+            }) => acc.push(AttributeBase1::EnumLiteral(*lit_enum)),
             Type::Literal(lit) => acc.push(AttributeBase1::ClassInstance(
-                lit.general_class_type(self.stdlib).clone(),
+                lit.value.general_class_type(self.stdlib).clone(),
             )),
             Type::TypeGuard(_) | Type::TypeIs(_) => {
                 acc.push(AttributeBase1::ClassInstance(self.stdlib.bool().clone()))
