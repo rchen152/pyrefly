@@ -56,6 +56,7 @@ pub struct TelemetryFileStats {
     pub config_root: Option<Url>,
 }
 
+#[derive(Clone)]
 pub struct TelemetryServerState {
     pub has_sourcedb: bool,
     pub id: Uuid,
@@ -198,5 +199,38 @@ impl TelemetryEvent {
         let process = self.start.elapsed();
         telemetry.record_event(self, process, error);
         process
+    }
+}
+
+pub struct SubTaskTelemetry<'a> {
+    telemetry: &'a dyn Telemetry,
+    server_state: TelemetryServerState,
+    task_stats: Option<&'a TelemetryTaskId>,
+}
+
+impl<'a> SubTaskTelemetry<'a> {
+    pub fn new(
+        telemetry: &'a dyn Telemetry,
+        server_state: TelemetryServerState,
+        task_stats: Option<&'a TelemetryTaskId>,
+    ) -> Self {
+        Self {
+            telemetry,
+            server_state,
+            task_stats,
+        }
+    }
+
+    pub fn new_task(&self, kind: TelemetryEventKind, start: Instant) -> TelemetryEvent {
+        TelemetryEvent::new_task(
+            kind,
+            self.server_state.clone(),
+            self.task_stats.cloned(),
+            start,
+        )
+    }
+
+    pub fn finish_task(&self, telemetry_event: TelemetryEvent, error: Option<&Error>) {
+        telemetry_event.finish_and_record(self.telemetry, error);
     }
 }
