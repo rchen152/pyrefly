@@ -575,7 +575,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                 });
                 match Lit::from_fstring(x) {
-                    Some(lit) => lit.to_type(),
+                    Some(lit) => lit.to_implicit_type(),
                     _ if all_literal_strings => Type::LiteralString,
                     _ => self.stdlib.str().clone().to_type(),
                 }
@@ -586,14 +586,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ErrorInfo::Kind(ErrorKind::Unsupported),
                 "t-strings are not yet supported".to_owned(),
             ),
-            Expr::StringLiteral(x) => Lit::from_string_literal(x).to_type(),
-            Expr::BytesLiteral(x) => Lit::from_bytes_literal(x).to_type(),
+            Expr::StringLiteral(x) => Lit::from_string_literal(x).to_implicit_type(),
+            Expr::BytesLiteral(x) => Lit::from_bytes_literal(x).to_implicit_type(),
             Expr::NumberLiteral(x) => match &x.value {
-                Number::Int(x) => Lit::from_int(x).to_type(),
+                Number::Int(x) => Lit::from_int(x).to_implicit_type(),
                 Number::Float(_) => self.stdlib.float().clone().to_type(),
                 Number::Complex { .. } => self.stdlib.complex().clone().to_type(),
             },
-            Expr::BooleanLiteral(x) => Lit::from_boolean_literal(x).to_type(),
+            Expr::BooleanLiteral(x) => Lit::from_boolean_literal(x).to_implicit_type(),
             Expr::NoneLiteral(_) => Type::None,
             Expr::EllipsisLiteral(_) => Type::Ellipsis,
             Expr::Starred(ExprStarred { value, .. }) => {
@@ -1165,13 +1165,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // If we reach the last value, we should always keep it.
                 if i == last_index || !should_discard(&t, value.range()) {
                     let t = if i != last_index && t == self.stdlib.bool().clone().to_type() {
-                        Lit::Bool(target).to_type()
+                        Lit::Bool(target).to_implicit_type()
                     } else if i != last_index && t == self.stdlib.int().clone().to_type() && !target
                     {
-                        LitInt::new(0).to_type()
+                        LitInt::new(0).to_implicit_type()
                     } else if i != last_index && t == self.stdlib.str().clone().to_type() && !target
                     {
-                        Lit::Str(Default::default()).to_type()
+                        Lit::Str(Default::default()).to_implicit_type()
                     } else {
                         t
                     };
@@ -2000,7 +2000,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         && self.get_enum_from_class(cls).is_some() =>
                 {
                     if let Some(member) = self.get_enum_member(cls, &Name::new(key.to_str())) {
-                        member.to_type()
+                        member.to_implicit_type()
                     } else {
                         self.error(
                             errors,
@@ -2143,7 +2143,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.stdlib.str().clone().to_type()
                 }
                 Type::Literal(ref lit) if let Lit::Str(ref value) = lit.value && xs.len() <= 3 => {
-                    let base_ty = Lit::Str(value.clone()).to_type();
+                    let base_ty = Lit::Str(value.clone()).to_implicit_type();
                     let context = || ErrorContext::Index(self.for_display(base_ty.clone()));
                     self.subscript_str_literal(
                         value.as_str(),

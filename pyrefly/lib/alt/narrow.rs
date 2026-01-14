@@ -82,7 +82,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     {
                         None
                     } else {
-                        Some(f.to_type())
+                        Some(f.to_implicit_type())
                     }
                 })
                 .collect::<Vec<_>>(),
@@ -675,7 +675,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 if cls.is_builtin("bool")
                                     && let Lit::Bool(b) = &lit.value =>
                             {
-                                result = Lit::Bool(!b).to_type();
+                                result = Lit::Bool(!b).to_implicit_type();
                             }
                             (Type::ClassType(left_cls), Type::Literal(right))
                                 if let Lit::Enum(right) = &right.value
@@ -712,7 +712,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             if cls.is_builtin("bool")
                                 && let Lit::Bool(b) = &lit.value =>
                         {
-                            Lit::Bool(!b).to_type()
+                            Lit::Bool(!b).to_implicit_type()
                         }
                         (Type::ClassType(left_cls), Type::Literal(right))
                             if let Lit::Enum(right) = &right.value
@@ -825,16 +825,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         return Type::never();
                     } else if let Type::ClassType(cls) = t {
                         if cls.is_builtin("bool") {
-                            return Lit::Bool(boolval).to_type();
+                            return Lit::Bool(boolval).to_implicit_type();
                         }
                         if !boolval {
                             if cls.is_builtin("int") {
-                                return LitInt::new(0).to_type();
+                                return LitInt::new(0).to_implicit_type();
                             } else if cls.is_builtin("str") {
-                                return Lit::Str("".into()).to_type();
+                                return Lit::Str("".into()).to_implicit_type();
                             } else if cls.is_builtin("bytes") {
                                 let empty = Vec::new();
-                                return Lit::Bytes(empty.into_boxed_slice()).to_type();
+                                return Lit::Bytes(empty.into_boxed_slice()).to_implicit_type();
                             }
                         }
                     }
@@ -859,7 +859,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             if cls.is_builtin("bool")
                                 && let Lit::Bool(b) = &lit.value =>
                         {
-                            Lit::Bool(!b).to_type()
+                            Lit::Bool(!b).to_implicit_type()
                         }
                         (Type::ClassType(left_cls), Type::Literal(right))
                             if let Lit::Enum(right) = &right.value

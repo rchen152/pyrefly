@@ -281,7 +281,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     member: name.clone(),
                     ty: ty.clone(),
                 }))
-                .to_type(),
+                .to_implicit_type(),
             )
         } else {
             None

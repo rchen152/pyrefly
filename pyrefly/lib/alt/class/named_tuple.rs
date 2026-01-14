@@ -150,7 +150,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let ty = Type::concrete_tuple(
             elements
                 .iter()
-                .map(|e| Lit::Str(e.as_str().into()).to_type())
+                .map(|e| Lit::Str(e.as_str().into()).to_implicit_type())
                 .collect(),
         );
         ClassSynthesizedField::new(ty)

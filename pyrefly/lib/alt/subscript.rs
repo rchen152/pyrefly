@@ -392,7 +392,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             };
 
             if slice_length <= 0 {
-                return Lit::Str("".into()).to_type();
+                return Lit::Str("".into()).to_implicit_type();
             }
 
             if slice_length as usize as i64 != slice_length {
@@ -415,7 +415,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 };
             }
 
-            Lit::Str(result.into()).to_type()
+            Lit::Str(result.into()).to_implicit_type()
         } else {
             let idx_ty = self.expr_infer(index_expr, errors);
             if let Type::Literal(lit) = idx_ty
@@ -426,7 +426,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     let ch = chars[normalized as usize];
                     let mut buf = String::new();
                     buf.push(ch);
-                    return Lit::Str(buf.into()).to_type();
+                    return Lit::Str(buf.into()).to_implicit_type();
                 } else {
                     return self.error(
                         errors,
@@ -458,7 +458,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     if idx >= 0
                         && let Some(byte) = idx.to_usize().and_then(|idx| bytes.get(idx))
                     {
-                        LitInt::new((*byte).into()).to_type()
+                        LitInt::new((*byte).into()).to_implicit_type()
                     } else if idx < 0
                         && let Some(byte) = idx
                             .checked_neg()
@@ -466,7 +466,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             .and_then(|idx| bytes.len().checked_sub(idx))
                             .and_then(|idx| bytes.get(idx))
                     {
-                        LitInt::new((*byte).into()).to_type()
+                        LitInt::new((*byte).into()).to_implicit_type()
                     } else {
                         self.error(
                             errors,

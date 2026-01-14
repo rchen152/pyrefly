@@ -297,7 +297,7 @@ class C:
             ClassNamesFromType::from_class(context.stdlib.int().class_object(), &context),
         )
         .with_is_int(true),
-        PysaType::from_type(&LitInt::new(0).to_type(), &context),
+        PysaType::from_type(&LitInt::new(0).to_implicit_type(), &context),
     );
 
     // Strip self type

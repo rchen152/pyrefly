@@ -1814,8 +1814,8 @@ mod tests {
 
     #[test]
     fn test_as_bool() {
-        let true_lit = Lit::Bool(true).to_type();
-        let false_lit = Lit::Bool(false).to_type();
+        let true_lit = Lit::Bool(true).to_implicit_type();
+        let false_lit = Lit::Bool(false).to_implicit_type();
         let none = Type::None;
         let s = Type::LiteralString;
 
@@ -1828,7 +1828,7 @@ mod tests {
     #[test]
     fn test_as_bool_union() {
         let s = Type::LiteralString;
-        let false_lit = Lit::Bool(false).to_type();
+        let false_lit = Lit::Bool(false).to_implicit_type();
         let none = Type::None;
 
         let str_opt = Type::union(vec![s, none.clone()]);

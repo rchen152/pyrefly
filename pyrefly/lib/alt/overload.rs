@@ -152,13 +152,16 @@ impl<'a> ArgsExpander<'a> {
         match ty {
             Type::Union(box Union { members: ts, .. }) => ts,
             Type::ClassType(cls) if cls.is_builtin("bool") => {
-                vec![Lit::Bool(true).to_type(), Lit::Bool(false).to_type()]
+                vec![
+                    Lit::Bool(true).to_implicit_type(),
+                    Lit::Bool(false).to_implicit_type(),
+                ]
             }
             Type::ClassType(cls) if solver.get_metadata_for_class(cls.class_object()).is_enum() => {
                 solver
                     .get_enum_members(cls.class_object())
                     .into_iter()
-                    .map(Lit::to_type)
+                    .map(Lit::to_implicit_type)
                     .collect()
             }
             Type::Type(box Type::Union(box Union { members: ts, .. })) => {
