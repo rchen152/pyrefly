@@ -192,7 +192,6 @@ mod tests {
     use crate::class::Class;
     use crate::class::ClassDefIndex;
     use crate::class::ClassType;
-    use crate::lit_int::LitInt;
     use crate::literal::LitEnum;
     use crate::literal::LitStyle;
     use crate::quantified::Quantified;
