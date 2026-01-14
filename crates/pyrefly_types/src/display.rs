@@ -415,7 +415,11 @@ impl<'a> TypeDisplayContext<'a> {
 
             // Other things
             Type::Literal(lit) => {
-                self.maybe_fmt_with_module("typing", "Literal", output)?;
+                if self.always_display_module_name {
+                    output.write_str("typing.")?;
+                }
+                let literal_qname = self.get_special_form_qname("Literal");
+                output.write_builtin("Literal", literal_qname)?;
                 output.write_str("[")?;
                 output.write_lit(&lit.value)?;
                 output.write_str("]")
@@ -646,7 +650,11 @@ impl<'a> TypeDisplayContext<'a> {
 
                         if i == idx {
                             // This is where the combined Literal goes
-                            self.maybe_fmt_with_module("typing", "Literal", output)?;
+                            if self.always_display_module_name {
+                                output.write_str("typing.")?;
+                            }
+                            let literal_qname = self.get_special_form_qname("Literal");
+                            output.write_builtin("Literal", literal_qname)?;
                             output.write_str("[")?;
                             for (j, lit) in literals.iter().enumerate() {
                                 if j > 0 {
