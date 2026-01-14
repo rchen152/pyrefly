@@ -29,6 +29,7 @@ use vec1::Vec1;
 use crate::handle::Handle;
 use crate::query::Include;
 use crate::query::PythonLibraryManifest;
+use crate::query::QueryResult;
 use crate::query::SourceDbQuerier;
 use crate::query::TargetManifestDatabase;
 use crate::source_db::ModulePathCache;
@@ -347,8 +348,15 @@ impl SourceDatabase for QuerySourceDatabase {
             }
             *includes = new_includes;
             info!("Querying Buck for source DB");
-            let (raw_db, build_id) = self.querier.query_source_db(&includes, &self.cwd);
+            let QueryResult {
+                db: raw_db,
+                build_id,
+                build_duration,
+                parse_duration,
+            } = self.querier.query_source_db(&includes, &self.cwd);
             stats.build_id = build_id;
+            stats.build_time = build_duration;
+            stats.parse_time = parse_duration;
             let raw_db = raw_db?;
             info!("Finished querying Buck for source DB");
             let changed = self.update_with_target_manifest(raw_db);
@@ -437,6 +445,7 @@ impl SourceDatabase for QuerySourceDatabase {
 
 #[cfg(test)]
 mod tests {
+
     use pretty_assertions::assert_eq;
     use pyrefly_python::sys_info::PythonPlatform;
     use pyrefly_python::sys_info::PythonVersion;
@@ -452,12 +461,13 @@ mod tests {
     struct DummyQuerier {}
 
     impl SourceDbQuerier for DummyQuerier {
-        fn query_source_db(
-            &self,
-            _: &SmallSet<Include>,
-            _: &Path,
-        ) -> (anyhow::Result<TargetManifestDatabase>, Option<String>) {
-            (Ok(TargetManifestDatabase::get_test_database()), None)
+        fn query_source_db(&self, _: &SmallSet<Include>, _: &Path) -> QueryResult {
+            QueryResult {
+                db: Ok(TargetManifestDatabase::get_test_database()),
+                build_id: None,
+                build_duration: None,
+                parse_duration: None,
+            }
         }
 
         fn construct_command(&self, _: Option<&Path>) -> std::process::Command {

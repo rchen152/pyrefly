@@ -102,6 +102,8 @@ pub struct TelemetrySourceDbRebuildStats {
 pub struct TelemetrySourceDbRebuildInstanceStats {
     pub common: TelemetryCommonSourceDbStats,
     pub build_id: Option<String>,
+    pub build_time: Option<Duration>,
+    pub parse_time: Option<Duration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
