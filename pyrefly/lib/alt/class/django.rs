@@ -21,6 +21,7 @@ use pyrefly_types::types::Union;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprCall;
 use ruff_python_ast::ExprStringLiteral;
+use ruff_python_ast::Keyword;
 use ruff_python_ast::name::Name;
 use ruff_text_size::TextRange;
 use starlark_map::small_map::SmallMap;
@@ -50,6 +51,14 @@ const CHAR_FIELD: Name = Name::new_static("CharField");
 const MANY_TO_MANY_FIELD: Name = Name::new_static("ManyToManyField");
 const MODEL: Name = Name::new_static("Model");
 const MANYRELATEDMANAGER: Name = Name::new_static("ManyRelatedManager");
+
+/// Check if a keyword argument with the given name exists and has value `True`.
+fn has_keyword_true(keywords: &[Keyword], name: &Name) -> bool {
+    keywords.iter().any(|kw| {
+        kw.arg.as_ref().is_some_and(|n| n.as_str() == name.as_str())
+            && matches!(&kw.value, Expr::BooleanLiteral(lit) if lit.value)
+    })
+}
 
 impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     pub fn get_django_field_type(
@@ -404,16 +413,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     fn is_django_field_nullable(&self, call_expr: &ExprCall) -> bool {
-        call_expr.arguments.keywords.iter().any(|keyword| {
-            keyword
-                .arg
-                .as_ref()
-                .is_some_and(|name| name.as_str() == NULL.as_str())
-                && matches!(
-                    &keyword.value,
-                    Expr::BooleanLiteral(bool_lit) if bool_lit.value
-                )
-        })
+        has_keyword_true(&call_expr.arguments.keywords, &NULL)
     }
 
     /// Check if a Django field has a `choices` argument.
@@ -428,16 +428,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     /// Check if a Django field has `blank=True`.
     fn is_django_field_blank(&self, call_expr: &ExprCall) -> bool {
-        call_expr.arguments.keywords.iter().any(|keyword| {
-            keyword
-                .arg
-                .as_ref()
-                .is_some_and(|name| name.as_str() == BLANK.as_str())
-                && matches!(
-                    &keyword.value,
-                    Expr::BooleanLiteral(bool_lit) if bool_lit.value
-                )
-        })
+        has_keyword_true(&call_expr.arguments.keywords, &BLANK)
     }
 
     /// Check if a Django field is a CharField.
