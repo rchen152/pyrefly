@@ -169,6 +169,14 @@ impl Lit {
         }))
     }
 
+    /// Convert a literal to an explicit (i.e., type-annotated) `Type::Literal`.
+    pub fn to_explicit_type(self) -> Type {
+        Type::Literal(Box::new(Literal {
+            value: self,
+            style: LitStyle::Explicit,
+        }))
+    }
+
     /// Convert a literal to a `ClassType` that is the general class_type of the literal.
     /// For example, `1` is converted to `int`, and `"foo"` is converted to `str`.
     pub fn general_class_type<'a>(&'a self, stdlib: &'a Stdlib) -> &'a ClassType {

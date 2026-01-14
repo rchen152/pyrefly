@@ -88,6 +88,10 @@ impl LitInt {
         Lit::Int(self).to_implicit_type()
     }
 
+    pub fn to_explicit_type(self) -> Type {
+        Lit::Int(self).to_explicit_type()
+    }
+
     fn new_big(x: BigInt) -> Self {
         match x.to_i64() {
             Some(x) => Self(LitIntInner::Small(x)),
