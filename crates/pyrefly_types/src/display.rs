@@ -179,6 +179,11 @@ impl<'a> TypeDisplayContext<'a> {
         self.stdlib = Some(stdlib);
     }
 
+    /// Get the QName for a special form, enabling go-to-definition functionality.
+    fn get_special_form_qname(&self, name: &str) -> Option<&QName> {
+        self.stdlib.and_then(|s| s.special_form_qname(name))
+    }
+
     pub fn display(&'a self, t: &'a Type) -> impl Display + 'a {
         Fmt(|f| self.fmt(t, f))
     }
