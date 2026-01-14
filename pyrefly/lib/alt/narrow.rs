@@ -429,7 +429,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 value: Lit::Bool(_) | Lit::Enum(_),
                                 ..
                             }),
-                        ) if right == facet_ty => Type::never(),
+                        ) if self.literal_equal(&right, &facet_ty) => Type::never(),
                         _ => t.clone(),
                     }
                 }))
@@ -466,7 +466,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     );
                     match (&facet_ty, &right) {
                         (Type::None | Type::Literal(_), Type::None | Type::Literal(_))
-                            if right == facet_ty =>
+                            if self.literal_equal(&right, &facet_ty) =>
                         {
                             Type::never()
                         }
@@ -668,7 +668,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     let mut result = t.clone();
                     for right in &literal_types {
                         match (t, right) {
-                            (_, _) if t == right => {
+                            (_, _) if self.literal_equal(t, right) => {
                                 result = Type::never();
                             }
                             (Type::ClassType(cls), Type::Literal(lit))
@@ -707,7 +707,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 value: Lit::Bool(_) | Lit::Enum(_),
                                 ..
                             }),
-                        ) if *t == right => Type::never(),
+                        ) if self.literal_equal(t, &right) => Type::never(),
                         (Type::ClassType(cls), Type::Literal(lit))
                             if cls.is_builtin("bool")
                                 && let Lit::Bool(b) = &lit.value =>
@@ -854,7 +854,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let right = self.expr_infer(v, errors);
                 if matches!(right, Type::Literal(_) | Type::None) {
                     self.distribute_over_union(ty, |t| match (t, &right) {
-                        (_, _) if *t == right => Type::never(),
+                        (_, _) if self.literal_equal(t, &right) => Type::never(),
                         (Type::ClassType(cls), Type::Literal(lit))
                             if cls.is_builtin("bool")
                                 && let Lit::Bool(b) = &lit.value =>
@@ -1395,6 +1395,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     _ => None,
                 }
             }
+        }
+    }
+
+    fn literal_equal(&self, left: &Type, right: &Type) -> bool {
+        match (left, right) {
+            (Type::None, Type::None) => true,
+            (Type::Literal(left), Type::Literal(right)) => left.value == right.value,
+            _ => false,
         }
     }
 }
