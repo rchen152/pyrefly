@@ -348,3 +348,15 @@ def test():
     return "\n".join(lines)
 "#,
 );
+
+testcase!(
+    bug = "https://github.com/facebook/pyrefly/issues/2077",
+    test_literal_int_sum_loop_inference,
+    r#"
+def f(x: int):
+    y = []
+    for i in range(10):
+        y.append(x)  # E: `int` is not assignable to parameter `object` with type `Literal
+    sum(y, 0)
+    "#,
+);
