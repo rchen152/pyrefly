@@ -49,10 +49,12 @@ use ruff_python_ast::StmtAugAssign;
 use ruff_python_ast::StmtClassDef;
 use ruff_python_ast::StmtFor;
 use ruff_python_ast::StmtFunctionDef;
+use ruff_python_ast::StmtReturn;
 use ruff_python_ast::StmtWith;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
+use ruff_text_size::TextSize;
 use serde::Serialize;
 use starlark_map::Hashed;
 use vec1::Vec1;
@@ -401,6 +403,78 @@ impl<Function: FunctionTrait> CallTarget<Function> {
         }
     }
 }
+
+// Intentionally refer to decorators by names instead of uniquely identifying them. Some special handling
+// (i.e., see the usage of `GRAPHQL_DECORATORS`) are triggered when decorators are matched by names.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GraphQLDecoratorRef {
+    module: &'static str,
+    name: &'static str,
+}
+
+impl GraphQLDecoratorRef {
+    fn is_inside_decorators(
+        &self,
+        mut decorators_range: impl Iterator<Item = TextSize>,
+        module_context: &ModuleContext,
+    ) -> bool {
+        decorators_range.any(|decorator_range| {
+            module_context
+                .transaction
+                .find_definition(
+                    &module_context.handle,
+                    decorator_range,
+                    FindPreference::default(),
+                )
+                .iter()
+                .any(|go_to_definition| {
+                    if let Some(display_name) = &go_to_definition.display_name {
+                        self.module == go_to_definition.module.name().as_str()
+                            && self.name == *display_name
+                    } else {
+                        false
+                    }
+                })
+        })
+    }
+}
+
+// Tuples of decorators. For any tuple (x, y), it means if a callable is decorated by x, then find
+// all callables that are decorated by y inside the return class type of the callable.
+static GRAPHQL_DECORATORS: &[(&GraphQLDecoratorRef, &GraphQLDecoratorRef)] = &[
+    (
+        &GraphQLDecoratorRef {
+            module: "graphqlserver.types",
+            name: "graphql_root_field",
+        },
+        &GraphQLDecoratorRef {
+            module: "graphqlserver.types",
+            name: "graphql_field",
+        },
+    ),
+    // For testing only
+    (
+        &GraphQLDecoratorRef {
+            module: "test",
+            name: "decorator_1",
+        },
+        &GraphQLDecoratorRef {
+            module: "test",
+            name: "decorator_2",
+        },
+    ),
+    // For testing only
+    (
+        &GraphQLDecoratorRef {
+            module: "graphql_callees",
+            name: "entrypoint_decorator",
+        },
+        &GraphQLDecoratorRef {
+            module: "graphql_callees",
+            name: "method_decorator",
+        },
+    ),
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum UnresolvedReason {
@@ -955,6 +1029,45 @@ impl<Function: FunctionTrait> FormatStringStringifyCallees<Function> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ReturnShimCallees<Function: FunctionTrait> {
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) targets: Vec<CallTarget<Function>>,
+}
+
+impl<Function: FunctionTrait> ReturnShimCallees<Function> {
+    #[cfg(test)]
+    fn map_function<OutputFunction: FunctionTrait, MapFunction>(
+        self,
+        map: &MapFunction,
+    ) -> ReturnShimCallees<OutputFunction>
+    where
+        MapFunction: Fn(Function) -> OutputFunction,
+    {
+        ReturnShimCallees {
+            targets: self
+                .targets
+                .into_iter()
+                .map(|call_target| CallTarget::map_function(call_target, map))
+                .collect(),
+        }
+    }
+
+    #[allow(dead_code)]
+    fn is_empty(&self) -> bool {
+        self.targets.is_empty()
+    }
+
+    pub fn all_targets(&self) -> impl Iterator<Item = &CallTarget<Function>> {
+        self.targets.iter()
+    }
+
+    fn dedup_and_sort(&mut self) {
+        self.targets.sort();
+        self.targets.dedup();
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum ExpressionCallees<Function: FunctionTrait> {
     Call(CallCallees<Function>),
     Identifier(IdentifierCallees<Function>),
@@ -962,6 +1075,7 @@ pub enum ExpressionCallees<Function: FunctionTrait> {
     Define(DefineCallees<Function>),
     FormatStringArtificial(FormatStringArtificialCallees<Function>),
     FormatStringStringify(FormatStringStringifyCallees<Function>),
+    Return(ReturnShimCallees<Function>),
 }
 
 impl<Function: FunctionTrait> ExpressionCallees<Function> {
@@ -992,6 +1106,9 @@ impl<Function: FunctionTrait> ExpressionCallees<Function> {
             ExpressionCallees::FormatStringStringify(callees) => {
                 ExpressionCallees::FormatStringStringify(callees.map_function(map))
             }
+            ExpressionCallees::Return(callees) => {
+                ExpressionCallees::Return(callees.map_function(map))
+            }
         }
     }
 
@@ -1006,6 +1123,7 @@ impl<Function: FunctionTrait> ExpressionCallees<Function> {
             ExpressionCallees::Define(define_callees) => define_callees.is_empty(),
             ExpressionCallees::FormatStringArtificial(callees) => callees.is_empty(),
             ExpressionCallees::FormatStringStringify(callees) => callees.is_empty(),
+            ExpressionCallees::Return(callees) => callees.is_empty(),
         }
     }
 
@@ -1021,6 +1139,7 @@ impl<Function: FunctionTrait> ExpressionCallees<Function> {
             ExpressionCallees::Define(define_callees) => Box::new(define_callees.all_targets()),
             ExpressionCallees::FormatStringArtificial(callees) => Box::new(callees.all_targets()),
             ExpressionCallees::FormatStringStringify(callees) => Box::new(callees.all_targets()),
+            ExpressionCallees::Return(callees) => Box::new(callees.all_targets()),
         }
     }
 
@@ -1042,6 +1161,9 @@ impl<Function: FunctionTrait> ExpressionCallees<Function> {
                 callees.dedup_and_sort();
             }
             ExpressionCallees::FormatStringStringify(callees) => {
+                callees.dedup_and_sort();
+            }
+            ExpressionCallees::Return(callees) => {
                 callees.dedup_and_sort();
             }
         }
@@ -1384,6 +1506,7 @@ struct CallGraphVisitor<'a> {
     debug: bool,                           // Enable logging for the current function or class body.
     debug_scopes: Vec<bool>,               // The value of the debug flag for each scope.
     error_collector: ErrorCollector,
+    matching_graphql_decorators: Vec<Option<GraphQLDecoratorRef>>, // The matching graphql method decorator for each scope.
 }
 
 impl<'a> CallGraphVisitor<'a> {
@@ -1453,22 +1576,19 @@ impl<'a> CallGraphVisitor<'a> {
                 class,
                 field_name,
                 class_field,
-                &context,
+                context,
             )?;
-            Some(function.as_function_ref(&context))
+            Some(function.as_function_ref(context))
         };
 
         let context = get_context_from_class(class, self.module_context);
         let class_field = get_class_field_from_current_class_only(class, field_name, &context);
         if let Some(class_field) = class_field
-            && let Some(function_ref) = get_function_from_field(class, class_field, context)
+            && let Some(function_ref) = get_function_from_field(class, class_field, &context)
         {
             Result::Ok(function_ref)
         } else if let Some(with_defining_class) = get_super_class_member(
-            class,
-            field_name,
-            /* start_lookup_cls */ None,
-            self.module_context,
+            class, field_name, /* start_lookup_cls */ None, &context,
         ) {
             let parent_class = with_defining_class.defining_class;
             let object = self.module_context.stdlib.object().class_object();
@@ -1477,7 +1597,7 @@ impl<'a> CallGraphVisitor<'a> {
             }
             let context = get_context_from_class(&parent_class, self.module_context);
             if let Some(function_ref) =
-                get_function_from_field(&parent_class, with_defining_class.value, context)
+                get_function_from_field(&parent_class, with_defining_class.value, &context)
             {
                 Result::Ok(function_ref)
             } else {
@@ -1756,7 +1876,7 @@ impl<'a> CallGraphVisitor<'a> {
                 // a function.
                 MaybeResolved::Unresolved(UnresolvedReason::UnsupportedFunctionTarget)
             }
-            Some(Type::LiteralString(_)) => {
+            Some(Type::LiteralString(..)) => {
                 let str_class = self.module_context.stdlib.str().class_object();
                 call_targets_from_method_name_with_class(str_class)
             }
@@ -3270,6 +3390,77 @@ impl<'a> CallGraphVisitor<'a> {
         self.add_callees(identifier, ExpressionCallees::Call(callees));
     }
 
+    fn resolve_and_register_return_shim(&mut self, return_stmt: &StmtReturn) {
+        if let Some(graphql_decorator) = self.matching_graphql_decorators.last().unwrap()
+            && let Some(return_expression_type) =
+                return_stmt.value.as_ref().and_then(|return_expression| {
+                    self.module_context
+                        .answers
+                        .get_type_trace(return_expression.range())
+                })
+            && let Some(class) = match return_expression_type {
+                Type::ClassDef(class) => Some(class),
+                Type::ClassType(class) => Some(class.class_object().clone()),
+                Type::SelfType(cls) => Some(cls.class_object().clone()),
+                _ => None,
+            }
+        {
+            let class_context = get_context_from_class(&class, self.module_context);
+            let have_graphql_decorator = |function_node: &FunctionNode| match function_node {
+                FunctionNode::DecoratedFunction(decorated_function) => {
+                    let decorators_range = decorated_function.undecorated.decorators.iter().map(
+                        |(_, decorator_range)| {
+                            // `start()` does not work with go-to-definitions since the start position always refers to `@`
+                            decorator_range.end()
+                        },
+                    );
+                    graphql_decorator.is_inside_decorators(decorators_range, &class_context)
+                }
+                _ => false,
+            };
+            let callees: Vec<CallTarget<FunctionRef>> = class
+                .fields()
+                .filter_map(|field_name| {
+                    if let Some(class_field) =
+                        get_class_field_from_current_class_only(&class, field_name, &class_context)
+                        && let Some(function_node) =
+                            FunctionNode::exported_function_from_class_field(
+                                &class,
+                                field_name,
+                                class_field,
+                                &class_context,
+                            )
+                        && have_graphql_decorator(&function_node)
+                    {
+                        Some(self.call_target_from_static_or_virtual_call(
+                            function_node.as_function_ref(&class_context),
+                            /* callee_expr */ None,
+                            /* callee_type */ None,
+                            /* precise_receiver_type */ None,
+                            /* return_type */
+                            ScalarTypeProperties::none(),
+                            /* callee_expr_suffix */ None,
+                            /* override_implicit_receiver */ None,
+                            /* override_is_direct_call */ None,
+                            /* unknown_callee_as_direct_call */ true,
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+            if !callees.is_empty() {
+                self.add_callees(
+                    ExpressionIdentifier::regular(
+                        return_stmt.range(),
+                        &self.module_context.module_info,
+                    ),
+                    ExpressionCallees::Return(ReturnShimCallees { targets: callees }),
+                );
+            }
+        }
+    }
+
     fn resolve_and_register_slice(&mut self, slice: &ExprSlice) {
         let slice_class = self.module_context.stdlib.slice_class_object();
         let slice_class_type =
@@ -3670,6 +3861,24 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
 
     fn enter_function_scope(&mut self, function_def: &StmtFunctionDef, _: &Scopes) {
         self.enter_debug_scope(&function_def.body);
+        self.matching_graphql_decorators.push(
+            GRAPHQL_DECORATORS
+                .iter()
+                .find_map(|(callable_decorator, method_decorator)| {
+                    if callable_decorator.is_inside_decorators(
+                        function_def
+                            .decorator_list
+                            .iter()
+                            .map(|decorator| decorator.expression.end()),
+                        self.module_context,
+                    ) {
+                        Some(*method_decorator)
+                    } else {
+                        None
+                    }
+                })
+                .cloned(),
+        );
     }
 
     fn enter_class_scope(&mut self, class_def: &StmtClassDef, _: &Scopes) {
@@ -3703,6 +3912,7 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
         }
 
         self.exit_debug_scope();
+        self.matching_graphql_decorators.pop();
     }
 
     fn exit_class_scope(&mut self, _function_def: &StmtClassDef, _: &Scopes) {
@@ -3739,6 +3949,7 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
             Stmt::With(stmt_with) => self.resolve_and_register_with_statement(stmt_with),
             Stmt::For(stmt_for) => self.resolve_and_register_for_statement(stmt_for),
             Stmt::AugAssign(aug_assign) => self.resolve_and_register_augmented_assign(aug_assign),
+            Stmt::Return(return_stmt) => self.resolve_and_register_return_shim(return_stmt),
             _ => {}
         }
     }
@@ -3764,6 +3975,7 @@ fn resolve_call(
         global_variables: &WholeProgramGlobalVariables::new(),
         captured_variables: &WholeProgramCapturedVariables::new(),
         error_collector: ErrorCollector::new(module_context.module_info.dupe(), ErrorStyle::Never),
+        matching_graphql_decorators: Vec::new(),
     };
     let callees = visitor.resolve_call(
         /* callee */ &call.func,
@@ -3808,6 +4020,7 @@ fn resolve_expression(
         global_variables: &WholeProgramGlobalVariables::new(),
         captured_variables: &WholeProgramCapturedVariables::new(),
         error_collector: ErrorCollector::new(module_context.module_info.dupe(), ErrorStyle::Never),
+        matching_graphql_decorators: Vec::new(),
     };
     visitor.resolve_and_register_expression(
         expression,
@@ -3921,6 +4134,7 @@ pub fn export_call_graphs(
         global_variables,
         captured_variables,
         error_collector: ErrorCollector::new(context.module_info.dupe(), ErrorStyle::Never),
+        matching_graphql_decorators: Vec::new(),
     };
 
     visit_module_ast(&mut visitor, context);

@@ -27,6 +27,7 @@ use crate::report::pysa::call_graph::FunctionTrait;
 use crate::report::pysa::call_graph::HigherOrderParameter;
 use crate::report::pysa::call_graph::IdentifierCallees;
 use crate::report::pysa::call_graph::ImplicitReceiver;
+use crate::report::pysa::call_graph::ReturnShimCallees;
 use crate::report::pysa::call_graph::Target;
 use crate::report::pysa::call_graph::Unresolved;
 use crate::report::pysa::call_graph::UnresolvedReason;
@@ -601,6 +602,14 @@ fn unresolved_format_string_stringify_callees(
     ExpressionCallees::FormatStringStringify(FormatStringStringifyCallees {
         targets: vec![],
         unresolved: Unresolved::True(reason),
+    })
+}
+
+fn return_shim_callees(
+    call_targets: Vec<CallTarget<FunctionRefForTest>>,
+) -> ExpressionCallees<FunctionRefForTest> {
+    ExpressionCallees::Return(ReturnShimCallees {
+        targets: call_targets,
     })
 }
 
@@ -3155,7 +3164,7 @@ def g() -> A:
   return A()
 def id(arg):
   return arg
-def foo(l0: typing.AsyncIterator[int], l1: typing.List[int], l2: typing.AsyncIterable[int]):
+async def foo(l0: typing.AsyncIterator[int], l1: typing.List[int], l2: typing.AsyncIterable[int]):
   x = [x async for x in l0]
   x = [x for x in l1]  # List comprehension
   x = [x async for x in l2]  # List comprehension
@@ -6405,6 +6414,49 @@ def foo(x: list[int]):
                     ]),
                 ),
             ],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_return_shim_callees,
+    TEST_MODULE_NAME,
+    r#"
+from typing import Callable, Any
+def decorator_1(callable: Callable[[Any], Any]) -> Callable[[Any], Any]:
+  return callable
+def decorator_2(callable: Callable[[Any, int], int]) -> Callable[[Any, int], int]:
+  return callable
+def decorator_3(callable: Callable[[Any, int], int]) -> Callable[[Any, int], int]:
+  return callable
+class Foo:
+  @decorator_2
+  def callee_1(self, x: int) -> int:
+    return x
+  @decorator_2
+  def callee_2(self, x: int) -> int:
+    return x
+  def not_callee_1(self, x: int) -> int:
+    return x
+  @decorator_3
+  def not_callee_2(self, x: int) -> int:
+    return x
+@decorator_1
+def caller(foo: Foo) -> Foo:  # Test return callees
+  return foo
+"#,
+    &|_context: &ModuleContext| {
+        vec![(
+            "test.caller",
+            vec![(
+                "23:3-23:13",
+                return_shim_callees(vec![
+                    create_call_target("test.Foo.callee_1", TargetType::Function)
+                        .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
+                    create_call_target("test.Foo.callee_2", TargetType::Function)
+                        .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
+                ]),
+            )],
         )]
     }
 );
