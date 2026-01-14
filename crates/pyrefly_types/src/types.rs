@@ -887,8 +887,12 @@ impl Type {
         matches!(self, Type::Never(_))
     }
 
-    pub fn is_literal(&self) -> bool {
-        matches!(self, Type::Literal(_) | Type::LiteralString(_))
+    pub fn is_implicit_literal(&self) -> bool {
+        matches!(
+            self,
+            Type::Literal(box Literal { style: LitStyle::Implicit, ..}) |
+            Type::LiteralString(LitStyle::Implicit)
+        )
     }
 
     pub fn is_literal_string(&self) -> bool {
