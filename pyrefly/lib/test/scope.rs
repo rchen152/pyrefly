@@ -858,3 +858,33 @@ class C:
             pass
     "#,
 );
+
+testcase!(
+    test_global_in_inner_function,
+    r#"
+from typing import assert_type
+
+x: int = 1
+
+def outer():
+    x: str = ""
+
+    def inner():
+        global x
+        assert_type(x, int)
+    "#,
+);
+
+testcase!(
+    test_global_with_same_name_as_local,
+    r#"
+from typing import assert_type, Literal
+
+x = 42
+
+def f():
+    global x
+    assert_type(x, Literal[42])
+    x = "foo"
+    "#,
+);
