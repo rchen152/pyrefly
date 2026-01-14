@@ -2182,3 +2182,38 @@ def f(a: A):
     a.x = (0, 0)
     "#,
 );
+
+testcase!(
+    bug = "LiteralString is promoted inconsistently",
+    test_always_promote_inferred_literalstring,
+    r#"
+from typing import assert_type
+class A:
+    def __init__(self):
+        greeting = "hello"
+        self.x = f"{greeting} world"
+        self.y = f"{greeting} world" if greeting == "hello" else 42
+def f(a: A):
+    assert_type(a.x, str)  # E: assert_type(LiteralString, str)
+    assert_type(a.y, int | str)
+    "#,
+);
+
+testcase!(
+    bug = "Anonymous TypedDict is promoted inconsistently",
+    test_always_promote_anonymous_typeddict,
+    r#"
+from typing import NotRequired, TypedDict
+class TD(TypedDict):
+    x: NotRequired[int]
+class A:
+    def __init__(self, check: bool):
+        self.x = {"x": 0}
+        self.y = {"x": 0} if check else 42
+def f(a: A):
+    # We want the anonymous TypedDict in `x` and `y` to be promoted to `dict[str, int]`,
+    # so the correct behavior is to NOT match `TD`.
+    x: TD = a.x
+    y: TD | int = a.y  # E: not assignable
+    "#,
+);
