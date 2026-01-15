@@ -1026,7 +1026,7 @@ fn test_untyped_import_diagnostic() {
                     "codeDescription": {
                         "href": "https://pyrefly.org/en/docs/error-kinds/#untyped-import"
                     },
-                    "message": "Missing type stubs for `boto3`\n  Hint: install the `boto3-stubs` package",
+                    "message": "Cannot find type stubs for module `boto3`\n  Hint: install the `boto3-stubs` package",
                     "range": {
                         "start": {"line": 5, "character": 7},
                         "end": {"line": 5, "character": 12}
