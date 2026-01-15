@@ -955,7 +955,11 @@ impl<'a> BindingsBuilder<'a> {
         self.bind_name(&name.id, idx, FlowStyle::Other);
     }
 
-    pub fn lookup_name(
+    /// Legacy name lookup that performs eager first-use detection.
+    ///
+    /// This method is deprecated and will be removed after migration to
+    /// deferred binding creation. Use `lookup_name` instead.
+    pub fn legacy_lookup_name(
         &mut self,
         name: Hashed<&Name>,
         usage: &mut LegacyUsage,
@@ -997,6 +1001,65 @@ impl<'a> BindingsBuilder<'a> {
             }
             NameReadInfo::NotFound => NameLookupResult::NotFound,
         }
+    }
+
+    /// Look up a name in scope, marking it as used, but without first-use detection.
+    ///
+    /// This is the primary lookup method for deferred BoundName creation.
+    /// First-use detection happens later in `process_deferred_bound_names`
+    /// when all phi nodes are populated.
+    #[allow(dead_code)] // Will be used in Phase 4 of deferred BoundName implementation
+    pub fn lookup_name(
+        &mut self,
+        name: Hashed<&Name>,
+        usage: &mut LegacyUsage,
+    ) -> NameLookupResult {
+        let name_read_info = if matches!(usage, LegacyUsage::StaticTypeInformation) {
+            self.scopes
+                .look_up_name_for_read_in_static_type_context(name)
+        } else {
+            self.scopes.look_up_name_for_read(name)
+        };
+        match name_read_info {
+            NameReadInfo::Flow { idx, initialized } => {
+                // Mark as used (this must happen during traversal for unused-variable detection)
+                self.scopes.mark_parameter_used(name.key());
+                self.scopes.mark_import_used(name.key());
+                self.scopes.mark_variable_used(name.key());
+                NameLookupResult::Found { idx, initialized }
+            }
+            NameReadInfo::Anywhere { key, initialized } => {
+                self.scopes.mark_parameter_used(name.key());
+                self.scopes.mark_import_used(name.key());
+                self.scopes.mark_variable_used(name.key());
+                NameLookupResult::Found {
+                    idx: self.table.types.0.insert(key),
+                    initialized,
+                }
+            }
+            NameReadInfo::NotFound => NameLookupResult::NotFound,
+        }
+    }
+
+    /// Defer creation of a BoundName binding until after AST traversal.
+    ///
+    /// This reserves an index for the binding and stores the lookup result
+    /// along with usage context. The actual binding is created later by
+    /// `process_deferred_bound_names` when all phi nodes are populated.
+    #[allow(dead_code)] // Will be used in Phase 4 of deferred BoundName implementation
+    pub fn defer_bound_name(
+        &mut self,
+        key: Key,
+        lookup_result_idx: Idx<Key>,
+        legacy_usage: &LegacyUsage,
+    ) -> Idx<Key> {
+        let bound_name_idx = self.idx_for_promise(key);
+        self.deferred_bound_names.push(DeferredBoundName {
+            bound_name_idx,
+            lookup_result_idx,
+            usage: Usage::from_legacy(legacy_usage),
+        });
+        bound_name_idx
     }
 
     /// Look up the idx for a name. The first output is the idx to use for the
@@ -1227,7 +1290,7 @@ impl<'a> BindingsBuilder<'a> {
     ) {
         for (name, (op, op_range)) in narrow_ops.0.iter_hashed() {
             if let Some(initial_idx) = self
-                .lookup_name(name, &mut usage.to_legacy_narrowing())
+                .legacy_lookup_name(name, &mut usage.to_legacy_narrowing())
                 .found()
             {
                 let narrowed_idx = self.insert_binding(
@@ -1446,7 +1509,7 @@ impl<'a> BindingsBuilder<'a> {
         has_scoped_type_params: bool,
     ) -> TParamLookupResult {
         let name = id.as_identifier();
-        self.lookup_name(
+        self.legacy_lookup_name(
             Hashed::new(&name.id),
             &mut LegacyUsage::StaticTypeInformation,
         )

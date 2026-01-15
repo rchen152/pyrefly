@@ -378,7 +378,7 @@ impl<'a> BindingsBuilder<'a> {
             if used_in_static_type && let Some((tparams_collector, tparam_id)) = tparams_lookup {
                 self.intercept_lookup(tparams_collector, tparam_id)
             } else {
-                self.lookup_name(Hashed::new(&name.id), usage)
+                self.legacy_lookup_name(Hashed::new(&name.id), usage)
             };
         match lookup_result {
             NameLookupResult::Found {
