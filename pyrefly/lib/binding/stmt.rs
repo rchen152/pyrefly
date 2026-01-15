@@ -44,6 +44,7 @@ use crate::binding::binding::LinkedKey;
 use crate::binding::binding::NarrowUseLocation;
 use crate::binding::binding::RaisedException;
 use crate::binding::bindings::BindingsBuilder;
+use crate::binding::expr::LegacyUsage;
 use crate::binding::expr::Usage;
 use crate::binding::narrow::NarrowOps;
 use crate::binding::scope::FlowStyle;
@@ -112,7 +113,7 @@ fn is_definitely_nonempty_iterable(iter: &Expr) -> bool {
 impl<'a> BindingsBuilder<'a> {
     fn assert(&mut self, assert_range: TextRange, mut test: Expr, msg: Option<Expr>) {
         let test_range = test.range();
-        self.ensure_expr(&mut test, &mut Usage::Narrowing(None));
+        self.ensure_expr(&mut test, &mut LegacyUsage::Narrowing(None));
         let narrow_ops = NarrowOps::from_expr(self, Some(&test));
         let static_test = self.sys_info.evaluate_bool(&test);
         self.insert_binding(Key::Anon(test_range), Binding::Expr(None, test));
@@ -178,7 +179,7 @@ impl<'a> BindingsBuilder<'a> {
 
     fn assign_type_var(&mut self, name: &ExprName, call: &mut ExprCall) {
         // Type var declarations are static types only; skip them for first-usage type inference.
-        let static_type_usage = &mut Usage::StaticTypeInformation;
+        let static_type_usage = &mut LegacyUsage::StaticTypeInformation;
         self.ensure_expr(&mut call.func, static_type_usage);
         let mut iargs = call.arguments.args.iter_mut();
         if let Some(expr) = iargs.next() {
@@ -209,7 +210,7 @@ impl<'a> BindingsBuilder<'a> {
 
     fn ensure_type_var_tuple_and_param_spec_args(&mut self, call: &mut ExprCall) {
         // Type var declarations are static types only; skip them for first-usage type inference.
-        let static_type_usage = &mut Usage::StaticTypeInformation;
+        let static_type_usage = &mut LegacyUsage::StaticTypeInformation;
         self.ensure_expr(&mut call.func, static_type_usage);
         for arg in call.arguments.args.iter_mut() {
             self.ensure_expr(arg, static_type_usage);
@@ -249,7 +250,7 @@ impl<'a> BindingsBuilder<'a> {
 
     fn ensure_type_alias_type_args(&mut self, call: &mut ExprCall) {
         // Type var declarations are static types only; skip them for first-usage type inference.
-        let static_type_usage = &mut Usage::StaticTypeInformation;
+        let static_type_usage = &mut LegacyUsage::StaticTypeInformation;
         self.ensure_expr(&mut call.func, static_type_usage);
         let mut iargs = call.arguments.args.iter_mut();
         // The first argument is the name
@@ -672,10 +673,10 @@ impl<'a> BindingsBuilder<'a> {
                         //
                         // We don't track first-usage in this context, since we won't analyze the usage anyway.
                         let mut e = illegal_target.clone();
-                        self.ensure_expr(&mut e, &mut Usage::StaticTypeInformation);
+                        self.ensure_expr(&mut e, &mut LegacyUsage::StaticTypeInformation);
                         // Even though the assignment target is invalid, we still need to analyze the RHS so errors
                         // (like invalid walrus targets) are reported.
-                        self.ensure_expr(&mut x.value, &mut Usage::StaticTypeInformation);
+                        self.ensure_expr(&mut x.value, &mut LegacyUsage::StaticTypeInformation);
                     }
                 }
             }
@@ -752,7 +753,7 @@ impl<'a> BindingsBuilder<'a> {
                 // narrowing and type checking are aware that the test might be impacted by changes
                 // made in the loop (e.g. if we reassign the test variable).
                 // Typecheck the test condition during solving.
-                self.ensure_expr(&mut x.test, &mut Usage::Narrowing(None));
+                self.ensure_expr(&mut x.test, &mut LegacyUsage::Narrowing(None));
                 let is_while_true = self.sys_info.evaluate_bool(&x.test) == Some(true);
                 let narrow_ops = NarrowOps::from_expr(self, Some(&x.test));
                 self.bind_narrow_ops(
@@ -806,7 +807,7 @@ impl<'a> BindingsBuilder<'a> {
                             result
                         }
                     };
-                    self.ensure_expr_opt(test.as_mut(), &mut Usage::Narrowing(None));
+                    self.ensure_expr_opt(test.as_mut(), &mut LegacyUsage::Narrowing(None));
                     let new_narrow_ops = if this_branch_chosen == Some(false) {
                         // Skip the body in this case - it typically means a check (e.g. a sys version,
                         // platform, or TYPE_CHECKING check) where the body is not statically analyzable.

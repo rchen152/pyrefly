@@ -72,8 +72,11 @@ fn is_special_name(name: &str) -> bool {
 /// There are some cases - particularly in type declaration contexts like annotations,
 /// type variable declarations, and match patterns - that we want to skip for usage
 /// tracking.
+///
+/// This is the legacy version that carries a mutable set of first uses.
+/// See `Usage` for the new immutable version used for deferred name lookups.
 #[derive(Debug)]
-pub enum Usage {
+pub enum LegacyUsage {
     /// I am a usage to create a `Binding`.
     /// - First entry is the idx we are working on
     /// - Second entry is all the idxs for which this idx is a first use (used to
@@ -95,7 +98,7 @@ pub enum Usage {
     StaticTypeInformation,
 }
 
-impl Usage {
+impl LegacyUsage {
     pub fn narrowing_from(other: &Self) -> Self {
         match other {
             Self::CurrentIdx(idx, _) => Self::Narrowing(Some(*idx)),
@@ -110,6 +113,53 @@ impl Usage {
             Self::Narrowing(idx) => *idx,
             Self::StaticTypeInformation => None,
         }
+    }
+}
+
+/// Usage context for deferred name lookups.
+///
+/// Unlike `LegacyUsage`, this doesn't carry a mutable `first_uses_of` set.
+/// It captures the essential information needed for deferred first-use detection.
+#[derive(Debug, Clone)]
+pub enum Usage {
+    /// Normal usage context that may pin partial types.
+    /// The idx is the current binding being computed.
+    CurrentIdx(Idx<Key>),
+    /// Narrowing context that should not pin partial types.
+    /// The idx (if present) is used for secondary-read detection.
+    Narrowing(Option<Idx<Key>>),
+    /// Static type context that should not pin partial types.
+    StaticTypeInformation,
+}
+
+impl Usage {
+    /// Create a Usage from a LegacyUsage reference.
+    pub fn from_legacy(usage: &LegacyUsage) -> Self {
+        match usage {
+            LegacyUsage::CurrentIdx(idx, _) => Usage::CurrentIdx(*idx),
+            LegacyUsage::Narrowing(idx) => Usage::Narrowing(*idx),
+            LegacyUsage::StaticTypeInformation => Usage::StaticTypeInformation,
+        }
+    }
+
+    /// Get the current binding idx, if any.
+    pub fn current_idx(&self) -> Option<Idx<Key>> {
+        match self {
+            Usage::CurrentIdx(idx) => Some(*idx),
+            Usage::Narrowing(idx) => *idx,
+            Usage::StaticTypeInformation => None,
+        }
+    }
+
+    /// Whether this usage context may pin partial types.
+    #[allow(dead_code)] // Will be used in Phase 5 of deferred BoundName implementation
+    pub fn may_pin_partial_type(&self) -> bool {
+        matches!(self, Usage::CurrentIdx(_))
+    }
+
+    /// Convert this Usage to a LegacyUsage suitable for narrowing operations.
+    pub fn to_legacy_narrowing(&self) -> LegacyUsage {
+        LegacyUsage::Narrowing(self.current_idx())
     }
 }
 
@@ -245,7 +295,7 @@ impl TestAssertion {
 impl<'a> BindingsBuilder<'a> {
     /// Ensure the name in an `ExprName`. Note that unlike `ensure_expr`, it
     /// does not require a mutable ref.
-    pub fn ensure_expr_name(&mut self, x: &ExprName, usage: &mut Usage) -> Idx<Key> {
+    pub fn ensure_expr_name(&mut self, x: &ExprName, usage: &mut LegacyUsage) -> Idx<Key> {
         let name = Ast::expr_name_identifier(x.clone());
         self.ensure_name(&name, usage, &mut None)
     }
@@ -253,7 +303,7 @@ impl<'a> BindingsBuilder<'a> {
     fn ensure_name(
         &mut self,
         name: &Identifier,
-        usage: &mut Usage,
+        usage: &mut LegacyUsage,
         tparams_builder: &mut Option<LegacyTParamCollector>,
     ) -> Idx<Key> {
         self.ensure_name_impl(
@@ -269,7 +319,7 @@ impl<'a> BindingsBuilder<'a> {
         &mut self,
         value: &Identifier,
         attr: &Identifier,
-        usage: &mut Usage,
+        usage: &mut LegacyUsage,
         tparams_builder: &mut Option<LegacyTParamCollector>,
     ) -> Idx<Key> {
         self.ensure_name_impl(
@@ -308,7 +358,7 @@ impl<'a> BindingsBuilder<'a> {
     fn ensure_name_impl(
         &mut self,
         name: &Identifier,
-        usage: &mut Usage,
+        usage: &mut LegacyUsage,
         tparams_lookup: Option<(&mut LegacyTParamCollector, LegacyTParamId)>,
     ) -> Idx<Key> {
         let key = Key::BoundName(ShortIdentifier::new(name));
@@ -323,7 +373,7 @@ impl<'a> BindingsBuilder<'a> {
             // in an IDE setting if we don't ensure this is the case.
             return self.insert_binding_overwrite(key, Binding::Type(Type::any_error()));
         }
-        let used_in_static_type = matches!(usage, Usage::StaticTypeInformation);
+        let used_in_static_type = matches!(usage, LegacyUsage::StaticTypeInformation);
         let lookup_result =
             if used_in_static_type && let Some((tparams_collector, tparam_id)) = tparams_lookup {
                 self.intercept_lookup(tparams_collector, tparam_id)
@@ -387,7 +437,7 @@ impl<'a> BindingsBuilder<'a> {
         &mut self,
         range: TextRange,
         comprehensions: &mut [Comprehension],
-        usage: &mut Usage,
+        usage: &mut LegacyUsage,
         is_generator: bool,
     ) {
         for (i, comp) in comprehensions.iter_mut().enumerate() {
@@ -420,14 +470,18 @@ impl<'a> BindingsBuilder<'a> {
                 Binding::Forward(iterable_value_idx)
             });
             for x in comp.ifs.iter_mut() {
-                self.ensure_expr(x, &mut Usage::narrowing_from(usage));
+                self.ensure_expr(x, &mut LegacyUsage::narrowing_from(usage));
                 let narrow_ops = NarrowOps::from_expr(self, Some(x));
-                self.bind_narrow_ops(&narrow_ops, NarrowUseLocation::Span(comp.range), usage);
+                self.bind_narrow_ops(
+                    &narrow_ops,
+                    NarrowUseLocation::Span(comp.range),
+                    &Usage::from_legacy(usage),
+                );
             }
         }
     }
 
-    pub fn bind_lambda(&mut self, lambda: &mut ExprLambda, usage: &mut Usage) {
+    pub fn bind_lambda(&mut self, lambda: &mut ExprLambda, usage: &mut LegacyUsage) {
         self.scopes.push(Scope::lambda(lambda.range, false));
         if let Some(parameters) = &lambda.parameters {
             for x in parameters {
@@ -517,7 +571,7 @@ impl<'a> BindingsBuilder<'a> {
     }
 
     /// Execute through the expr, ensuring every name has a binding.
-    pub fn ensure_expr(&mut self, x: &mut Expr, usage: &mut Usage) {
+    pub fn ensure_expr(&mut self, x: &mut Expr, usage: &mut LegacyUsage) {
         self.with_semantic_checker(|semantic, context| semantic.visit_expr(x, context));
 
         match x {
@@ -528,9 +582,13 @@ impl<'a> BindingsBuilder<'a> {
             Expr::If(x) => {
                 // Ternary operation. We treat it like an if/else statement.
                 self.start_fork_and_branch(x.range);
-                self.ensure_expr(&mut x.test, &mut Usage::narrowing_from(usage));
+                self.ensure_expr(&mut x.test, &mut LegacyUsage::narrowing_from(usage));
                 let narrow_ops = NarrowOps::from_expr(self, Some(&x.test));
-                self.bind_narrow_ops(&narrow_ops, NarrowUseLocation::Span(x.body.range()), usage);
+                self.bind_narrow_ops(
+                    &narrow_ops,
+                    NarrowUseLocation::Span(x.body.range()),
+                    &Usage::from_legacy(usage),
+                );
                 self.ensure_expr(&mut x.body, usage);
                 // Negate the narrow ops for the `orelse`, then merge the Flows.
                 // TODO(stroxler): We eventually want to drop all narrows but merge values.
@@ -538,7 +596,7 @@ impl<'a> BindingsBuilder<'a> {
                 self.bind_narrow_ops(
                     &narrow_ops.negate(),
                     NarrowUseLocation::Span(x.range),
-                    usage,
+                    &Usage::from_legacy(usage),
                 );
                 self.ensure_expr(&mut x.orelse, usage);
                 self.finish_branch();
@@ -567,16 +625,16 @@ impl<'a> BindingsBuilder<'a> {
                 if let Some(value) = values.next() {
                     // The first operation runs unconditionally, so any walrus-defined
                     // names will be added to the base flow.
-                    self.ensure_expr(value, &mut Usage::narrowing_from(usage));
+                    self.ensure_expr(value, &mut LegacyUsage::narrowing_from(usage));
                     self.start_fork_and_branch(*range);
                     let mut narrow_ops = get_narrow_ops(self, value, *op);
                     for value in values {
                         self.bind_narrow_ops(
                             &narrow_ops,
                             NarrowUseLocation::Span(value.range()),
-                            usage,
+                            &Usage::from_legacy(usage),
                         );
-                        self.ensure_expr(value, &mut Usage::narrowing_from(usage));
+                        self.ensure_expr(value, &mut LegacyUsage::narrowing_from(usage));
                         let new_narrow_ops = get_narrow_ops(self, value, *op);
                         narrow_ops.and_all(new_narrow_ops);
                     }
@@ -587,7 +645,7 @@ impl<'a> BindingsBuilder<'a> {
                     self.bind_narrow_ops(
                         &narrow_ops.negate(),
                         NarrowUseLocation::End(*range),
-                        usage,
+                        &Usage::from_legacy(usage),
                     );
                     self.finish_branch();
                     self.finish_bool_op_fork();
@@ -718,12 +776,16 @@ impl<'a> BindingsBuilder<'a> {
             {
                 self.ensure_expr(func, usage);
                 for arg in arguments.args.iter_mut() {
-                    self.ensure_expr(arg, &mut Usage::narrowing_from(usage));
+                    self.ensure_expr(arg, &mut LegacyUsage::narrowing_from(usage));
                 }
                 for kw in arguments.keywords.iter_mut() {
                     self.ensure_expr(&mut kw.value, usage);
                 }
-                self.bind_narrow_ops(&narrow_op, NarrowUseLocation::Span(*range), usage);
+                self.bind_narrow_ops(
+                    &narrow_op,
+                    NarrowUseLocation::Span(*range),
+                    &Usage::from_legacy(usage),
+                );
             }
             Expr::Named(x) => {
                 // For scopes defined in terms of Definitions, we should normally already have the name in Static, but
@@ -822,7 +884,7 @@ impl<'a> BindingsBuilder<'a> {
     }
 
     /// Execute through the expr, ensuring every name has a binding.
-    pub fn ensure_expr_opt(&mut self, x: Option<&mut Expr>, usage: &mut Usage) {
+    pub fn ensure_expr_opt(&mut self, x: Option<&mut Expr>, usage: &mut LegacyUsage) {
         if let Some(x) = x {
             self.ensure_expr(x, usage);
         }
@@ -845,7 +907,7 @@ impl<'a> BindingsBuilder<'a> {
     ) {
         self.track_potential_typing_self(x);
         // We do not treat static types as usage for the purpose of first-usage-based type inference.
-        let static_type_usage = &mut Usage::StaticTypeInformation;
+        let static_type_usage = &mut LegacyUsage::StaticTypeInformation;
         match x {
             Expr::Name(x) => {
                 let name = Ast::expr_name_identifier(x.clone());
@@ -966,7 +1028,7 @@ impl<'a> BindingsBuilder<'a> {
     pub fn ensure_and_bind_decorators(
         &mut self,
         decorators: Vec<Decorator>,
-        usage: &mut Usage,
+        usage: &mut LegacyUsage,
     ) -> Vec<Idx<KeyDecorator>> {
         let mut decorator_keys = Vec::with_capacity(decorators.len());
         for mut x in decorators {

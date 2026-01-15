@@ -32,7 +32,7 @@ use crate::binding::binding::SizeExpectation;
 use crate::binding::binding::UnpackedPosition;
 use crate::binding::bindings::BindingsBuilder;
 use crate::binding::bindings::LegacyTParamCollector;
-use crate::binding::expr::Usage;
+use crate::binding::expr::LegacyUsage;
 use crate::binding::narrow::identifier_and_chain_prefix_for_expr;
 use crate::binding::scope::FlowStyle;
 use crate::binding::scope::NameReadInfo;
@@ -328,7 +328,7 @@ impl<'a> BindingsBuilder<'a> {
                 //
                 // We ignore such names for first-usage-tracking purposes, since
                 // we are not going to analyze the code at all.
-                self.ensure_expr(illegal_target, &mut Usage::StaticTypeInformation);
+                self.ensure_expr(illegal_target, &mut LegacyUsage::StaticTypeInformation);
                 // Make sure the RHS is properly bound, so that we can report errors there.
                 let mut user = self.declare_current_idx(Key::Anon(illegal_target.range()));
                 if ensure_assigned && let Some(assigned) = &mut assigned {
@@ -420,7 +420,7 @@ impl<'a> BindingsBuilder<'a> {
             // Parser error recovery can synthesize empty identifiers. Skip creating a definition
             // binding, but still analyze any assigned value so we surface downstream errors.
             if ensure_assigned && let Some(assigned) = &mut assigned {
-                self.ensure_expr(assigned, &mut Usage::StaticTypeInformation);
+                self.ensure_expr(assigned, &mut LegacyUsage::StaticTypeInformation);
             }
             return;
         }
