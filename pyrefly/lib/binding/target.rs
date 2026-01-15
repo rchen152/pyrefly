@@ -506,18 +506,13 @@ impl<'a> BindingsBuilder<'a> {
         // Record the raw assignment
         let (def_idx, first_use_of) = current.decompose();
         let def_idx = self.insert_binding_idx(def_idx, binding);
-        // If this is a first use, add a binding that will eliminate any placeholder types coming from upstream.
-        let unpinned_idx = if first_use_of.is_empty() {
-            def_idx
-        } else {
-            self.insert_binding(
-                Key::PartialTypeWithUpstreamsCompleted(identifier),
-                Binding::PartialTypeWithUpstreamsCompleted(
-                    def_idx,
-                    first_use_of.into_iter().collect(),
-                ),
-            )
-        };
+        // Always create PartialTypeWithUpstreamsCompleted.
+        // When first_use_of is empty, it behaves like a Forward to def_idx.
+        // This allows deferred binding processing to update the first_uses list later.
+        let unpinned_idx = self.insert_binding(
+            Key::PartialTypeWithUpstreamsCompleted(identifier),
+            Binding::PartialTypeWithUpstreamsCompleted(def_idx, first_use_of.into_iter().collect()),
+        );
         // Insert the Pin binding that will pin any types, potentially after evaluating the first downstream use.
         self.insert_binding_idx(
             pinned_idx,

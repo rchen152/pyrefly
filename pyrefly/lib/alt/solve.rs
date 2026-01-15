@@ -2490,6 +2490,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     BindingLegacyTypeParam::ParamKeyed(_) => TypeInfo::of_ty(ty),
                 }
             }
+            Binding::PartialTypeWithUpstreamsCompleted(raw_idx, first_used_by) => {
+                // Force all of the upstream `Pin`s for which this was the first use.
+                for idx in first_used_by {
+                    self.get_idx(*idx);
+                }
+                // Recursively get the TypeInfo from the raw binding to preserve facets
+                // (e.g., dict literal key completions).
+                self.get_idx(*raw_idx).arc_clone()
+            }
             _ => {
                 // All other Bindings model `Type` level operations where we do not
                 // propagate any attribute narrows.

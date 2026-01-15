@@ -1470,6 +1470,7 @@ impl<'a> BindingsBuilder<'a> {
         while let Some(
             Binding::Forward(fwd_idx)
             | Binding::CompletedPartialType(fwd_idx, _)
+            | Binding::PartialTypeWithUpstreamsCompleted(fwd_idx, _)
             | Binding::Phi(JoinStyle::NarrowOf(fwd_idx), _),
         ) = original_binding
         {
