@@ -6652,3 +6652,86 @@ def caller() -> Foo:
         )]
     }
 );
+
+call_graph_testcase!(
+    test,
+    TEST_MODULE_NAME,
+    r#"
+def decorator(f):
+  def inner():
+    return 0
+  return inner
+@decorator
+def foo1():
+  ...  # Not considered as being decorated due to missing the body
+@decorator
+def foo2():
+  return 0
+def identity(x):
+  return x
+def bar(b):
+  if b:
+    return identity(foo1)  # Redirect actual parameters
+  else:
+    return identity(foo2)
+"#,
+    &|_context: &ModuleContext| {
+        vec![(
+            "test.bar",
+            vec![
+                (
+                    "16:12-16:26",
+                    call_callees(
+                        /* call_targets */
+                        vec![create_call_target("test.identity", TargetType::Function)],
+                        /* init_targets */ vec![],
+                        /* new_targets */ vec![],
+                        /* higher_order_parameters */
+                        vec![(
+                            0,
+                            vec![
+                                create_call_target("test.foo1", TargetType::Function)
+                                    .with_return_type(ScalarTypeProperties::int()),
+                            ],
+                            Unresolved::False,
+                        )],
+                        Unresolved::False,
+                    ),
+                ),
+                (
+                    "16:21-16:25|identifier|foo1",
+                    regular_identifier_callees(vec![
+                        create_call_target("test.foo1", TargetType::Function)
+                            .with_return_type(ScalarTypeProperties::int()),
+                    ]),
+                ),
+                (
+                    "18:12-18:26",
+                    call_callees(
+                        /* call_targets */
+                        vec![create_call_target("test.identity", TargetType::Function)],
+                        /* init_targets */ vec![],
+                        /* new_targets */ vec![],
+                        /* higher_order_parameters */
+                        vec![(
+                            0,
+                            vec![
+                                create_call_target("test.foo2", TargetType::Function)
+                                    .with_return_type(ScalarTypeProperties::int()),
+                            ],
+                            Unresolved::False,
+                        )],
+                        Unresolved::False,
+                    ),
+                ),
+                (
+                    "18:21-18:25|identifier|foo2",
+                    regular_identifier_callees(vec![
+                        create_call_target("test.foo2", TargetType::Function)
+                            .with_return_type(ScalarTypeProperties::int()),
+                    ]),
+                ),
+            ],
+        )]
+    }
+);
