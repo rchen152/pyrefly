@@ -226,7 +226,7 @@ impl TypeCheckKind {
                 ctx.display(want),
             ),
             Self::YieldFrom => format!(
-                "Cannot yield from a generator of type `{}` because it does not match the declared return type `{}`",
+                "Cannot yield from `{}`, which is not assignable to declared return type `{}`",
                 ctx.display(got),
                 ctx.display(want),
             ),
