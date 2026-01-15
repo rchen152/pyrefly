@@ -12,7 +12,6 @@ use pyrefly_python::module::Module;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePathDetails;
 use ruff_python_ast::Decorator;
-use ruff_python_ast::Expr;
 use ruff_python_ast::ModModule;
 use ruff_python_ast::Stmt;
 use ruff_python_ast::StmtClassDef;
@@ -26,6 +25,8 @@ use ruff_text_size::TextSize;
 use super::extract_function::LocalRefactorCodeAction;
 use super::extract_shared::decorator_matches_name;
 use super::extract_shared::line_indent_and_start;
+use super::extract_shared::member_name_from_stmt;
+use super::extract_shared::selection_anchor;
 use crate::state::ide::insert_import_edit;
 use crate::state::lsp::ImportFormat;
 use crate::state::lsp::Transaction;
@@ -608,31 +609,6 @@ fn contains_nonlocal_or_global(function_def: &StmtFunctionDef) -> bool {
     finder.found
 }
 
-fn member_name_from_stmt(stmt: &Stmt) -> Option<String> {
-    match stmt {
-        Stmt::FunctionDef(func_def) => Some(func_def.name.id.to_string()),
-        Stmt::ClassDef(class_def) => Some(class_def.name.id.to_string()),
-        Stmt::Assign(assign) => {
-            if assign.targets.len() != 1 {
-                return None;
-            }
-            if let Expr::Name(name) = &assign.targets[0] {
-                Some(name.id.to_string())
-            } else {
-                None
-            }
-        }
-        Stmt::AnnAssign(assign) => {
-            if let Expr::Name(name) = assign.target.as_ref() {
-                Some(name.id.to_string())
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
 fn sibling_module_targets(
     transaction: &Transaction<'_>,
     handle: &Handle,
@@ -687,26 +663,6 @@ fn sibling_module_targets(
     } else {
         targets.sort_by(|a, b| a.0.module().as_str().cmp(b.0.module().as_str()));
         Some(targets)
-    }
-}
-
-fn selection_anchor(source: &str, selection: TextRange) -> TextSize {
-    if selection.is_empty() {
-        return selection.start();
-    }
-    let start = selection.start().to_usize().min(source.len());
-    let end = selection.end().to_usize().min(source.len());
-    if start >= end {
-        return selection.start();
-    }
-    if let Some(offset) = source[start..end]
-        .char_indices()
-        .find(|(_, ch)| !matches!(ch, ' ' | '\t' | '\n' | '\r'))
-        .map(|(idx, _)| idx)
-    {
-        TextSize::try_from(start + offset).unwrap_or(selection.start())
-    } else {
-        selection.start()
     }
 }
 
