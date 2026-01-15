@@ -1416,6 +1416,59 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                         drop(variables);
                         self.is_subset_eq(&t1, want)
                     }
+                    // When both variables are quantified, we need to preserve the stricter bound.
+                    // The `unify` function preserves the Variable data from its second argument,
+                    // so we call it with the stricter bound in the v2 position.
+                    (Variable::Quantified(q1), Variable::Quantified(q2))
+                    | (Variable::PartialQuantified(q1), Variable::Quantified(q2))
+                    | (Variable::Quantified(q1), Variable::PartialQuantified(q2))
+                    | (Variable::PartialQuantified(q1), Variable::PartialQuantified(q2)) => {
+                        let r1 = q1.restriction().clone();
+                        let r2 = q2.restriction().clone();
+                        drop(variable1);
+                        drop(variable2);
+
+                        match (r1.is_restricted(), r2.is_restricted()) {
+                            (false, false) => {
+                                // Neither has a restriction, order doesn't matter
+                                variables.unify(*v1, *v2);
+                            }
+                            (true, false) => {
+                                // Only v1 has a restriction, preserve v1's data
+                                variables.unify(*v2, *v1);
+                            }
+                            (false, true) => {
+                                // Only v2 has a restriction, preserve v2's data
+                                variables.unify(*v1, *v2);
+                            }
+                            (true, true) => {
+                                // Both have restrictions, need to compare bounds
+                                let b1 = r1.as_type(self.type_order.stdlib());
+                                let b2 = r2.as_type(self.type_order.stdlib());
+                                drop(variables);
+
+                                let b1_subtype_of_b2 = self.is_subset_eq(&b1, &b2).is_ok();
+                                let b2_subtype_of_b1 = self.is_subset_eq(&b2, &b1).is_ok();
+
+                                // Unify in the correct order to preserve the stricter bound.
+                                // unify(x, y) preserves y's Variable data.
+                                if b1_subtype_of_b2 && b2_subtype_of_b1 {
+                                    // Bounds are equivalent, order doesn't matter
+                                    self.solver.variables.lock().unify(*v1, *v2);
+                                } else if b1_subtype_of_b2 {
+                                    // b1 is stricter (subtype of b2), preserve v1's data
+                                    self.solver.variables.lock().unify(*v2, *v1);
+                                } else if b2_subtype_of_b1 {
+                                    // b2 is stricter (subtype of b1), preserve v2's data
+                                    self.solver.variables.lock().unify(*v1, *v2);
+                                } else {
+                                    // Bounds are incompatible
+                                    return Err(SubsetError::Other);
+                                }
+                            }
+                        }
+                        Ok(())
+                    }
                     (_, _) => {
                         drop(variable1);
                         drop(variable2);
