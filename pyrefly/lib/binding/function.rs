@@ -57,7 +57,7 @@ use crate::binding::binding::ReturnType;
 use crate::binding::binding::ReturnTypeKind;
 use crate::binding::bindings::BindingsBuilder;
 use crate::binding::bindings::LegacyTParamCollector;
-use crate::binding::expr::LegacyUsage;
+use crate::binding::expr::Usage;
 use crate::binding::scope::FlowStyle;
 use crate::binding::scope::InstanceAttribute;
 use crate::binding::scope::Scope;
@@ -252,7 +252,7 @@ impl<'a> BindingsBuilder<'a> {
         x: &mut StmtFunctionDef,
         func_name: &Identifier,
         class_key: Option<Idx<KeyClass>>,
-        usage: &mut LegacyUsage,
+        usage: &mut Usage,
     ) -> (
         Option<(TextRange, Idx<KeyAnnotation>)>,
         Vec<Idx<KeyLegacyTypeParam>>,
@@ -482,11 +482,7 @@ impl<'a> BindingsBuilder<'a> {
         );
     }
 
-    fn decorators(
-        &mut self,
-        decorator_list: Vec<Decorator>,
-        usage: &mut LegacyUsage,
-    ) -> Decorators {
+    fn decorators(&mut self, decorator_list: Vec<Decorator>, usage: &mut Usage) -> Decorators {
         let mut is_overload = false;
         let mut is_override = false;
         let mut has_no_type_check = false;

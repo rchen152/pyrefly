@@ -67,7 +67,6 @@ use crate::binding::binding::Keyed;
 use crate::binding::binding::LastStmt;
 use crate::binding::binding::NarrowUseLocation;
 use crate::binding::binding::TypeParameter;
-use crate::binding::expr::LegacyUsage;
 use crate::binding::expr::Usage;
 use crate::binding::narrow::NarrowOps;
 use crate::binding::scope::Exportable;
@@ -613,28 +612,28 @@ impl BindingTable {
 /// are currently constructing, which can be used as a factory to create
 /// usage values for `ensure_expr`.
 ///
-/// Note that while it wraps a `LegacyUsage`, that usage is always `LegacyUsage::CurrentIdx`,
+/// Note that while it wraps a `Usage`, that usage is always `Usage::CurrentIdx`,
 /// never some other variant.
 ///
 /// The first_use_of tracking has been removed since deferred BoundName processing
 /// now handles all first-use detection after AST traversal.
 #[derive(Debug)]
-pub struct CurrentIdx(LegacyUsage);
+pub struct CurrentIdx(Usage);
 
 impl CurrentIdx {
     pub fn new(idx: Idx<Key>) -> Self {
         // Create a CurrentIdx usage without first_use_of tracking.
         // Deferred BoundName processing will build the first-use graph.
-        Self(LegacyUsage::CurrentIdx(idx))
+        Self(Usage::CurrentIdx(idx))
     }
 
-    pub fn usage(&mut self) -> &mut LegacyUsage {
+    pub fn usage(&mut self) -> &mut Usage {
         &mut self.0
     }
 
     fn idx(&self) -> Idx<Key> {
         match self.0 {
-            LegacyUsage::CurrentIdx(idx) => idx,
+            Usage::CurrentIdx(idx) => idx,
             _ => unreachable!(),
         }
     }
@@ -720,8 +719,7 @@ impl<'a> BindingsBuilder<'a> {
         matches!(self.await_context, AwaitContext::GeneratorElement)
     }
 
-    /// Insert a binding into the bindings table, given a `Usage`. This will panic if the usage
-    /// is `LegacyUsage::NoUsageTracking`.
+    /// Insert a binding into the bindings table using the current idx from a `CurrentIdx` wrapper.
     pub fn insert_binding_current(&mut self, current: CurrentIdx, value: Binding) -> Idx<Key> {
         self.insert_binding_idx(current.into_idx(), value)
     }
@@ -961,9 +959,9 @@ impl<'a> BindingsBuilder<'a> {
     pub fn legacy_lookup_name(
         &mut self,
         name: Hashed<&Name>,
-        usage: &mut LegacyUsage,
+        usage: &mut Usage,
     ) -> NameLookupResult {
-        let name_read_info = if matches!(usage, LegacyUsage::StaticTypeInformation) {
+        let name_read_info = if matches!(usage, Usage::StaticTypeInformation) {
             self.scopes
                 .look_up_name_for_read_in_static_type_context(name)
         } else {
@@ -1007,12 +1005,8 @@ impl<'a> BindingsBuilder<'a> {
     /// This is the primary lookup method for deferred BoundName creation.
     /// First-use detection happens later in `process_deferred_bound_names`
     /// when all phi nodes are populated.
-    pub fn lookup_name(
-        &mut self,
-        name: Hashed<&Name>,
-        usage: &mut LegacyUsage,
-    ) -> NameLookupResult {
-        let name_read_info = if matches!(usage, LegacyUsage::StaticTypeInformation) {
+    pub fn lookup_name(&mut self, name: Hashed<&Name>, usage: &mut Usage) -> NameLookupResult {
+        let name_read_info = if matches!(usage, Usage::StaticTypeInformation) {
             self.scopes
                 .look_up_name_for_read_in_static_type_context(name)
         } else {
@@ -1048,13 +1042,13 @@ impl<'a> BindingsBuilder<'a> {
         &mut self,
         key: Key,
         lookup_result_idx: Idx<Key>,
-        legacy_usage: &LegacyUsage,
+        usage: &Usage,
     ) -> Idx<Key> {
         let bound_name_idx = self.idx_for_promise(key);
         self.deferred_bound_names.push(DeferredBoundName {
             bound_name_idx,
             lookup_result_idx,
-            usage: Usage::from_legacy(legacy_usage),
+            usage: usage.clone(),
         });
         bound_name_idx
     }
@@ -1287,24 +1281,24 @@ impl<'a> BindingsBuilder<'a> {
     fn detect_first_use(
         &self,
         flow_idx: Idx<Key>,
-        usage: &mut LegacyUsage,
+        usage: &mut Usage,
     ) -> (Idx<Key>, Option<Idx<Key>>) {
         match self.table.types.1.get(flow_idx) {
             Some(Binding::CompletedPartialType(unpinned_idx, FirstUse::Undetermined)) => {
                 match usage {
-                    LegacyUsage::StaticTypeInformation | LegacyUsage::Narrowing(_) => {
+                    Usage::StaticTypeInformation | Usage::Narrowing(_) => {
                         (flow_idx, Some(flow_idx))
                     }
-                    LegacyUsage::CurrentIdx(..) => (*unpinned_idx, Some(flow_idx)),
+                    Usage::CurrentIdx(..) => (*unpinned_idx, Some(flow_idx)),
                 }
             }
             Some(Binding::CompletedPartialType(unpinned_idx, first_use)) => match first_use {
                 FirstUse::DoesNotPin => (flow_idx, None),
                 FirstUse::Undetermined => match usage {
-                    LegacyUsage::StaticTypeInformation | LegacyUsage::Narrowing(_) => {
+                    Usage::StaticTypeInformation | Usage::Narrowing(_) => {
                         (flow_idx, Some(flow_idx))
                     }
-                    LegacyUsage::CurrentIdx(..) => (*unpinned_idx, Some(flow_idx)),
+                    Usage::CurrentIdx(..) => (*unpinned_idx, Some(flow_idx)),
                 },
                 FirstUse::UsedBy(usage_idx) => {
                     // Detect secondary reads of the same name from a first use, and make
@@ -1327,14 +1321,12 @@ impl<'a> BindingsBuilder<'a> {
     }
 
     /// Record a first use detected in `detect_possible_first_use`.
-    fn record_first_use(&mut self, used: Idx<Key>, usage: &mut LegacyUsage) {
+    fn record_first_use(&mut self, used: Idx<Key>, usage: &mut Usage) {
         match self.table.types.1.get_mut(used) {
             Some(Binding::CompletedPartialType(.., first_use @ FirstUse::Undetermined)) => {
                 *first_use = match usage {
-                    LegacyUsage::CurrentIdx(use_idx) => FirstUse::UsedBy(*use_idx),
-                    LegacyUsage::StaticTypeInformation | LegacyUsage::Narrowing(_) => {
-                        FirstUse::DoesNotPin
-                    }
+                    Usage::CurrentIdx(use_idx) => FirstUse::UsedBy(*use_idx),
+                    Usage::StaticTypeInformation | Usage::Narrowing(_) => FirstUse::DoesNotPin,
                 };
             }
             b => {
@@ -1494,7 +1486,7 @@ impl<'a> BindingsBuilder<'a> {
     ) {
         for (name, (op, op_range)) in narrow_ops.0.iter_hashed() {
             if let Some(initial_idx) = self
-                .legacy_lookup_name(name, &mut usage.to_legacy_narrowing())
+                .legacy_lookup_name(name, &mut Usage::Narrowing(usage.current_idx()))
                 .found()
             {
                 let narrowed_idx = self.insert_binding(
@@ -1713,17 +1705,14 @@ impl<'a> BindingsBuilder<'a> {
         has_scoped_type_params: bool,
     ) -> TParamLookupResult {
         let name = id.as_identifier();
-        self.legacy_lookup_name(
-            Hashed::new(&name.id),
-            &mut LegacyUsage::StaticTypeInformation,
-        )
-        .found()
-        .map_or(TParamLookupResult::NotFound, |original_idx| {
-            match self.lookup_legacy_tparam_from_idx(id, original_idx, has_scoped_type_params) {
-                Some(possible_tparam) => TParamLookupResult::MaybeTParam(possible_tparam),
-                None => TParamLookupResult::NotTParam(original_idx),
-            }
-        })
+        self.legacy_lookup_name(Hashed::new(&name.id), &mut Usage::StaticTypeInformation)
+            .found()
+            .map_or(TParamLookupResult::NotFound, |original_idx| {
+                match self.lookup_legacy_tparam_from_idx(id, original_idx, has_scoped_type_params) {
+                    Some(possible_tparam) => TParamLookupResult::MaybeTParam(possible_tparam),
+                    None => TParamLookupResult::NotTParam(original_idx),
+                }
+            })
     }
 
     pub fn get_original_binding(
