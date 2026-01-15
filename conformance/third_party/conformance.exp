@@ -1339,8 +1339,8 @@
     {
       "code": -2,
       "column": 15,
-      "concise_description": "Type of yielded value `Literal[3]` is not assignable to declared return type `A`",
-      "description": "Type of yielded value `Literal[3]` is not assignable to declared return type `A`",
+      "concise_description": "Yielded type `Literal[3]` is not assignable to declared yield type `A`",
+      "description": "Yielded type `Literal[3]` is not assignable to declared yield type `A`",
       "line": 57,
       "name": "invalid-yield",
       "severity": "error",
@@ -1350,8 +1350,8 @@
     {
       "code": -2,
       "column": 15,
-      "concise_description": "Type of yielded value `Literal[3]` is not assignable to declared return type `A`",
-      "description": "Type of yielded value `Literal[3]` is not assignable to declared return type `A`",
+      "concise_description": "Yielded type `Literal[3]` is not assignable to declared yield type `A`",
+      "description": "Yielded type `Literal[3]` is not assignable to declared yield type `A`",
       "line": 66,
       "name": "invalid-yield",
       "severity": "error",
@@ -1372,8 +1372,8 @@
     {
       "code": -2,
       "column": 11,
-      "concise_description": "Type of yielded value `B` is not assignable to declared return type `A`",
-      "description": "Type of yielded value `B` is not assignable to declared return type `A`",
+      "concise_description": "Yielded type `B` is not assignable to declared yield type `A`",
+      "description": "Yielded type `B` is not assignable to declared yield type `A`",
       "line": 75,
       "name": "invalid-yield",
       "severity": "error",

@@ -221,7 +221,7 @@ impl TypeCheckKind {
                 ctx.display(want),
             ),
             Self::YieldValue => format!(
-                "Type of yielded value `{}` is not assignable to declared return type `{}`",
+                "Yielded type `{}` is not assignable to declared yield type `{}`",
                 ctx.display(got),
                 ctx.display(want),
             ),
