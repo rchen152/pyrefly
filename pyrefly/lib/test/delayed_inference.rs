@@ -331,3 +331,71 @@ from chained_first_use_with_inconsistent_pins import x
 assert_type(x, list[Any])
 "#,
 );
+
+// Tests for partial type inference in loops.
+// These currently fail because BoundName bindings are created during loop body traversal,
+// but loop phi bindings aren't filled in until after the loop. When we look up `x` inside
+// the loop, `detect_first_use` sees an empty phi node and fails to recognize the
+// first-use opportunity.
+//
+// After the deferred BoundName refactor, these should correctly infer types.
+
+testcase!(
+    bug = "Partial type inference fails in loops - first use not detected through phi nodes",
+    test_partial_type_first_use_in_for_loop,
+    r#"
+from typing import assert_type
+x = []
+for i in range(5):
+    x.append(i)
+# BUG: Currently infers list[Any] because first-use detection fails through phi nodes.
+# After fix: should infer list[int], remove the E marker below
+assert_type(x, list[int])  # E: assert_type(list[Any], list[int]) failed
+"#,
+);
+
+testcase!(
+    bug = "Partial type inference fails in loops - first use not detected through phi nodes",
+    test_partial_type_first_use_in_while_loop,
+    r#"
+from typing import assert_type
+x = []
+i = 0
+while i < 5:
+    x.append(i)
+    i += 1
+# BUG: Currently infers list[Any] because first-use detection fails through phi nodes.
+# After fix: should infer list[int], remove the E marker below
+assert_type(x, list[int])  # E: assert_type(list[Any], list[int]) failed
+"#,
+);
+
+testcase!(
+    bug = "Partial type inference fails in loops - first use not detected through phi nodes",
+    test_partial_type_first_use_in_nested_loops,
+    r#"
+from typing import assert_type
+x = []
+for i in range(5):
+    for j in range(3):
+        x.append(i + j)
+# BUG: Currently infers list[Any] because first-use detection fails through phi nodes.
+# After fix: should infer list[int], remove the E marker below
+assert_type(x, list[int])  # E: assert_type(list[Any], list[int]) failed
+"#,
+);
+
+testcase!(
+    bug = "Partial type inference fails in loops - first use not detected through phi nodes",
+    test_partial_type_secondary_read_in_loop,
+    r#"
+from typing import assert_type
+x = []
+for i in range(5):
+    x.append(i)
+    y = len(x)  # secondary read of x, doesn't reassign
+# BUG: Currently infers list[Any] because first-use detection fails through phi nodes.
+# After fix: should infer list[int], remove the E marker below
+assert_type(x, list[int])  # E: assert_type(list[Any], list[int]) failed
+"#,
+);
