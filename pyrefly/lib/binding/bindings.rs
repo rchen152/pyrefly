@@ -952,54 +952,6 @@ impl<'a> BindingsBuilder<'a> {
         self.bind_name(&name.id, idx, FlowStyle::Other);
     }
 
-    /// Legacy name lookup that performs eager first-use detection.
-    ///
-    /// This method is deprecated and will be removed after migration to
-    /// deferred binding creation. Use `lookup_name` instead.
-    pub fn legacy_lookup_name(
-        &mut self,
-        name: Hashed<&Name>,
-        usage: &mut Usage,
-    ) -> NameLookupResult {
-        let name_read_info = if matches!(usage, Usage::StaticTypeInformation) {
-            self.scopes
-                .look_up_name_for_read_in_static_type_context(name)
-        } else {
-            self.scopes.look_up_name_for_read(name)
-        };
-        match name_read_info {
-            NameReadInfo::Flow {
-                idx,
-                initialized: is_initialized,
-            } => {
-                let (idx, first_use) = self.detect_first_use(idx, usage);
-                if let Some(used_idx) = first_use {
-                    self.record_first_use(used_idx, usage);
-                }
-                self.scopes.mark_parameter_used(name.key());
-                self.scopes.mark_import_used(name.key());
-                self.scopes.mark_variable_used(name.key());
-                NameLookupResult::Found {
-                    idx,
-                    initialized: is_initialized,
-                }
-            }
-            NameReadInfo::Anywhere {
-                key,
-                initialized: is_initialized,
-            } => {
-                self.scopes.mark_parameter_used(name.key());
-                self.scopes.mark_import_used(name.key());
-                self.scopes.mark_variable_used(name.key());
-                NameLookupResult::Found {
-                    idx: self.table.types.0.insert(key),
-                    initialized: is_initialized,
-                }
-            }
-            NameReadInfo::NotFound => NameLookupResult::NotFound,
-        }
-    }
-
     /// Look up a name in scope, marking it as used, but without first-use detection.
     ///
     /// This is the primary lookup method for deferred BoundName creation.
@@ -1124,7 +1076,7 @@ impl<'a> BindingsBuilder<'a> {
             let is_narrowing = matches!(deferred.usage, Usage::Narrowing(_));
 
             if matches!(deferred.usage, Usage::StaticTypeInformation) {
-                self.mark_does_not_pin(pinned_idx);
+                self.mark_does_not_pin_if_first_use(pinned_idx);
                 self.insert_binding_idx(deferred.bound_name_idx, Binding::Forward(pinned_idx));
                 return;
             }
@@ -1177,7 +1129,7 @@ impl<'a> BindingsBuilder<'a> {
                 // entire definition of `y` to the pin of `x`.
                 match first_use {
                     FirstUse::Undetermined => {
-                        self.mark_does_not_pin(pinned_idx);
+                        self.mark_does_not_pin_if_first_use(pinned_idx);
                         self.insert_binding_idx(
                             deferred.bound_name_idx,
                             Binding::Forward(pinned_idx),
@@ -1206,7 +1158,7 @@ impl<'a> BindingsBuilder<'a> {
             } else {
                 // Any other kind of read (e.g. StaticTypeInformation) should use the pinned upstream.
                 if matches!(first_use, FirstUse::Undetermined) {
-                    self.mark_does_not_pin(pinned_idx);
+                    self.mark_does_not_pin_if_first_use(pinned_idx);
                 }
                 self.insert_binding_idx(deferred.bound_name_idx, Binding::Forward(pinned_idx));
             }
@@ -1253,85 +1205,16 @@ impl<'a> BindingsBuilder<'a> {
         }
     }
 
-    /// Mark a CompletedPartialType as DoesNotPin.
-    fn mark_does_not_pin(&mut self, partial_type_idx: Idx<Key>) {
+    /// Mark a CompletedPartialType as DoesNotPin if it's the first use.
+    ///
+    /// This is used when looking up names in static type contexts or for narrowing,
+    /// where we don't want to pin partial types. Should be called after `lookup_name`.
+    pub fn mark_does_not_pin_if_first_use(&mut self, partial_type_idx: Idx<Key>) {
         if let Some(Binding::CompletedPartialType(_, first_use)) =
             self.table.types.1.get_mut(partial_type_idx)
             && matches!(first_use, FirstUse::Undetermined)
         {
             *first_use = FirstUse::DoesNotPin;
-        }
-    }
-
-    /// Look up the idx for a name. The first output is the idx to use for the
-    /// lookup itself, and the second is possibly used to record the first-usage
-    /// for pinning:
-    /// - If this is not the first use of a `Binding::Pin`, then the result is just
-    ///   `(flow_idx, None)`.
-    /// - If this is the first use of a `Binding::Pin` then we look at the usage:
-    ///   - If it is `Usage(idx)`, then we return `(unpinned_idx, Some(pinned_idx))`
-    ///     which will allow us to expose unpinned types to the first use, then pin.
-    ///   - Otherwise, we return `(pinned_idx, Some(pinned_idx))` which will tell
-    ///     us to record that the first usage does not pin (and therefore the
-    ///     `Binding::Pin` should force placeholder types to default values).
-    /// - If this is a secondary read of a `Binding::Pin` and the usage is the same
-    ///   usage as the first read, return `(pinned_idx, None)`: we don't need to
-    ///   record first use because that is done already, but we want to continue
-    ///   forwarding the raw binding throughout this first use.
-    fn detect_first_use(
-        &self,
-        flow_idx: Idx<Key>,
-        usage: &mut Usage,
-    ) -> (Idx<Key>, Option<Idx<Key>>) {
-        match self.table.types.1.get(flow_idx) {
-            Some(Binding::CompletedPartialType(unpinned_idx, FirstUse::Undetermined)) => {
-                match usage {
-                    Usage::StaticTypeInformation | Usage::Narrowing(_) => {
-                        (flow_idx, Some(flow_idx))
-                    }
-                    Usage::CurrentIdx(..) => (*unpinned_idx, Some(flow_idx)),
-                }
-            }
-            Some(Binding::CompletedPartialType(unpinned_idx, first_use)) => match first_use {
-                FirstUse::DoesNotPin => (flow_idx, None),
-                FirstUse::Undetermined => match usage {
-                    Usage::StaticTypeInformation | Usage::Narrowing(_) => {
-                        (flow_idx, Some(flow_idx))
-                    }
-                    Usage::CurrentIdx(..) => (*unpinned_idx, Some(flow_idx)),
-                },
-                FirstUse::UsedBy(usage_idx) => {
-                    // Detect secondary reads of the same name from a first use, and make
-                    // sure they all use the raw binding rather than the `Pin`.
-                    // TODO(grievejia): This would eliminate cycles formed on the secondary reads,
-                    // but may cause nondeterminism in presence of multiple walrus operators
-                    // nested in a single expression. We really need to re-think how first-usage
-                    // pinning can interact with things like narrowing and walrus.
-                    let currently_in_first_use =
-                        usage.current_idx().is_some_and(|idx| &idx == usage_idx);
-                    if currently_in_first_use {
-                        (*unpinned_idx, None)
-                    } else {
-                        (flow_idx, None)
-                    }
-                }
-            },
-            _ => (flow_idx, None),
-        }
-    }
-
-    /// Record a first use detected in `detect_possible_first_use`.
-    fn record_first_use(&mut self, used: Idx<Key>, usage: &mut Usage) {
-        match self.table.types.1.get_mut(used) {
-            Some(Binding::CompletedPartialType(.., first_use @ FirstUse::Undetermined)) => {
-                *first_use = match usage {
-                    Usage::CurrentIdx(use_idx) => FirstUse::UsedBy(*use_idx),
-                    Usage::StaticTypeInformation | Usage::Narrowing(_) => FirstUse::DoesNotPin,
-                };
-            }
-            b => {
-                unreachable!("Expected a Binding::Pin needing first use, got {:?}", b)
-            }
         }
     }
 
@@ -1482,13 +1365,13 @@ impl<'a> BindingsBuilder<'a> {
         &mut self,
         narrow_ops: &NarrowOps,
         use_location: NarrowUseLocation,
-        usage: &Usage,
+        _usage: &Usage,
     ) {
         for (name, (op, op_range)) in narrow_ops.0.iter_hashed() {
-            if let Some(initial_idx) = self
-                .legacy_lookup_name(name, &mut Usage::Narrowing(usage.current_idx()))
-                .found()
-            {
+            // Narrowing operations should not pin partial types
+            let mut narrowing_usage = Usage::narrowing_from(_usage);
+            if let Some(initial_idx) = self.lookup_name(name, &mut narrowing_usage).found() {
+                self.mark_does_not_pin_if_first_use(initial_idx);
                 let narrowed_idx = self.insert_binding(
                     Key::Narrow(name.into_key().clone(), *op_range, use_location),
                     Binding::Narrow(initial_idx, Box::new(op.clone()), use_location),
@@ -1705,9 +1588,12 @@ impl<'a> BindingsBuilder<'a> {
         has_scoped_type_params: bool,
     ) -> TParamLookupResult {
         let name = id.as_identifier();
-        self.legacy_lookup_name(Hashed::new(&name.id), &mut Usage::StaticTypeInformation)
+        // Legacy type parameter lookups are in static type contexts
+        let mut usage = Usage::StaticTypeInformation;
+        self.lookup_name(Hashed::new(&name.id), &mut usage)
             .found()
             .map_or(TParamLookupResult::NotFound, |original_idx| {
+                self.mark_does_not_pin_if_first_use(original_idx);
                 match self.lookup_legacy_tparam_from_idx(id, original_idx, has_scoped_type_params) {
                     Some(possible_tparam) => TParamLookupResult::MaybeTParam(possible_tparam),
                     None => TParamLookupResult::NotTParam(original_idx),
