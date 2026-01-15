@@ -50,7 +50,7 @@ impl ErrorContext {
                 format!("Cannot match positional sub-patterns in `{ty}`")
             }
             Self::ImportNotFound(import) => {
-                format!("Could not find import of `{import}`")
+                format!("Cannot find module `{import}`")
             }
             Self::ImportNotTyped(import) => format!("Missing type stubs for `{import}`"),
         }

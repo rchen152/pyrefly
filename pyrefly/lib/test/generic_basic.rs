@@ -265,7 +265,7 @@ class A[*Ps, *Qs = *Ps]: # E: may not have more than one TypeVarTuple
 testcase!(
     test_specialize_error,
     r#"
-from nowhere import BrokenGeneric, BrokenTypeVar # E: Could not find import of `nowhere`
+from nowhere import BrokenGeneric, BrokenTypeVar # E: Cannot find module `nowhere`
 
 class MyClass(BrokenGeneric[BrokenTypeVar]):
     pass
