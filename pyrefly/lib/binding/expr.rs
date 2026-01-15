@@ -378,11 +378,11 @@ impl<'a> BindingsBuilder<'a> {
             if used_in_static_type && let Some((tparams_collector, tparam_id)) = tparams_lookup {
                 self.intercept_lookup(tparams_collector, tparam_id)
             } else {
-                self.legacy_lookup_name(Hashed::new(&name.id), usage)
+                self.lookup_name(Hashed::new(&name.id), usage)
             };
         match lookup_result {
             NameLookupResult::Found {
-                idx: value,
+                idx: lookup_result_idx,
                 initialized: is_initialized,
             } => {
                 // Uninitialized local errors are only reported when we are neither in a stub
@@ -397,7 +397,15 @@ impl<'a> BindingsBuilder<'a> {
                         error_message,
                     );
                 }
-                self.insert_binding(key, Binding::Forward(value))
+
+                // For static type context, create binding immediately since it
+                // doesn't participate in partial type pinning anyway and legacy tparam handling
+                // needs this; otherwise, defer creating a bound name.
+                if used_in_static_type {
+                    self.insert_binding(key, Binding::Forward(lookup_result_idx))
+                } else {
+                    self.defer_bound_name(key, lookup_result_idx, usage)
+                }
             }
             NameLookupResult::NotFound => {
                 let suggestion = self
