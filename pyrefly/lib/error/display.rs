@@ -75,7 +75,7 @@ impl TypeCheckKind {
             }
             Self::AugmentedAssignment => {
                 format!(
-                    "Augmented assignment produces a value of type `{}`, which is not assignable to `{}`",
+                    "Augmented assignment result `{}` is not assignable to `{}`",
                     ctx.display(got),
                     ctx.display(want),
                 )
