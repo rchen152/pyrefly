@@ -92,6 +92,7 @@ use crate::report::pysa::override_graph::OverrideGraph;
 use crate::report::pysa::types::ScalarTypeProperties;
 use crate::report::pysa::types::has_superclass;
 use crate::report::pysa::types::string_for_type;
+use crate::state::lsp::FindDefinitionItemWithDocstring;
 use crate::state::lsp::FindPreference;
 
 #[derive(Debug, PartialEq, Eq, Clone, Serialize, Hash, PartialOrd, Ord)]
@@ -413,6 +414,14 @@ struct GraphQLDecoratorRef {
 }
 
 impl GraphQLDecoratorRef {
+    fn matches_definition(&self, definition: &FindDefinitionItemWithDocstring) -> bool {
+        if let Some(display_name) = &definition.display_name {
+            self.module == definition.module.name().as_str() && self.name == *display_name
+        } else {
+            false
+        }
+    }
+
     fn is_inside_decorators(
         &self,
         mut decorators_range: impl Iterator<Item = TextSize>,
@@ -427,14 +436,7 @@ impl GraphQLDecoratorRef {
                     FindPreference::default(),
                 )
                 .iter()
-                .any(|go_to_definition| {
-                    if let Some(display_name) = &go_to_definition.display_name {
-                        self.module == go_to_definition.module.name().as_str()
-                            && self.name == *display_name
-                    } else {
-                        false
-                    }
-                })
+                .any(|go_to_definition| self.matches_definition(go_to_definition))
         })
     }
 }
@@ -3406,7 +3408,7 @@ impl<'a> CallGraphVisitor<'a> {
             }
         {
             let class_context = get_context_from_class(&class, self.module_context);
-            let have_graphql_decorator = |function_node: &FunctionNode| match function_node {
+            let has_graphql_decorator = |function_node: &FunctionNode| match function_node {
                 FunctionNode::DecoratedFunction(decorated_function) => {
                     let decorators_range = decorated_function.undecorated.decorators.iter().map(
                         |(_, decorator_range)| {
@@ -3430,7 +3432,7 @@ impl<'a> CallGraphVisitor<'a> {
                                 class_field,
                                 &class_context,
                             )
-                        && have_graphql_decorator(&function_node)
+                        && has_graphql_decorator(&function_node)
                     {
                         Some(self.call_target_from_static_or_virtual_call(
                             function_node.as_function_ref(&class_context),
@@ -3862,20 +3864,30 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
     fn enter_function_scope(&mut self, function_def: &StmtFunctionDef, _: &Scopes) {
         self.enter_debug_scope(&function_def.body);
         self.matching_graphql_decorators.push(
-            GRAPHQL_DECORATORS
+            function_def
+                .decorator_list
                 .iter()
-                .find_map(|(callable_decorator, method_decorator)| {
-                    if callable_decorator.is_inside_decorators(
-                        function_def
-                            .decorator_list
-                            .iter()
-                            .map(|decorator| decorator.expression.end()),
-                        self.module_context,
-                    ) {
-                        Some(*method_decorator)
-                    } else {
-                        None
+                .map(|decorator| match &decorator.expression {
+                    Expr::Name(_) | Expr::Attribute(_) => {
+                        self.module_context.transaction.find_definition(
+                            &self.module_context.handle,
+                            decorator.expression.end(),
+                            FindPreference::default(),
+                        )
                     }
+                    _ => vec![],
+                })
+                .flat_map(|v| v.into_iter())
+                .find_map(|go_to_definition| {
+                    GRAPHQL_DECORATORS
+                        .iter()
+                        .find_map(|(callable_decorator, method_decorator)| {
+                            if callable_decorator.matches_definition(&go_to_definition) {
+                                Some(*method_decorator)
+                            } else {
+                                None
+                            }
+                        })
                 })
                 .cloned(),
         );
