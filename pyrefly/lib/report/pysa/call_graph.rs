@@ -1031,9 +1031,17 @@ impl<Function: FunctionTrait> FormatStringStringifyCallees<Function> {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub enum ReturnShimArgumentMapping {
+    ReturnExpression,
+    ReturnExpressionElement,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct ReturnShimCallees<Function: FunctionTrait> {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) targets: Vec<CallTarget<Function>>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) arguments: Vec<ReturnShimArgumentMapping>,
 }
 
 impl<Function: FunctionTrait> ReturnShimCallees<Function> {
@@ -1051,6 +1059,7 @@ impl<Function: FunctionTrait> ReturnShimCallees<Function> {
                 .into_iter()
                 .map(|call_target| CallTarget::map_function(call_target, map))
                 .collect(),
+            arguments: self.arguments,
         }
     }
 
@@ -3393,6 +3402,35 @@ impl<'a> CallGraphVisitor<'a> {
     }
 
     fn resolve_and_register_return_shim(&mut self, return_stmt: &StmtReturn) {
+        let extract_inner_class_and_argument_mapping = |type_| match type_ {
+            Type::ClassDef(class) => Some((class, ReturnShimArgumentMapping::ReturnExpression)),
+            Type::ClassType(class_type) | Type::SelfType(class_type) => {
+                let class_object = class_type.class_object();
+                let mut targs = class_type.targs().iter_paired().map(|(_, targ)| targ);
+                if let Some(targ) = targs.next()
+                    && (class_object == self.module_context.stdlib.list_object()
+                        || class_object == self.module_context.stdlib.set_object()
+                        || class_type == self.module_context.stdlib.sequence(targ.clone()))
+                {
+                    match targ {
+                        Type::ClassType(class_type) => Some((
+                            class_type.class_object().clone(),
+                            ReturnShimArgumentMapping::ReturnExpressionElement,
+                        )),
+                        _ => Some((
+                            class_object.clone(),
+                            ReturnShimArgumentMapping::ReturnExpression,
+                        )),
+                    }
+                } else {
+                    Some((
+                        class_object.clone(),
+                        ReturnShimArgumentMapping::ReturnExpression,
+                    ))
+                }
+            }
+            _ => None,
+        };
         if let Some(graphql_decorator) = self.matching_graphql_decorators.last().unwrap()
             && let Some(return_expression_type) =
                 return_stmt.value.as_ref().and_then(|return_expression| {
@@ -3400,14 +3438,11 @@ impl<'a> CallGraphVisitor<'a> {
                         .answers
                         .get_type_trace(return_expression.range())
                 })
-            && let Some(class) = match return_expression_type {
-                Type::ClassDef(class) => Some(class),
-                Type::ClassType(class) => Some(class.class_object().clone()),
-                Type::SelfType(cls) => Some(cls.class_object().clone()),
-                _ => None,
-            }
+            && let return_expression_type = strip_none_from_union(&return_expression_type)
+            && let Some((return_inner_class, argument_mapping)) =
+                extract_inner_class_and_argument_mapping(return_expression_type)
         {
-            let class_context = get_context_from_class(&class, self.module_context);
+            let class_context = get_context_from_class(&return_inner_class, self.module_context);
             let has_graphql_decorator = |function_node: &FunctionNode| match function_node {
                 FunctionNode::DecoratedFunction(decorated_function) => {
                     let decorators_range = decorated_function.undecorated.decorators.iter().map(
@@ -3420,18 +3455,20 @@ impl<'a> CallGraphVisitor<'a> {
                 }
                 _ => false,
             };
-            let callees: Vec<CallTarget<FunctionRef>> = class
+            let callees: Vec<CallTarget<FunctionRef>> = return_inner_class
                 .fields()
                 .filter_map(|field_name| {
-                    if let Some(class_field) =
-                        get_class_field_from_current_class_only(&class, field_name, &class_context)
-                        && let Some(function_node) =
-                            FunctionNode::exported_function_from_class_field(
-                                &class,
-                                field_name,
-                                class_field,
-                                &class_context,
-                            )
+                    if let Some(class_field) = get_class_field_from_current_class_only(
+                        &return_inner_class,
+                        field_name,
+                        &class_context,
+                    ) && let Some(function_node) =
+                        FunctionNode::exported_function_from_class_field(
+                            &return_inner_class,
+                            field_name,
+                            class_field,
+                            &class_context,
+                        )
                         && has_graphql_decorator(&function_node)
                     {
                         Some(self.call_target_from_static_or_virtual_call(
@@ -3457,7 +3494,10 @@ impl<'a> CallGraphVisitor<'a> {
                         return_stmt.range(),
                         &self.module_context.module_info,
                     ),
-                    ExpressionCallees::Return(ReturnShimCallees { targets: callees }),
+                    ExpressionCallees::Return(ReturnShimCallees {
+                        targets: callees,
+                        arguments: vec![argument_mapping],
+                    }),
                 );
             }
         }
