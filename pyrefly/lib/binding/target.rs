@@ -504,14 +504,13 @@ impl<'a> BindingsBuilder<'a> {
             is_in_function_scope: self.scopes.in_function_scope(),
         };
         // Record the raw assignment
-        let (def_idx, first_use_of) = current.decompose();
+        let def_idx = current.into_idx();
         let def_idx = self.insert_binding_idx(def_idx, binding);
-        // Always create PartialTypeWithUpstreamsCompleted.
-        // When first_use_of is empty, it behaves like a Forward to def_idx.
-        // This allows deferred binding processing to update the first_uses list later.
+        // Always create PartialTypeWithUpstreamsCompleted with an empty first_uses list.
+        // Deferred binding processing will populate the first_uses list after AST traversal.
         let unpinned_idx = self.insert_binding(
             Key::PartialTypeWithUpstreamsCompleted(identifier),
-            Binding::PartialTypeWithUpstreamsCompleted(def_idx, first_use_of.into_iter().collect()),
+            Binding::PartialTypeWithUpstreamsCompleted(def_idx, Box::new([])),
         );
         // Insert the Pin binding that will pin any types, potentially after evaluating the first downstream use.
         self.insert_binding_idx(

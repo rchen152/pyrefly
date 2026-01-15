@@ -28,7 +28,6 @@ use ruff_python_ast::Identifier;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use starlark_map::Hashed;
-use starlark_map::small_set::SmallSet;
 use vec1::vec1;
 
 use crate::binding::binding::Binding;
@@ -73,15 +72,14 @@ fn is_special_name(name: &str) -> bool {
 /// type variable declarations, and match patterns - that we want to skip for usage
 /// tracking.
 ///
-/// This is the legacy version that carries a mutable set of first uses.
+/// This is the legacy version that carries context for expression traversal.
 /// See `Usage` for the new immutable version used for deferred name lookups.
 #[derive(Debug)]
 pub enum LegacyUsage {
     /// I am a usage to create a `Binding`.
-    /// - First entry is the idx we are working on
-    /// - Second entry is all the idxs for which this idx is a first use (used to
-    ///   create `PartialTypeWithUpstreamsCompleted` bindings).
-    CurrentIdx(Idx<Key>, SmallSet<Idx<Key>>),
+    /// The idx is the binding we are currently constructing.
+    /// First-use tracking is now handled by deferred BoundName processing.
+    CurrentIdx(Idx<Key>),
     /// I am a usage that will appear in a narrowing operation (including a
     /// match pattern). We don't allow pinning in this case:
     /// - It is generally not useful (narrowing operations don't usually pin types)
@@ -101,7 +99,7 @@ pub enum LegacyUsage {
 impl LegacyUsage {
     pub fn narrowing_from(other: &Self) -> Self {
         match other {
-            Self::CurrentIdx(idx, _) => Self::Narrowing(Some(*idx)),
+            Self::CurrentIdx(idx) => Self::Narrowing(Some(*idx)),
             Self::Narrowing(idx) => Self::Narrowing(*idx),
             Self::StaticTypeInformation => Self::Narrowing(None),
         }
@@ -109,7 +107,7 @@ impl LegacyUsage {
 
     pub fn current_idx(&self) -> Option<Idx<Key>> {
         match self {
-            Self::CurrentIdx(idx, _) => Some(*idx),
+            Self::CurrentIdx(idx) => Some(*idx),
             Self::Narrowing(idx) => *idx,
             Self::StaticTypeInformation => None,
         }
@@ -136,7 +134,7 @@ impl Usage {
     /// Create a Usage from a LegacyUsage reference.
     pub fn from_legacy(usage: &LegacyUsage) -> Self {
         match usage {
-            LegacyUsage::CurrentIdx(idx, _) => Usage::CurrentIdx(*idx),
+            LegacyUsage::CurrentIdx(idx) => Usage::CurrentIdx(*idx),
             LegacyUsage::Narrowing(idx) => Usage::Narrowing(*idx),
             LegacyUsage::StaticTypeInformation => Usage::StaticTypeInformation,
         }

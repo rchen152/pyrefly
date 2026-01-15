@@ -613,14 +613,19 @@ impl BindingTable {
 /// are currently constructing, which can be used as a factory to create
 /// usage values for `ensure_expr`.
 ///
-/// Note that while it wraps a `LegacyUsage`, that usage is always `LegacyLegacyUsage::CurrentIdx`,
+/// Note that while it wraps a `LegacyUsage`, that usage is always `LegacyUsage::CurrentIdx`,
 /// never some other variant.
+///
+/// The first_use_of tracking has been removed since deferred BoundName processing
+/// now handles all first-use detection after AST traversal.
 #[derive(Debug)]
 pub struct CurrentIdx(LegacyUsage);
 
 impl CurrentIdx {
     pub fn new(idx: Idx<Key>) -> Self {
-        Self(LegacyUsage::CurrentIdx(idx, SmallSet::new()))
+        // Create a CurrentIdx usage without first_use_of tracking.
+        // Deferred BoundName processing will build the first-use graph.
+        Self(LegacyUsage::CurrentIdx(idx))
     }
 
     pub fn usage(&mut self) -> &mut LegacyUsage {
@@ -629,20 +634,13 @@ impl CurrentIdx {
 
     fn idx(&self) -> Idx<Key> {
         match self.0 {
-            LegacyUsage::CurrentIdx(idx, ..) => idx,
+            LegacyUsage::CurrentIdx(idx) => idx,
             _ => unreachable!(),
         }
     }
 
     pub fn into_idx(self) -> Idx<Key> {
         self.idx()
-    }
-
-    pub fn decompose(self) -> (Idx<Key>, SmallSet<Idx<Key>>) {
-        match self.0 {
-            LegacyUsage::CurrentIdx(idx, first_use_of) => (idx, first_use_of),
-            _ => unreachable!(),
-        }
     }
 }
 
@@ -1333,10 +1331,7 @@ impl<'a> BindingsBuilder<'a> {
         match self.table.types.1.get_mut(used) {
             Some(Binding::CompletedPartialType(.., first_use @ FirstUse::Undetermined)) => {
                 *first_use = match usage {
-                    LegacyUsage::CurrentIdx(use_idx, first_uses_of) => {
-                        first_uses_of.insert(used);
-                        FirstUse::UsedBy(*use_idx)
-                    }
+                    LegacyUsage::CurrentIdx(use_idx) => FirstUse::UsedBy(*use_idx),
                     LegacyUsage::StaticTypeInformation | LegacyUsage::Narrowing(_) => {
                         FirstUse::DoesNotPin
                     }
