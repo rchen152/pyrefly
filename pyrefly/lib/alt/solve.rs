@@ -1572,10 +1572,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
         let mut type_info = self.binding_to_type_info(binding, errors);
         type_info.visit_mut(&mut |ty| {
-            if !matches!(
-                binding,
-                Binding::NameAssign { .. } | Binding::PartialTypeWithUpstreamsCompleted(..)
-            ) {
+            // Skip pinning for NameAssign and PartialTypeWithUpstreamsCompleted bindings
+            // when infer_with_first_use is enabled, as these bindings can contain placeholder
+            // types that should be pinned by first use. When infer_with_first_use is disabled,
+            // we pin immediately since there's no first-use inference mechanism.
+            let skip_pinning = self.solver().infer_with_first_use
+                && matches!(
+                    binding,
+                    Binding::NameAssign { .. } | Binding::PartialTypeWithUpstreamsCompleted(..)
+                );
+            if !skip_pinning {
                 self.pin_all_placeholder_types(ty);
             }
             self.expand_vars_mut(ty);

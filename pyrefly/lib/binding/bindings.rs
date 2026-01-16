@@ -631,7 +631,7 @@ impl CurrentIdx {
         &mut self.0
     }
 
-    fn idx(&self) -> Idx<Key> {
+    pub fn idx(&self) -> Idx<Key> {
         match self.0 {
             Usage::CurrentIdx(idx) => idx,
             _ => unreachable!(),
@@ -644,6 +644,11 @@ impl CurrentIdx {
 }
 
 impl<'a> BindingsBuilder<'a> {
+    /// Whether to infer empty container types and unsolved type variables based on first use.
+    pub fn infer_with_first_use(&self) -> bool {
+        self.solver.infer_with_first_use
+    }
+
     /// Given a `key: K = impl Keyed`, get an `Idx<K>` for it. The intended use case
     /// is when creating a complex binding where the process of creating the binding
     /// requires being able to identify what we are binding.
