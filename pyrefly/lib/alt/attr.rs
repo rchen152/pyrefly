@@ -385,14 +385,21 @@ impl NotFoundOn {
 }
 
 impl InternalError {
-    pub fn to_error_msg(self, attr_name: &Name, todo_ctx: &str) -> String {
-        match self {
+    pub fn add_to(
+        self,
+        errors: &ErrorCollector,
+        range: TextRange,
+        attr_name: &Name,
+        todo_ctx: &str,
+    ) {
+        let msg = match self {
             InternalError::AttributeBaseUndefined(ty) => format!(
                 "TODO: {todo_ctx} attribute base undefined for type: {} (trying to access {})",
                 ty.deterministic_printing(),
                 attr_name
             ),
-        }
+        };
+        errors.add(range, ErrorInfo::Kind(ErrorKind::InternalError), vec1![msg]);
     }
 }
 
@@ -552,11 +559,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             success = false;
         }
         for err in error {
-            errors.add(
-                range,
-                ErrorInfo::new(ErrorKind::InternalError, context),
-                vec1![err.to_error_msg(attr_name, todo_ctx)],
-            );
+            err.add_to(errors, range, attr_name, todo_ctx);
             success = false;
         }
 
@@ -710,12 +713,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             not_found = true;
         }
         for internal_error in lookup_result.internal_error {
-            attr_tys.push(self.error(
-                errors,
-                range,
-                ErrorInfo::new(ErrorKind::InternalError, context),
-                internal_error.to_error_msg(attr_name, todo_ctx),
-            ))
+            internal_error.add_to(errors, range, attr_name, todo_ctx);
+            attr_tys.push(Type::any_error());
         }
         if not_found {
             return None;
@@ -867,25 +866,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut should_narrow = true;
         let mut narrowed_types = Vec::new();
         let Some(attr_base) = self.as_attribute_base(base.clone()) else {
-            self.error(
-                errors,
-                range,
-                ErrorInfo::new(ErrorKind::InternalError, context),
-                InternalError::AttributeBaseUndefined(base.clone())
-                    .to_error_msg(attr_name, todo_ctx),
-            );
+            InternalError::AttributeBaseUndefined(base.clone())
+                .add_to(errors, range, attr_name, todo_ctx);
             return None;
         };
         let (lookup_found, lookup_not_found, lookup_error) = self
             .lookup_attr_from_base(attr_base.clone(), attr_name)
             .decompose();
         for e in lookup_error {
-            self.error(
-                errors,
-                range,
-                ErrorInfo::new(ErrorKind::InternalError, context),
-                e.to_error_msg(attr_name, todo_ctx),
-            );
+            e.add_to(errors, range, attr_name, todo_ctx);
             should_narrow = false;
         }
         for not_found in lookup_not_found {
@@ -1006,13 +995,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         todo_ctx: &str,
     ) {
         let Some(attr_base) = self.as_attribute_base(base.clone()) else {
-            self.error(
-                errors,
-                range,
-                ErrorInfo::new(ErrorKind::InternalError, context),
-                InternalError::AttributeBaseUndefined(base.clone())
-                    .to_error_msg(attr_name, todo_ctx),
-            );
+            InternalError::AttributeBaseUndefined(base.clone())
+                .add_to(errors, range, attr_name, todo_ctx);
             return;
         };
         let (lookup_found, lookup_not_found, lookup_error) = self
@@ -1029,12 +1013,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             );
         }
         for error in lookup_error {
-            self.error(
-                errors,
-                range,
-                ErrorInfo::new(ErrorKind::InternalError, context),
-                error.to_error_msg(attr_name, todo_ctx),
-            );
+            error.add_to(errors, range, attr_name, todo_ctx);
         }
         for (attr, _) in lookup_found {
             match attr {
