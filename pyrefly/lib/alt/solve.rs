@@ -2826,10 +2826,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         for var in vars {
             if let Some(range) = self.solver().pin_placeholder_type(var)
                 && let Some(errors) = errors
-                // TODO(stroxler): this guard doesn't really make sense, it's only here
-                // for backward compatibility - ideally we would produce implicit-any
-                // errors when the type is not pinned regardless of `infer_with_first_use`
-                && !self.solver().infer_with_first_use
             {
                 errors.add(
                     range,

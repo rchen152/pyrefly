@@ -104,14 +104,12 @@ x4: Mapping[str, str] = {} # ok
 );
 
 testcase!(
-    bug = "No error when partial type inference is enabled but container type is never pinned",
     test_implicit_any_empty_containers_with_partial_inference,
     TestEnv::new().enable_implicit_any_error(),
     r#"
 from typing import Iterable, Mapping
-# We should get implicit-any errors here, but we don't because of how the flags are wired up right now
-x1 = []
-x2 = {}
+x1 = [] # E: Cannot infer type of empty container
+x2 = {} # E: Cannot infer type of empty container
 x3: Iterable[int] = {} # ok
 x4: Mapping[str, str] = {} # ok
 "#,
