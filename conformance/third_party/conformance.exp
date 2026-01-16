@@ -9934,7 +9934,7 @@
       "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Any]]] (trying to access unknown)",
       "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Any]]] (trying to access unknown)",
       "line": 143,
-      "name": "missing-attribute",
+      "name": "internal-error",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 143
@@ -9945,7 +9945,7 @@
       "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA2, type[type[Any]]] (trying to access unknown)",
       "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA2, type[type[Any]]] (trying to access unknown)",
       "line": 144,
-      "name": "missing-attribute",
+      "name": "internal-error",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 144
@@ -9956,7 +9956,7 @@
       "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA3, type[type[Any]]] (trying to access unknown)",
       "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA3, type[type[Any]]] (trying to access unknown)",
       "line": 145,
-      "name": "missing-attribute",
+      "name": "internal-error",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 145
@@ -9967,7 +9967,7 @@
       "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA4, type[type[Any]]] (trying to access unknown)",
       "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA4, type[type[Any]]] (trying to access unknown)",
       "line": 146,
-      "name": "missing-attribute",
+      "name": "internal-error",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 146

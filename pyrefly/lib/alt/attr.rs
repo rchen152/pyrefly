@@ -536,25 +536,35 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         );
         let mut types = Vec::new();
         let mut error_messages = Vec::new();
+        let mut success = true;
         let (found, not_found, error) = lookup_result.decompose();
         for (attr, _) in found {
             match self.resolve_get_access(attr_name, attr, range, errors, context) {
                 Ok(ty) => types.push(ty),
-                Err(err) => error_messages.push(err.to_error_msg(attr_name)),
+                Err(err) => {
+                    error_messages.push(err.to_error_msg(attr_name));
+                    success = false;
+                }
             }
         }
         for err in not_found {
-            error_messages.push(err.to_error_msg(attr_name))
+            error_messages.push(err.to_error_msg(attr_name));
+            success = false;
         }
         for err in error {
-            error_messages.push(err.to_error_msg(attr_name, todo_ctx))
+            errors.add(
+                range,
+                ErrorInfo::new(ErrorKind::InternalError, context),
+                vec1![err.to_error_msg(attr_name, todo_ctx)],
+            );
+            success = false;
         }
 
         // Both types and error messages can be duplicated if elements in `attr_base` gets duplicated (can happen with
         // if base type contain vars). Make sure that dedup logic applies to both branches.
-        if error_messages.is_empty() {
+        if success {
             self.unions(types)
-        } else {
+        } else if !error_messages.is_empty() {
             error_messages.sort();
             error_messages.dedup();
             let mut msg = vec1![error_messages.join("\n")];
@@ -570,6 +580,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 msg,
             );
             Type::any_error()
+        } else {
+            Type::any_error() // we've encountered internal errors (already logged above)
         }
     }
 
