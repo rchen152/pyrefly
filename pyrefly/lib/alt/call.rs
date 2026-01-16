@@ -684,7 +684,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             self.record_resolved_trace(arguments_range, init_method);
         }
-        if class_metadata.is_pydantic_base_model()
+        if class_metadata.is_pydantic_model()
             && let Some(dataclass) = class_metadata.dataclass_metadata()
         {
             self.check_pydantic_argument_range_constraints(

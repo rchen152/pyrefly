@@ -259,12 +259,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     .has_toplevel_qname(ModuleName::pydantic_settings().as_str(), "BaseSettings")
             });
 
-        let is_pydantic_base_model = has_pydantic_base_model_base_class
+        let is_pydantic_model = has_pydantic_base_model_base_class
             || bases_with_metadata
                 .iter()
-                .any(|(_, metadata)| metadata.is_pydantic_base_model());
+                .any(|(_, metadata)| metadata.is_pydantic_model());
 
-        if !is_pydantic_base_model {
+        if !is_pydantic_model {
             return None;
         }
 
@@ -521,7 +521,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         metadata: &ClassMetadata,
     ) -> Option<DataclassFieldKeywords> {
         let dm = metadata.dataclass_metadata()?;
-        if !metadata.is_pydantic_base_model() {
+        if !metadata.is_pydantic_model() {
             return None;
         }
         if let BindingAnnotation::AnnotateExpr(_, annotation_expr, _) = self.bindings().get(annot) {

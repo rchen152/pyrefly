@@ -1979,7 +1979,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             && dm.kws.frozen
             && dm.fields.contains(name)
         {
-            let reason = if metadata.is_pydantic_base_model() {
+            let reason = if metadata.is_pydantic_model() {
                 ReadOnlyReason::PydanticFrozen
             } else {
                 ReadOnlyReason::FrozenDataclass
@@ -2219,7 +2219,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         range: TextRange,
         errors: &ErrorCollector,
     ) {
-        if metadata.is_pydantic_base_model()
+        if metadata.is_pydantic_model()
             && let ClassFieldInitialization::ClassBody(Some(kws)) = initialization
         {
             let field_ty = annotation.get_type();
@@ -3750,7 +3750,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let should_raise_error = if let Some(instance_class) = instance_class {
                     let class = instance_class.class_object();
                     let metadata = self.get_metadata_for_class(class);
-                    !(metadata.is_pydantic_base_model()
+                    !(metadata.is_pydantic_model()
                         && metadata
                             .dataclass_metadata()
                             .is_some_and(|dm| !dm.kws.frozen))
