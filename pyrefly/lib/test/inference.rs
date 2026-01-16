@@ -27,6 +27,28 @@ assert_type(x, dict[Any, Any])
 );
 
 testcase!(
+    bug = "Empty containers are eagerly inferred as Any, losing type information",
+    test_empty_container_inference_via_generic_function,
+    TestEnv::new_with_infer_with_first_use(false),
+    r#"
+from typing import assert_type, Any
+
+def pair[T](a: T, b: T) -> tuple[T, T]:
+    return (a, b)
+
+# The empty list [] comes first. Ideally it would get unified with list[int] from
+# the second argument through the generic function's type variable T.
+# But currently [] eagerly becomes list[Any].
+result = pair([], [1, 2, 3])
+assert_type(result, tuple[list[Any], list[Any]])
+
+# Same pattern with dict
+dict_result = pair({}, {"a": 1})
+assert_type(dict_result, tuple[dict[Any, Any], dict[Any, Any]])
+"#,
+);
+
+testcase!(
     test_implicit_any_no_inference,
     TestEnv::new_with_untyped_def_behavior(UntypedDefBehavior::SkipAndInferReturnAny)
         .enable_unannotated_return_error()
