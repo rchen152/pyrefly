@@ -399,7 +399,7 @@ impl InternalError {
                 attr_name
             ),
         };
-        errors.add(range, ErrorInfo::Kind(ErrorKind::InternalError), vec1![msg]);
+        errors.internal_error(range, vec1![msg]);
     }
 }
 

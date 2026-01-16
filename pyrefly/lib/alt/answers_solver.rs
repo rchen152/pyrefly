@@ -565,9 +565,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         }
                         CycleDetectedResult::DuplicateCycleDetected => {
                             let range = self.bindings().idx_to_key(idx).range();
-                            self.base_errors.add(
+                            self.base_errors.internal_error(
                                 range,
-                                ErrorInfo::Kind(ErrorKind::InternalError),
                                 vec1![format!(
                                     "Duplicate cycle detected at {current}; likely infinite recursion in type resolution"
                                 )],

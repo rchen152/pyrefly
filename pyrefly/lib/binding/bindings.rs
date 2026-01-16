@@ -816,12 +816,8 @@ impl<'a> BindingsBuilder<'a> {
                 }
             }
             FindingOrError::Error(err @ FindError::NotFound(..)) if !ignore_if_missing => {
-                let (ctx, msg) = err.display();
-                self.error_multiline(
-                    TextRange::default(),
-                    ErrorInfo::new(ErrorKind::InternalError, ctx.as_deref()),
-                    msg,
-                );
+                let (_, msg) = err.display();
+                self.errors.internal_error(TextRange::default(), msg);
             }
             FindingOrError::Error(_) => (),
         }

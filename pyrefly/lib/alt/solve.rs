@@ -1598,12 +1598,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.force_for_narrowing(&forced, range, errors)
                 } else {
                     // Cycle detected - report as internal error
-                    self.error(
-                        errors,
+                    errors.internal_error(
                         range,
-                        ErrorInfo::Kind(ErrorKind::InternalError),
-                        "Type narrowing encountered a cycle in Type::Var".to_owned(),
-                    )
+                        vec1!["Type narrowing encountered a cycle in Type::Var".to_owned()],
+                    );
+                    Type::any_error()
                 }
             }
             _ => ty.clone(),

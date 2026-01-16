@@ -1247,8 +1247,9 @@ pub enum SubsetError {
     TypedDict(Box<TypedDictSubsetError>),
     /// Errors involving arbitrary unknown fields in open TypedDicts
     OpenTypedDict(Box<OpenTypedDictSubsetError>),
-    /// An invariant was violated - used for cases that should be unreachabile when - if there is ever a bug - we
+    /// An invariant was violated - used for cases that should be unreachable when - if there is ever a bug - we
     /// would prefer to not panic and get a text location for reproducing rather than just a crash report.
+    /// Note: always use `ErrorCollector::internal_error` to log internal errors.
     InternalError(String),
     /// Protocol class names cannot be assigned to `type[P]` when `P` is a protocol
     TypeOfProtocolNeedsConcreteClass(Name),
