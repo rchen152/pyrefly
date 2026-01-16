@@ -36,10 +36,12 @@ pub struct PydanticConfig {
 }
 
 #[derive(Clone, Debug, TypeEq, PartialEq, Eq, VisitMut, Default)]
-
 pub enum PydanticModelKind {
     #[default]
     BaseModel,
     RootModel,
     BaseSettings,
+    /// A class decorated with `@pydantic.dataclasses.dataclass`.
+    #[allow(dead_code)]
+    DataClass,
 }
