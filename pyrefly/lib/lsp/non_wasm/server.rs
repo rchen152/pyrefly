@@ -702,6 +702,16 @@ pub fn capabilities(
         .and_then(|c| c.semantic_tokens.as_ref())
         .and_then(|c| c.augments_syntax_tokens)
         .unwrap_or(false);
+
+    // Parse syncNotebooks from initialization options, defaults to true
+    let sync_notebooks = initialization_params
+        .initialization_options
+        .as_ref()
+        .and_then(|opts| opts.get("pyrefly"))
+        .and_then(|pyrefly| pyrefly.get("syncNotebooks"))
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+
     ServerCapabilities {
         position_encoding: Some(PositionEncodingKind::UTF16),
         text_document_sync: Some(TextDocumentSyncCapability::Kind(
@@ -793,15 +803,19 @@ pub fn capabilities(
                 ..Default::default()
             }),
         }),
-        notebook_document_sync: Some(OneOf::Left(NotebookDocumentSyncOptions {
-            notebook_selector: vec![NotebookSelector::ByCells {
-                notebook: None,
-                cells: vec![NotebookCellSelector {
-                    language: "python".into(),
+        notebook_document_sync: if sync_notebooks {
+            Some(OneOf::Left(NotebookDocumentSyncOptions {
+                notebook_selector: vec![NotebookSelector::ByCells {
+                    notebook: None,
+                    cells: vec![NotebookCellSelector {
+                        language: "python".into(),
+                    }],
                 }],
-            }],
-            save: None,
-        })),
+                save: None,
+            }))
+        } else {
+            None
+        },
         ..Default::default()
     }
 }
