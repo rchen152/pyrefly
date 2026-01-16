@@ -54,7 +54,6 @@ use ruff_python_ast::StmtWith;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
-use ruff_text_size::TextSize;
 use serde::Serialize;
 use starlark_map::Hashed;
 use vec1::Vec1;
@@ -422,22 +421,21 @@ impl GraphQLDecoratorRef {
         }
     }
 
-    fn is_inside_decorators(
-        &self,
-        mut decorators_range: impl Iterator<Item = TextSize>,
-        module_context: &ModuleContext,
-    ) -> bool {
-        decorators_range.any(|decorator_range| {
-            module_context
-                .transaction
-                .find_definition(
-                    &module_context.handle,
-                    decorator_range,
-                    FindPreference::default(),
-                )
-                .iter()
-                .any(|go_to_definition| self.matches_definition(go_to_definition))
-        })
+    fn matches_function_type(&self, ty: &Type) -> bool {
+        let func_metadata = match ty {
+            Type::Function(box pyrefly_types::callable::Function { metadata, .. }) => {
+                Some(metadata)
+            }
+            Type::Overload(pyrefly_types::types::Overload { box metadata, .. }) => Some(metadata),
+            _ => None,
+        };
+        match func_metadata {
+            Some(pyrefly_types::callable::FuncMetadata {
+                kind: pyrefly_types::callable::FunctionKind::Def(box func_id),
+                ..
+            }) => func_id.module.name().as_str() == self.module && func_id.name == self.name,
+            _ => false,
+        }
     }
 }
 
@@ -3444,15 +3442,11 @@ impl<'a> CallGraphVisitor<'a> {
         {
             let class_context = get_context_from_class(&return_inner_class, self.module_context);
             let has_graphql_decorator = |function_node: &FunctionNode| match function_node {
-                FunctionNode::DecoratedFunction(decorated_function) => {
-                    let decorators_range = decorated_function.undecorated.decorators.iter().map(
-                        |(_, decorator_range)| {
-                            // `start()` does not work with go-to-definitions since the start position always refers to `@`
-                            decorator_range.end()
-                        },
-                    );
-                    graphql_decorator.is_inside_decorators(decorators_range, &class_context)
-                }
+                FunctionNode::DecoratedFunction(decorated_function) => decorated_function
+                    .undecorated
+                    .decorators
+                    .iter()
+                    .any(|(ty, _)| graphql_decorator.matches_function_type(ty)),
                 _ => false,
             };
             let callees: Vec<CallTarget<FunctionRef>> = return_inner_class
