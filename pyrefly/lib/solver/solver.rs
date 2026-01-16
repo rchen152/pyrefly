@@ -71,7 +71,10 @@ enum Variable {
     ///
     /// It will attempt to infer the type from the first downstream use; if the
     /// type cannot be determined it becomes `Any`.
-    PartialContained,
+    ///
+    /// The TextRange is the location of the empty container literal (e.g., `[]` or `{}`),
+    /// used for error reporting when the type cannot be inferred.
+    PartialContained(TextRange),
     /// A "partial type" (see above) representing a type variable that was not
     /// solved as part of a generic function or constructor call.
     ///
@@ -128,7 +131,7 @@ enum LoopBound {
 impl Display for Variable {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Variable::PartialContained => write!(f, "PartialContained"),
+            Variable::PartialContained(_) => write!(f, "PartialContained"),
             Variable::PartialQuantified(q) | Variable::Quantified(q) => {
                 let label = if matches!(self, Variable::PartialQuantified(_)) {
                     "PartialQuantified"
@@ -333,23 +336,36 @@ impl Solver {
 
     /// Force all non-recursive Vars in `vars`.
     ///
+    /// Returns `Some(range)` if a `PartialContained` variable was pinned to `Any`,
+    /// where `range` is the location of the empty container literal.
+    /// This allows callers to emit errors about uninferred empty containers.
+    ///
     /// TODO: deduplicate Variable-to-gradual-type logic with `force_var`.
-    pub fn pin_placeholder_type(&self, var: Var) {
+    pub fn pin_placeholder_type(&self, var: Var) -> Option<TextRange> {
         let variables = self.variables.lock();
         let mut variable = variables.get_mut(var);
         match &mut *variable {
             Variable::LoopRecursive(..) | Variable::Recursive | Variable::Answer(..) => {
                 // Nothing to do if we have an answer already, and we want to skip recursive Vars
                 // which do not represent placeholder types.
+                None
             }
             Variable::Quantified(q) => {
                 *variable = Variable::Answer(q.as_gradual_type());
+                None
             }
             Variable::PartialQuantified(q) => {
                 *variable = Variable::Answer(default(q));
+                None
             }
-            Variable::PartialContained | Variable::Unwrap => {
+            Variable::PartialContained(range) => {
+                let range = *range;
                 *variable = Variable::Answer(Type::any_implicit());
+                Some(range)
+            }
+            Variable::Unwrap => {
+                *variable = Variable::Answer(Type::any_implicit());
+                None
             }
             Variable::Parameter => {
                 unreachable!("Unexpected Variable::Parameter")
@@ -595,11 +611,12 @@ impl Solver {
 
     /// Generate a fresh variable based on code that is unspecified inside a container,
     /// e.g. `[]` with an unknown type of element.
-    pub fn fresh_partial_contained(&self, uniques: &UniqueFactory) -> Var {
+    /// The `range` parameter is the location of the empty container literal.
+    pub fn fresh_partial_contained(&self, uniques: &UniqueFactory, range: TextRange) -> Var {
         let v = Var::new(uniques);
         self.variables
             .lock()
-            .insert_fresh(v, Variable::PartialContained);
+            .insert_fresh(v, Variable::PartialContained(range));
         v
     }
 
@@ -1549,7 +1566,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                             Err(e) => Err(e),
                         }
                     }
-                    Variable::PartialContained => {
+                    Variable::PartialContained(_) => {
                         drop(v1_ref);
                         variables.update(*v1, Variable::Answer(t2.clone()));
                         Ok(())
@@ -1619,7 +1636,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                         }
                         Ok(())
                     }
-                    Variable::PartialContained => {
+                    Variable::PartialContained(_) => {
                         let t1_p = t1
                             .clone()
                             .promote_implicit_literals(self.type_order.stdlib());
