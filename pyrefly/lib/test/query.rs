@@ -102,3 +102,69 @@ fn test_simple_int_annotation() {
 
     assert_eq!(json, expected);
 }
+
+#[test]
+fn test_if_else_in_loop() {
+    let tdir = TempDir::new().unwrap();
+    let file_path = tdir.path().join("main.py");
+    let code = r#"
+class Foo:
+    x: int | None
+def f(foos: list[Foo]) -> int:
+    n = 0
+    xs = set()
+    for foo in foos:
+        if foo.x:
+            xs.add(foo.x)
+        else:
+            n += 1
+    return n + len(xs)
+"#;
+    fs_anyhow::write(&file_path, code).unwrap();
+
+    let query = create_query();
+    let module_name = ModuleName::from_str("main");
+    let path = ModulePath::filesystem(file_path.clone());
+
+    // Load the file
+    let errors = query.add_files(vec![(module_name, path.clone())]);
+    assert!(errors.is_empty(), "Unexpected errors: {:?}", errors);
+
+    // Get types
+    let types = query.get_types_in_file(module_name, path).unwrap();
+    let json = types_to_json(types);
+
+    let expected = json!([
+        {"location": {"end_col": 5, "end_line": 3, "start_col": 4, "start_line": 3}, "type": "builtins.int | None"},
+        {"location": {"end_col": 17, "end_line": 3, "start_col": 7, "start_line": 3}, "type": "type[builtins.int | None]"},
+        {"location": {"end_col": 10, "end_line": 3, "start_col": 7, "start_line": 3}, "type": "type[builtins.int]"},
+        {"location": {"end_col": 17, "end_line": 3, "start_col": 13, "start_line": 3}, "type": "None"},
+        {"location": {"end_col": 21, "end_line": 4, "start_col": 12, "start_line": 4}, "type": "type[builtins.list[main.Foo]]"},
+        {"location": {"end_col": 16, "end_line": 4, "start_col": 12, "start_line": 4}, "type": "type[builtins.list]"},
+        {"location": {"end_col": 20, "end_line": 4, "start_col": 17, "start_line": 4}, "type": "type[main.Foo]"},
+        {"location": {"end_col": 29, "end_line": 4, "start_col": 26, "start_line": 4}, "type": "type[builtins.int]"},
+        {"location": {"end_col": 5, "end_line": 5, "start_col": 4, "start_line": 5}, "type": "typing.Literal[0]"},
+        {"location": {"end_col": 9, "end_line": 5, "start_col": 8, "start_line": 5}, "type": "typing.Literal[0]"},
+        {"location": {"end_col": 6, "end_line": 6, "start_col": 4, "start_line": 6}, "type": "builtins.set[Unknown]"},
+        {"location": {"end_col": 14, "end_line": 6, "start_col": 9, "start_line": 6}, "type": "builtins.set[Unknown]"},
+        {"location": {"end_col": 12, "end_line": 6, "start_col": 9, "start_line": 6}, "type": "type[builtins.set]"},
+        {"location": {"end_col": 11, "end_line": 7, "start_col": 8, "start_line": 7}, "type": "main.Foo"},
+        {"location": {"end_col": 19, "end_line": 7, "start_col": 15, "start_line": 7}, "type": "builtins.list[main.Foo]"},
+        {"location": {"end_col": 16, "end_line": 8, "start_col": 11, "start_line": 8}, "type": "builtins.int | None"},
+        {"location": {"end_col": 14, "end_line": 8, "start_col": 11, "start_line": 8}, "type": "main.Foo"},
+        {"location": {"end_col": 25, "end_line": 9, "start_col": 12, "start_line": 9}, "type": "None"},
+        {"location": {"end_col": 18, "end_line": 9, "start_col": 12, "start_line": 9}, "type": "BoundMethod[builtins.set[Unknown], (self: builtins.set[Unknown], element: Unknown, /) -> None]"},
+        {"location": {"end_col": 14, "end_line": 9, "start_col": 12, "start_line": 9}, "type": "builtins.set[Unknown]"},
+        {"location": {"end_col": 24, "end_line": 9, "start_col": 19, "start_line": 9}, "type": "builtins.int"},
+        {"location": {"end_col": 22, "end_line": 9, "start_col": 19, "start_line": 9}, "type": "main.Foo"},
+        {"location": {"end_col": 13, "end_line": 11, "start_col": 12, "start_line": 11}, "type": "builtins.int"},
+        {"location": {"end_col": 18, "end_line": 11, "start_col": 17, "start_line": 11}, "type": "typing.Literal[1]"},
+        {"location": {"end_col": 22, "end_line": 12, "start_col": 11, "start_line": 12}, "type": "builtins.int"},
+        {"location": {"end_col": 12, "end_line": 12, "start_col": 11, "start_line": 12}, "type": "builtins.int"},
+        {"location": {"end_col": 22, "end_line": 12, "start_col": 15, "start_line": 12}, "type": "builtins.int"},
+        {"location": {"end_col": 18, "end_line": 12, "start_col": 15, "start_line": 12}, "type": "(obj: typing.Sized, /) -> builtins.int"},
+        {"location": {"end_col": 21, "end_line": 12, "start_col": 19, "start_line": 12}, "type": "builtins.set[Unknown]"}
+    ]);
+
+    assert_eq!(json, expected);
+}
