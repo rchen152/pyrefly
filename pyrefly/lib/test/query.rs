@@ -232,7 +232,7 @@ def f(foos: list[Foo]) -> int:
       "start_col": 4,
       "start_line": 6
     },
-    "type": "builtins.set[Unknown]"
+    "type": "builtins.set[builtins.int]"
   },
   {
     "location": {
@@ -241,7 +241,7 @@ def f(foos: list[Foo]) -> int:
       "start_col": 9,
       "start_line": 6
     },
-    "type": "builtins.set[Unknown]"
+    "type": "builtins.set[builtins.int]"
   },
   {
     "location": {
@@ -304,7 +304,7 @@ def f(foos: list[Foo]) -> int:
       "start_col": 12,
       "start_line": 9
     },
-    "type": "BoundMethod[builtins.set[Unknown], (self: builtins.set[Unknown], element: Unknown, /) -> None]"
+    "type": "BoundMethod[builtins.set[builtins.int], (self: builtins.set[builtins.int], element: builtins.int, /) -> None]"
   },
   {
     "location": {
@@ -313,7 +313,7 @@ def f(foos: list[Foo]) -> int:
       "start_col": 12,
       "start_line": 9
     },
-    "type": "builtins.set[Unknown]"
+    "type": "builtins.set[builtins.int]"
   },
   {
     "location": {
@@ -394,7 +394,7 @@ def f(foos: list[Foo]) -> int:
       "start_col": 19,
       "start_line": 12
     },
-    "type": "builtins.set[Unknown]"
+    "type": "builtins.set[builtins.int]"
   }
 ]"#;
 
