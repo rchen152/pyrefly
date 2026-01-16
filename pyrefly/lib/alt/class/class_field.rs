@@ -1660,11 +1660,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut descriptor = None;
         // Descriptor semantics apply when:
         // 1. The field is initialized in the class body (class-level attribute), or
-        // 2. The field is annotated with ClassVar (explicitly class-level, even without initialization)
+        // 2. The field is annotated with ClassVar (explicitly class-level, even without initialization), or
+        // 3. The field's type is special-case to always be treated like a descriptor.
         let is_classvar = direct_annotation
             .as_ref()
             .is_some_and(|annot| annot.has_qualifier(&Qualifier::ClassVar));
-        if matches!(initialization, ClassFieldInitialization::ClassBody(_)) || is_classvar {
+        let is_special_descriptor_type = direct_annotation.as_ref().is_some_and(|annot| {
+            annot
+                .ty
+                .as_ref()
+                .is_some_and(|ty| self.is_special_descriptor_type(ty))
+        });
+        if matches!(initialization, ClassFieldInitialization::ClassBody(_))
+            || is_classvar
+            || is_special_descriptor_type
+        {
             match &ty {
                 // TODO(stroxler): This works for simple descriptors. There are known gaps:
                 // - Gracefully handle instance-only `__get__`/`__set__`. Descriptors only seem to be detected
@@ -1873,6 +1883,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
 
         class_field
+    }
+
+    /// Is this a type that is special-cased to always have descriptor behavior?
+    fn is_special_descriptor_type(&self, ty: &Type) -> bool {
+        // `sqlalchemy.orm.Mapped` is used in subclasses of `sqlalchemy.orm.DeclarativeBase`,
+        // which does runtime magic to initialize fields annotated as `Mapped`, making them class-level.
+        matches!(ty, Type::ClassType(cls) if cls.has_qname("sqlalchemy.orm.base", "Mapped"))
     }
 
     /// Helper to infer with an optional annotation as a hint and then expand
