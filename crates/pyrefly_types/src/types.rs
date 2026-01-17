@@ -1190,9 +1190,9 @@ impl Type {
 
     /// Calls a `check` function on this type's function metadata if it is a function. Note that we
     /// do *not* recurse into the type to find nested function types.
-    pub fn check_toplevel_func_metadata<T: Default>(
-        &self,
-        check: &dyn Fn(&FuncMetadata) -> T,
+    pub fn check_toplevel_func_metadata<'a, T: Default>(
+        &'a self,
+        check: &dyn Fn(&'a FuncMetadata) -> T,
     ) -> T {
         match self {
             Type::Function(box func)
@@ -1747,12 +1747,7 @@ impl Type {
 
     /// Return the FunctionKind if this type corresponds to a function or method.
     pub fn to_func_kind(&self) -> Option<&FunctionKind> {
-        match &self {
-            Type::Function(f) => Some(&f.metadata.kind),
-            Type::BoundMethod(m) => Some(&m.func.metadata().kind),
-            Type::Overload(o) => Some(&o.metadata.kind),
-            _ => None,
-        }
+        self.check_toplevel_func_metadata(&|meta| Some(&meta.kind))
     }
 
     pub fn materialize(&self) -> Self {
