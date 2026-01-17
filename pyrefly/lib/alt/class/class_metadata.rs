@@ -740,7 +740,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         for (decorator, _) in decorators {
             // `@foo` where `foo` is decorated with `@dataclass_transform(...)`
             if let Some(defaults) = decorator.ty.dataclass_transform_metadata() {
-                let mut kws = DataclassKeywords::from_type_map(&TypeMap::new(), &defaults);
+                let mut kws = DataclassKeywords::from_type_map(&TypeMap::new(), defaults);
                 // For pydantic dataclasses, default strict to false (no explicit keywords here)
                 if matches!(
                     pydantic_config.map(|c| &c.pydantic_model_kind),
@@ -748,7 +748,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ) {
                     kws.strict = false;
                 }
-                dataclass_from_dataclass_transform = Some((kws, defaults.field_specifiers));
+                dataclass_from_dataclass_transform = Some((kws, defaults.field_specifiers.clone()));
             }
             // `@foo(...)` where `foo` is decorated with `@dataclass_transform(...)`
             else if let Type::KwCall(call) = &decorator.ty

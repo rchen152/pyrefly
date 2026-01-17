@@ -1234,8 +1234,8 @@ impl Type {
         self.visit_toplevel_func_metadata(&|meta| meta.flags.has_enum_member_decoration)
     }
 
-    pub fn property_metadata(&self) -> Option<PropertyMetadata> {
-        self.visit_toplevel_func_metadata(&|meta| meta.flags.property_metadata.clone())
+    pub fn property_metadata(&self) -> Option<&PropertyMetadata> {
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.property_metadata.as_ref())
     }
 
     pub fn is_property_getter(&self) -> bool {
@@ -1259,7 +1259,7 @@ impl Type {
         })
     }
 
-    pub fn property_deleter_metadata(&self) -> Option<PropertyMetadata> {
+    pub fn property_deleter_metadata(&self) -> Option<&PropertyMetadata> {
         self.property_metadata().and_then(|meta| match meta.role {
             PropertyRole::DeleterDecorator => Some(meta),
             _ => None,
@@ -1278,16 +1278,16 @@ impl Type {
         self.visit_toplevel_func_metadata(&|meta| meta.flags.is_overload)
     }
 
-    pub fn function_deprecation(&self) -> Option<Deprecation> {
-        self.visit_toplevel_func_metadata(&|meta| meta.flags.deprecation.clone())
+    pub fn function_deprecation(&self) -> Option<&Deprecation> {
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.deprecation.as_ref())
     }
 
     pub fn has_final_decoration(&self) -> bool {
         self.visit_toplevel_func_metadata(&|meta| meta.flags.has_final_decoration)
     }
 
-    pub fn dataclass_transform_metadata(&self) -> Option<DataclassTransformMetadata> {
-        self.visit_toplevel_func_metadata(&|meta| meta.flags.dataclass_transform_metadata.clone())
+    pub fn dataclass_transform_metadata(&self) -> Option<&DataclassTransformMetadata> {
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.dataclass_transform_metadata.as_ref())
     }
 
     /// If a Protocol method lacks an implementation and does not come from a `.pyi` file, then it cannot be called
