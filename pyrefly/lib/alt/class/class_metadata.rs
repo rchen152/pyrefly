@@ -241,6 +241,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             &bases_with_metadata,
             pydantic_config_dict,
             &keywords,
+            &decorators,
             errors,
             cls.range(),
         );
