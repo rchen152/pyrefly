@@ -253,13 +253,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Option<PydanticConfig> {
         // Check if this class is decorated with @pydantic.dataclasses.dataclass
         // Handle both @dataclass and @dataclass(...) forms
+        let is_pydantic_dataclass_metadata = |meta: &FuncMetadata| {
+            matches!(&meta.kind, FunctionKind::Def(id)
+                if id.module.name() == ModuleName::pydantic_dataclasses()
+                    && id.name.as_str() == "dataclass")
+        };
         let is_pydantic_dataclass = decorators.iter().any(|(decorator, _)| {
             decorator
                 .ty
-                .is_function_with_qname(ModuleName::pydantic_dataclasses(), "dataclass")
+                .check_toplevel_func_metadata(&is_pydantic_dataclass_metadata)
                 || matches!(&decorator.ty, Type::KwCall(call)
-                    if matches!(&call.func_metadata.kind, FunctionKind::Def(id)
-                        if id.module.name() == ModuleName::pydantic_dataclasses() && id.name.as_str() == "dataclass"))
+                    if is_pydantic_dataclass_metadata(&call.func_metadata))
         });
 
         let has_pydantic_base_model_base_class =
