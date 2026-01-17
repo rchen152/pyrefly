@@ -18,6 +18,7 @@ use parse_display::Display;
 use pyrefly_derive::TypeEq;
 use pyrefly_derive::Visit;
 use pyrefly_derive::VisitMut;
+use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::qname::QName;
 use pyrefly_util::assert_words;
 use pyrefly_util::display::commas_iter;
@@ -1753,6 +1754,14 @@ impl Type {
             Type::Overload(o) => Some(&o.metadata.kind),
             _ => None,
         }
+    }
+
+    /// Check if this type is a function with the given module and name.
+    #[allow(dead_code)]
+    pub fn is_function_with_qname(&self, module: ModuleName, name: &str) -> bool {
+        self.check_toplevel_func_metadata(&|meta| {
+            matches!(&meta.kind, FunctionKind::Def(id) if id.module.name() == module && id.name.as_str() == name)
+        })
     }
 
     pub fn materialize(&self) -> Self {
