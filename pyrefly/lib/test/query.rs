@@ -100,7 +100,7 @@ fn test_simple_int_annotation() {
   }
 ]"#;
 
-    assert_eq!(actual, expected);
+    assert_eq!(expected, actual);
 }
 
 #[test]
@@ -398,5 +398,5 @@ def f(foos: list[Foo]) -> int:
   }
 ]"#;
 
-    assert_eq!(actual, expected);
+    assert_eq!(expected, actual);
 }
