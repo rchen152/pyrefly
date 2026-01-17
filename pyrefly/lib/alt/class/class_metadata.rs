@@ -48,6 +48,7 @@ use crate::alt::types::class_metadata::TotalOrderingMetadata;
 use crate::alt::types::class_metadata::TypedDictMetadata;
 use crate::alt::types::decorated_function::Decorator;
 use crate::alt::types::pydantic::PydanticConfig;
+use crate::alt::types::pydantic::PydanticModelKind;
 use crate::binding::base_class::BaseClass;
 use crate::binding::base_class::BaseClassExpr;
 use crate::binding::base_class::BaseClassGeneric;
@@ -739,19 +740,29 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         for (decorator, _) in decorators {
             // `@foo` where `foo` is decorated with `@dataclass_transform(...)`
             if let Some(defaults) = decorator.ty.dataclass_transform_metadata() {
-                dataclass_from_dataclass_transform = Some((
-                    DataclassKeywords::from_type_map(&TypeMap::new(), &defaults),
-                    defaults.field_specifiers,
-                ));
+                let mut kws = DataclassKeywords::from_type_map(&TypeMap::new(), &defaults);
+                // For pydantic dataclasses, default strict to false (no explicit keywords here)
+                if matches!(
+                    pydantic_config.map(|c| &c.pydantic_model_kind),
+                    Some(PydanticModelKind::DataClass)
+                ) {
+                    kws.strict = false;
+                }
+                dataclass_from_dataclass_transform = Some((kws, defaults.field_specifiers));
             }
             // `@foo(...)` where `foo` is decorated with `@dataclass_transform(...)`
             else if let Type::KwCall(call) = &decorator.ty
                 && let Some(defaults) = &call.func_metadata.flags.dataclass_transform_metadata
             {
-                dataclass_from_dataclass_transform = Some((
-                    DataclassKeywords::from_type_map(&call.keywords, defaults),
-                    defaults.field_specifiers.clone(),
-                ));
+                let mut kws = DataclassKeywords::from_type_map(&call.keywords, defaults);
+                // For pydantic dataclasses, default strict to false unless explicitly set
+                if matches!(
+                    pydantic_config.map(|c| &c.pydantic_model_kind),
+                    Some(PydanticModelKind::DataClass)
+                ) {
+                    kws.strict = false;
+                }
+                dataclass_from_dataclass_transform = Some((kws, defaults.field_specifiers.clone()));
             }
         }
         dataclass_from_dataclass_transform
