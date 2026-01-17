@@ -105,7 +105,7 @@ impl HoverValue {
         match self.kind {
             Some(SymbolKind::Attribute) if self.type_.is_toplevel_callable() => self
                 .type_
-                .check_toplevel_func_metadata(&|meta| match &meta.kind {
+                .visit_toplevel_func_metadata(&|meta| match &meta.kind {
                     FunctionKind::Def(func) if func.cls.is_some() => Some(SymbolKind::Method),
                     _ => Some(SymbolKind::Function),
                 })
@@ -280,7 +280,7 @@ fn position_is_in_docstring(
 /// type metadata knows about the callable. This primarily handles third-party stubs
 /// where we only have typeshed information.
 fn fallback_hover_name_from_type(type_: &Type) -> Option<String> {
-    let name = type_.check_toplevel_func_metadata(&|meta| {
+    let name = type_.visit_toplevel_func_metadata(&|meta| {
         Some(meta.kind.function_name().into_owned().to_string())
     });
     if name.is_some() {

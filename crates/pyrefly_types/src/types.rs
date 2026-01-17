@@ -1188,11 +1188,11 @@ impl Type {
         seen
     }
 
-    /// Calls a `check` function on this type's function metadata if it is a function. Note that we
+    /// Calls a `visit` function on this type's function metadata if it is a function. Note that we
     /// do *not* recurse into the type to find nested function types.
-    pub fn check_toplevel_func_metadata<'a, T: Default>(
+    pub fn visit_toplevel_func_metadata<'a, T: Default>(
         &'a self,
-        check: &dyn Fn(&'a FuncMetadata) -> T,
+        visit: &dyn Fn(&'a FuncMetadata) -> T,
     ) -> T {
         match self {
             Type::Function(box func)
@@ -1208,34 +1208,34 @@ impl Type {
                         body: func,
                     }),
                 ..
-            }) => check(&func.metadata),
+            }) => visit(&func.metadata),
             Type::Overload(overload)
             | Type::BoundMethod(box BoundMethod {
                 func: BoundMethodType::Overload(overload),
                 ..
-            }) => check(&overload.metadata),
+            }) => visit(&overload.metadata),
             _ => T::default(),
         }
     }
 
     pub fn has_toplevel_func_metadata(&self) -> bool {
-        self.check_toplevel_func_metadata(&|_| true)
+        self.visit_toplevel_func_metadata(&|_| true)
     }
 
     pub fn is_abstract_method(&self) -> bool {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.is_abstract_method)
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.is_abstract_method)
     }
 
     pub fn is_override(&self) -> bool {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.is_override)
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.is_override)
     }
 
     pub fn has_enum_member_decoration(&self) -> bool {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.has_enum_member_decoration)
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.has_enum_member_decoration)
     }
 
     pub fn property_metadata(&self) -> Option<PropertyMetadata> {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.property_metadata.clone())
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.property_metadata.clone())
     }
 
     pub fn is_property_getter(&self) -> bool {
@@ -1244,7 +1244,7 @@ impl Type {
     }
 
     pub fn is_cached_property(&self) -> bool {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.is_cached_property)
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.is_cached_property)
     }
 
     pub fn is_property_setter_decorator(&self) -> bool {
@@ -1275,24 +1275,24 @@ impl Type {
     }
 
     pub fn is_overload(&self) -> bool {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.is_overload)
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.is_overload)
     }
 
     pub fn function_deprecation(&self) -> Option<Deprecation> {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.deprecation.clone())
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.deprecation.clone())
     }
 
     pub fn has_final_decoration(&self) -> bool {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.has_final_decoration)
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.has_final_decoration)
     }
 
     pub fn dataclass_transform_metadata(&self) -> Option<DataclassTransformMetadata> {
-        self.check_toplevel_func_metadata(&|meta| meta.flags.dataclass_transform_metadata.clone())
+        self.visit_toplevel_func_metadata(&|meta| meta.flags.dataclass_transform_metadata.clone())
     }
 
     /// If a Protocol method lacks an implementation and does not come from a `.pyi` file, then it cannot be called
     pub fn is_non_callable_protocol_method(&self) -> bool {
-        self.check_toplevel_func_metadata(&|meta| {
+        self.visit_toplevel_func_metadata(&|meta| {
             meta.flags.lacks_implementation && !meta.flags.defined_in_stub_file
         })
     }
@@ -1747,7 +1747,7 @@ impl Type {
 
     /// Return the FunctionKind if this type corresponds to a function or method.
     pub fn to_func_kind(&self) -> Option<&FunctionKind> {
-        self.check_toplevel_func_metadata(&|meta| Some(&meta.kind))
+        self.visit_toplevel_func_metadata(&|meta| Some(&meta.kind))
     }
 
     pub fn materialize(&self) -> Self {
