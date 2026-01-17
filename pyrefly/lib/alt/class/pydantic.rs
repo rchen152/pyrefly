@@ -391,10 +391,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         );
 
         Some(PydanticConfig {
-            frozen,
+            frozen: Some(frozen),
             validation_flags,
-            extra,
-            strict,
+            extra: Some(extra),
+            strict: Some(strict),
             pydantic_model_kind,
         })
     }

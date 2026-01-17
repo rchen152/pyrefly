@@ -719,11 +719,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .collect::<OrderedMap<_, _>>();
             let mut kws = DataclassKeywords::from_type_map(&TypeMap(map), &defaults);
 
-            // Inject pydantic model configuration
+            // Inject pydantic model configuration from ConfigDict.
+            // This path is for pydantic models (BaseModel, etc.), not pydantic dataclasses.
             if let Some(pydantic) = pydantic_config {
-                kws.frozen = pydantic.frozen;
-                kws.extra = pydantic.extra;
-                kws.strict = pydantic.strict;
+                if let Some(frozen) = pydantic.frozen {
+                    kws.frozen = frozen;
+                }
+                if let Some(extra) = pydantic.extra {
+                    kws.extra = extra;
+                }
+                if let Some(strict) = pydantic.strict {
+                    kws.strict = strict;
+                }
             }
 
             dataclass_from_dataclass_transform = Some((kws, defaults.field_specifiers));
