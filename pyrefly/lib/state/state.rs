@@ -57,7 +57,6 @@ use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
 use tracing::debug;
 use tracing::info;
-use tracing::trace;
 use vec1::vec1;
 use web_time::Instant;
 
@@ -116,6 +115,35 @@ use crate::types::class::Class;
 use crate::types::stdlib::Stdlib;
 use crate::types::types::TParams;
 use crate::types::types::Type;
+
+/// Represents which exports changed in a module for fine-grained invalidation.
+#[derive(Debug, Clone)]
+enum ChangedExports {
+    /// No exports changed
+    NoChange,
+    /// Specific export names changed
+    Changed(SmallSet<Name>),
+    /// Invalidate all dependents (non-export change or too complex to track)
+    InvalidateAll,
+}
+
+impl DependsOn {
+    /// Check if this dependency should be invalidated given a set of changed names.
+    /// Returns true if any of the changed names overlap with what this dependency imports.
+    fn should_invalidate(&self, changed_exports: &ChangedExports) -> bool {
+        match changed_exports {
+            ChangedExports::NoChange => false,
+            ChangedExports::InvalidateAll => true,
+            ChangedExports::Changed(changed) => match self {
+                DependsOn::All => true, // Depends on everything
+                DependsOn::Names(names) => {
+                    // Only invalidate if any changed name is imported
+                    changed.iter().any(|n| names.into_iter().any(|i| i == n))
+                }
+            },
+        }
+    }
+}
 
 /// Represents a resolved or failed import.
 #[derive(Debug, Clone)]
@@ -236,6 +264,25 @@ impl ModuleDataMut {
             syntactic_deps,
         }
     }
+
+    /// Look up how this module depends on a specific source handle.
+    /// Returns the `DependsOn` if this module imports from `source_handle`, or `None` if not found.
+    fn get_depends_on(
+        &self,
+        source_module: ModuleName,
+        source_handle: &Handle,
+    ) -> Option<DependsOn> {
+        let deps_guard = self.deps.read();
+        deps_guard
+            .get(&source_module)
+            .and_then(|resolution| match resolution {
+                ImportResolution::Resolved(handles_map) => handles_map
+                    .into_iter()
+                    .find(|(h, _)| *h == source_handle)
+                    .map(|(_, d)| d.clone()),
+                ImportResolution::Failed(_) => None,
+            })
+    }
 }
 
 /// A subset of State that contains readable information for various systems (e.g. IDE, error reporting, etc).
@@ -280,7 +327,7 @@ pub(crate) struct TransactionData<'a> {
     /// gets picked first, ensuring we release its memory quickly.
     todo: TaskHeap<Step, ArcId<ModuleDataMut>>,
     /// Values whose solutions changed value since the last time we recomputed
-    changed: Mutex<Vec<ArcId<ModuleDataMut>>>,
+    changed: Mutex<Vec<(ArcId<ModuleDataMut>, ChangedExports)>>,
     /// Handles which are dirty
     dirty: Mutex<SmallSet<ArcId<ModuleDataMut>>>,
     /// Thing to tell about each action.
@@ -816,6 +863,46 @@ impl<'a> Transaction<'a> {
         }
     }
 
+    /// Invalidate modules that had failed imports from a module whose exports changed.
+    /// Scans both updated_modules and readable.modules for failed imports.
+    fn invalidate_failed_imports_from(
+        &self,
+        changed_module: &Handle,
+        dirtied: &mut Vec<ArcId<ModuleDataMut>>,
+    ) {
+        let module_name = changed_module.module();
+
+        // Helper closure to invalidate a module with failed imports.
+        // Failed imports use coarse-grained tracking, so we always invalidate.
+        let mut invalidate = |handle: &Handle| {
+            debug!(
+                "Invalidating `{}` due to failed import resolution from `{}`",
+                handle.module(),
+                module_name
+            );
+            self.try_mark_module_dirty(&self.get_module(handle), dirtied);
+        };
+
+        // Scan updated_modules
+        for (handle, module) in self.data.updated_modules.iter_unordered() {
+            let deps = module.deps.read();
+            if let Some(ImportResolution::Failed(_)) = deps.get(&module_name) {
+                drop(deps);
+                invalidate(handle);
+            }
+        }
+
+        // Scan readable.modules for modules not yet in updated_modules
+        for (handle, module_ro) in self.readable.modules.iter() {
+            if self.data.updated_modules.get(handle).is_some() {
+                continue; // Already checked above
+            }
+            if let Some(ImportResolution::Failed(_)) = module_ro.deps.get(&module_name) {
+                invalidate(handle);
+            }
+        }
+    }
+
     /// Compute a module up to the given step, performing single-level fine-grained
     /// invalidation of direct dependents when exports change.
     ///
@@ -882,7 +969,6 @@ impl<'a> Transaction<'a> {
                     .infer_with_first_use(module_data.handle.path().as_path()),
             });
             {
-                let mut changed = false;
                 let mut to_drop = None;
                 let mut writer = exclusive.write();
                 let mut load_result = None;
@@ -898,15 +984,34 @@ impl<'a> Transaction<'a> {
                 {
                     *module_data.syntactic_deps.write() = Some(exports.syntactic_deps().clone());
                 }
-                if todo == Step::Solutions {
-                    if let Some(old) = old_solutions.as_ref()
-                        && let Some(new) = writer.steps.solutions.as_ref()
-                        && let Some(difference) = old.first_difference(new)
-                    {
-                        debug!("Exports changed for `{}`", module_data.handle.module());
-                        trace!("Difference: {difference}");
-                        changed = true;
+                // Compute which export names changed for fine-grained invalidation.
+                let changed_exports: ChangedExports = if todo == Step::Solutions {
+                    match (old_solutions.as_ref(), writer.steps.solutions.as_ref()) {
+                        (Some(old), Some(new)) => match old.changed_export_names(new) {
+                            None => {
+                                debug!(
+                                    "Exports changed for `{}` (invalidate all)",
+                                    module_data.handle.module()
+                                );
+                                ChangedExports::InvalidateAll
+                            }
+                            Some(names) if names.is_empty() => ChangedExports::NoChange,
+                            Some(names) => {
+                                debug!(
+                                    "Exports changed for `{}`: {:?}",
+                                    module_data.handle.module(),
+                                    names
+                                );
+                                ChangedExports::Changed(names)
+                            }
+                        },
+                        (Some(_old), None) => ChangedExports::InvalidateAll, // Had solutions, now don't
+                        (None, _) => ChangedExports::NoChange, // No old solutions = no change to propagate
                     }
+                } else {
+                    ChangedExports::NoChange // Not Solutions step = no export changes
+                };
+                if todo == Step::Solutions {
                     if !require.keep_bindings() && !require.keep_answers() {
                         // From now on we can use the answers directly, so evict the bindings/answers.
                         to_drop = writer.steps.answers.take();
@@ -916,14 +1021,34 @@ impl<'a> Transaction<'a> {
                 drop(writer);
                 // Release the lock before dropping
                 drop(to_drop);
-                if changed {
-                    self.data.changed.lock().push(module_data.dupe());
+                if !matches!(changed_exports, ChangedExports::NoChange) {
+                    self.data
+                        .changed
+                        .lock()
+                        .push((module_data.dupe(), changed_exports.clone()));
                     let mut dirtied = Vec::new();
                     // We clone so we drop the lock immediately
-                    let rdeps = module_data.rdeps.lock().iter().cloned().collect::<Vec<_>>();
-                    for x in rdeps.iter().map(|handle| self.get_module(handle)) {
-                        self.try_mark_module_dirty(&x, &mut dirtied);
+                    let rdeps: Vec<Handle> = module_data.rdeps.lock().iter().cloned().collect();
+                    let our_module = module_data.handle.module();
+                    for rdep_handle in rdeps.iter() {
+                        let rdep_module = self.get_module(rdep_handle);
+                        let should_invalidate = rdep_module
+                            .get_depends_on(our_module, &module_data.handle)
+                            .is_none_or(|d| d.should_invalidate(&changed_exports));
+                        if !should_invalidate {
+                            continue;
+                        }
+                        self.try_mark_module_dirty(&rdep_module, &mut dirtied);
                     }
+
+                    // Also check for modules that had failed imports from this module
+                    // If any of the names they tried to import are now available, invalidate them
+                    if let ChangedExports::Changed(names) = &changed_exports
+                        && !names.is_empty()
+                    {
+                        self.invalidate_failed_imports_from(&module_data.handle, &mut dirtied);
+                    }
+
                     self.stats.lock().dirty_rdeps += dirtied.len();
                     self.data.dirty.lock().extend(dirtied);
                 }
@@ -1363,12 +1488,13 @@ impl<'a> Transaction<'a> {
             if changed.is_empty() {
                 return Ok(());
             }
-            for c in &changed {
-                if !changed_twice.insert(c.dupe()) {
+            for (module, _) in &changed {
+                if !changed_twice.insert(module.dupe()) {
                     debug!("Mutable dependency cycle, invalidating the cycle");
                     // We are in a cycle of mutual dependencies, so give up.
                     // Just invalidate everything in the cycle and recompute it all.
-                    self.invalidate_rdeps(&changed);
+                    let modules: Vec<_> = changed.iter().map(|(m, _)| m.dupe()).collect();
+                    self.invalidate_rdeps(&modules);
                     return self.run_step(handles, require);
                 }
             }
