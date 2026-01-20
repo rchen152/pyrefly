@@ -280,7 +280,7 @@ impl HeavyTaskQueue {
                         TelemetryEvent::new_dequeued(kind, enqueued, server.telemetry_state());
                     let task_stats = TelemetryTaskId::new(
                         self.queue_name,
-                        self.next_task_id.fetch_add(1, Ordering::Relaxed),
+                        Some(self.next_task_id.fetch_add(1, Ordering::Relaxed)),
                     );
                     task.run(server, telemetry, &mut telemetry_event, Some(&task_stats));
                     telemetry_event.set_task_stats(task_stats);

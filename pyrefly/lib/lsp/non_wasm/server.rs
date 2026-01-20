@@ -868,6 +868,7 @@ pub fn lsp_loop(
                 enqueue_time,
                 server.telemetry_state(),
             );
+            event_telemetry.set_task_stats(TelemetryTaskId::new("lsp_queue", None));
             let event_description = event.describe();
             let result = server.process_event(
                 &mut ide_transaction_manager,
