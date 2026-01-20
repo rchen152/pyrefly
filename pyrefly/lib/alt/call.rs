@@ -755,7 +755,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn call_infer_with_range(
+    fn call_infer_with_callee_range(
         &self,
         call_target: CallTarget,
         args: &[CallArg],
@@ -959,7 +959,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let keywords = call.vec_call_keyword(keywords, self, errors);
                 self.unions(targets.into_map(|t| {
                     let ctor_targs = None; // hack
-                    self.call_infer_with_range(
+                    self.call_infer_with_callee_range(
                         t,
                         &args,
                         &keywords,
@@ -1015,7 +1015,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         hint: Option<HintRef>,
         ctor_targs: Option<&mut TArgs>,
     ) -> Type {
-        self.call_infer_with_range(
+        self.call_infer_with_callee_range(
             call_target,
             args,
             keywords,
@@ -1356,7 +1356,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         let callable =
             self.as_call_target_or_error(ty, CallStyle::FreeForm, callee_range, errors, None);
-        self.call_infer_with_range(
+        self.call_infer_with_callee_range(
             callable,
             args,
             kws,
