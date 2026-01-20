@@ -659,3 +659,116 @@ fn test_import_module_as_argument() {
     i.set("foo", "x: str = 'changed'");
     i.check(&["main"], &["foo", "main"]);
 }
+
+/// Test transitive export addition: when a module adds an export that a downstream
+/// module re-exports, consumers of the re-export should see the error go away.
+///
+/// Scenario:
+/// - foo (a.py): initially empty
+/// - bar (b.py): `from foo import *` (re-exports everything from foo)
+/// - main (c.py): `from bar import x` (fails because foo doesn't export x)
+///
+/// After foo adds `x = 1`, main's import should succeed.
+#[test]
+fn test_transitive_export_addition_clears_error() {
+    let mut i = Incremental::new();
+
+    // Initial state: foo is empty, bar re-exports from foo, main tries to import x from bar
+    i.set("foo", "");
+    i.set("bar", "from foo import *");
+    i.set(
+        "main",
+        "from bar import x # E: Could not import `x` from `bar`",
+    );
+    i.check(&["main", "foo", "bar"], &["main", "foo", "bar"]);
+
+    let main_handle = i.handle("main");
+
+    // Verify there's an error before the fix
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected errors before foo exports x"
+    );
+
+    // Now foo exports x - main's import should succeed
+    i.set("foo", "x = 1");
+    i.check_ignoring_expectations(&["main"], &["foo", "bar", "main"]);
+
+    // Verify the error is gone
+    let errors_after_fix = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        errors_after_fix.shown.is_empty(),
+        "Expected no errors after foo exports x, but got: {:?}",
+        errors_after_fix.shown
+    );
+}
+
+/// Test that when a type is used via inference (not explicitly imported),
+/// changes to that type still trigger recomputation.
+///
+/// Scenario:
+/// - foo: exports class A with field x: int
+/// - bar: imports A, creates instance, and re-exports it
+/// - main: imports the instance from bar (gets type A via inference, not import)
+///
+/// When A's field type changes, main should see the update.
+#[test]
+fn test_inferred_type_changes_trigger_recompute() {
+    let mut i = Incremental::new();
+
+    i.set("foo", "class A:\n    x: int = 1");
+    i.set("bar", "from foo import A\ninstance = A()");
+    i.set("main", "from bar import instance\ny = instance.x + 1");
+    i.check(&["main", "foo", "bar"], &["main", "foo", "bar"]);
+
+    // Change A's field type from int to str - main's arithmetic should now fail
+    i.set("foo", "class A:\n    x: str = 'hello'");
+    i.set(
+        "main",
+        "from bar import instance\ny = instance.x + 1 # E: `+` is not supported",
+    );
+    i.check(&["main"], &["foo", "bar", "main"]);
+}
+
+/// Test that when a function's return type changes, callers that import only
+/// the function (not the return type) still see the update.
+///
+/// Scenario:
+/// - foo: exports class A with field x and function get_a() -> A
+/// - main: imports only get_a, uses the returned value's field
+///
+/// When A's field type changes, main should see the update.
+#[test]
+fn test_function_return_type_changes_trigger_recompute() {
+    let mut i = Incremental::new();
+
+    i.set(
+        "foo",
+        "class A:\n    x: int = 1\ndef get_a() -> A:\n    return A()",
+    );
+    i.set(
+        "main",
+        "from foo import get_a\nval = get_a()\ny = val.x + 1",
+    );
+    i.check(&["main", "foo"], &["main", "foo"]);
+
+    // Change A's field type from int to str - main's arithmetic should now fail
+    i.set(
+        "foo",
+        "class A:\n    x: str = 'hello'\ndef get_a() -> A:\n    return A()",
+    );
+    i.set(
+        "main",
+        "from foo import get_a\nval = get_a()\ny = val.x + 1 # E: `+` is not supported",
+    );
+    i.check(&["main"], &["foo", "main"]);
+}
