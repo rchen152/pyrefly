@@ -582,3 +582,80 @@ fn test_incremental_rdeps_with_new() {
 
     i.check(&["foo", "bar", "baz"], &[]); // Nothing appears dirty
 }
+
+/// Test fine-grained dependency tracking: changing an unrelated export should NOT
+/// trigger recomputation of a module that only imports a different export.
+#[test]
+fn test_fine_grained_unrelated_export_no_recompute() {
+    let mut i = Incremental::new();
+    i.set("foo", "x: int = 1\ny: int = 2");
+    i.set("main", "from foo import x\nz = x + 1");
+    i.check(&["main"], &["main", "foo"]);
+
+    // Change only `y` - main should NOT be recomputed since it only imports `x`
+    i.set("foo", "x: int = 1\ny: str = 'changed'");
+    i.check(&["main"], &["foo"]);
+}
+
+/// Test fine-grained dependency tracking: changing the imported export SHOULD
+/// trigger recomputation.
+#[test]
+fn test_fine_grained_related_export_recompute() {
+    let mut i = Incremental::new();
+    i.set("foo", "x: int = 1\ny: int = 2");
+    i.set("main", "from foo import x\nprint(x)");
+    i.check(&["main"], &["main", "foo"]);
+
+    // Change `x` - main SHOULD be recomputed since it imports `x`
+    i.set("foo", "x: str = 'changed'\ny: int = 2");
+    i.check(&["main"], &["foo", "main"]);
+}
+
+/// Test fine-grained tracking with `import foo` style (depends on all exports).
+/// Any export change should trigger recomputation.
+#[test]
+fn test_import_module_regular_import_invalidate_all() {
+    let mut i = Incremental::new();
+    i.set("foo", "x: int = 1\ny: int = 2");
+    i.set("main", "import foo\nz = foo.x");
+    i.check(&["main"], &["main", "foo"]);
+
+    i.set("foo", "x: int = 1\ny: str = 'changed'");
+    i.check(&["main"], &["foo", "main"]);
+}
+
+/// Test mixed import styles: `from foo import x` followed by `import foo`.
+/// Should only depend on x.
+#[test]
+fn test_mixed_import_depends_on_all() {
+    let mut i = Incremental::new();
+    i.set("foo", "x: int = 1\ny: int = 2");
+    i.set(
+        "main",
+        "from foo import x\nimport foo\nprint(x); print(foo.y)",
+    );
+    i.check(&["main"], &["main", "foo"]);
+
+    // Change only `y` - main SHOULD be recomputed because of `import foo`
+    i.set("foo", "x: int = 1\ny: str = 'changed'");
+    i.check(&["main"], &["foo", "main"]);
+}
+
+/// Test incremental behavior with `import foo; bar(foo)` pattern.
+/// Verifies that passing an imported module as an argument to a function works correctly
+/// and triggers recomputation when the module changes.
+#[test]
+fn test_import_module_as_argument() {
+    let mut i = Incremental::new();
+    i.set("foo", "x: int = 1");
+    i.set(
+        "bar",
+        "import types\ndef process(m: types.ModuleType) -> int: return m.x",
+    );
+    i.set("main", "import foo\nimport bar\nresult = bar.process(foo)");
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change `x` in foo - main should recompute since it passes foo to a function
+    i.set("foo", "x: str = 'changed'");
+    i.check(&["main"], &["foo", "main"]);
+}
