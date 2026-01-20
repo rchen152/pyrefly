@@ -80,9 +80,9 @@ enum Variable {
     ///
     /// Behaves similar to `PartialContained`, but it has the ability to use
     /// the default type if the first use does not pin.
-    PartialQuantified(Box<Quantified>),
+    PartialQuantified(Quantified),
     /// A variable due to generic instantiation, `def f[T](x: T): T` with `f(1)`
-    Quantified(Box<Quantified>),
+    Quantified(Quantified),
     /// A variable caused by general recursion, e.g. `x = f(); def f(): return x`.
     Recursive,
     /// A loop-recursive variable, e.g. `x = None; while x is None: x = f()`
@@ -105,7 +105,7 @@ impl Variable {
         if let Some(d) = q.default() {
             Variable::Answer(d.clone())
         } else {
-            Variable::PartialQuantified(Box::new(q.clone()))
+            Variable::PartialQuantified(q.clone())
         }
     }
 }
@@ -674,7 +674,7 @@ impl Solver {
         let t = t.subst(&params.iter().map(|p| &p.quantified).zip(&ts).collect());
         let mut lock = self.variables.lock();
         for (v, param) in vs.iter().zip(params.iter()) {
-            lock.insert_fresh(*v, Variable::Quantified(Box::new(param.quantified.clone())));
+            lock.insert_fresh(*v, Variable::Quantified(param.quantified.clone()));
         }
         (QuantifiedHandle(vs), t)
     }
@@ -719,7 +719,7 @@ impl Solver {
 
         let mut lock = self.variables.lock();
         for (v, q) in vs.iter().zip(qs.into_iter()) {
-            lock.insert_fresh(*v, Variable::Quantified(Box::new(q)));
+            lock.insert_fresh(*v, Variable::Quantified(q));
         }
         drop(lock);
 
@@ -789,7 +789,7 @@ impl Solver {
             {
                 let v = Var::new(uniques);
                 *t = v.to_type();
-                lock.insert_fresh(v, Variable::Quantified(Box::new(param.quantified.clone())));
+                lock.insert_fresh(v, Variable::Quantified(param.quantified.clone()));
             }
         })
     }
