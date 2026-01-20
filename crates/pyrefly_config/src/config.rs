@@ -1091,6 +1091,7 @@ impl ConfigFile {
         };
 
         // TODO(connernilsen): remove once PyTorch performs an upgrade
+        #[allow(unexpected_cfgs)]
         if cfg!(fbcode_build) {
             let root = match &self.source {
                 ConfigSource::File(path) => {
