@@ -42,6 +42,7 @@ use lsp_types::notification::PublishDiagnostics;
 use lsp_types::request::CodeActionRequest;
 use lsp_types::request::Completion;
 use lsp_types::request::DocumentDiagnosticRequest;
+use lsp_types::request::FoldingRangeRequest;
 use lsp_types::request::GotoDefinition;
 use lsp_types::request::GotoImplementation;
 use lsp_types::request::GotoTypeDefinition;
@@ -486,6 +487,18 @@ impl TestClient {
         "textDocument": {
             "uri": Url::from_file_path(&path).unwrap().to_string()
         }}))
+    }
+
+    pub fn folding_range(
+        &self,
+        file: &'static str,
+    ) -> ClientRequestHandle<'_, FoldingRangeRequest> {
+        let path = self.get_root_or_panic().join(file);
+        self.send_request(json!({
+            "textDocument": {
+                "uri": Url::from_file_path(&path).unwrap().to_string()
+            }
+        }))
     }
 
     pub fn hover(

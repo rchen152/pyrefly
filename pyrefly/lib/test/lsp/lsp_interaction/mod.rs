@@ -16,6 +16,7 @@ mod diagnostic;
 mod did_change;
 mod document_symbols;
 mod file_watcher;
+mod folding_range;
 mod hover;
 mod implementation;
 mod inlay_hint;
