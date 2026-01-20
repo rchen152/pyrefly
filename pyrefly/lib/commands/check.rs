@@ -759,23 +759,22 @@ impl CheckArgs {
         let mut handles = Handles::new(expanded_file_list);
         let state = State::new(config_finder);
 
-        // If CLI doesn't provide baseline, get from config
-        if self.output.baseline.is_none() {
-            let (loaded_handles, _, _) = handles.all(state.config_finder());
-            if let Some(handle) = loaded_handles.first() {
+        let mut transaction = state.new_committable_transaction(require_levels.default, None);
+        loop {
+            let timings = Timings::new();
+            let (loaded_handles, reloaded_configs, sourcedb_errors) =
+                handles.all(state.config_finder());
+
+            // If CLI doesn't provide baseline, get from config (only on first iteration)
+            if self.output.baseline.is_none()
+                && let Some(handle) = loaded_handles.first()
+            {
                 let config = state.config_finder().python_file(
                     ModuleNameWithKind::guaranteed(handle.module()),
                     handle.path(),
                 );
                 self.output.baseline = config.baseline.clone();
             }
-        }
-
-        let mut transaction = state.new_committable_transaction(require_levels.default, None);
-        loop {
-            let timings = Timings::new();
-            let (loaded_handles, reloaded_configs, sourcedb_errors) =
-                handles.all(state.config_finder());
             let mut_transaction = transaction.as_mut();
             mut_transaction.invalidate_find_for_configs(reloaded_configs);
             let res = self.run_inner(
