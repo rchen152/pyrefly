@@ -759,16 +759,18 @@ impl CheckArgs {
         let mut handles = Handles::new(expanded_file_list);
         let state = State::new(config_finder);
 
+        // Track if CLI provided baseline - if so, never override it with config values
+        let cli_provided_baseline = self.output.baseline.is_some();
+
         let mut transaction = state.new_committable_transaction(require_levels.default, None);
         loop {
             let timings = Timings::new();
             let (loaded_handles, reloaded_configs, sourcedb_errors) =
                 handles.all(state.config_finder());
 
-            // If CLI doesn't provide baseline, get from config (only on first iteration)
-            if self.output.baseline.is_none()
-                && let Some(handle) = loaded_handles.first()
-            {
+            // If CLI didn't provide baseline, get from config on every iteration
+            // to pick up config file changes
+            if !cli_provided_baseline && let Some(handle) = loaded_handles.first() {
                 let config = state.config_finder().python_file(
                     ModuleNameWithKind::guaranteed(handle.module()),
                     handle.path(),
