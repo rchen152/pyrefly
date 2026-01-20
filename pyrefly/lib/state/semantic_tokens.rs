@@ -449,25 +449,31 @@ impl SemanticTokenBuilder {
                     self.push_if_in_range(module.range, SemanticTokenType::NAMESPACE, vec![]);
                 }
                 for alias in names {
-                    // If there's an alias, the original name is highlighted as NAMESPACE
-                    if alias.asname.is_some() {
-                        self.push_if_in_range(
-                            alias.name.range,
-                            SemanticTokenType::NAMESPACE,
-                            vec![],
-                        );
-                    }
-                    // Highlight the bound name (asname if present, otherwise the imported name)
-                    // Use callback to look up the actual symbol kind
+                    // Look up the symbol kind using the bound name's key
                     let bound_name = alias.asname.as_ref().unwrap_or(&alias.name);
                     let def_key = Key::Definition(ShortIdentifier::new(bound_name));
                     if let Some((def_module, symbol_kind)) = get_symbol_kind(&def_key) {
                         let (token_type, mut token_modifiers) =
                             symbol_kind.to_lsp_semantic_token_type_with_modifiers();
                         maybe_add_default_library_modifier(def_module, &mut token_modifiers);
+                        // If there's an alias, highlight the original name with the resolved type
+                        if alias.asname.is_some() {
+                            self.push_if_in_range(
+                                alias.name.range,
+                                token_type.clone(),
+                                token_modifiers.clone(),
+                            );
+                        }
                         self.push_if_in_range(bound_name.range, token_type, token_modifiers);
                     } else {
                         // Fallback to NAMESPACE if we can't resolve
+                        if alias.asname.is_some() {
+                            self.push_if_in_range(
+                                alias.name.range,
+                                SemanticTokenType::NAMESPACE,
+                                vec![],
+                            );
+                        }
                         self.push_if_in_range(
                             bound_name.range,
                             SemanticTokenType::NAMESPACE,
