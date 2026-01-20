@@ -138,7 +138,7 @@ impl DependsOn {
                 DependsOn::All => true, // Depends on everything
                 DependsOn::Names(names) => {
                     // Only invalidate if any changed name is imported
-                    changed.iter().any(|n| names.into_iter().any(|i| i == n))
+                    changed.iter().any(|n| names.contains(n))
                 }
             },
         }
