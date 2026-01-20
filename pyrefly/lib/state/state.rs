@@ -39,7 +39,7 @@ use pyrefly_util::lock::Mutex;
 use pyrefly_util::lock::RwLock;
 use pyrefly_util::locked_map::LockedMap;
 use pyrefly_util::no_hash::BuildNoHash;
-use pyrefly_util::small_set1::SmallSet1;
+use pyrefly_util::small_map1::SmallMap1;
 use pyrefly_util::task_heap::CancellationHandle;
 use pyrefly_util::task_heap::Cancelled;
 use pyrefly_util::task_heap::TaskHeap;
@@ -85,6 +85,7 @@ use crate::config::finder::ConfigError;
 use crate::config::finder::ConfigFinder;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
+use crate::export::definitions::DependsOn;
 use crate::export::definitions::SyntacticDeps;
 use crate::export::exports::ExportLocation;
 use crate::export::exports::Exports;
@@ -119,8 +120,10 @@ use crate::types::types::Type;
 /// Represents a resolved or failed import.
 #[derive(Debug, Clone)]
 enum ImportResolution {
-    /// Successfully resolved import - module name to handle(s).
-    Resolved(SmallSet1<Handle>),
+    /// Successfully resolved import - maps module name to handle(s) with optional dependency tracking.
+    /// `None` means the import was resolved for caching only (used during Exports phase).
+    /// `Some(DependsOn)` means the import is tracked for fine-grained invalidation (used during Solutions phase).
+    Resolved(SmallMap1<Handle, DependsOn>),
     /// Failed import - stores the error for incremental invalidation.
     Failed(FindError),
 }
@@ -646,8 +649,8 @@ impl<'a> Transaction<'a> {
                 // But don't give up the lock entirely, so we don't recompute anything
                 let _exclusive = w.exclusive();
                 for resolution in deps.values() {
-                    if let ImportResolution::Resolved(handles) = resolution {
-                        for dep_handle in handles {
+                    if let ImportResolution::Resolved(handles_map) = resolution {
+                        for (dep_handle, _depends_on) in handles_map {
                             let removed = self
                                 .get_module(dep_handle)
                                 .rdeps
@@ -729,7 +732,7 @@ impl<'a> Transaction<'a> {
                 match resolution {
                     ImportResolution::Resolved(handles) => {
                         // Check if any of the resolved imports have changed
-                        for dependency_handle in handles {
+                        for (dependency_handle, _) in handles {
                             match loader.find_import(
                                 dependency_handle.module(),
                                 Some(module_data.handle.path()),
@@ -1688,11 +1691,11 @@ impl<'a> TransactionHandle<'a> {
     ) -> FindingOrError<ArcId<ModuleDataMut>> {
         let require = self.module_data.state.read().require;
         if let Some(ImportResolution::Resolved(handles)) = self.module_data.deps.read().get(&module)
-            && path.is_none_or(|path| path == handles.first().path())
+            && path.is_none_or(|path| path == handles.first().0.path())
         {
             return FindingOrError::new_finding(
                 self.transaction
-                    .get_imported_module(handles.first(), require),
+                    .get_imported_module(handles.first().0, require),
             );
         }
 
@@ -1705,21 +1708,53 @@ impl<'a> TransactionHandle<'a> {
                 let handle = finding.finding;
                 let error = finding.error;
                 let res = self.transaction.get_imported_module(&handle, require);
+
+                let depends_on = {
+                    let deps = self.module_data.syntactic_deps.read();
+                    match &*deps {
+                        Some(deps) => match deps.deps().get(&module) {
+                            Some(depends_on) => depends_on.clone(),
+                            // There are many examples where we get to this point without having
+                            // seen an import statement for a dependency. I started enumerating them
+                            // here D90647698 but that did not scale. Instead, just assume that any
+                            // module that depends on something without a syntactic dep (import statement)
+                            // is injected by pyrefly and therefore unlikely to be changed often. Intuitively
+                            // these likely do not affect incremental performance much. Examples:
+                            // - Special exports like typing.pyi constructs
+                            // - builtins.pyi which is auto injected
+                            // - abc.pyi and all others auto injected from _type_checker_internals.pyi
+                            // - django.db.models (not sure where this comes from)
+                            // - ... and more
+                            None => DependsOn::All,
+                        },
+                        None => {
+                            unreachable!("should have received syntactic_deps from exports");
+                        }
+                    }
+                };
                 let mut write = self.module_data.deps.write();
                 let did_insert = match write.entry(module) {
                     Entry::Vacant(e) => {
-                        e.insert(ImportResolution::Resolved(SmallSet1::new(handle)));
+                        e.insert(ImportResolution::Resolved(SmallMap1::new(
+                            handle,
+                            depends_on.clone(),
+                        )));
                         true
                     }
                     Entry::Occupied(mut e) => {
                         match e.get_mut() {
-                            ImportResolution::Resolved(handles) => handles.insert(handle),
+                            ImportResolution::Resolved(handles) => {
+                                handles.insert(handle, depends_on.clone()).is_none()
+                            }
                             ImportResolution::Failed(_) => {
                                 // A prior lookup (without explicit path) failed, but this lookup
                                 // (with explicit path) succeeded. This can happen when an import
                                 // is first resolved via search paths (fails) and later via an
                                 // explicit path (e.g., from bundled typeshed). Upgrade to Resolved.
-                                e.insert(ImportResolution::Resolved(SmallSet1::new(handle)));
+                                e.insert(ImportResolution::Resolved(SmallMap1::new(
+                                    handle,
+                                    depends_on.clone(),
+                                )));
                                 true
                             }
                         }
