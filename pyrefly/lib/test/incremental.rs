@@ -772,3 +772,93 @@ fn test_function_return_type_changes_trigger_recompute() {
     );
     i.check(&["main"], &["foo", "main"]);
 }
+
+/// Test that non-overlapping export changes do NOT trigger false cycle detection.
+///
+/// This simulates a pattern similar to PyTorch's torch.distributed.pipelining.stage module,
+/// which imports and re-exports from multiple independent sources:
+///   - `from torch.distributed._composable.replicate_with_fsdp import replicate`
+///   - `from torch.distributed.fsdp import fully_shard`
+///
+/// When both sources change in different epochs, the same module (stage) appears multiple
+/// times in the change propagation - but with DIFFERENT exports. This should NOT be
+/// treated as a cycle because:
+///   1. The exports don't overlap - they're independent re-exports
+///   2. Each export chain will stabilize independently
+///   3. There's no infinite loop risk since no single export keeps changing
+#[test]
+fn test_non_overlapping_exports_no_false_cycle() {
+    let mut i = Incremental::new();
+
+    i.set("foo", "x: int = 1");
+    i.set("bar", "y: int = 2");
+    i.set("baz", "from foo import x\nfrom bar import y");
+    i.set("main", "from baz import x, y\nprint(x, y)");
+    i.check(&["main"], &["main", "foo", "bar", "baz"]);
+
+    // Now change BOTH sources simultaneously. The hub module will:
+    // 1. First re-export the changed `x` (from foo)
+    // 2. Then re-export the changed `y` (from bar)
+    // This should NOT trigger cycle detection since the exports don't overlap.
+    i.set("foo", "x: str = 'changed_x'");
+    i.set("bar", "y: str = 'changed_y'");
+    i.check(&["main"], &["foo", "bar", "baz", "main"]);
+}
+
+/// Test that overlapping export changes DO trigger proper cycle detection.
+///
+/// A true cycle occurs when the same export keeps changing:
+///   - Export X in A depends on export Y in B
+///   - Export Y in B depends on export X in A
+///   - X changes -> Y changes -> X changes -> would loop forever
+///
+/// The cycle detection should catch this and force invalidation.
+#[test]
+fn test_overlapping_exports_cycle_detected() {
+    let mut i = Incremental::new();
+
+    // Set up a mutual dependency cycle where both modules export
+    // values that depend on each other.
+    i.set("foo", "import bar\nx: int = 1\ny = bar.x");
+    i.set("bar", "import foo\nx: int = 2\ny = foo.x");
+    i.check(&["foo"], &["foo", "bar"]);
+
+    // Changing `x` in foo should propagate to bar (which uses foo.x),
+    // and potentially back to foo (if bar.x changes). The same export `x`
+    // may need to be recomputed multiple times, triggering cycle detection.
+    i.set("foo", "import bar\nx: str = 'changed'\ny = bar.x");
+
+    // The cycle detection should handle this gracefully.
+    // We use unchecked because the exact recomputation pattern depends on
+    // cycle detection behavior.
+    let res = i.unchecked(&["foo"]);
+    // Both modules should be recomputed to reach stable state
+    assert!(res.changed.contains(&"foo".to_owned()));
+    assert!(res.changed.contains(&"bar".to_owned()));
+}
+
+/// Test a more complex non-overlapping case with a chain of re-exports.
+///
+/// This models a longer dependency chain where multiple intermediate modules
+/// re-export from different sources, similar to:
+///   torch.distributed.fsdp -> torch.distributed.fsdp._fully_shard -> _fully_shard.py
+#[test]
+fn test_reexport_chain_non_overlapping() {
+    let mut i = Incremental::new();
+
+    // Create a chain: source -> intermediate -> hub -> main
+    // with two parallel chains that don't share exports
+    i.set("foo", "a: int = 1\nb: int = 2");
+    i.set("bar", "from foo import a"); // bar re-exports only `a`
+    i.set("baz", "from foo import b"); // baz re-exports only `b`
+    i.set("main", "from bar import a\nfrom baz import b");
+    i.check(&["main"], &["main", "foo", "bar", "baz"]);
+
+    // Change `a` - only bar and main should be affected (fine-grained tracking)
+    i.set("foo", "a: str = 'new_a'\nb: int = 2");
+    i.check(&["main"], &["foo", "bar", "main"]);
+
+    // Change `b` - only baz and main should be affected
+    i.set("foo", "a: str = 'new_a'\nb: str = 'new_b'");
+    i.check(&["main"], &["foo", "baz", "main"]);
+}

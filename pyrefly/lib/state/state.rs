@@ -1562,21 +1562,67 @@ impl<'a> Transaction<'a> {
 
         // We first compute all the modules that are either new or have changed.
         // Then we repeatedly compute all the modules who depend on modules that changed.
-        // To ensure we guarantee termination, and don't endure more than a linear overhead,
-        // if we end up spotting the same module changing twice, we just invalidate
-        // everything in the cycle and force it to compute.
-        let mut changed_twice = SmallSet::new();
+        //
+        // ## Termination Guarantee
+        //
+        // To ensure termination, we detect when the same export changes twice for a module.
+        // A true non-terminating cycle requires the same export to keep changing:
+        //   - Export X in A depends on export Y in B
+        //   - Export Y in B depends on export X in A
+        //   - X changes -> Y changes -> X changes -> infinite loop
+        //
+        // However, a module appearing twice with DIFFERENT exports is not a cycle:
+        //   - Module A exports {x} due to change in dependency B
+        //   - Later, A exports {y} due to change in dependency C
+        //   - These are independent dependency chains that will each stabilize
+        //
+        // We track (module, export_name) pairs rather than just modules to distinguish
+        // these cases. This avoids false positives where independent exports happen to
+        // be processed in the same module across different epochs.
+        //
+        // As a defense-in-depth measure, we also cap the total number of epochs to prevent
+        // runaway computation in case of unforeseen edge cases.
+        const MAX_EPOCHS: usize = 100;
+        let mut seen_exports: SmallMap<ArcId<ModuleDataMut>, ChangedExports> = SmallMap::new();
 
-        for i in 1.. {
+        for i in 1..=MAX_EPOCHS {
             debug!("Running epoch {i} of run {run_number}");
             self.run_step(handles, require)?;
             let changed = mem::take(&mut *self.data.changed.lock());
             if changed.is_empty() {
                 return Ok(());
             }
-            for (module, _) in &changed {
-                if !changed_twice.insert(module.dupe()) {
-                    debug!("Mutable dependency cycle, invalidating the cycle");
+            for (module, changed_exports) in &changed {
+                let dominated = match seen_exports.get(module) {
+                    None => false,
+                    Some(ChangedExports::InvalidateAll) => {
+                        // We previously saw InvalidateAll, so any new change is dominated
+                        true
+                    }
+                    Some(ChangedExports::NoChange) => false,
+                    Some(ChangedExports::Changed(seen_names)) => {
+                        // Check if the new changes overlap with previously seen exports
+                        match changed_exports {
+                            ChangedExports::InvalidateAll => {
+                                // InvalidateAll dominates any previous specific names
+                                !seen_names.is_empty()
+                            }
+                            ChangedExports::Changed(new_names) => {
+                                new_names.iter().any(|n| seen_names.contains(n))
+                            }
+                            ChangedExports::NoChange => false,
+                        }
+                    }
+                };
+
+                if dominated {
+                    debug!(
+                        "Mutable dependency cycle detected: module `{}` has overlapping export changes. \
+                         Previously seen: {:?}, now: {:?}. Invalidating cycle.",
+                        module.handle.module(),
+                        seen_exports.get(module),
+                        changed_exports
+                    );
                     // We are in a cycle of mutual dependencies, so give up.
                     // Just invalidate everything in the cycle and recompute it all.
                     // Use coarse-grained invalidation to ensure all cyclic modules reach stable state
@@ -1587,9 +1633,51 @@ impl<'a> Transaction<'a> {
                     self.invalidate_rdeps(&coarse_grained_changed);
                     return self.run_step(handles, require);
                 }
+
+                // Merge the new exports into our tracking set
+                match seen_exports.entry(module.dupe()) {
+                    starlark_map::small_map::Entry::Vacant(e) => {
+                        e.insert(changed_exports.clone());
+                    }
+                    starlark_map::small_map::Entry::Occupied(mut e) => {
+                        let existing = e.get_mut();
+                        match (existing, changed_exports) {
+                            (ChangedExports::InvalidateAll, _) => {
+                                // Already tracking all, nothing to do
+                            }
+                            (existing, ChangedExports::InvalidateAll) => {
+                                *existing = ChangedExports::InvalidateAll;
+                            }
+                            (ChangedExports::NoChange, new) => {
+                                *e.get_mut() = new.clone();
+                            }
+                            (_, ChangedExports::NoChange) => {
+                                // Nothing new to add
+                            }
+                            (ChangedExports::Changed(seen), ChangedExports::Changed(new)) => {
+                                for name in new {
+                                    seen.insert(name.clone());
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
-        Ok(())
+        // If we reach here, we've exceeded MAX_EPOCHS without stabilizing.
+        // This should be extremely rare and indicates an unexpected edge case.
+        // Force invalidation and one final run as a fallback.
+        tracing::warn!(
+            "Exceeded maximum epochs ({MAX_EPOCHS}) without stabilizing. \
+             This may indicate an unexpected dependency pattern. Forcing invalidation."
+        );
+        let changed = mem::take(&mut *self.data.changed.lock());
+        let coarse_grained_changed: Vec<_> = changed
+            .iter()
+            .map(|(m, _)| (m.dupe(), ChangedExports::InvalidateAll))
+            .collect();
+        self.invalidate_rdeps(&coarse_grained_changed);
+        self.run_step(handles, require)
     }
 
     pub fn run(&mut self, handles: &[Handle], require: Require) {
