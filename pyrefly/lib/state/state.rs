@@ -143,6 +143,30 @@ impl DependsOn {
             },
         }
     }
+
+    /// Compute which names to propagate to this dependent based on what changed.
+    fn propagate_names(&self, changed_exports: &ChangedExports) -> ChangedExports {
+        match changed_exports {
+            ChangedExports::NoChange => ChangedExports::NoChange,
+            ChangedExports::InvalidateAll => ChangedExports::InvalidateAll,
+            ChangedExports::Changed(changed) => match self {
+                DependsOn::All => ChangedExports::Changed(changed.clone()), // Propagate all changes
+                DependsOn::Names(imported) => {
+                    // Only propagate names that are imported
+                    let propagated: SmallSet<Name> = changed
+                        .iter()
+                        .filter(|n| imported.contains(n))
+                        .cloned()
+                        .collect();
+                    if propagated.is_empty() {
+                        ChangedExports::NoChange
+                    } else {
+                        ChangedExports::Changed(propagated)
+                    }
+                }
+            },
+        }
+    }
 }
 
 /// Represents a resolved or failed import.
@@ -1439,29 +1463,91 @@ impl<'a> Transaction<'a> {
 
     /// Transitively invalidate all modules in the dependency chain of the changed modules.
     ///
+    /// Unlike the single-level invalidation in `demand`, this follows the entire rdeps
+    /// chain using a worklist algorithm. It propagates changed export names through the
+    /// dependency graph, only invalidating modules that import (directly or transitively)
+    /// the names that changed.
+    ///
     /// This is called from `run_internal` when a mutable dependency cycle is detected
     /// (i.e., the same module changes twice in one run), as a fallback to ensure all
     /// cyclic modules reach a stable state.
-    fn invalidate_rdeps(&mut self, changed: &[ArcId<ModuleDataMut>]) {
+    fn invalidate_rdeps(&mut self, changed: &[(ArcId<ModuleDataMut>, ChangedExports)]) {
+        let mut changed_exports: SmallMap<Handle, ChangedExports> = changed
+            .iter()
+            .map(|(m, exports)| (m.handle.dupe(), exports.clone()))
+            .collect();
+
         // Those that I have yet to follow
-        let mut follow: Vec<ArcId<ModuleDataMut>> = changed.iter().map(|x| x.dupe()).collect();
+        let mut follow: Vec<(Handle, ChangedExports)> = changed
+            .iter()
+            .map(|(m, exports)| (m.handle.dupe(), exports.clone()))
+            .collect();
+
         // Those that I know are dirty
         let mut dirty: SmallMap<Handle, ArcId<ModuleDataMut>> = changed
             .iter()
-            .map(|x| (x.handle.dupe(), x.dupe()))
+            .map(|(m, _)| (m.handle.dupe(), m.dupe()))
             .collect();
 
-        while let Some(x) = follow.pop() {
-            for rdep in x.rdeps.lock().iter() {
-                let hashed_rdep = Hashed::new(rdep);
-                if !dirty.contains_key_hashed(hashed_rdep) {
-                    let m = self.get_module(rdep);
-                    dirty.insert_hashed(hashed_rdep.cloned(), m.dupe());
-                    follow.push(m);
+        while let Some((handle, item_changed_exports)) = follow.pop() {
+            let module = self.get_module(&handle);
+            let module_name = handle.module();
+            let rdeps: Vec<Handle> = module.rdeps.lock().iter().cloned().collect();
+
+            for rdep_handle in rdeps {
+                let hashed_rdep = Hashed::new(&rdep_handle);
+
+                let rdep_module = self.get_module(&rdep_handle);
+                let propagated = rdep_module
+                    .get_depends_on(module_name, &handle)
+                    .map_or(ChangedExports::InvalidateAll, |d| {
+                        d.propagate_names(&item_changed_exports)
+                    });
+                if matches!(&propagated, ChangedExports::NoChange) {
+                    continue; // Nothing to propagate
                 }
+
+                if dirty.contains_key_hashed(hashed_rdep) {
+                    // Already marked dirty, merge the propagated names into existing
+                    if let Some(existing) = changed_exports.get_mut(&rdep_handle) {
+                        match (&propagated, &*existing) {
+                            (ChangedExports::InvalidateAll, _) => {
+                                *existing = ChangedExports::InvalidateAll
+                            }
+                            (_, ChangedExports::InvalidateAll) => {} // Already invalidating all
+                            (ChangedExports::Changed(new), ChangedExports::Changed(old)) => {
+                                let mut merged = old.clone();
+                                merged.extend(new.iter().cloned());
+                                *existing = ChangedExports::Changed(merged);
+                            }
+                            (ChangedExports::Changed(_), ChangedExports::NoChange) => {
+                                *existing = propagated.clone();
+                            }
+                            (ChangedExports::NoChange, _) => {} // Nothing to merge
+                        }
+                    }
+                    continue;
+                }
+
+                let m = self.get_module(&rdep_handle);
+                dirty.insert_hashed(hashed_rdep.cloned(), m.dupe());
+                changed_exports.insert(rdep_handle.dupe(), propagated.clone());
+                follow.push((rdep_handle, propagated));
             }
         }
         self.stats.lock().cycle_rdeps += dirty.len();
+
+        // Also invalidate modules that had failed imports from any of the changed modules
+        let mut failed_import_dirtied = Vec::new();
+        for (m, _) in changed {
+            self.invalidate_failed_imports_from(&m.handle, &mut failed_import_dirtied);
+        }
+        for m in failed_import_dirtied {
+            let hashed = Hashed::new(&m.handle);
+            if !dirty.contains_key_hashed(hashed) {
+                dirty.insert_hashed(hashed.cloned(), m);
+            }
+        }
 
         let mut dirty_set: std::sync::MutexGuard<'_, SmallSet<ArcId<ModuleDataMut>>> =
             self.data.dirty.lock();
@@ -1493,8 +1579,12 @@ impl<'a> Transaction<'a> {
                     debug!("Mutable dependency cycle, invalidating the cycle");
                     // We are in a cycle of mutual dependencies, so give up.
                     // Just invalidate everything in the cycle and recompute it all.
-                    let modules: Vec<_> = changed.iter().map(|(m, _)| m.dupe()).collect();
-                    self.invalidate_rdeps(&modules);
+                    // Use coarse-grained invalidation to ensure all cyclic modules reach stable state
+                    let coarse_grained_changed: Vec<_> = changed
+                        .iter()
+                        .map(|(m, _)| (m.dupe(), ChangedExports::InvalidateAll))
+                        .collect();
+                    self.invalidate_rdeps(&coarse_grained_changed);
                     return self.run_step(handles, require);
                 }
             }
