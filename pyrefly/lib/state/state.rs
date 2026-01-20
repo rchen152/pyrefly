@@ -115,6 +115,15 @@ use crate::types::stdlib::Stdlib;
 use crate::types::types::TParams;
 use crate::types::types::Type;
 
+/// Represents a resolved or failed import.
+#[derive(Debug, Clone)]
+enum ImportResolution {
+    /// Successfully resolved import - module name to handle(s).
+    Resolved(SmallSet1<Handle>),
+    /// Failed import - stores the error for incremental invalidation.
+    Failed(FindError),
+}
+
 /// `ModuleData` is a snapshot of `ArcId<ModuleDataMut>` in the main state.
 /// The snapshot is readonly most of the times. It will only be overwritten with updated information
 /// from `Transaction` when we decide to commit a `Transaction` into the main state.
@@ -123,12 +132,9 @@ struct ModuleData {
     handle: Handle,
     config: ArcId<ConfigFile>,
     state: ModuleDataInner,
-    /// The dependencies of this module.
+    /// The dependencies of this module, including both resolved and failed imports.
     /// Most modules exist in exactly one place, but it can be possible to load the same module multiple times with different paths.
-    deps: HashMap<ModuleName, SmallSet1<Handle>, BuildNoHash>,
-    /// Imports that failed to resolve. Necessary for incremental invalidation.
-    /// TODO(kylei): Merge this with deps above based on D87952758 once we are confident.
-    failed_deps: HashMap<ModuleName, FindError>,
+    deps: HashMap<ModuleName, ImportResolution, BuildNoHash>,
     rdeps: HashSet<Handle>,
 }
 
@@ -137,14 +143,13 @@ struct ModuleDataMut {
     handle: Handle,
     config: RwLock<ArcId<ConfigFile>>,
     state: UpgradeLock<Step, ModuleDataInner>,
+    /// The dependencies of this module, including both resolved and failed imports.
     /// Invariant: If `h1` depends on `h2` then we must have both of:
-    /// data[h1].deps[h2.module].contains(h2)
+    /// data[h1].deps[h2.module] == ImportResolution::Resolved(set) where set.contains(h2)
     /// data[h2].rdeps.contains(h1)
     ///
     /// To ensure that is atomic, we always modify the rdeps while holding the deps write lock.
-    deps: RwLock<HashMap<ModuleName, SmallSet1<Handle>, BuildNoHash>>,
-    /// Imports that failed to resolve. Necessary for incremental invalidation.
-    failed_deps: RwLock<HashMap<ModuleName, FindError>>,
+    deps: RwLock<HashMap<ModuleName, ImportResolution, BuildNoHash>>,
     /// The reverse dependencies of this module. This is used to invalidate on change.
     /// Note that if we are only running once, e.g. on the command line, this isn't valuable.
     /// But we create it anyway for simplicity, since it doesn't seem to add much overhead.
@@ -179,7 +184,6 @@ impl ModuleData {
             config: RwLock::new(self.config.dupe()),
             state: UpgradeLock::new(self.state.clone()),
             deps: RwLock::new(self.deps.clone()),
-            failed_deps: RwLock::new(self.failed_deps.clone()),
             rdeps: Mutex::new(self.rdeps.clone()),
         }
     }
@@ -192,7 +196,6 @@ impl ModuleDataMut {
             config: RwLock::new(config),
             state: UpgradeLock::new(ModuleDataInner::new(require, now)),
             deps: Default::default(),
-            failed_deps: Default::default(),
             rdeps: Default::default(),
         }
     }
@@ -205,11 +208,9 @@ impl ModuleDataMut {
             config,
             state,
             deps,
-            failed_deps,
             rdeps,
         } = self;
         let deps = mem::take(&mut *deps.write());
-        let failed_deps = mem::take(&mut *failed_deps.write());
         let rdeps = mem::take(&mut *rdeps.lock());
         let state = state.read().clone();
         ModuleData {
@@ -217,7 +218,6 @@ impl ModuleDataMut {
             config: config.read().dupe(),
             state,
             deps,
-            failed_deps,
             rdeps,
         }
     }
@@ -633,13 +633,17 @@ impl<'a> Transaction<'a> {
                 // Downgrade to exclusive, so other people can read from us, or we lock up.
                 // But don't give up the lock entirely, so we don't recompute anything
                 let _exclusive = w.exclusive();
-                for dep_handle in deps.values().flatten() {
-                    let removed = self
-                        .get_module(dep_handle)
-                        .rdeps
-                        .lock()
-                        .remove(&module_data.handle);
-                    assert!(removed);
+                for resolution in deps.values() {
+                    if let ImportResolution::Resolved(handles) = resolution {
+                        for dep_handle in handles {
+                            let removed = self
+                                .get_module(dep_handle)
+                                .rdeps
+                                .lock()
+                                .remove(&module_data.handle);
+                            assert!(removed);
+                        }
+                    }
                 }
             }
             // Make sure we hold deps write lock while mutating rdeps
@@ -709,32 +713,41 @@ impl<'a> Transaction<'a> {
             let mut is_dirty = false;
 
             // Check dependencies for changes
-            for dependency_handle in module_data.deps.read().values().flatten() {
-                match loader
-                    .find_import(dependency_handle.module(), Some(module_data.handle.path()))
-                {
-                    FindingOrError::Finding(path) if &path.finding == dependency_handle.path() => {}
-                    _ => {
-                        is_dirty = true;
-                        break;
+            for (module_name, resolution) in module_data.deps.read().iter() {
+                match resolution {
+                    ImportResolution::Resolved(handles) => {
+                        // Check if any of the resolved imports have changed
+                        for dependency_handle in handles {
+                            match loader.find_import(
+                                dependency_handle.module(),
+                                Some(module_data.handle.path()),
+                            ) {
+                                FindingOrError::Finding(path)
+                                    if &path.finding == dependency_handle.path() => {}
+                                _ => {
+                                    is_dirty = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    ImportResolution::Failed(import_failure) => {
+                        // Check if failed imports now succeed or have different errors
+                        match loader.find_import(*module_name, Some(module_data.handle.path())) {
+                            // If we can now resolve an import, we need to rebuild
+                            FindingOrError::Finding(_) => {
+                                is_dirty = true;
+                            }
+                            // If the error changes, we need to rebuild
+                            FindingOrError::Error(error) if error != *import_failure => {
+                                is_dirty = true;
+                            }
+                            FindingOrError::Error(_) => {}
+                        }
                     }
                 }
-            }
-
-            // Check import errors for changes
-            for (module_name, import_failure) in module_data.failed_deps.read().iter() {
-                match loader.find_import(*module_name, Some(module_data.handle.path())) {
-                    // If we can now resolve an import, we need to rebuild
-                    FindingOrError::Finding(_) => {
-                        is_dirty = true;
-                        break;
-                    }
-                    // If the error changes, we need to rebuild
-                    FindingOrError::Error(error) if error != *import_failure => {
-                        is_dirty = true;
-                        break;
-                    }
-                    FindingOrError::Error(_) => {}
+                if is_dirty {
+                    break;
                 }
             }
 
@@ -1656,10 +1669,13 @@ impl<'a> TransactionHandle<'a> {
         path: Option<&ModulePath>,
     ) -> FindingOrError<ArcId<ModuleDataMut>> {
         let require = self.module_data.state.read().require;
-        if let Some(res) = self.module_data.deps.read().get(&module).map(|x| x.first())
-            && path.is_none_or(|path| path == res.path())
+        if let Some(ImportResolution::Resolved(handles)) = self.module_data.deps.read().get(&module)
+            && path.is_none_or(|path| path == handles.first().path())
         {
-            return FindingOrError::new_finding(self.transaction.get_imported_module(res, require));
+            return FindingOrError::new_finding(
+                self.transaction
+                    .get_imported_module(handles.first(), require),
+            );
         }
 
         let handle = self
@@ -1674,10 +1690,22 @@ impl<'a> TransactionHandle<'a> {
                 let mut write = self.module_data.deps.write();
                 let did_insert = match write.entry(module) {
                     Entry::Vacant(e) => {
-                        e.insert(SmallSet1::new(handle));
+                        e.insert(ImportResolution::Resolved(SmallSet1::new(handle)));
                         true
                     }
-                    Entry::Occupied(mut e) => e.get_mut().insert(handle),
+                    Entry::Occupied(mut e) => {
+                        match e.get_mut() {
+                            ImportResolution::Resolved(handles) => handles.insert(handle),
+                            ImportResolution::Failed(_) => {
+                                // A prior lookup (without explicit path) failed, but this lookup
+                                // (with explicit path) succeeded. This can happen when an import
+                                // is first resolved via search paths (fails) and later via an
+                                // explicit path (e.g., from bundled typeshed). Upgrade to Resolved.
+                                e.insert(ImportResolution::Resolved(SmallSet1::new(handle)));
+                                true
+                            }
+                        }
+                    }
                 };
                 if did_insert {
                     let inserted = res.rdeps.lock().insert(self.module_data.handle.dupe());
@@ -1693,9 +1721,9 @@ impl<'a> TransactionHandle<'a> {
             FindingOrError::Error(err) => {
                 // Store the failed import so we can retry it when the config changes
                 self.module_data
-                    .failed_deps
+                    .deps
                     .write()
-                    .insert(module, err.dupe());
+                    .insert(module, ImportResolution::Failed(err.dupe()));
                 FindingOrError::Error(err)
             }
         }
