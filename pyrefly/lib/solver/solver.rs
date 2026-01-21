@@ -102,16 +102,12 @@ enum Variable {
 
 impl Variable {
     fn finished(q: &Quantified) -> Self {
-        if let Some(d) = q.default() {
-            Variable::Answer(d.clone())
+        if q.default().is_some() {
+            Variable::Answer(q.as_gradual_type())
         } else {
             Variable::PartialQuantified(q.clone())
         }
     }
-}
-
-fn default(q: &Quantified) -> Type {
-    q.default().cloned().unwrap_or_else(Type::any_implicit)
 }
 
 /// The restrictions placed on a `LoopRecursive` Var during recursive solve of
@@ -355,7 +351,7 @@ impl Solver {
                 None
             }
             Variable::PartialQuantified(q) => {
-                *variable = Variable::Answer(default(q));
+                *variable = Variable::Answer(q.as_gradual_type());
                 None
             }
             Variable::PartialContained(range) => {
@@ -442,7 +438,7 @@ impl Solver {
             _ => {
                 let ty = match &mut *e {
                     Variable::Quantified(q) => q.as_gradual_type(),
-                    Variable::PartialQuantified(q) => default(q),
+                    Variable::PartialQuantified(q) => q.as_gradual_type(),
                     _ => Type::any_implicit(),
                 };
                 *e = Variable::Answer(ty.clone());
@@ -766,7 +762,7 @@ impl Solver {
                     if self.infer_with_first_use {
                         *e = Variable::finished(q);
                     } else {
-                        *e = Variable::Answer(default(q))
+                        *e = Variable::Answer(q.as_gradual_type())
                     }
                 }
                 _ => {}
@@ -856,7 +852,7 @@ impl Solver {
                     self.variables.lock().insert_fresh(v, Variable::finished(q));
                     Some(v.to_type())
                 } else {
-                    Some(default(q))
+                    Some(q.as_gradual_type())
                 }
             } else {
                 None
