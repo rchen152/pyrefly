@@ -530,6 +530,9 @@ pub struct Server {
     /// Whether to stream diagnostics as they become available during recheck.
     /// Defaults to true. Set via `streamDiagnostics` initialization option.
     stream_diagnostics: bool,
+    /// Testing-only flag to prevent the next recheck from committing.
+    /// When set, the recheck queue task will loop without committing the transaction.
+    do_not_commit_recheck: AtomicBool,
 }
 
 pub fn shutdown_finish(connection: &Connection, id: RequestId) {
@@ -1624,6 +1627,14 @@ impl Server {
                             Ok(TypeErrorDisplayStatus::DisabledDueToMissingConfigFile),
                         ));
                     }
+                } else if &x.method == "testing/doNotCommitNextRecheck" {
+                    self.do_not_commit_recheck.store(true, Ordering::SeqCst);
+                    info!("Set do_not_commit_recheck flag to true");
+                    self.send_response(new_response(x.id, Ok(())));
+                } else if &x.method == "testing/continueRecheck" {
+                    self.do_not_commit_recheck.store(false, Ordering::SeqCst);
+                    info!("Set do_not_commit_recheck flag to false");
+                    self.send_response(new_response(x.id, Ok(())));
                 } else {
                     self.send_response(Response::new_err(
                         x.id.clone(),
@@ -1706,6 +1717,7 @@ impl Server {
             comment_folding_ranges,
             currently_streaming_diagnostics_for_handles: RwLock::new(None),
             stream_diagnostics,
+            do_not_commit_recheck: AtomicBool::new(false),
         };
 
         if let Some(init_options) = &s.initialize_params.initialization_options {
@@ -2182,6 +2194,11 @@ impl Server {
 
                 // Run transaction prioritizing currently-open files, sending diagnostics as soon as they are available via the subscriber
                 server.validate_in_memory_for_transaction(transaction.as_mut(), telemetry_event);
+
+                // Wait in a loop while do_not_commit_recheck flag is set (testing only)
+                while server.do_not_commit_recheck.load(Ordering::SeqCst) {
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
 
                 // Commit will be blocked until there are no ongoing reads.
                 // If we have some long running read jobs that can be cancelled, we should cancel them
