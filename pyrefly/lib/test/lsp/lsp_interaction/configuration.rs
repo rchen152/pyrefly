@@ -117,7 +117,7 @@ fn test_pythonpath_change() {
             test_files_root.path().join("custom_interpreter/src/foo.py"),
             1,
         )
-        .expect("Failed to receive publish diagnostics");
+        .expect("Failed to receive initial publish diagnostics");
 
     // The definition response is in the same file
     interaction
@@ -139,11 +139,11 @@ fn test_pythonpath_change() {
     // After the new config takes effect, publish diagnostics should have 0 errors
     interaction
         .client
-        .expect_publish_diagnostics_eventual_error_count(
+        .expect_publish_diagnostics_must_have_error_count(
             test_files_root.path().join("custom_interpreter/src/foo.py"),
             0,
         )
-        .expect("Failed to receive publish diagnostics");
+        .expect("Failed to receive 0 diagnostics for new config");
     // The definition can now be found in site-packages
     interaction
         .client
@@ -169,14 +169,24 @@ fn test_pythonpath_change() {
                 "pythonPath": bad_interpreter_path.to_str().unwrap()
             }
         ]));
-    // After the bad config takes effect, publish diagnostics should have 1 error
+    // After the bad config takes effect, publish diagnostics should have 1 error.
+    // With diagnostic streaming, we need to wait for both the streaming diagnostic
+    // and the committed diagnostic to ensure the transaction has fully committed
+    // before we can expect the definition request to reflect the new state.
     interaction
         .client
         .expect_publish_diagnostics_eventual_error_count(
             test_files_root.path().join("custom_interpreter/src/foo.py"),
             1,
         )
-        .expect("Failed to receive publish diagnostics");
+        .expect("Failed to receive streaming diagnostics");
+    interaction
+        .client
+        .expect_publish_diagnostics_must_have_error_count(
+            test_files_root.path().join("custom_interpreter/src/foo.py"),
+            1,
+        )
+        .expect("Failed to receive committed diagnostics");
     // The definition should not be found in site-packages
     interaction
         .client
