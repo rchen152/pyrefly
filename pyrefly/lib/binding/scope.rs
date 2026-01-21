@@ -997,6 +997,10 @@ pub struct Scope {
     finally_depth: usize,
     /// Depth of with blocks we're in. Resets in new function scopes.
     with_depth: usize,
+    /// Names that are known to be initialized from outer scopes when this scope was created.
+    /// Used to determine whether captured variables should be considered "always defined"
+    /// during flow merges, even if they have no local assignment.
+    captured_initialized: SmallSet<Name>,
 }
 
 impl Scope {
@@ -1013,6 +1017,7 @@ impl Scope {
             variables: SmallMap::new(),
             finally_depth: 0,
             with_depth: 0,
+            captured_initialized: SmallSet::new(),
         }
     }
 
@@ -1374,11 +1379,38 @@ impl Scopes {
         in_class: bool,
         is_async: bool,
     ) {
-        if in_class {
-            self.push(Scope::method(range, name.clone(), is_async));
+        // Collect names that are currently initialized in outer scopes.
+        // This is used during flow merges to determine if a captured variable
+        // should be considered "always defined" even without a local assignment.
+        let captured_initialized = self.collect_initialized_names_from_outer_scopes();
+        let mut scope = if in_class {
+            Scope::method(range, name.clone(), is_async)
         } else {
-            self.push(Scope::function(range, is_async));
+            Scope::function(range, is_async)
+        };
+        scope.captured_initialized = captured_initialized;
+        self.push(scope);
+    }
+
+    /// Collect names that are currently initialized in outer scopes (with flow barriers).
+    /// Used when entering a new function scope to track which captured variables
+    /// are known to be initialized.
+    fn collect_initialized_names_from_outer_scopes(&self) -> SmallSet<Name> {
+        let mut initialized = SmallSet::new();
+        let mut flow_barrier = FlowBarrier::AllowFlowChecked;
+        for scope in self.iter_rev() {
+            // Only collect from scopes where flow information is accessible
+            // (i.e., before we hit a flow barrier)
+            if flow_barrier < FlowBarrier::BlockFlow {
+                for (name, info) in scope.flow.info.iter() {
+                    if matches!(info.initialized(), InitializedInFlow::Yes) {
+                        initialized.insert(name.clone());
+                    }
+                }
+            }
+            flow_barrier = max(flow_barrier, scope.flow_barrier);
         }
+        initialized
     }
 
     fn collect_unused_parameters(
@@ -2651,8 +2683,14 @@ impl<'a> BindingsBuilder<'a> {
     /// The default value will depend on whether we are still in a loop after the
     /// current merge. If so, we preserve the existing default; if not, the
     /// merged phi is the new default used for downstream loops.
+    ///
+    /// `is_captured_initialized` indicates whether this name is a captured variable
+    /// that was known to be initialized when the current scope was created. If true,
+    /// the name is treated as "always defined" during flow merges even if it has
+    /// no local assignment in the current scope.
     fn merged_flow_info(
         &mut self,
+        is_captured_initialized: bool,
         merge_item: MergeItem,
         phi_idx: Idx<Key>,
         merge_style: MergeStyle,
@@ -2738,10 +2776,15 @@ impl<'a> BindingsBuilder<'a> {
         // - It was defined before the loop (base_has_value), OR
         // - It's defined in all loop body branches (since the loop definitely runs at least once)
         // For regular loops and other merges, a name is always defined if it's in all branches.
-        let this_name_always_defined = match merge_style {
-            MergeStyle::LoopDefinitelyRuns => base_has_value || n_branch_flow_infos == n_branches,
-            _ => n_values == n_branches,
-        };
+        // Additionally, if the name is a captured variable that was known to be initialized
+        // from an outer scope, we treat it as always defined even without a local assignment.
+        let this_name_always_defined = is_captured_initialized
+            || match merge_style {
+                MergeStyle::LoopDefinitelyRuns => {
+                    base_has_value || n_branch_flow_infos == n_branches
+                }
+                _ => n_values == n_branches,
+            };
         match value_idxs.len() {
             // If there are no values, then this name isn't assigned at all
             // and is only narrowed (it's most likely a capture, but could be
@@ -2884,11 +2927,19 @@ impl<'a> BindingsBuilder<'a> {
 
         // For each name and merge item, produce the merged FlowInfo for our new Flow
         let mut merged_flow_infos = SmallMap::with_capacity(merge_items.0.len());
+        let captured_initialized = self.scopes.current().captured_initialized.clone();
         for (name, merge_item) in merge_items.0.into_iter_hashed() {
             let phi_idx = self.idx_for_promise(Key::Phi(name.key().clone(), range));
+            let is_captured_initialized = captured_initialized.contains(name.key());
             merged_flow_infos.insert_hashed(
                 name,
-                self.merged_flow_info(merge_item, phi_idx, merge_style, n_branches),
+                self.merged_flow_info(
+                    is_captured_initialized,
+                    merge_item,
+                    phi_idx,
+                    merge_style,
+                    n_branches,
+                ),
             );
         }
 
