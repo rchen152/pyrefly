@@ -2153,7 +2153,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         if errors2.is_empty() {
                             // The new type is compatible with the inherited one; use the inherited type to
                             // avoid spurious errors about changing the type of a read-write attribute.
-                            inherited_ty
+                            // However, we need to clear the is_abstract_method flag since assigning
+                            // a concrete implementation makes this field non-abstract.
+                            let mut ty = inherited_ty;
+                            ty.transform_toplevel_func_metadata(|meta| {
+                                meta.flags.is_abstract_method = false;
+                            });
+                            ty
                         } else {
                             // The hint was no good; infer the type without it.
                             self.attribute_expr_infer(e, None, name, errors)
