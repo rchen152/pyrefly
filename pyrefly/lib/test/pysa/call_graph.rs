@@ -414,7 +414,7 @@ fn class_identifier_without_constructors(
             unresolved: Unresolved::False,
         },
         global_targets: vec![],
-        nonlocal_targets: vec![],
+        captured_variables: vec![],
     })
 }
 
@@ -507,7 +507,7 @@ fn identifier_callees(
             unresolved,
         },
         global_targets: vec![],
-        nonlocal_targets: vec![],
+        captured_variables: vec![],
     })
 }
 
@@ -523,7 +523,7 @@ fn regular_identifier_callees(
             unresolved: Unresolved::False,
         },
         global_targets: vec![],
-        nonlocal_targets: vec![],
+        captured_variables: vec![],
     })
 }
 
@@ -533,7 +533,7 @@ fn global_identifier_callees(
     ExpressionCallees::Identifier(IdentifierCallees {
         if_called: CallCallees::empty(),
         global_targets,
-        nonlocal_targets: vec![],
+        captured_variables: vec![],
     })
 }
 
@@ -544,7 +544,7 @@ fn nonlocal_identifier_callees(
     ExpressionCallees::Identifier(IdentifierCallees {
         if_called: CallCallees::empty(),
         global_targets: vec![],
-        nonlocal_targets: vec![CapturedVariableRef {
+        captured_variables: vec![CapturedVariableRef {
             outer_function: FunctionRefForTest::from_string(function),
             name: Name::new(variable_name),
         }],
@@ -982,7 +982,7 @@ def foo(c: C):
                             unresolved: Unresolved::False,
                         },
                         global_targets: vec![],
-                        nonlocal_targets: vec![],
+                        captured_variables: vec![],
                     }),
                 ),
                 ("5:4-5:17", regular_call_callees(call_targets)),

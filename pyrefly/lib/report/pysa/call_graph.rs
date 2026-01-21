@@ -867,7 +867,7 @@ pub struct IdentifierCallees<Function: FunctionTrait> {
     pub(crate) if_called: CallCallees<Function>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) global_targets: Vec<GlobalVariableRef>,
-    pub(crate) nonlocal_targets: Vec<CapturedVariableRef<Function>>,
+    pub(crate) captured_variables: Vec<CapturedVariableRef<Function>>,
 }
 
 impl<Function: FunctionTrait> IdentifierCallees<Function> {
@@ -882,8 +882,8 @@ impl<Function: FunctionTrait> IdentifierCallees<Function> {
         IdentifierCallees {
             if_called: self.if_called.map_function(map),
             global_targets: self.global_targets,
-            nonlocal_targets: self
-                .nonlocal_targets
+            captured_variables: self
+                .captured_variables
                 .into_iter()
                 .map(|target| target.map_function(map))
                 .collect::<Vec<_>>(),
@@ -893,7 +893,7 @@ impl<Function: FunctionTrait> IdentifierCallees<Function> {
     fn is_empty(&self) -> bool {
         self.if_called.is_empty()
             && self.global_targets.is_empty()
-            && self.nonlocal_targets.is_empty()
+            && self.captured_variables.is_empty()
     }
 
     pub fn all_targets(&self) -> impl Iterator<Item = &CallTarget<Function>> {
@@ -904,8 +904,8 @@ impl<Function: FunctionTrait> IdentifierCallees<Function> {
         self.if_called.dedup_and_sort();
         self.global_targets.sort();
         self.global_targets.dedup();
-        self.nonlocal_targets.sort();
-        self.nonlocal_targets.dedup();
+        self.captured_variables.sort();
+        self.captured_variables.dedup();
     }
 }
 
@@ -2298,7 +2298,7 @@ impl<'a> CallGraphVisitor<'a> {
                 return IdentifierCallees {
                     if_called: callees,
                     global_targets: vec![],
-                    nonlocal_targets: vec![],
+                    captured_variables: vec![],
                 };
             }
         }
@@ -2325,7 +2325,7 @@ impl<'a> CallGraphVisitor<'a> {
             return IdentifierCallees {
                 if_called: CallCallees::empty(),
                 global_targets: vec![global],
-                nonlocal_targets: vec![],
+                captured_variables: vec![],
             };
         }
 
@@ -2346,7 +2346,7 @@ impl<'a> CallGraphVisitor<'a> {
             return IdentifierCallees {
                 if_called: CallCallees::empty(),
                 global_targets: vec![],
-                nonlocal_targets: vec![captured],
+                captured_variables: vec![captured],
             };
         }
 
@@ -2377,7 +2377,7 @@ impl<'a> CallGraphVisitor<'a> {
         IdentifierCallees {
             if_called: callees,
             global_targets: vec![],
-            nonlocal_targets: vec![],
+            captured_variables: vec![],
         }
     }
 
