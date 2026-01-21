@@ -1079,6 +1079,7 @@ checksum = "e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1"
 dependencies = [
  "ahash",
  "allocator-api2",
+ "serde",
 ]
 
 [[package]]
@@ -1299,6 +1300,12 @@ dependencies = [
  "walkdir",
  "winapi-util",
 ]
+
+[[package]]
+name = "index_vec"
+version = "0.1.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "44faf5bb8861a9c72e20d3fb0fdbd59233e43056e2b80475ab0aacdc2e781355"
 
 [[package]]
 name = "indexmap"
@@ -2227,9 +2234,12 @@ dependencies = [
  "const-str",
  "dupe",
  "equivalent",
+ "fxhash",
  "glob",
+ "hashbrown 0.14.5",
  "human_bytes",
  "ignore",
+ "index_vec",
  "itertools 0.14.0",
  "lock_free_hashtable",
  "lsp-types",
