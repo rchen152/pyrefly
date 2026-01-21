@@ -658,6 +658,19 @@ impl Solver {
         v
     }
 
+    fn fresh_quantified_vars(
+        &self,
+        qs: &[&Quantified],
+        uniques: &UniqueFactory,
+    ) -> QuantifiedHandle {
+        let vs = qs.map(|_| Var::new(uniques));
+        let mut lock = self.variables.lock();
+        for (v, q) in vs.iter().zip(qs.iter()) {
+            lock.insert_fresh(*v, Variable::Quantified((*q).clone()));
+        }
+        QuantifiedHandle(vs)
+    }
+
     /// Generate fresh variables and substitute them in replacing a `Forall`.
     pub fn fresh_quantified(
         &self,
@@ -669,14 +682,11 @@ impl Solver {
             return (QuantifiedHandle::empty(), t);
         }
 
-        let vs: Vec<_> = params.iter().map(|_| Var::new(uniques)).collect();
-        let ts = vs.map(|v| v.to_type());
-        let t = t.subst(&params.iter().map(|p| &p.quantified).zip(&ts).collect());
-        let mut lock = self.variables.lock();
-        for (v, param) in vs.iter().zip(params.iter()) {
-            lock.insert_fresh(*v, Variable::Quantified(param.quantified.clone()));
-        }
-        (QuantifiedHandle(vs), t)
+        let qs = params.iter().map(|p| &p.quantified).collect::<Vec<_>>();
+        let vs = self.fresh_quantified_vars(&qs, uniques);
+        let ts = vs.0.map(|v| v.to_type());
+        let t = t.subst(&qs.into_iter().zip(&ts).collect());
+        (vs, t)
     }
 
     /// Partially instantiate a generic function using the first argument.
@@ -701,7 +711,7 @@ impl Solver {
         let mut qs = Vec::new();
         self_param.for_each_quantified(&mut |q| {
             if tparams.iter().any(|tparam| tparam.quantified == *q) {
-                qs.push(q.clone());
+                qs.push(q);
             }
         });
 
@@ -710,18 +720,12 @@ impl Solver {
         }
 
         // Substitute fresh vars for the quantifieds in the self param.
-        let vs = qs.map(|_| Var::new(uniques));
-        let ts = vs.map(|v| v.to_type());
-        let mp = qs.iter().zip(&ts).collect();
+        let vs = self.fresh_quantified_vars(&qs, uniques);
+        let ts = vs.0.map(|v| v.to_type());
+        let mp = qs.into_iter().zip(&ts).collect();
         let self_param = self_param.clone().subst(&mp);
         callable.visit_mut(&mut |t| t.subst_mut(&mp));
         drop(mp);
-
-        let mut lock = self.variables.lock();
-        for (v, q) in vs.iter().zip(qs.into_iter()) {
-            lock.insert_fresh(*v, Variable::Quantified(q));
-        }
-        drop(lock);
 
         // Solve for the vars created above. If this errors, then the definition
         // is invalid, and we should have raised an error at the definition site.
@@ -729,7 +733,7 @@ impl Solver {
 
         // Either we have solutions, or we fall back to Any. We don't use finish_quantified
         // because we don't want Variable::Partial.
-        for v in vs {
+        for v in vs.0 {
             self.force_var(v);
         }
 
