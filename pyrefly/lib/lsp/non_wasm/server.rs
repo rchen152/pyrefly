@@ -2003,7 +2003,7 @@ impl Server {
         }
         for (path, diagnostics) in diags.iter_mut() {
             for diagnostic in diagnostics.iter_mut() {
-                diagnostic.data = serde_json::to_value({ source }).ok()
+                diagnostic.data = serde_json::to_value(source).ok()
             }
             if notebook_cell_urls.contains_key(path) {
                 continue;
