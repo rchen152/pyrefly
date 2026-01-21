@@ -12,7 +12,6 @@ use ruff_python_ast::name::Name;
 use serde::Serialize;
 
 use crate::report::pysa::call_graph::FunctionTrait;
-use crate::report::pysa::captured_variable::CapturedVariableRef;
 use crate::report::pysa::captured_variable::ModuleCapturedVariables;
 use crate::report::pysa::captured_variable::collect_captured_variables_for_module;
 use crate::report::pysa::collect::CollectNoDuplicateKeys;
