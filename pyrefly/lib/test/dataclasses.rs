@@ -1511,6 +1511,26 @@ C2('', 0.2, b=3)
 );
 
 testcase!(
+    bug = "Child class positional fields incorrectly inherit KW_ONLY from parent",
+    test_kw_only_sentinel_inheritance,
+    r#"
+from dataclasses import dataclass, KW_ONLY
+
+@dataclass
+class Foo:
+    _: KW_ONLY
+    option: int | None = None
+
+@dataclass
+class Bar(Foo):
+    arg: str
+
+Bar("arg")  # E: Expected argument `arg` to be passed by name
+Bar(arg="arg")
+    "#,
+);
+
+testcase!(
     test_assign_to_field_in_child,
     r#"
 from dataclasses import dataclass
