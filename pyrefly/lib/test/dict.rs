@@ -35,7 +35,6 @@ x: C | dict[str, int] = {"y": 0}
 );
 
 testcase!(
-    bug = "A union of dicts should be recognized as a valid mapping for **kwargs unpacking",
     test_kwargs_unpack_dict_union,
     r#"
 from typing import Any
@@ -49,6 +48,6 @@ def bar(yes: bool) -> None:
     else:
         kwargs = {"goodbye": 1}
 
-    foo(**kwargs)  # E: Expected argument after ** to be a mapping, got: dict[str, int] | dict[str, str]
+    foo(**kwargs)  
 "#,
 );
