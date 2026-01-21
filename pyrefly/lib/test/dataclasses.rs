@@ -24,6 +24,37 @@ assert_type(Data, type[Data])
 );
 
 testcase!(
+    bug = "Only the call D(4, 5, 6) should raise an error",
+    test_kw_only_sentinel_deep_inheritance,
+    r#"
+from dataclasses import dataclass, KW_ONLY
+
+@dataclass
+class A:
+    _: KW_ONLY
+    a: int = 0
+
+@dataclass
+class B(A):
+    b: int = 1
+
+@dataclass
+class C(B):
+    _: KW_ONLY
+    c: int = 2
+
+@dataclass
+class D(C):
+    d: int = 3
+
+D()
+D(4) # E: Expected 0 positional arguments, got 1 in function `D.__init__` 
+D(4, 5) # E: Expected 0 positional arguments, got 2 in function `D.__init__`
+D(4, 5, 6) # E: Expected 0 positional arguments, got 3 in function `D.__init__` 
+    "#,
+);
+
+testcase!(
     test_fields,
     r#"
 from typing import assert_type
