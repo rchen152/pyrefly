@@ -862,3 +862,352 @@ fn test_reexport_chain_non_overlapping() {
     i.set("foo", "a: str = 'new_a'\nb: str = 'new_b'");
     i.check(&["main"], &["foo", "baz", "main"]);
 }
+
+#[test]
+fn test_class_field_type_change_propagates() {
+    let mut i = Incremental::new();
+
+    // Set up a chain: main -> baz -> bar -> foo
+    // where foo.A has a field, bar.B uses A, baz.C uses B, main uses C
+    i.set("foo", "class A:\n    x: int = 1");
+    i.set("bar", "from foo import A\nclass B:\n    a: A");
+    i.set("baz", "from bar import B\nclass C:\n    b: B");
+    i.set(
+        "main",
+        "from baz import C\ndef f(c: C) -> int:\n    return c.b.a.x",
+    );
+    i.check(&["main"], &["main", "foo", "bar", "baz"]);
+
+    // Change A's field type from int to str - modules should be recomputed
+    i.set("foo", "class A:\n    x: str = 'hello'");
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that class base type change propagates through the dependency chain.
+///
+/// When a class's base class changes, modules that use the derived class
+/// should be recomputed.
+#[test]
+fn test_class_base_type_change_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.Base has method m, bar.Derived extends Base, main uses Derived
+    i.set("foo", "class Base:\n    def m(self) -> int: return 1");
+    i.set("bar", "from foo import Base\nclass Derived(Base): pass");
+    i.set(
+        "main",
+        "from bar import Derived\ndef f(d: Derived) -> int:\n    return d.m()",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change Base's method return type - main should be recomputed
+    i.set("foo", "class Base:\n    def m(self) -> str: return 'hello'");
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that class MRO change propagates when a base class is added/removed.
+///
+/// Changing the inheritance hierarchy should invalidate dependents.
+#[test]
+fn test_class_mro_change_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.Mixin has method mix, bar.C does NOT inherit from Mixin
+    // Note: foo is not in the dependency chain yet since bar doesn't import it
+    i.set("foo", "class Mixin:\n    def mix(self) -> int: return 1");
+    i.set("bar", "class C: pass");
+    i.set(
+        "main",
+        "from bar import C\ndef f(c: C):\n    c.mix() # E: Object of class `C` has no attribute `mix`",
+    );
+    i.check(&["main"], &["main", "bar"]);
+
+    // Change C to inherit from Mixin - main's error should go away
+    // Now foo is part of the dependency chain since bar imports it
+    i.set("bar", "from foo import Mixin\nclass C(Mixin): pass");
+    i.set("main", "from bar import C\ndef f(c: C):\n    c.mix()");
+    i.check(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that base class field changes propagate when only the derived class is imported.
+///
+/// When main imports only Derived (not Base), and Base's fields change,
+/// main should still see the updated fields through Derived.
+#[test]
+fn test_base_class_field_change_derived_import_only() {
+    let mut i = Incremental::new();
+
+    // foo.Base has field x, bar.Derived extends Base, main uses Derived.x
+    i.set("foo", "class Base:\n    x: int = 1");
+    i.set("bar", "from foo import Base\nclass Derived(Base): pass");
+    i.set(
+        "main",
+        "from bar import Derived\ndef f(d: Derived) -> int:\n    return d.x",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change x to str - main should see the updated type (error)
+    i.set("foo", "class Base:\n    x: str = 'hello'");
+    i.check_ignoring_expectations(&["foo"], &["main", "foo", "bar"]);
+}
+
+/// Test that dataclass field changes propagate through the dependency chain.
+///
+/// Dataclass synthesized fields (like __init__ parameters) should trigger
+/// recomputation when they change.
+#[test]
+fn test_dataclass_field_change_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.Data is a dataclass with field x: int
+    i.set(
+        "foo",
+        "from dataclasses import dataclass\n@dataclass\nclass Data:\n    x: int",
+    );
+    i.set("bar", "from foo import Data\nclass Wrapper:\n    d: Data");
+    i.set(
+        "main",
+        "from bar import Wrapper\ndef f(w: Wrapper) -> int:\n    return w.d.x",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change the dataclass field type - main should be recomputed
+    i.set(
+        "foo",
+        "from dataclasses import dataclass\n@dataclass\nclass Data:\n    x: str",
+    );
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that adding a new field to a class propagates correctly.
+///
+/// When a class gains a new field, modules using that class should be
+/// recomputed so they can access the new field.
+#[test]
+fn test_class_field_addition_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.A has only field x
+    i.set("foo", "class A:\n    x: int = 1");
+    i.set("bar", "from foo import A\nclass B:\n    a: A");
+    i.set(
+        "main",
+        "from bar import B\ndef f(b: B):\n    b.a.y # E: Object of class `A` has no attribute `y`",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Add field y to A - main's error should go away
+    i.set("foo", "class A:\n    x: int = 1\n    y: int = 2");
+    i.set("main", "from bar import B\ndef f(b: B):\n    b.a.y");
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that removing a field from a class propagates correctly.
+///
+/// When a class loses a field, modules using that field should be
+/// recomputed and see the error.
+#[test]
+fn test_class_field_removal_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.A has fields x and y
+    i.set("foo", "class A:\n    x: int = 1\n    y: int = 2");
+    i.set("bar", "from foo import A\nclass B:\n    a: A");
+    i.set(
+        "main",
+        "from bar import B\ndef f(b: B) -> int:\n    return b.a.y",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Remove field y from A - main should see an error
+    i.set("foo", "class A:\n    x: int = 1");
+    i.set(
+        "main",
+        "from bar import B\ndef f(b: B) -> int:\n    return b.a.y # E: Object of class `A` has no attribute `y`",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that method signature changes propagate through the dependency chain.
+///
+/// When a class method's signature changes, callers should be recomputed.
+#[test]
+fn test_class_method_signature_change_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.A has method m(self) -> int
+    i.set("foo", "class A:\n    def m(self) -> int: return 1");
+    i.set("bar", "from foo import A\nclass B:\n    a: A");
+    i.set(
+        "main",
+        "from bar import B\ndef f(b: B) -> int:\n    return b.a.m()",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change method to require an argument - main should see an error
+    i.set("foo", "class A:\n    def m(self, n: int) -> int: return n");
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test generic class type parameter changes propagate.
+///
+/// When a generic class's type parameters change, modules using the class
+/// with specific type arguments should be recomputed.
+#[test]
+fn test_generic_class_type_param_change_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.Container is a simple class with field items: list[int]
+    i.set("foo", "class Container:\n    items: list[int]");
+    i.set(
+        "bar",
+        "from foo import Container\nclass Wrapper:\n    c: Container",
+    );
+    i.set(
+        "main",
+        "from bar import Wrapper\ndef f(w: Wrapper) -> int:\n    return w.c.items[0]",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change items to list[str] - main should see a type error
+    i.set("foo", "class Container:\n    items: list[str]");
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that NamedTuple field changes propagate correctly.
+///
+/// NamedTuple has synthesized fields similar to dataclass.
+#[test]
+fn test_namedtuple_field_change_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.Point is a NamedTuple with x: int, y: int
+    i.set(
+        "foo",
+        "from typing import NamedTuple\nclass Point(NamedTuple):\n    x: int\n    y: int",
+    );
+    i.set(
+        "bar",
+        "from foo import Point\nclass Line:\n    start: Point",
+    );
+    i.set(
+        "main",
+        "from bar import Line\ndef length(l: Line) -> int:\n    return l.start.x + l.start.y",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change field types to str - main should be recomputed
+    i.set(
+        "foo",
+        "from typing import NamedTuple\nclass Point(NamedTuple):\n    x: str\n    y: str",
+    );
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that Protocol changes propagate correctly.
+///
+/// When a Protocol's method signature changes, implementors and users
+/// should be recomputed.
+#[test]
+fn test_protocol_change_propagates() {
+    let mut i = Incremental::new();
+
+    // foo.Proto is a Protocol with method m() -> int
+    i.set(
+        "foo",
+        "from typing import Protocol\nclass Proto(Protocol):\n    def m(self) -> int: ...",
+    );
+    i.set(
+        "bar",
+        "from foo import Proto\nclass Impl:\n    def m(self) -> int: return 1",
+    );
+    i.set(
+        "main",
+        "from foo import Proto\nfrom bar import Impl\ndef f(p: Proto) -> int:\n    return p.m()\nx: Proto = Impl()",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change Protocol method to return str - main should be recomputed
+    i.set(
+        "foo",
+        "from typing import Protocol\nclass Proto(Protocol):\n    def m(self) -> str: ...",
+    );
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test four-level dependency chain with class field change.
+///
+/// This is a more thorough version of test_stale_typed_dict that verifies
+/// propagation through a 4-level chain.
+#[test]
+fn test_four_level_class_field_chain() {
+    let mut i = Incremental::new();
+
+    // Chain: main -> baz -> bar -> foo
+    // Each level wraps the previous level's class
+    i.set("foo", "class A:\n    val: int = 1");
+    i.set("bar", "from foo import A\nclass B:\n    a: A");
+    i.set("baz", "from bar import B\nclass C:\n    b: B");
+    i.set(
+        "main",
+        "from baz import C\ndef get_val(c: C) -> int:\n    return c.b.a.val",
+    );
+    i.check(&["main"], &["main", "foo", "bar", "baz"]);
+
+    i.set("foo", "class A:\n    val: str = 'hello'");
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that star import properly invalidates on any export change.
+///
+/// Modules using `from X import *` should be invalidated when ANY export
+/// in X changes, including class-related exports.
+#[test]
+fn test_star_import_invalidates_on_class_change() {
+    let mut i = Incremental::new();
+
+    // bar uses star import from foo
+    i.set("foo", "class A:\n    x: int = 1\nclass B:\n    y: int = 2");
+    i.set("bar", "from foo import *\nclass C:\n    a: A");
+    i.set(
+        "main",
+        "from bar import C\ndef f(c: C) -> int:\n    return c.a.x",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change B (not A) - bar should still be recomputed because of star import
+    i.set(
+        "foo",
+        "class A:\n    x: int = 1\nclass B:\n    y: str = 'changed'",
+    );
+    // bar should be recomputed even though it only uses A, because star import
+    // means it depends on all exports
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
+
+/// Test that enum member changes propagate correctly.
+#[test]
+fn test_enum_member_change_propagates() {
+    let mut i = Incremental::new();
+
+    i.set(
+        "foo",
+        "from enum import Enum\nclass Color(Enum):\n    RED = 1\n    GREEN = 2",
+    );
+    i.set(
+        "bar",
+        "from foo import Color\nclass Palette:\n    primary: Color",
+    );
+    i.set(
+        "main",
+        "from bar import Palette\nfrom foo import Color\ndef f(p: Palette):\n    if p.primary == Color.RED: pass",
+    );
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Add a new enum member - main should be recomputed
+    i.set(
+        "foo",
+        "from enum import Enum\nclass Color(Enum):\n    RED = 1\n    GREEN = 2\n    BLUE = 3",
+    );
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+}
