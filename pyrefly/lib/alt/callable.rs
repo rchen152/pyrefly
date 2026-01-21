@@ -1131,7 +1131,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if let Some(targs) = ctor_targs {
             self.solver().generalize_class_targs(targs);
         }
-        if let Err(e) = self.solver().finish_quantified(qs) {
+        if let Err(e) = self
+            .solver()
+            .finish_quantified(qs, self.solver().infer_with_first_use)
+        {
             for e in e {
                 let kind = TypeCheckKind::TypeVarSpecialization(e.name);
                 self.error(

@@ -727,15 +727,13 @@ impl Solver {
         callable.visit_mut(&mut |t| t.subst_mut(&mp));
         drop(mp);
 
-        // Solve for the vars created above. If this errors, then the definition
-        // is invalid, and we should have raised an error at the definition site.
+        // Solve for the vars created above.
         is_subset(self_obj, &self_param);
 
-        // Either we have solutions, or we fall back to Any. We don't use finish_quantified
-        // because we don't want Variable::Partial.
-        for v in vs.0 {
-            self.force_var(v);
-        }
+        // Either we have solutions, or we fall back to Any. We don't want Variable::Partial.
+        // If this errors, then the definition is invalid, and we should have raised an error at
+        // the definition site.
+        let _specialization_errors = self.finish_quantified(vs, false);
 
         callable
     }
@@ -753,6 +751,7 @@ impl Solver {
     pub fn finish_quantified(
         &self,
         vs: QuantifiedHandle,
+        infer_with_first_use: bool,
     ) -> Result<(), Vec1<TypeVarSpecializationError>> {
         let lock = self.variables.lock();
         let mut err = Vec::new();
@@ -767,7 +766,7 @@ impl Solver {
                     }
                 }
                 Variable::Quantified(q) => {
-                    if self.infer_with_first_use {
+                    if infer_with_first_use {
                         *e = Variable::finished(q);
                     } else {
                         *e = Variable::Answer(q.as_gradual_type())
@@ -1662,6 +1661,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
         &self,
         vs: QuantifiedHandle,
     ) -> Result<(), Vec1<TypeVarSpecializationError>> {
-        self.solver.finish_quantified(vs)
+        self.solver
+            .finish_quantified(vs, self.solver.infer_with_first_use)
     }
 }
