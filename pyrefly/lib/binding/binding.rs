@@ -2168,10 +2168,13 @@ pub enum ClassFieldDefinition {
     /// Declared with no annotation or assignment (this is impossible
     /// in a normal class, but can happen with some synthesized classes).
     DeclaredWithoutAnnotation,
-    /// Defined via assignment, possibly with an annotation
+    /// Defined via assignment, possibly with an annotation.
+    /// `alias_of` is set when the value is a simple name referring to another
+    /// field in the same class (used for enum alias detection).
     AssignedInBody {
         value: ExprOrBinding,
         annotation: Option<Idx<KeyAnnotation>>,
+        alias_of: Option<Name>,
     },
     /// Defined by a `def` form. Because of decorators it may not
     /// actually *be* a method, hence the name `MethodLike`.

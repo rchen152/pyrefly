@@ -1053,7 +1053,11 @@ impl Query {
                     // Get field type efficiently (avoids expensive position-based lookup)
                     // Priority: annotation type > expression type trace > ClassField.ty()
                     let field_ty = match &class_field.definition {
-                        ClassFieldDefinition::AssignedInBody { value, annotation }
+                        ClassFieldDefinition::AssignedInBody {
+                            value,
+                            annotation,
+                            alias_of: _,
+                        }
                         | ClassFieldDefinition::DefinedInMethod {
                             value, annotation, ..
                         } => {

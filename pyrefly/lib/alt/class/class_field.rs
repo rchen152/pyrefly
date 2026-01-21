@@ -1938,11 +1938,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 | ClassFieldDefinition::MethodLike { .. }
                 | ClassFieldDefinition::DefinedWithoutAssign { .. }
         );
+        // Extract alias_of from field_definition for enum alias detection
+        let alias_of = match field_definition {
+            ClassFieldDefinition::AssignedInBody { alias_of, .. } => alias_of.as_ref(),
+            _ => None,
+        };
         self.get_enum_class_field_type(
             class,
             name,
             direct_annotation,
             ty,
+            alias_of,
             is_initialized_on_class_body,
             is_descriptor,
             range,
