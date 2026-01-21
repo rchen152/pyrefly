@@ -67,7 +67,6 @@ use crate::report::pysa::ast_visitor::AstScopedVisitor;
 use crate::report::pysa::ast_visitor::ScopeExportedFunctionFlags;
 use crate::report::pysa::ast_visitor::Scopes;
 use crate::report::pysa::ast_visitor::visit_module_ast;
-use crate::report::pysa::captured_variable::CapturedVariable;
 use crate::report::pysa::captured_variable::CapturedVariableRef;
 use crate::report::pysa::captured_variable::WholeProgramCapturedVariables;
 use crate::report::pysa::class::ClassRef;
@@ -2335,26 +2334,21 @@ impl<'a> CallGraphVisitor<'a> {
             && let Some(current_module_captured_variables) = self
                 .captured_variables
                 .get_for_module(self.module_context.module_id)
-        {
-            let captured_variable = CapturedVariable {
-                name: name.id().clone(),
-            };
-            if let Some(captured) = current_module_captured_variables
+            && let Some(captured) = current_module_captured_variables
                 .get(current_function)
-                .and_then(|captured_variables| captured_variables.get(&captured_variable))
+                .and_then(|captured_variables| captured_variables.get(name.id()))
                 .cloned()
                 .map(|outer_function| CapturedVariableRef {
                     outer_function,
-                    name: captured_variable.name,
+                    name: name.id().clone(),
                 })
-            {
-                return IdentifierCallees {
-                    if_called: CallCallees::empty(),
-                    global_targets: vec![],
-                    nonlocal_targets: vec![captured],
-                };
-            }
-        };
+        {
+            return IdentifierCallees {
+                if_called: CallCallees::empty(),
+                global_targets: vec![],
+                nonlocal_targets: vec![captured],
+            };
+        }
 
         let callee_type = self.module_context.answers.get_type_trace(name.range());
         let callee_expr = Some(AnyNodeRef::from(name));
