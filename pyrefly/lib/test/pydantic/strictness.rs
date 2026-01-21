@@ -175,7 +175,7 @@ reveal_type(Model10.__init__)  # E: revealed type: (self: Model10, *, u: LaxUUID
 );
 
 pydantic_testcase!(
-    bug = "An error should be raised here",
+    bug = "Errors should be raised here",
     test_lax_mode_coercion_literals,
     r#"
 from typing import Literal
@@ -185,6 +185,11 @@ class Model1(BaseModel):
     status: Literal[1]
 
 m = Model1(status="1")
+
+class Model2(BaseModel):
+    value: Literal["MyLiteral"]
+
+Model2(value=2) 
     "#,
 );
 
