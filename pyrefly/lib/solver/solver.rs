@@ -1248,7 +1248,6 @@ pub enum SubsetError {
     /// The name of a positional parameter differs between `got` and `want`.
     PosParamName(Name, Name),
     /// Instantiations for quantified vars are incompatible with bounds
-    #[allow(dead_code)]
     TypeVarSpecialization(Vec1<TypeVarSpecializationError>),
     /// `got` is missing an attribute that the Protocol `want` requires
     /// The first element is the name of the protocol, the second is the name of the attribute

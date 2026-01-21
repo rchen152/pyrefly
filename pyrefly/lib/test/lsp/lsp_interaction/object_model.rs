@@ -920,6 +920,7 @@ impl TestClient {
     }
 
     /// The next publishDiagnostics for that path should have the expected count, otherwise error
+    #[expect(dead_code)]
     pub fn expect_publish_diagnostics_must_have_error_count(
         &self,
         path: PathBuf,
@@ -1107,7 +1108,7 @@ impl TestClient {
         Ok(())
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code)]
     pub fn untyped_import_diagnostic_response(
         package_name: &str,
         line: u32,
