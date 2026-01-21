@@ -107,7 +107,7 @@ baseline = "baseline.json"
 
 When the baseline is specified in the configuration file, you don't need to pass the `--baseline` flag on every invocation. The CLI flag takes precedence if both are specified.
 
-Note that `baseline` is a **project-level setting** and cannot be overridden in [`sub-config`](/docs/configuration#sub-configs) sections. If you need different baseline files for different parts of your codebase, consider using separate Pyrefly configuration files.
+Note that `baseline` is a **project-level setting** and cannot be overridden in [`sub-config`](./configuration.mdx#sub-configs) sections. If you need different baseline files for different parts of your codebase, consider using separate Pyrefly configuration files.
 
 Errors are matched with the baseline by looking at file, error code, and column number.
 Note that errors suppressed by the baseline file are still shown in the IDE.
