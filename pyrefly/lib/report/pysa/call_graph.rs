@@ -20,6 +20,7 @@ use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_types::callable::Param;
 use pyrefly_types::callable::Params;
 use pyrefly_types::class::Class;
+use pyrefly_types::typed_dict::TypedDict;
 use pyrefly_types::types::BoundMethod;
 use pyrefly_types::types::BoundMethodType;
 use pyrefly_types::types::OverloadType;
@@ -1888,6 +1889,16 @@ impl<'a> CallGraphVisitor<'a> {
                 let str_class = self.module_context.stdlib.str().class_object();
                 call_targets_from_method_name_with_class(str_class)
             }
+            Some(Type::TypedDict(typed_dict)) | Some(Type::PartialTypedDict(typed_dict)) => {
+                match typed_dict {
+                    TypedDict::TypedDict(inner) => {
+                        call_targets_from_method_name_with_class(inner.class_object())
+                    }
+                    TypedDict::Anonymous(..) => {
+                        MaybeResolved::Unresolved(UnresolvedReason::UnexpectedDefiningClass)
+                    }
+                }
+            }
             _ => MaybeResolved::Unresolved(UnresolvedReason::UnexpectedDefiningClass),
         };
         if call_targets.is_unresolved() {
@@ -2177,6 +2188,25 @@ impl<'a> CallGraphVisitor<'a> {
                 self.resolve_constructor_callees(
                     init_method,
                     new_method,
+                    callee_expr,
+                    callee_type,
+                    return_type,
+                    callee_expr_suffix,
+                    exclude_object_methods,
+                )
+            }
+            Some(CallTargetLookup::Ok(box crate::alt::call::CallTarget::TypedDict(
+                typed_dict_inner,
+            ))) => {
+                let init_method = self
+                    .module_context
+                    .transaction
+                    .ad_hoc_solve(&self.module_context.handle, |solver| {
+                        solver.get_typed_dict_dunder_init(&typed_dict_inner)
+                    });
+                self.resolve_constructor_callees(
+                    init_method,
+                    /* new_method */ None,
                     callee_expr,
                     callee_type,
                     return_type,
