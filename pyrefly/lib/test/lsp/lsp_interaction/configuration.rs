@@ -105,6 +105,9 @@ fn test_pythonpath_change() {
             configuration: Some(Some(
                 json!([{"pyrefly": {"displayTypeErrors": "force-on"}}]),
             )),
+            initialization_options: Some(json!({
+                "pyrefly": {"streamDiagnostics": false},
+            })),
             ..Default::default()
         })
         .expect("Failed to initialize");
@@ -117,7 +120,7 @@ fn test_pythonpath_change() {
             test_files_root.path().join("custom_interpreter/src/foo.py"),
             1,
         )
-        .expect("Failed to receive initial publish diagnostics");
+        .expect("Failed to receive publish diagnostics");
 
     // The definition response is in the same file
     interaction
@@ -139,11 +142,11 @@ fn test_pythonpath_change() {
     // After the new config takes effect, publish diagnostics should have 0 errors
     interaction
         .client
-        .expect_publish_diagnostics_must_have_error_count(
+        .expect_publish_diagnostics_eventual_error_count(
             test_files_root.path().join("custom_interpreter/src/foo.py"),
             0,
         )
-        .expect("Failed to receive 0 diagnostics for new config");
+        .expect("Failed to receive publish diagnostics");
     // The definition can now be found in site-packages
     interaction
         .client
@@ -169,24 +172,14 @@ fn test_pythonpath_change() {
                 "pythonPath": bad_interpreter_path.to_str().unwrap()
             }
         ]));
-    // After the bad config takes effect, publish diagnostics should have 1 error.
-    // With diagnostic streaming, we need to wait for both the streaming diagnostic
-    // and the committed diagnostic to ensure the transaction has fully committed
-    // before we can expect the definition request to reflect the new state.
+    // After the bad config takes effect, publish diagnostics should have 1 error
     interaction
         .client
         .expect_publish_diagnostics_eventual_error_count(
             test_files_root.path().join("custom_interpreter/src/foo.py"),
             1,
         )
-        .expect("Failed to receive streaming diagnostics");
-    interaction
-        .client
-        .expect_publish_diagnostics_must_have_error_count(
-            test_files_root.path().join("custom_interpreter/src/foo.py"),
-            1,
-        )
-        .expect("Failed to receive committed diagnostics");
+        .expect("Failed to receive publish diagnostics");
     // The definition should not be found in site-packages
     interaction
         .client

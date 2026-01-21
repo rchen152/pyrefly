@@ -475,6 +475,8 @@ pub struct Server {
     sourcedb_queue: HeavyTaskQueue,
     /// Any configs whose find cache should be invalidated.
     invalidated_source_dbs: Mutex<SmallSet<ArcId<Box<dyn SourceDatabase + 'static>>>>,
+    /// Custom initialization options are provided via initialize_params.initializationOptions
+    /// The type should match `LspConfig`
     initialize_params: InitializeParams,
     indexing_mode: IndexingMode,
     workspace_indexing_limit: usize,
@@ -525,6 +527,9 @@ pub struct Server {
     /// - Empty set means there is an ongoing recheck but all open files at the start of
     ///   the recheck were subsequently modified
     currently_streaming_diagnostics_for_handles: RwLock<Option<SmallSet<Handle>>>,
+    /// Whether to stream diagnostics as they become available during recheck.
+    /// Defaults to true. Set via `streamDiagnostics` initialization option.
+    stream_diagnostics: bool,
 }
 
 pub fn shutdown_finish(connection: &Connection, id: RequestId) {
@@ -1655,6 +1660,15 @@ impl Server {
 
         let workspaces = Arc::new(Workspaces::new(Workspace::default(), &folders));
 
+        // Parse streamDiagnostics from initialization options, defaulting to true
+        let stream_diagnostics = initialize_params
+            .initialization_options
+            .as_ref()
+            .and_then(|opts| opts.get("pyrefly"))
+            .and_then(|pyrefly| pyrefly.get("streamDiagnostics"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+
         let config_finder = Workspaces::config_finder(workspaces.dupe());
 
         // Parse commentFoldingRanges from initialization options, defaults to false
@@ -1691,6 +1705,7 @@ impl Server {
             id: Uuid::new_v4(),
             comment_folding_ranges,
             currently_streaming_diagnostics_for_handles: RwLock::new(None),
+            stream_diagnostics,
         };
 
         if let Some(init_options) = &s.initialize_params.initialization_options {
@@ -2133,6 +2148,7 @@ impl Server {
 
     fn invalidate(&self, f: impl FnOnce(&mut Transaction) + Send + Sync + 'static) {
         let open_handles = self.get_open_file_handles();
+        let stream_diagnostics = self.stream_diagnostics;
         self.recheck_queue.queue_task(
             TelemetryEventKind::Invalidate,
             Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
@@ -2141,11 +2157,13 @@ impl Server {
                 let open_handles_set: SmallSet<Handle> = open_handles.iter().cloned().collect();
                 // Store the snapshot so non-committable transactions know not to publish
                 // diagnostics for these files (they'll be streamed by this transaction)
-                *server.currently_streaming_diagnostics_for_handles.write() =
-                    Some(open_handles_set.clone());
+                if stream_diagnostics {
+                    *server.currently_streaming_diagnostics_for_handles.write() =
+                        Some(open_handles_set.clone());
+                }
                 let publish_callback =
                     move |transaction: &Transaction<'_>, handle: &Handle, changed: bool| {
-                        if changed && open_handles_set.contains(handle) {
+                        if stream_diagnostics && changed && open_handles_set.contains(handle) {
                             server.publish_for_handles(
                                 transaction,
                                 std::slice::from_ref(handle),
@@ -3860,15 +3878,19 @@ impl Server {
     /// This ensures validate_in_memory() only runs after config invalidation completes
     fn invalidate_config_and_validate_in_memory(&self) {
         let open_handles = self.get_open_file_handles();
+        let stream_diagnostics = self.stream_diagnostics;
         self.recheck_queue.queue_task(
             TelemetryEventKind::InvalidateConfig,
             Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                 let open_handles_set: SmallSet<Handle> = open_handles.iter().cloned().collect();
-                *server.currently_streaming_diagnostics_for_handles.write() =
-                    Some(open_handles_set.clone());
+                // Only set this if streaming is enabled
+                if stream_diagnostics {
+                    *server.currently_streaming_diagnostics_for_handles.write() =
+                        Some(open_handles_set.clone());
+                }
                 let publish_callback =
                     move |transaction: &Transaction<'_>, handle: &Handle, changed: bool| {
-                        if changed && open_handles_set.contains(handle) {
+                        if stream_diagnostics && changed && open_handles_set.contains(handle) {
                             server.publish_for_handles(
                                 transaction,
                                 std::slice::from_ref(handle),
