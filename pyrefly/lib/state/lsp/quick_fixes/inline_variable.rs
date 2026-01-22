@@ -203,18 +203,10 @@ fn references_in_nested_scope(
 ) -> bool {
     let mut nested_ranges = Vec::new();
     collect_nested_scopes(&ast.body, scope_range, &mut nested_ranges);
-    for reference in references {
-        if *reference == definition_range {
-            continue;
-        }
-        if nested_ranges
-            .iter()
-            .any(|nested| nested.contains_range(*reference))
-        {
-            return true;
-        }
-    }
-    false
+    references
+        .iter()
+        .filter(|r| **r != definition_range)
+        .any(|r| nested_ranges.iter().any(|nested| nested.contains_range(*r)))
 }
 
 fn collect_nested_scopes(stmts: &[Stmt], scope_range: TextRange, ranges: &mut Vec<TextRange>) {

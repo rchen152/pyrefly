@@ -99,7 +99,7 @@ pub(crate) fn inline_method_code_actions(
         )
     } else {
         let none_text = "None".to_owned();
-        let none_range = TextRange::at(call.range().start(), TextSize::new(0));
+        let none_range = TextRange::empty(call.range().start());
         (none_range, none_text, Vec::new(), false)
     };
     let replaced = apply_replacements_in_text(&expr_text, expr_range.start(), &replacements)?;
