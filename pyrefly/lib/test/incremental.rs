@@ -1211,3 +1211,63 @@ fn test_enum_member_change_propagates() {
     );
     i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
 }
+
+/// Test fine-grained tracking when importing a class: changing an unrelated
+/// function should NOT trigger recomputation.
+#[test]
+fn test_class_import_unrelated_function_change_no_recompute() {
+    let mut i = Incremental::new();
+
+    // foo has class A and unrelated function f; main imports only A
+    i.set("foo", "class A:\n    x: int = 1\ndef f() -> int: return 42");
+    i.set(
+        "main",
+        "from foo import A\ndef use_a(a: A) -> int: return a.x",
+    );
+    i.check(&["main"], &["main", "foo"]);
+
+    // Change only f - main should NOT be recomputed since it doesn't import f
+    i.set(
+        "foo",
+        "class A:\n    x: int = 1\ndef f() -> str: return 'changed'",
+    );
+    i.check(&["main"], &["foo"]);
+}
+
+#[test]
+fn test_mixed_import_failed_export_invalidated() {
+    let mut i = Incremental::new();
+
+    // Initial state: foo exports x but not y
+    i.set("foo", "x = 1");
+    i.set(
+        "main",
+        "from foo import x, y  # E: Could not import `y` from `foo`",
+    );
+    i.check(&["main", "foo"], &["main", "foo"]);
+
+    let main_handle = i.handle("main");
+
+    // Verify there's an error before the fix
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected error before foo exports y"
+    );
+
+    i.set("foo", "x = 1\ny = 2");
+    i.check_ignoring_expectations(&["main"], &["foo", "main"]);
+    let errors_after = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        errors_after.shown.is_empty(),
+        "Expected error after foo exports y"
+    );
+}
