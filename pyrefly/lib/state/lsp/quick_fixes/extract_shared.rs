@@ -6,6 +6,7 @@
  */
 
 use pyrefly_python::ast::Ast;
+use ruff_python_ast::AnyNodeRef;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ModModule;
 use ruff_python_ast::Parameters;
@@ -142,4 +143,33 @@ pub(super) fn member_name_from_stmt(stmt: &Stmt) -> Option<String> {
         }
         _ => None,
     }
+}
+
+/// Checks if an expression creates a new scope where variable semantics differ.
+/// These include lambdas and comprehensions, where inlining could change behavior.
+pub(super) fn is_disallowed_scope_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Lambda(_)
+            | Expr::ListComp(_)
+            | Expr::SetComp(_)
+            | Expr::DictComp(_)
+            | Expr::Generator(_)
+    )
+}
+
+/// Checks if a reference position is inside a disallowed scope expression.
+pub(super) fn reference_in_disallowed_scope(ast: &ModModule, reference: TextRange) -> bool {
+    Ast::locate_node(ast, reference.start())
+        .into_iter()
+        .any(|node| {
+            matches!(
+                node,
+                AnyNodeRef::ExprLambda(_)
+                    | AnyNodeRef::ExprListComp(_)
+                    | AnyNodeRef::ExprSetComp(_)
+                    | AnyNodeRef::ExprDictComp(_)
+                    | AnyNodeRef::ExprGenerator(_)
+            )
+        })
 }

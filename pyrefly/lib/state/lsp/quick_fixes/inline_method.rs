@@ -27,6 +27,7 @@ use crate::state::lsp::Transaction;
 use crate::state::lsp::quick_fixes::extract_function::LocalRefactorCodeAction;
 use crate::state::lsp::quick_fixes::extract_shared::first_parameter_name;
 use crate::state::lsp::quick_fixes::extract_shared::function_has_decorator;
+use crate::state::lsp::quick_fixes::extract_shared::is_disallowed_scope_expr;
 
 pub(crate) fn inline_method_code_actions(
     transaction: &Transaction<'_>,
@@ -249,29 +250,20 @@ fn collect_param_replacements(
         if *invalid {
             return;
         }
-        match expr {
-            Expr::Lambda(_)
-            | Expr::ListComp(_)
-            | Expr::SetComp(_)
-            | Expr::DictComp(_)
-            | Expr::Generator(_) => {
+        if is_disallowed_scope_expr(expr) {
+            *invalid = true;
+            return;
+        }
+        if let Expr::Name(name) = expr {
+            if matches!(name.ctx, ExprContext::Store) && param_map.contains_key(name.id.as_str()) {
                 *invalid = true;
                 return;
             }
-            Expr::Name(name) => {
-                if matches!(name.ctx, ExprContext::Store)
-                    && param_map.contains_key(name.id.as_str())
-                {
-                    *invalid = true;
-                    return;
-                }
-                if matches!(name.ctx, ExprContext::Load)
-                    && let Some(replacement) = param_map.get(name.id.as_str())
-                {
-                    replacements.push((name.range(), replacement.clone()));
-                }
+            if matches!(name.ctx, ExprContext::Load)
+                && let Some(replacement) = param_map.get(name.id.as_str())
+            {
+                replacements.push((name.range(), replacement.clone()));
             }
-            _ => {}
         }
         expr.recurse(&mut |child| visit(child, param_map, replacements, invalid));
     }

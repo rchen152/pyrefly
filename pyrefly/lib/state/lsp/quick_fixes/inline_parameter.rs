@@ -25,6 +25,7 @@ use ruff_text_size::TextSize;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
 use crate::state::lsp::quick_fixes::extract_function::LocalRefactorCodeAction;
+use crate::state::lsp::quick_fixes::extract_shared::is_disallowed_scope_expr;
 
 pub(crate) fn inline_parameter_code_actions(
     transaction: &Transaction<'_>,
@@ -186,25 +187,18 @@ impl<'a> Visitor<'a> for ParamUseCollector {
         if self.invalid {
             return;
         }
-        match expr {
-            Expr::Lambda(_)
-            | Expr::ListComp(_)
-            | Expr::SetComp(_)
-            | Expr::DictComp(_)
-            | Expr::Generator(_) => {
+        if is_disallowed_scope_expr(expr) {
+            self.invalid = true;
+            return;
+        }
+        if let Expr::Name(name) = expr {
+            if name.id.as_str() == self.name && matches!(name.ctx, ExprContext::Store) {
                 self.invalid = true;
                 return;
             }
-            Expr::Name(name) => {
-                if name.id.as_str() == self.name && matches!(name.ctx, ExprContext::Store) {
-                    self.invalid = true;
-                    return;
-                }
-                if name.id.as_str() == self.name && matches!(name.ctx, ExprContext::Load) {
-                    self.uses.push(name.range());
-                }
+            if name.id.as_str() == self.name && matches!(name.ctx, ExprContext::Load) {
+                self.uses.push(name.range());
             }
-            _ => {}
         }
         ruff_python_ast::visitor::walk_expr(self, expr);
     }

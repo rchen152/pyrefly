@@ -11,7 +11,6 @@ use pyrefly_build::handle::Handle;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::symbol_kind::SymbolKind;
 use pyrefly_util::visit::Visit;
-use ruff_python_ast::AnyNodeRef;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprContext;
 use ruff_python_ast::ModModule;
@@ -24,6 +23,7 @@ use crate::state::lsp::FindPreference;
 use crate::state::lsp::IdentifierContext;
 use crate::state::lsp::Transaction;
 use crate::state::lsp::quick_fixes::extract_function::LocalRefactorCodeAction;
+use crate::state::lsp::quick_fixes::extract_shared::reference_in_disallowed_scope;
 
 pub(crate) fn inline_variable_code_actions(
     transaction: &Transaction<'_>,
@@ -68,7 +68,7 @@ pub(crate) fn inline_variable_code_actions(
         return None;
     }
     if references.iter().any(|range| {
-        *range != def.definition_range && reference_in_disallowed_expr(ast.as_ref(), *range)
+        *range != def.definition_range && reference_in_disallowed_scope(ast.as_ref(), *range)
     }) {
         return None;
     }
@@ -215,20 +215,6 @@ fn references_in_nested_scope(
         }
     }
     false
-}
-
-fn reference_in_disallowed_expr(ast: &ModModule, reference: TextRange) -> bool {
-    let covering_nodes = Ast::locate_node(ast, reference.start());
-    covering_nodes.iter().any(|node| {
-        matches!(
-            node,
-            AnyNodeRef::ExprLambda(_)
-                | AnyNodeRef::ExprListComp(_)
-                | AnyNodeRef::ExprSetComp(_)
-                | AnyNodeRef::ExprDictComp(_)
-                | AnyNodeRef::ExprGenerator(_)
-        )
-    })
 }
 
 fn collect_nested_scopes(stmts: &[Stmt], scope_range: TextRange, ranges: &mut Vec<TextRange>) {
