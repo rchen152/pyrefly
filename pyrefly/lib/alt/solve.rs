@@ -2297,11 +2297,40 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 if branches.len() == 1 {
                     self.get_idx(branches[0].value_key).arc_clone()
                 } else {
-                    // TODO(Step 9): Implement termination-based filtering
-                    let type_infos = branches
+                    // Filter branches based on type-based termination (Never/NoReturn)
+                    let live_value_keys: Vec<Idx<Key>> = branches
                         .iter()
                         .filter_map(|branch| {
-                            let t: Arc<TypeInfo> = self.get_idx(branch.value_key);
+                            match branch.termination_key {
+                                None => {
+                                    // No terminal statement, branch is live
+                                    Some(branch.value_key)
+                                }
+                                Some(term_key) => {
+                                    let term_type = self.get_idx(term_key);
+                                    if term_type.ty().is_never() {
+                                        // Branch terminated with Never/NoReturn
+                                        None
+                                    } else {
+                                        // Terminal statement doesn't return Never, branch is live
+                                        Some(branch.value_key)
+                                    }
+                                }
+                            }
+                        })
+                        .collect();
+
+                    // If all branches terminated, use all value keys (consistent with binding-time)
+                    let keys_to_use = if live_value_keys.is_empty() {
+                        branches.iter().map(|b| b.value_key).collect()
+                    } else {
+                        live_value_keys
+                    };
+
+                    let type_infos = keys_to_use
+                        .iter()
+                        .filter_map(|k| {
+                            let t: Arc<TypeInfo> = self.get_idx(*k);
                             // Filter out all `@overload`-decorated types except the one that
                             // accumulates all signatures into a Type::Overload.
                             if matches!(t.ty(), Type::Overload(_)) || !t.ty().is_overload() {
@@ -2311,6 +2340,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             }
                         })
                         .collect::<Vec<_>>();
+
                     TypeInfo::join(
                         type_infos,
                         &|ts| self.unions(ts),
