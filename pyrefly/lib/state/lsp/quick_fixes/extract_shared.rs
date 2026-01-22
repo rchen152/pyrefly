@@ -304,3 +304,15 @@ pub(super) struct MethodInfo {
     /// Name of the receiver parameter (typically `self` or `cls`).
     pub receiver_name: String,
 }
+
+/// Extracts the text at the given range from a source string.
+/// Returns `None` if the range extends beyond the source bounds.
+pub(super) fn code_at_range<'a>(source: &'a str, range: TextRange) -> Option<&'a str> {
+    let start = range.start().to_usize();
+    let end = range.end().to_usize();
+    if end <= source.len() {
+        Some(&source[start..end])
+    } else {
+        None
+    }
+}

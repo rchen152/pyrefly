@@ -31,6 +31,7 @@ use ruff_text_size::TextSize;
 
 use super::extract_function::LocalRefactorCodeAction;
 use super::extract_shared::MethodInfo;
+use super::extract_shared::code_at_range;
 use super::extract_shared::first_parameter_name;
 use super::extract_shared::function_has_decorator;
 use super::extract_shared::is_exact_expression;
@@ -455,10 +456,7 @@ fn collect_matching_expression_ranges(
 
         fn visit_expr(&mut self, expr: &'a Expr) {
             let range = expr.range();
-            if range.end().to_usize() <= self.source.len()
-                && &self.source[range.start().to_usize()..range.end().to_usize()]
-                    == self.expression_text
-            {
+            if code_at_range(self.source, range) == Some(self.expression_text) {
                 self.matches.push(range);
             }
             ruff_python_ast::visitor::walk_expr(self, expr);
@@ -651,11 +649,9 @@ fn bound_method_receiver<'a>(
 
 fn build_replacement_from_expr(expr: &Expr, source: &str) -> ArgReplacement {
     let range = expr.range();
-    let text = if range.end().to_usize() <= source.len() {
-        source[range.start().to_usize()..range.end().to_usize()].to_owned()
-    } else {
-        String::new()
-    };
+    let text = code_at_range(source, range)
+        .map(|s| s.to_owned())
+        .unwrap_or_default();
     let needs_parens = !matches!(expr, Expr::Name(_) | Expr::Attribute(_));
     ArgReplacement { text, needs_parens }
 }
