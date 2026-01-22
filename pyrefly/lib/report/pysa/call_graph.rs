@@ -2452,6 +2452,7 @@ impl<'a> CallGraphVisitor<'a> {
                          target,
                          attr_type: callee_type,
                      }| {
+                        // TODO(T252263933): Need more precise return types for `__getitem__` in `typed_dict.py`
                         let return_type =
                             if let Some(return_type) = callee_type.callable_return_type() {
                                 ScalarTypeProperties::from_type(&return_type, self.module_context)
