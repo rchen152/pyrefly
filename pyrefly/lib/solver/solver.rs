@@ -35,6 +35,7 @@ use vec1::Vec1;
 use vec1::vec1;
 
 use crate::alt::answers::LookupAnswer;
+use crate::alt::answers_solver::AnswersSolver;
 use crate::alt::attr::AttrSubsetError;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
@@ -1129,6 +1130,16 @@ pub struct TypeVarSpecializationError {
     pub want: Type,
     #[allow(dead_code)]
     pub error: SubsetError,
+}
+
+impl TypeVarSpecializationError {
+    pub fn to_error_msg<Ans: LookupAnswer>(self, ans: &AnswersSolver<Ans>) -> String {
+        TypeCheckKind::TypeVarSpecialization(self.name).format_error(
+            &ans.for_display(self.got),
+            &ans.for_display(self.want),
+            ans.module().name(),
+        )
+    }
 }
 
 #[derive(Debug, Clone)]

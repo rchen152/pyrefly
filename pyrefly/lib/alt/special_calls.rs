@@ -401,9 +401,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 self.solver().finish_quantified(vs, false)
                             {
                                 for e in specialization_errors {
-                                    unsafe_overlap_errors.push(format!(
-                                        "`{}` is not assignable to upper bound `{}` of type variable `{}`", self.for_display(e.got), self.for_display(e.want), e.name,
-                                    ))
+                                    unsafe_overlap_errors.push(e.to_error_msg(self))
                                 }
                             }
                             if !unsafe_overlap_errors.is_empty() {

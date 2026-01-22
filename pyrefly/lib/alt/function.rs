@@ -1534,12 +1534,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.for_display(Type::Callable(Box::new(impl_sig.clone()))),
                 )];
                 for e in specialization_errors {
-                    msg.push(format!(
-                        "`{}` is not assignable to upper bound `{}` of type variable `{}`",
-                        self.for_display(e.got),
-                        self.for_display(e.want),
-                        e.name
-                    ));
+                    msg.push(e.to_error_msg(self));
                 }
                 errors.add(
                     *range,

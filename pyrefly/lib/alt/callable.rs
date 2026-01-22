@@ -1136,16 +1136,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .finish_quantified(qs, self.solver().infer_with_first_use)
         {
             for e in e {
-                let kind = TypeCheckKind::TypeVarSpecialization(e.name);
                 self.error(
                     call_errors,
                     arguments_range,
-                    ErrorInfo::new(kind.as_error_kind(), context),
-                    kind.format_error(
-                        &self.for_display(e.got),
-                        &self.for_display(e.want),
-                        self.module().name(),
-                    ),
+                    ErrorInfo::new(ErrorKind::BadSpecialization, context),
+                    e.to_error_msg(self),
                 );
             }
         }
