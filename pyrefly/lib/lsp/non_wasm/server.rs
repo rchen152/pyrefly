@@ -34,6 +34,7 @@ use lsp_types::CodeActionOrCommand;
 use lsp_types::CodeActionParams;
 use lsp_types::CodeActionProviderCapability;
 use lsp_types::CodeActionResponse;
+use lsp_types::CodeActionTriggerKind;
 use lsp_types::CompletionList;
 use lsp_types::CompletionOptions;
 use lsp_types::CompletionParams;
@@ -3070,6 +3071,13 @@ impl Server {
                 },
             ));
         }
+        // Optimization: do not calculate refactors for automated codeactions since they're expensive
+        // If we had lazy code actions, we could keep them.
+        if let Some(trigger_kind) = params.context.trigger_kind
+            && trigger_kind == CodeActionTriggerKind::AUTOMATIC
+        {
+            return (!actions.is_empty()).then_some(actions);
+        }
         let mut push_refactor_actions = |refactors: Vec<LocalRefactorCodeAction>| {
             for action in refactors {
                 let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
@@ -3141,11 +3149,7 @@ impl Server {
         {
             actions.push(action);
         }
-        if actions.is_empty() {
-            None
-        } else {
-            Some(actions)
-        }
+        (!actions.is_empty()).then_some(actions)
     }
 
     fn document_highlight(
