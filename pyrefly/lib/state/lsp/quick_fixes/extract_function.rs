@@ -11,7 +11,6 @@ use dupe::Dupe;
 use lsp_types::CodeActionKind;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::docstring::dedent_block_preserving_layout;
-use pyrefly_python::module::Module;
 use pyrefly_util::visit::Visit;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprContext;
@@ -28,18 +27,11 @@ use super::extract_shared::MethodInfo;
 use super::extract_shared::first_parameter_name;
 use super::extract_shared::function_has_decorator;
 use super::extract_shared::line_indent_and_start;
+use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
 
 const HELPER_INDENT: &str = "    ";
-
-/// Description of a refactor edit that stays within the local workspace.
-#[derive(Clone, Debug)]
-pub struct LocalRefactorCodeAction {
-    pub title: String,
-    pub edits: Vec<(Module, TextRange, String)>,
-    pub kind: CodeActionKind,
-}
 
 /// Builds extract-function quick fix code actions for the supplied selection.
 pub(crate) fn extract_function_code_actions(

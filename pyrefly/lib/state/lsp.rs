@@ -86,7 +86,7 @@ use crate::types::types::Type;
 mod dict_completions;
 mod quick_fixes;
 
-pub(crate) use self::quick_fixes::extract_function::LocalRefactorCodeAction;
+pub(crate) use self::quick_fixes::types::LocalRefactorCodeAction;
 
 #[derive(Debug)]
 pub(crate) enum CalleeKind {

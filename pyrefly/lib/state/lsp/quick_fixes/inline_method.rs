@@ -22,9 +22,9 @@ use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 
+use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
-use crate::state::lsp::quick_fixes::extract_function::LocalRefactorCodeAction;
 use crate::state::lsp::quick_fixes::extract_shared::first_parameter_name;
 use crate::state::lsp::quick_fixes::extract_shared::function_has_decorator;
 use crate::state::lsp::quick_fixes::extract_shared::is_disallowed_scope_expr;

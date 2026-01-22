@@ -14,8 +14,8 @@ use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 
+use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::Transaction;
-use crate::state::lsp::quick_fixes::extract_function::LocalRefactorCodeAction;
 use crate::state::lsp::quick_fixes::extract_shared::is_exact_expression;
 use crate::state::lsp::quick_fixes::extract_shared::line_indent_and_start;
 use crate::state::lsp::quick_fixes::extract_shared::split_selection;

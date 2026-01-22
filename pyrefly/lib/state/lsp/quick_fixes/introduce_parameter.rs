@@ -29,7 +29,6 @@ use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 
-use super::extract_function::LocalRefactorCodeAction;
 use super::extract_shared::MethodInfo;
 use super::extract_shared::code_at_range;
 use super::extract_shared::first_parameter_name;
@@ -38,6 +37,7 @@ use super::extract_shared::is_exact_expression;
 use super::extract_shared::is_local_scope_stmt;
 use super::extract_shared::split_selection;
 use super::extract_shared::unique_name;
+use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
 
