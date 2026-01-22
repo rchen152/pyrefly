@@ -371,7 +371,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         // fresh vars and solve them during the `is_subset_eq` check below.
                         let protocol_metadata = metadata.protocol_metadata().unwrap();
                         if let Some(object_type) = &object_type
-                            && let Type::ClassType(protocol_class_type) =
+                            && let (vs, Type::ClassType(protocol_class_type)) =
                                 self.instantiate_fresh_class(cls)
                         {
                             let mut unsafe_overlap_errors = vec![];
@@ -395,6 +395,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                         "Attribute `{}` has incompatible types{}",
                                         field_name, error_msg,
                                     ));
+                                }
+                            }
+                            if let Err(specialization_errors) =
+                                self.solver().finish_quantified(vs, false)
+                            {
+                                for e in specialization_errors {
+                                    unsafe_overlap_errors.push(format!(
+                                        "`{}` is not assignable to upper bound `{}` of type variable `{}`", self.for_display(e.got), self.for_display(e.want), e.name,
+                                    ))
                                 }
                             }
                             if !unsafe_overlap_errors.is_empty() {
