@@ -8,10 +8,14 @@
 use pyrefly_python::ast::Ast;
 use ruff_python_ast::AnyNodeRef;
 use ruff_python_ast::Expr;
+use ruff_python_ast::ExprContext;
 use ruff_python_ast::ModModule;
 use ruff_python_ast::Parameters;
 use ruff_python_ast::Stmt;
 use ruff_python_ast::StmtFunctionDef;
+use ruff_python_ast::visitor::Visitor;
+use ruff_python_ast::visitor::walk_expr;
+use ruff_python_ast::visitor::walk_stmt;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
@@ -172,4 +176,83 @@ pub(super) fn reference_in_disallowed_scope(ast: &ModModule, reference: TextRang
                     | AnyNodeRef::ExprGenerator(_)
             )
         })
+}
+
+/// Collects references to a named identifier in statements or expressions.
+///
+/// This utility consolidates the common pattern of:
+/// 1. Finding Load-context references to a name
+/// 2. Detecting Store-context references (which invalidate inline operations)
+/// 3. Skipping nested function/class definitions (different scope)
+/// 4. Rejecting if references appear in disallowed expressions (lambdas, comprehensions)
+///
+/// The collector becomes "invalid" if:
+/// - A Store-context reference to the name is found
+/// - A Load-context reference appears inside a lambda or comprehension
+pub(super) struct NameRefCollector {
+    pub name: String,
+    pub load_refs: Vec<TextRange>,
+    pub invalid: bool,
+}
+
+impl NameRefCollector {
+    /// Creates a new collector for the given identifier name.
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            load_refs: Vec::new(),
+            invalid: false,
+        }
+    }
+
+    /// Collects references from statements, skipping nested function/class definitions.
+    pub fn visit_stmts(&mut self, stmts: &[Stmt]) {
+        for stmt in stmts {
+            if self.invalid {
+                return;
+            }
+            self.visit_stmt(stmt);
+        }
+    }
+}
+
+impl Visitor<'_> for NameRefCollector {
+    fn visit_stmt(&mut self, stmt: &Stmt) {
+        if self.invalid {
+            return;
+        }
+        // Skip nested function and class definitions to avoid capturing
+        // references in different scopes.
+        match stmt {
+            Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {}
+            _ => walk_stmt(self, stmt),
+        }
+    }
+
+    fn visit_expr(&mut self, expr: &Expr) {
+        if self.invalid {
+            return;
+        }
+        // Disallow references inside lambdas and comprehensions where
+        // inlining could change semantics.
+        if is_disallowed_scope_expr(expr) {
+            self.invalid = true;
+            return;
+        }
+        if let Expr::Name(name) = expr
+            && name.id.as_str() == self.name
+        {
+            match name.ctx {
+                ExprContext::Store => {
+                    self.invalid = true;
+                    return;
+                }
+                ExprContext::Load => {
+                    self.load_refs.push(name.range());
+                }
+                _ => {}
+            }
+        }
+        walk_expr(self, expr);
+    }
 }

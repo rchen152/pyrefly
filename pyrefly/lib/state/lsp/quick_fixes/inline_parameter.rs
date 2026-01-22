@@ -13,11 +13,8 @@ use pyrefly_python::symbol_kind::SymbolKind;
 use pyrefly_util::visit::Visit;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprCall;
-use ruff_python_ast::ExprContext;
 use ruff_python_ast::ModModule;
-use ruff_python_ast::Stmt;
 use ruff_python_ast::StmtFunctionDef;
-use ruff_python_ast::visitor::Visitor;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
@@ -25,7 +22,7 @@ use ruff_text_size::TextSize;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
 use crate::state::lsp::quick_fixes::extract_function::LocalRefactorCodeAction;
-use crate::state::lsp::quick_fixes::extract_shared::is_disallowed_scope_expr;
+use crate::state::lsp::quick_fixes::extract_shared::NameRefCollector;
 
 pub(crate) fn inline_parameter_code_actions(
     transaction: &Transaction<'_>,
@@ -85,12 +82,12 @@ pub(crate) fn inline_parameter_code_actions(
     let arg_text = module_info.code_at(arg_expr.range());
     let replacement = format!("({arg_text})");
     let mut edits = Vec::new();
-    let mut collector = ParamUseCollector::new(param_name);
-    collector.visit_body(&function_def.body);
-    if collector.invalid || collector.uses.is_empty() {
+    let mut collector = NameRefCollector::new(param_name.to_owned());
+    collector.visit_stmts(&function_def.body);
+    if collector.invalid || collector.load_refs.is_empty() {
         return None;
     }
-    for range in collector.uses {
+    for range in collector.load_refs {
         edits.push((module_info.dupe(), range, replacement.clone()));
     }
     let param_remove_range = expand_range_to_remove_item(module_info.contents(), param.range());
@@ -154,54 +151,6 @@ fn collect_calls_to_definition(
         return None;
     }
     Some(calls)
-}
-
-struct ParamUseCollector {
-    name: String,
-    uses: Vec<TextRange>,
-    invalid: bool,
-}
-
-impl ParamUseCollector {
-    fn new(name: &str) -> Self {
-        Self {
-            name: name.to_owned(),
-            uses: Vec::new(),
-            invalid: false,
-        }
-    }
-}
-
-impl<'a> Visitor<'a> for ParamUseCollector {
-    fn visit_stmt(&mut self, stmt: &'a Stmt) {
-        if self.invalid {
-            return;
-        }
-        match stmt {
-            Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {}
-            _ => ruff_python_ast::visitor::walk_stmt(self, stmt),
-        }
-    }
-
-    fn visit_expr(&mut self, expr: &'a Expr) {
-        if self.invalid {
-            return;
-        }
-        if is_disallowed_scope_expr(expr) {
-            self.invalid = true;
-            return;
-        }
-        if let Expr::Name(name) = expr {
-            if name.id.as_str() == self.name && matches!(name.ctx, ExprContext::Store) {
-                self.invalid = true;
-                return;
-            }
-            if name.id.as_str() == self.name && matches!(name.ctx, ExprContext::Load) {
-                self.uses.push(name.range());
-            }
-        }
-        ruff_python_ast::visitor::walk_expr(self, expr);
-    }
 }
 
 fn expand_range_to_remove_item(source: &str, item_range: TextRange) -> TextRange {
