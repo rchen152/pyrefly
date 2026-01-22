@@ -2113,6 +2113,70 @@ def f(x: Color) -> Color:
 );
 
 testcase!(
+    test_union_attribute_missing_no_suggestion,
+    r#"
+# When an attribute exists on some union members but not others,
+# we shouldn't suggest similar attributes from the types that have it
+def f(x: str | None):
+    return x.split()  # E: Object of class `NoneType` has no attribute `split` # !E: Did you mean
+"#,
+);
+
+testcase!(
+    test_union_attribute_missing_no_suggestion_three_types,
+    r#"
+# Partial union failure with 3 types: attribute exists on 1, missing on 2
+def f(x: str | int | None):
+    return x.split()  # E: Object of class `NoneType` has no attribute `split`\nObject of class `int` has no attribute `split` # !E: Did you mean
+"#,
+);
+
+testcase!(
+    test_union_attribute_missing_no_suggestion_mostly_have_it,
+    r#"
+# Even if most types have the attribute, if ANY don't, skip suggestion
+class A:
+    upper: int
+    lower: int
+class B:
+    upper: int
+    lower: int
+class C:
+    def upper(self) -> str: ...
+def f(x: C | A | B):
+    # C has "upper" method, A and B have "upper" attribute
+    # But C doesn't have "lower" attribute, A and B do
+    x.lowerr  # E: Object of class `C` has no attribute `lowerr` # !E: Did you mean
+"#,
+);
+
+testcase!(
+    test_union_both_missing_should_suggest,
+    r#"
+# When an attribute is missing on ALL union members, we should still suggest
+class A:
+    value: int
+class B:
+    value: str
+def f(x: A | B):
+    return x.vaule  # E: Object of class `A` has no attribute `vaule`\nObject of class `B` has no attribute `vaule`\n  Did you mean `value`?
+"#,
+);
+
+testcase!(
+    test_union_all_have_attribute_no_error,
+    r#"
+# When all union members have the attribute, there should be no error
+class A:
+    value: int
+class B:
+    value: str
+def f(x: A | B):
+    return x.value  # No error - both A and B have 'value'
+"#,
+);
+
+testcase!(
     test_class_toplevel_inherited_attr_name,
     r#"
 # at the class top level, inherited attribute names should be considered in scope
