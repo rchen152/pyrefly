@@ -8,13 +8,11 @@
 use dupe::Dupe;
 use lsp_types::CodeActionKind;
 use pyrefly_build::handle::Handle;
-use pyrefly_python::ast::Ast;
 use pyrefly_python::symbol_kind::SymbolKind;
 use pyrefly_util::visit::Visit;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprCall;
 use ruff_python_ast::ModModule;
-use ruff_python_ast::StmtFunctionDef;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
@@ -23,6 +21,7 @@ use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
 use crate::state::lsp::quick_fixes::extract_function::LocalRefactorCodeAction;
 use crate::state::lsp::quick_fixes::extract_shared::NameRefCollector;
+use crate::state::lsp::quick_fixes::extract_shared::find_enclosing_function;
 
 pub(crate) fn inline_parameter_code_actions(
     transaction: &Transaction<'_>,
@@ -100,21 +99,6 @@ pub(crate) fn inline_parameter_code_actions(
         edits,
         kind: CodeActionKind::REFACTOR_INLINE,
     }])
-}
-
-fn find_enclosing_function<'a>(
-    ast: &'a ModModule,
-    param_range: TextRange,
-) -> Option<&'a StmtFunctionDef> {
-    let covering_nodes = Ast::locate_node(ast, param_range.start());
-    for node in covering_nodes {
-        if let Some(function_def) = node.as_stmt_function_def()
-            && function_def.range().contains_range(param_range)
-        {
-            return Some(function_def);
-        }
-    }
-    None
 }
 
 fn collect_calls_to_definition(

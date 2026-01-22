@@ -272,3 +272,19 @@ pub(super) fn unique_name(base: &str, exists: impl Fn(&str) -> bool) -> String {
         counter += 1;
     }
 }
+
+/// Finds the innermost function definition that contains the given range.
+pub(super) fn find_enclosing_function(
+    ast: &ModModule,
+    range: TextRange,
+) -> Option<&StmtFunctionDef> {
+    let covering_nodes = Ast::locate_node(ast, range.start());
+    for node in covering_nodes {
+        if let Some(function_def) = node.as_stmt_function_def()
+            && function_def.range().contains_range(range)
+        {
+            return Some(function_def);
+        }
+    }
+    None
+}
