@@ -1248,3 +1248,16 @@ def g[T](f: T) -> T:
 reveal_type(g(f))  # E: (x: bool = True) -> bool
     "#,
 );
+
+testcase!(
+    test_lambda_matches_generic_callable,
+    r#"
+from typing import Callable, List, TypeVar
+T = TypeVar("T")
+def f(x):
+    return x
+def wrap(fn: Callable[[List[T]], T]): ...
+def g():
+    return wrap(lambda x: f(x))
+    "#,
+);
