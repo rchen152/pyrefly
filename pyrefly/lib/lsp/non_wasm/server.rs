@@ -783,6 +783,7 @@ pub fn capabilities(
                 CodeActionKind::QUICKFIX,
                 CodeActionKind::REFACTOR_EXTRACT,
                 CodeActionKind::new("refactor.move"),
+                CodeActionKind::REFACTOR_INLINE,
             ]),
             ..Default::default()
         })),
@@ -3105,6 +3106,15 @@ impl Server {
             push_refactor_actions(refactors);
         }
         if let Some(refactors) = transaction.extract_function_code_actions(&handle, range) {
+            push_refactor_actions(refactors);
+        }
+        if let Some(refactors) = transaction.inline_variable_code_actions(&handle, range) {
+            push_refactor_actions(refactors);
+        }
+        if let Some(refactors) = transaction.inline_method_code_actions(&handle, range) {
+            push_refactor_actions(refactors);
+        }
+        if let Some(refactors) = transaction.inline_parameter_code_actions(&handle, range) {
             push_refactor_actions(refactors);
         }
         if let Some(refactors) = transaction.pull_members_up_code_actions(&handle, range) {
