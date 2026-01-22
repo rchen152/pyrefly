@@ -33,6 +33,7 @@ use super::extract_function::LocalRefactorCodeAction;
 use super::extract_shared::first_parameter_name;
 use super::extract_shared::function_has_decorator;
 use super::extract_shared::is_exact_expression;
+use super::extract_shared::is_local_scope_stmt;
 use super::extract_shared::split_selection;
 use super::extract_shared::unique_name;
 use crate::state::lsp::FindPreference;
@@ -445,9 +446,8 @@ fn collect_matching_expression_ranges(
 
     impl<'a> Visitor<'a> for Finder<'a> {
         fn visit_stmt(&mut self, stmt: &'a Stmt) {
-            match stmt {
-                Stmt::FunctionDef(_) | Stmt::ClassDef(_) => {}
-                _ => ruff_python_ast::visitor::walk_stmt(self, stmt),
+            if is_local_scope_stmt(stmt) {
+                ruff_python_ast::visitor::walk_stmt(self, stmt);
             }
         }
 

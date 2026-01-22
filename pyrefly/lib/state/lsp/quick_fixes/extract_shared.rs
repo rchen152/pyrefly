@@ -288,3 +288,9 @@ pub(super) fn find_enclosing_function(
     }
     None
 }
+
+/// Returns true if a visitor should recurse into this statement for intra-function analysis.
+/// Returns false for nested function and class definitions, which create new scopes.
+pub(super) fn is_local_scope_stmt(stmt: &Stmt) -> bool {
+    !matches!(stmt, Stmt::FunctionDef(_) | Stmt::ClassDef(_))
+}
