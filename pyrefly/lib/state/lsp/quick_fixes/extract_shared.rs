@@ -256,3 +256,19 @@ impl Visitor<'_> for NameRefCollector {
         walk_expr(self, expr);
     }
 }
+
+/// Generates a unique name by appending `_N` suffixes until the name is not in use.
+/// The `exists` predicate should return true if a name is already taken.
+pub(super) fn unique_name(base: &str, exists: impl Fn(&str) -> bool) -> String {
+    if !exists(base) {
+        return base.to_owned();
+    }
+    let mut counter = 1;
+    loop {
+        let candidate = format!("{base}_{counter}");
+        if !exists(&candidate) {
+            return candidate;
+        }
+        counter += 1;
+    }
+}

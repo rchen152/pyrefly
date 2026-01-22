@@ -1427,10 +1427,10 @@ def compute():
     let expected = r#"
 def compute():
     extracted_value = 10
-    extracted_value_2 = 4 * 5
+    extracted_value_1 = 4 * 5
     result = (
         # EXTRACT-START
-        extracted_value_2
+        extracted_value_1
         # EXTRACT-END
     )
     return result

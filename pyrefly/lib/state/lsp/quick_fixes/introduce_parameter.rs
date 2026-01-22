@@ -34,6 +34,7 @@ use super::extract_shared::first_parameter_name;
 use super::extract_shared::function_has_decorator;
 use super::extract_shared::is_exact_expression;
 use super::extract_shared::split_selection;
+use super::extract_shared::unique_name;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
 
@@ -130,7 +131,7 @@ pub(crate) fn introduce_parameter_code_actions(
     let template =
         ExpressionTemplate::new(expression_text, expression_range, &name_refs, &param_names);
     let base_name = suggest_parameter_name(ast.as_ref(), expression_range, &param_names);
-    let param_name = unique_parameter_name(&base_name, &param_names);
+    let param_name = unique_name(&base_name, |name| param_names.contains(name));
     let insert_style = parameter_insert_style(&function_ctx.function_def.parameters);
     let (signature_range, signature_text) = build_parameter_insertion(
         module_info.contents(),
@@ -368,20 +369,6 @@ fn suggest_parameter_name(
         DEFAULT_PARAMETER_PREFIX.to_owned()
     } else {
         base
-    }
-}
-
-fn unique_parameter_name(base: &str, existing: &HashSet<String>) -> String {
-    if !existing.contains(base) {
-        return base.to_owned();
-    }
-    let mut counter = 1;
-    loop {
-        let candidate = format!("{base}_{counter}");
-        if !existing.contains(&candidate) {
-            return candidate;
-        }
-        counter += 1;
     }
 }
 
