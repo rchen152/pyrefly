@@ -7,8 +7,10 @@
 
 use lsp_types::CompletionItem;
 use lsp_types::CompletionItemKind;
+use pyrefly_python::dunder;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
+use ruff_python_ast::Identifier;
 
 use crate::state::state::Transaction;
 use crate::types::types::Type;
@@ -47,6 +49,26 @@ impl Transaction<'_> {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// Adds completions for magic methods (dunder methods like `__init__`, `__str__`, etc.).
+    pub(crate) fn add_magic_method_completions(
+        identifier: &Identifier,
+        completions: &mut Vec<CompletionItem>,
+    ) {
+        let typed = identifier.as_str();
+        if !typed.is_empty() && !typed.starts_with("__") {
+            return;
+        }
+        for name in dunder::MAGIC_METHOD_NAMES {
+            if name.starts_with(typed) {
+                completions.push(CompletionItem {
+                    label: (*name).to_owned(),
+                    kind: Some(CompletionItemKind::METHOD),
+                    ..Default::default()
+                });
+            }
         }
     }
 }

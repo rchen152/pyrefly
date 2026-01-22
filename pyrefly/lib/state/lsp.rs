@@ -2497,26 +2497,6 @@ impl<'a> Transaction<'a> {
         }
     }
 
-    fn add_magic_method_completions(
-        &self,
-        identifier: &Identifier,
-        completions: &mut Vec<CompletionItem>,
-    ) {
-        let typed = identifier.as_str();
-        if !typed.is_empty() && !typed.starts_with("__") {
-            return;
-        }
-        for name in dunder::MAGIC_METHOD_NAMES {
-            if name.starts_with(typed) {
-                completions.push(CompletionItem {
-                    label: (*name).to_owned(),
-                    kind: Some(CompletionItemKind::METHOD),
-                    ..Default::default()
-                });
-            }
-        }
-    }
-
     fn add_builtins_autoimport_completions(
         &self,
         handle: &Handle,
@@ -2993,7 +2973,7 @@ impl<'a> Transaction<'a> {
                 context,
             }) => {
                 if matches!(context, IdentifierContext::MethodDef { .. }) {
-                    self.add_magic_method_completions(&identifier, &mut result);
+                    Self::add_magic_method_completions(&identifier, &mut result);
                 }
                 self.add_kwargs_completions(handle, position, &mut result);
                 self.add_keyword_completions(handle, &mut result);
