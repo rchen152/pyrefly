@@ -184,6 +184,10 @@ impl TParams {
         Self(tparams)
     }
 
+    pub fn empty() -> TParams {
+        Self(Vec::new())
+    }
+
     pub fn len(&self) -> usize {
         self.0.len()
     }

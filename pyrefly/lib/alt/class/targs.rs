@@ -212,6 +212,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.type_of_instance(cls, self.targs_of_tparams(cls))
     }
 
+    pub fn instantiate_type_var_tuple(&self) -> (TParams, Type) {
+        let quantified = Quantified::type_var_tuple(Name::new_static("Ts"), self.uniques, None);
+        let tparams = TParams::new(vec![TParam {
+            quantified: quantified.clone(),
+            variance: PreInferenceVariance::Covariant,
+        }]);
+        let tuple_ty = Type::Tuple(Tuple::Unpacked(Box::new((
+            Vec::new(),
+            Type::Quantified(Box::new(quantified)),
+            Vec::new(),
+        ))));
+        (tparams, tuple_ty)
+    }
+
     /// Gets this Class as a ClassType with its tparams as the arguments. For non-TypedDict
     /// classes, this is the type of an instance of this class. Unless you specifically need the
     /// ClassType inside the Type and know you don't have a TypedDict, you should instead use
@@ -234,22 +248,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.instantiate(cls),
                 self.uniques,
             )
-            .1
-    }
-
-    pub fn instantiate_fresh_tuple(&self) -> Type {
-        let quantified = Quantified::type_var_tuple(Name::new_static("Ts"), self.uniques, None);
-        let tparams = TParams::new(vec![TParam {
-            quantified: quantified.clone(),
-            variance: PreInferenceVariance::Covariant,
-        }]);
-        let tuple_ty = Type::Tuple(Tuple::Unpacked(Box::new((
-            Vec::new(),
-            Type::Quantified(Box::new(quantified)),
-            Vec::new(),
-        ))));
-        self.solver()
-            .fresh_quantified(&tparams, tuple_ty, self.uniques)
             .1
     }
 

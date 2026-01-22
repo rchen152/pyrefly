@@ -220,7 +220,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn narrow_isinstance(&self, left: &Type, right: &Type) -> Type {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
-            if let Some(right) = self.unwrap_class_object_silently(&right) {
+            if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
+                let (_vs, right) = self
+                    .solver()
+                    .fresh_quantified(&tparams, right, self.uniques);
                 res.push(self.intersect_with_fallback(left, &right, &|| right.clone()))
             } else {
                 res.push(left.clone());
@@ -232,7 +235,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn narrow_is_not_instance(&self, left: &Type, right: &Type) -> Type {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
-            if let Some(right) = self.unwrap_class_object_silently(&right) {
+            if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
+                let (_vs, right) = self
+                    .solver()
+                    .fresh_quantified(&tparams, right, self.uniques);
                 res.push(self.subtract(left, &right))
             } else {
                 res.push(left.clone())
@@ -273,9 +279,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         };
 
         for right in self.as_class_info(right.clone()) {
-            if let Some(right_unwrapped) = self.unwrap_class_object_silently(&right) {
+            if let Some((tparams, right_unwrapped)) = self.unwrap_class_object_silently(&right) {
                 // Handle type vars specially: we need to enforce restrictions and avoid
                 // simplifying them away.
+                let (_vs, right_unwrapped) =
+                    self.solver()
+                        .fresh_quantified(&tparams, right_unwrapped, self.uniques);
                 let mut quantifieds = Vec::new();
                 let mut nonquantifieds = Vec::new();
                 self.map_over_union(left, |left| {
@@ -317,8 +326,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
             if let Some(left_untyped) = self.untype_opt(left.clone(), range, errors)
-                && let Some(right) = self.unwrap_class_object_silently(&right)
+                && let Some((tparams, right)) = self.unwrap_class_object_silently(&right)
             {
+                let (_vs, right) = self
+                    .solver()
+                    .fresh_quantified(&tparams, right, self.uniques);
                 res.push(self.issubclass_result(self.subtract(&left_untyped, &right), left))
             } else {
                 res.push(left.clone())
