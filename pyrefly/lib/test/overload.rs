@@ -654,6 +654,20 @@ def f(x: int) -> int:
 );
 
 testcase!(
+    test_typevar_bound_consistency,
+    r#"
+from typing import overload
+
+@overload
+def f[T: str](x: T) -> T: ...  # E: `str` is not assignable to upper bound `bytes` of type variable `T`
+@overload
+def f[T: bytes](x: T) -> T: ...
+def f[T: bytes](x: T) -> T:
+    return x
+    "#,
+);
+
+testcase!(
     test_generic_implementation_multiple_typevars,
     r#"
 from typing import overload
