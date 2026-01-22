@@ -40,15 +40,23 @@ fn test_stream_diagnostics_after_save() {
     let b_path = root_path.join("b.py");
     let b_contents = std::fs::read_to_string(&b_path).unwrap();
     interaction.client.did_open("d.py");
-    interaction.client.did_open("b.py");
     interaction
         .client
         .expect_publish_diagnostics_eventual_error_count(d_path.clone(), 0)
         .expect("Failed to receive initial diagnostics for d");
     interaction
         .client
+        .expect_file_watcher_register()
+        .expect("Register file watcher for d");
+    interaction.client.did_open("b.py");
+    interaction
+        .client
         .expect_publish_diagnostics_eventual_error_count(b_path.clone(), 0)
         .expect("Failed to receive initial diagnostics for b");
+    interaction
+        .client
+        .expect_file_watcher_register()
+        .expect("Register file watcher for b");
     let new_contents = b_contents.replace("1", "''");
     interaction.client.edit_file("b.py", &new_contents);
     // Streamed diagnostics
@@ -65,7 +73,6 @@ fn test_stream_diagnostics_after_save() {
 }
 
 #[test]
-#[ignore] // TODO: fix and re-enable
 fn test_stream_diagnostics_no_flicker_after_undo_edit() {
     let root = get_test_files_root();
     let root_path = root.path().join("streaming");
@@ -87,15 +94,23 @@ fn test_stream_diagnostics_no_flicker_after_undo_edit() {
     let d_path = root_path.join("d.py");
     let b_path = root_path.join("b.py");
     interaction.client.did_open("d.py");
-    interaction.client.did_open("b.py");
     interaction
         .client
         .expect_publish_diagnostics_eventual_error_count(d_path.clone(), 0)
         .expect("Failed to receive initial diagnostics for d");
     interaction
         .client
+        .expect_file_watcher_register()
+        .expect("Register file watcher for d");
+    interaction.client.did_open("b.py");
+    interaction
+        .client
         .expect_publish_diagnostics_eventual_error_count(b_path.clone(), 0)
         .expect("Failed to receive initial diagnostics for b");
+    interaction
+        .client
+        .expect_file_watcher_register()
+        .expect("Register file watcher for b");
     // Delete contents of b.py & save
     interaction.do_not_commit_next_recheck();
     let b_contents = std::fs::read_to_string(&b_path).unwrap();
@@ -156,6 +171,10 @@ fn test_open_file_during_recheck() {
         .client
         .expect_publish_diagnostics_eventual_error_count(b_path.clone(), 0)
         .expect("Failed to receive initial diagnostics for b");
+    interaction
+        .client
+        .expect_file_watcher_register()
+        .expect("Register file watcher for b");
     // Trigger a recheck by modifying and saving b
     interaction.do_not_commit_next_recheck();
     let new_contents = b_contents.replace("1", "''");
@@ -208,15 +227,23 @@ fn test_edit_file_during_recheck() {
     let b_contents = std::fs::read_to_string(&b_path).unwrap();
     // Open both b and d initially
     interaction.client.did_open("b.py");
-    interaction.client.did_open("d.py");
     interaction
         .client
         .expect_publish_diagnostics_eventual_error_count(b_path.clone(), 0)
         .expect("Failed to receive initial diagnostics for b");
     interaction
         .client
+        .expect_file_watcher_register()
+        .expect("Register file watcher for b");
+    interaction.client.did_open("d.py");
+    interaction
+        .client
         .expect_publish_diagnostics_eventual_error_count(d_path.clone(), 0)
         .expect("Failed to receive initial diagnostics for d");
+    interaction
+        .client
+        .expect_file_watcher_register()
+        .expect("Register file watcher for d");
     // Set flag to prevent recheck from committing
     interaction.do_not_commit_next_recheck();
     // Trigger a recheck by modifying and saving b
