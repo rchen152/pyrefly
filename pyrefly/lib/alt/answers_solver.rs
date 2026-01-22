@@ -298,6 +298,11 @@ impl Cycle {
         }
     }
 
+    /// Check if the cycle is complete (all participants have unwound).
+    fn is_complete(&self) -> bool {
+        self.unwind_stack.is_empty()
+    }
+
     /// Get all participants in this cycle as a sorted vector for comparison.
     ///
     /// This normalizes the cycle representation so cycles can be compared regardless
@@ -409,7 +414,7 @@ impl Cycles {
             cycle.on_calculation_finished(current);
         }
         while let Some(cycle) = stack.last_mut() {
-            if cycle.unwind_stack.is_empty() {
+            if cycle.is_complete() {
                 stack.pop();
             } else {
                 break;
