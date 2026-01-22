@@ -1172,6 +1172,7 @@ impl Server {
                 if in_cancelled_requests
                     || (subsequent_mutation && !ONLY_ONCE.contains(&x.method.as_str()))
                 {
+                    telemetry_event.canceled = true;
                     let message = format!(
                         "Request {} ({}) is canceled due to {}",
                         x.method,
