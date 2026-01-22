@@ -1746,9 +1746,34 @@ def add(a, b):
     return a + b
 
 def compute():
-    total = ((1) + (2))
+    total = (1 + 2)
 #           ^
     return total
+"#;
+    assert_eq!(expected, updated);
+}
+
+#[test]
+fn inline_method_preserves_needed_parens() {
+    // When an argument is a complex expression, it should be wrapped in parens
+    let code = r#"
+def mul(a, b):
+    return a * b
+
+def compute():
+    result = mul(1 + 2, 3)
+#            ^
+    return result
+"#;
+    let updated = apply_first_inline_method_action(code).expect("expected inline method action");
+    let expected = r#"
+def mul(a, b):
+    return a * b
+
+def compute():
+    result = ((1 + 2) * 3)
+#            ^
+    return result
 "#;
     assert_eq!(expected, updated);
 }

@@ -37,12 +37,12 @@ pub(crate) fn inline_method_code_actions(
     let module_info = transaction.get_module_info(handle)?;
     let ast = transaction.get_ast(handle)?;
     let call = find_enclosing_call(ast.as_ref(), selection)?;
-    let (callee_name, callee_range, receiver_range) = match call.func.as_ref() {
+    let (callee_name, callee_range, receiver_expr) = match call.func.as_ref() {
         Expr::Name(name) => (name.id.to_string(), name.range(), None),
         Expr::Attribute(attr) => (
             attr.attr.id.to_string(),
             attr.attr.range(),
-            Some(attr.value.range()),
+            Some(attr.value.as_ref()),
         ),
         _ => return None,
     };
@@ -61,7 +61,7 @@ pub(crate) fn inline_method_code_actions(
     if !function_def.decorator_list.is_empty() {
         return None;
     }
-    if in_class && receiver_range.is_none() {
+    if in_class && receiver_expr.is_none() {
         return None;
     }
     if !function_def.parameters.posonlyargs.is_empty()
@@ -76,29 +76,38 @@ pub(crate) fn inline_method_code_actions(
     } else {
         String::new()
     };
-    let receiver_text = receiver_range.map(|range| module_info.code_at(range));
     let param_map = build_param_map(
         &function_def,
         &call,
         receiver_name.as_str(),
-        receiver_text,
+        receiver_expr,
         module_info.contents(),
     )?;
     let return_expr = match function_def.body.as_slice() {
         [Stmt::Return(ret)] => ret.value.as_deref(),
         _ => return None,
     };
-    let (expr_range, expr_text, replacements) = if let Some(expr) = return_expr {
+    let (expr_range, expr_text, replacements, needs_outer_parens) = if let Some(expr) = return_expr
+    {
         let expr_text = module_info.code_at(expr.range()).to_owned();
         let replacements = collect_param_replacements(expr, &param_map)?;
-        (expr.range(), expr_text, replacements)
+        (
+            expr.range(),
+            expr_text,
+            replacements,
+            expr_needs_parens(expr),
+        )
     } else {
         let none_text = "None".to_owned();
         let none_range = TextRange::at(call.range().start(), TextSize::new(0));
-        (none_range, none_text, Vec::new())
+        (none_range, none_text, Vec::new(), false)
     };
     let replaced = apply_replacements_in_text(&expr_text, expr_range.start(), &replacements)?;
-    let inline_text = format!("({replaced})");
+    let inline_text = if needs_outer_parens {
+        format!("({replaced})")
+    } else {
+        replaced
+    };
     let edits = vec![(module_info.dupe(), call.range(), inline_text)];
     Some(vec![LocalRefactorCodeAction {
         title: format!("Inline call to `{callee_name}`"),
@@ -152,16 +161,51 @@ fn find_function_def_with_context(
     search_in_body(&ast.body, definition_range, false)
 }
 
+/// Returns true if the function is a @staticmethod.
 fn is_static_or_class_method(function_def: &StmtFunctionDef) -> bool {
     function_has_decorator(function_def, "staticmethod")
         || function_has_decorator(function_def, "classmethod")
+}
+
+/// Returns true if the expression needs parentheses when inlined.
+/// Simple expressions (literals, names, subscripts, attributes, calls) don't need
+/// parentheses because they have high precedence. Complex expressions (binary ops,
+/// unary ops, comparisons, etc.) need parentheses to preserve semantics.
+fn expr_needs_parens(expr: &Expr) -> bool {
+    !matches!(
+        expr,
+        Expr::Name(_)
+            | Expr::NumberLiteral(_)
+            | Expr::StringLiteral(_)
+            | Expr::BytesLiteral(_)
+            | Expr::BooleanLiteral(_)
+            | Expr::NoneLiteral(_)
+            | Expr::EllipsisLiteral(_)
+            | Expr::Subscript(_)
+            | Expr::Attribute(_)
+            | Expr::Call(_)
+            | Expr::List(_)
+            | Expr::Dict(_)
+            | Expr::Set(_)
+            | Expr::Tuple(_)
+            | Expr::FString(_)
+    )
+}
+
+/// Wraps text in parentheses only if the expression needs them.
+fn wrap_if_needed(expr: &Expr, text: &str) -> String {
+    if expr_needs_parens(expr) {
+        format!("({text})")
+    } else {
+        text.to_owned()
+    }
 }
 
 fn build_param_map(
     function_def: &StmtFunctionDef,
     call: &ExprCall,
     receiver_name: &str,
-    receiver_text: Option<&str>,
+    receiver_expr: Option<&Expr>,
     source: &str,
 ) -> Option<HashMap<String, String>> {
     if call.arguments.args.iter().any(|arg| arg.is_starred_expr())
@@ -176,8 +220,13 @@ fn build_param_map(
         if receiver.name().id.as_str() != receiver_name {
             return None;
         }
-        let receiver_text = receiver_text?;
-        map.insert(receiver_name.to_owned(), format!("({receiver_text})"));
+        let receiver_expr = receiver_expr?;
+        let receiver_text = &source[receiver_expr.range().start().to_usize()
+            ..receiver_expr.range().end().to_usize().min(source.len())];
+        map.insert(
+            receiver_name.to_owned(),
+            wrap_if_needed(receiver_expr, receiver_text),
+        );
         params.remove(0);
     }
     let positional_count = call
@@ -212,7 +261,7 @@ fn build_param_map(
         } else {
             return None;
         };
-        map.insert(param_name.to_owned(), format!("({arg_text})"));
+        map.insert(param_name.to_owned(), wrap_if_needed(arg_expr, arg_text));
     }
     Some(map)
 }
