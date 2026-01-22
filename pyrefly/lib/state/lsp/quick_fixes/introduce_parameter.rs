@@ -30,6 +30,7 @@ use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 
 use super::extract_function::LocalRefactorCodeAction;
+use super::extract_shared::MethodInfo;
 use super::extract_shared::first_parameter_name;
 use super::extract_shared::function_has_decorator;
 use super::extract_shared::is_exact_expression;
@@ -43,8 +44,7 @@ const DEFAULT_PARAMETER_PREFIX: &str = "param";
 
 #[derive(Clone, Debug)]
 struct MethodContext {
-    class_name: String,
-    receiver_name: String,
+    info: MethodInfo,
     is_staticmethod: bool,
     is_classmethod: bool,
 }
@@ -217,8 +217,10 @@ fn method_context_from_class(
 ) -> Option<MethodContext> {
     let receiver_name = first_parameter_name(&function_def.parameters)?;
     Some(MethodContext {
-        class_name: class_def.name.id.to_string(),
-        receiver_name,
+        info: MethodInfo {
+            class_name: class_def.name.id.to_string(),
+            receiver_name,
+        },
         is_staticmethod: function_has_decorator(function_def, "staticmethod"),
         is_classmethod: function_has_decorator(function_def, "classmethod"),
     })
@@ -637,12 +639,12 @@ fn bound_method_receiver<'a>(
     };
     if !ctx.is_classmethod
         && let Expr::Name(name) = attribute.value.as_ref()
-        && name.id.as_str() == ctx.class_name
+        && name.id.as_str() == ctx.info.class_name
     {
         return Some((None, 0));
     }
     Some((
-        Some((ctx.receiver_name.clone(), attribute.value.as_ref())),
+        Some((ctx.info.receiver_name.clone(), attribute.value.as_ref())),
         1,
     ))
 }

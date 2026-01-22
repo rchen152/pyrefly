@@ -294,3 +294,13 @@ pub(super) fn find_enclosing_function(
 pub(super) fn is_local_scope_stmt(stmt: &Stmt) -> bool {
     !matches!(stmt, Stmt::FunctionDef(_) | Stmt::ClassDef(_))
 }
+
+/// Core information about a method within a class.
+/// Contains the common fields needed by various refactoring operations.
+#[derive(Clone, Debug)]
+pub(super) struct MethodInfo {
+    /// Name of the class containing the method.
+    pub class_name: String,
+    /// Name of the receiver parameter (typically `self` or `cls`).
+    pub receiver_name: String,
+}
