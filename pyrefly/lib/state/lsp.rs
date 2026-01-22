@@ -32,7 +32,6 @@ use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
 use pyrefly_python::sys_info::SysInfo;
 use pyrefly_types::display::LspDisplayMode;
-use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
 use pyrefly_util::gas::Gas;
 use pyrefly_util::prelude::SliceExt;
@@ -2813,41 +2812,6 @@ impl<'a> Transaction<'a> {
                 completions,
                 in_string_literal,
             );
-        }
-    }
-
-    fn add_literal_completions_from_type(
-        param_type: &Type,
-        completions: &mut Vec<CompletionItem>,
-        in_string_literal: bool,
-    ) {
-        match param_type {
-            Type::Literal(lit) => {
-                // TODO: Pass the flag correctly for whether literal string is single quoted or double quoted
-                let label = lit.value.to_string_escaped(true);
-                let insert_text = if in_string_literal {
-                    if let Lit::Str(s) = &lit.value {
-                        s.to_string()
-                    } else {
-                        label.clone()
-                    }
-                } else {
-                    label.clone()
-                };
-                completions.push(CompletionItem {
-                    label,
-                    kind: Some(CompletionItemKind::VALUE),
-                    detail: Some(format!("{param_type}")),
-                    insert_text: Some(insert_text),
-                    ..Default::default()
-                });
-            }
-            Type::Union(box Union { members, .. }) => {
-                for member in members {
-                    Self::add_literal_completions_from_type(member, completions, in_string_literal);
-                }
-            }
-            _ => {}
         }
     }
 
