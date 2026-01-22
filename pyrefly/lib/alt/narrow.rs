@@ -221,10 +221,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
             if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
-                let (_vs, right) = self
+                let (vs, right) = self
                     .solver()
                     .fresh_quantified(&tparams, right, self.uniques);
-                res.push(self.intersect_with_fallback(left, &right, &|| right.clone()))
+                res.push(self.intersect_with_fallback(left, &right, &|| right.clone()));
+                // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
+                // * If `left` is an invalid specialization, the error has already been reported at its definition site.
+                // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
+                let _specialization_errors = self.solver().finish_quantified(vs, false);
             } else {
                 res.push(left.clone());
             }
@@ -236,10 +240,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
             if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
-                let (_vs, right) = self
+                let (vs, right) = self
                     .solver()
                     .fresh_quantified(&tparams, right, self.uniques);
-                res.push(self.subtract(left, &right))
+                res.push(self.subtract(left, &right));
+                // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
+                // * If `left` is an invalid specialization, the error has already been reported at its definition site.
+                // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
+                let _specialization_errors = self.solver().finish_quantified(vs, false);
             } else {
                 res.push(left.clone())
             }
@@ -282,7 +290,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             if let Some((tparams, right_unwrapped)) = self.unwrap_class_object_silently(&right) {
                 // Handle type vars specially: we need to enforce restrictions and avoid
                 // simplifying them away.
-                let (_vs, right_unwrapped) =
+                let (vs, right_unwrapped) =
                     self.solver()
                         .fresh_quantified(&tparams, right_unwrapped, self.uniques);
                 let mut quantifieds = Vec::new();
@@ -307,8 +315,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     })
                 }
                 if !nonquantifieds.is_empty() {
-                    res.push(narrow(&self.unions(nonquantifieds), right_unwrapped))
+                    res.push(narrow(&self.unions(nonquantifieds), right_unwrapped));
                 }
+                // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
+                // * If `left` is an invalid specialization, the error has already been reported at its definition site.
+                // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
+                let _specialization_errors = self.solver().finish_quantified(vs, false);
             } else {
                 res.push(left.clone())
             }
@@ -328,10 +340,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             if let Some(left_untyped) = self.untype_opt(left.clone(), range, errors)
                 && let Some((tparams, right)) = self.unwrap_class_object_silently(&right)
             {
-                let (_vs, right) = self
+                let (vs, right) = self
                     .solver()
                     .fresh_quantified(&tparams, right, self.uniques);
-                res.push(self.issubclass_result(self.subtract(&left_untyped, &right), left))
+                res.push(self.issubclass_result(self.subtract(&left_untyped, &right), left));
+                // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
+                // * If `left` is an invalid specialization, the error has already been reported at its definition site.
+                // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
+                let _specialization_errors = self.solver().finish_quantified(vs, false);
             } else {
                 res.push(left.clone())
             }
