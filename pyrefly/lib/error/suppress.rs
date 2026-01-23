@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use anyhow::anyhow;
 use pyrefly_config::error_kind::Severity;
 use pyrefly_python::ast::Ast;
+use pyrefly_python::ignore::Ignore;
 use pyrefly_python::ignore::Tool;
 use pyrefly_python::module::GENERATED_TOKEN;
 use pyrefly_python::module_path::ModulePathDetails;
@@ -21,6 +22,7 @@ use regex::Regex;
 use ruff_python_ast::PySourceType;
 use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
+use starlark_map::smallset;
 use tracing::error;
 use tracing::info;
 
@@ -305,40 +307,56 @@ pub fn suppress_errors(errors: Vec<Error>) {
     }
 }
 
-pub fn find_unused_ignores<'a>(
-    all_ignores: SmallMap<&'a PathBuf, SmallSet<LineNumber>>,
-    suppressed_errors: SmallMap<&PathBuf, SmallSet<LineNumber>>,
-) -> SmallMap<&'a PathBuf, SmallSet<LineNumber>> {
-    let mut all_unused_ignores: SmallMap<&PathBuf, SmallSet<LineNumber>> = SmallMap::new();
-    let default_set: SmallSet<LineNumber> = SmallSet::new();
-    // Loop over each path only save the ignores that are not in use
-    for (path, ignores) in all_ignores {
-        let errors = suppressed_errors.get(path).unwrap_or(&default_set);
-        let mut unused_ignores = SmallSet::new();
-        for ignore in ignores {
-            // An ignore is unused if no error starts on that line. Suppressions only
-            // apply to errors whose start line matches the suppression's line (see
-            // Ignore::is_ignored which looks up suppressions by start_line only).
-            if !errors.contains(&ignore) {
-                unused_ignores.insert(ignore);
-            }
-        }
-
-        all_unused_ignores.insert(path, unused_ignores);
+/// Given a line with a pyrefly ignore comment and sets of used/unused error codes,
+/// returns the updated line. If all codes are unused, removes the entire comment.
+/// If some codes are used, keeps only the used codes in the comment.
+fn update_ignore_comment_with_used_codes(
+    line: &str,
+    used_codes: &SmallSet<String>,
+    unused_codes: &SmallSet<String>,
+) -> Option<String> {
+    // If there are no unused codes, keep the line as-is
+    if unused_codes.is_empty() {
+        return None;
     }
-    all_unused_ignores
+
+    // If there are no used codes, remove the entire comment
+    if used_codes.is_empty() {
+        let regex = Regex::new(r"(#\s*pyrefly:\s*ignore.*$|#\s*type:\s*ignore.*$)").unwrap();
+        if regex.is_match(line) {
+            let new_string = regex.replace_all(line, "");
+            return Some(new_string.trim_end().to_owned());
+        }
+        return None;
+    }
+
+    // Some codes are used, some are unused - rebuild the comment with only used codes
+    let regex = Regex::new(r"#\s*pyrefly:\s*ignore\s*\[[^\]]*\]").unwrap();
+    if regex.is_match(line) {
+        let mut sorted_codes: Vec<_> = used_codes.iter().cloned().collect();
+        sorted_codes.sort();
+        let new_comment = format!("# pyrefly: ignore [{}]", sorted_codes.join(", "));
+        let updated = regex.replace(line, new_comment.as_str()).to_string();
+        return Some(updated);
+    }
+    None
 }
 
 pub fn remove_unused_ignores(loads: &Errors, all: bool) -> usize {
     let errors = loads.collect_errors();
-    let mut all_ignores: SmallMap<&PathBuf, SmallSet<LineNumber>> = SmallMap::new();
+
+    // Collect ignores with full suppression data (including comment_line)
+    let mut all_ignores: SmallMap<&PathBuf, &Ignore> = SmallMap::new();
     for (module_path, ignore) in loads.collect_ignores() {
         if let ModulePathDetails::FileSystem(path) = module_path.details() {
-            all_ignores.insert(path, ignore.get_pyrefly_ignores(all));
+            all_ignores.insert(path, ignore);
         }
     }
 
-    let mut suppressed_errors: SmallMap<&PathBuf, SmallSet<LineNumber>> = SmallMap::new();
+    // Track which specific error codes are used on each line (not just line presence)
+    // Key: (path, line_number), Value: set of error code names that were suppressed
+    let mut suppressed_error_codes: SmallMap<&PathBuf, SmallMap<LineNumber, SmallSet<String>>> =
+        SmallMap::new();
     for e in &errors.suppressed {
         if e.is_ignored(&Tool::default_enabled())
             && let ModulePathDetails::FileSystem(path) = e.path().details()
@@ -347,45 +365,102 @@ pub fn remove_unused_ignores(loads: &Errors, all: bool) -> usize {
             // are matched by start line only (see Ignore::is_ignored), so an error
             // spanning lines 10-20 only "uses" a suppression on line 10.
             let start = e.display_range().start.line_within_file();
-            suppressed_errors.entry(path).or_default().insert(start);
+            let end = e.display_range().end.line_within_file();
+            let error_code = e.error_kind().to_name().to_owned();
+            for line_idx in start.to_zero_indexed()..=end.to_zero_indexed() {
+                suppressed_error_codes
+                    .entry(path)
+                    .or_default()
+                    .entry(LineNumber::from_zero_indexed(line_idx))
+                    .or_default()
+                    .insert(error_code.clone());
+            }
         }
     }
 
-    let path_ignores = find_unused_ignores(all_ignores, suppressed_errors);
-
-    // TODO: right now we only remove pyrefly ignores, but we should have options to clean up
-    // other comment based ignores as well
     let regex = Regex::new(r"(#\s*pyrefly:\s*ignore.*$|#\s*type:\s*ignore.*$)").unwrap();
     let mut removed_ignores: SmallMap<&PathBuf, usize> = SmallMap::new();
-    for (path, ignores) in path_ignores {
+
+    for (path, ignore) in &all_ignores {
         let mut unused_ignore_count = 0;
-        let mut ignore_locations: SmallSet<usize> = SmallSet::new();
-        for ignore in ignores {
-            if let Some(above_line) = ignore.decrement() {
-                ignore_locations.insert(above_line.to_zero_indexed() as usize);
+
+        // Build a map from comment line number to the line the suppression applies to
+        // and the error codes declared in the suppression
+        let mut comment_line_info: SmallMap<usize, (LineNumber, SmallSet<String>)> =
+            SmallMap::new();
+
+        for (applies_to_line, suppressions) in ignore.iter() {
+            for supp in suppressions {
+                // Filter to only pyrefly (and type: ignore if all=true)
+                let dominated_tools = if all {
+                    supp.tool() == Tool::Pyrefly || supp.tool() == Tool::Type
+                } else {
+                    supp.tool() == Tool::Pyrefly
+                };
+                if !dominated_tools {
+                    continue;
+                }
+
+                let comment_idx = supp.comment_line().to_zero_indexed() as usize;
+                let declared_codes: SmallSet<String> = supp.error_codes().iter().cloned().collect();
+
+                comment_line_info.insert(comment_idx, (*applies_to_line, declared_codes));
             }
-            let same_line = ignore.to_zero_indexed() as usize;
-            ignore_locations.insert(same_line);
         }
+
         if let Ok(file) = read_and_validate_file(path) {
             let line_ending = detect_line_ending(&file);
             let mut buf = String::with_capacity(file.len());
-            let lines = file.lines();
-            for (idx, line) in lines.enumerate() {
-                if ignore_locations.contains(&idx) {
-                    if regex.is_match(line) {
+            let lines: Vec<&str> = file.lines().collect();
+            for (idx, line) in lines.iter().enumerate() {
+                if let Some((applies_to_line, declared_codes)) = comment_line_info.get(&idx)
+                    && regex.is_match(line)
+                {
+                    // Get the error codes actually used on the line this suppression applies to
+                    let used_codes: SmallSet<String> = suppressed_error_codes
+                        .get(path)
+                        .and_then(|m| m.get(applies_to_line))
+                        .cloned()
+                        .unwrap_or_default();
+
+                    // Calculate which codes are unused
+                    // If the ignore has no specific codes (suppresses all), treat it as fully unused if no errors
+                    let (final_used_codes, unused_codes): (SmallSet<String>, SmallSet<String>) =
+                        if declared_codes.is_empty() {
+                            // Blanket ignore - if there are any errors, it's used; otherwise unused
+                            if used_codes.is_empty() {
+                                (SmallSet::new(), smallset! { String::new() })
+                            } else {
+                                (used_codes.clone(), SmallSet::new())
+                            }
+                        } else {
+                            // Specific codes - find which are used vs unused
+                            let used: SmallSet<String> = declared_codes
+                                .iter()
+                                .filter(|code| used_codes.contains(*code))
+                                .cloned()
+                                .collect();
+                            let unused: SmallSet<String> = declared_codes
+                                .iter()
+                                .filter(|code| !used_codes.contains(*code))
+                                .cloned()
+                                .collect();
+                            (used, unused)
+                        };
+
+                    if let Some(updated_line) = update_ignore_comment_with_used_codes(
+                        line,
+                        &final_used_codes,
+                        &unused_codes,
+                    ) {
                         unused_ignore_count += 1;
-                        let new_string = regex.replace_all(line, "");
-                        if !new_string.trim().is_empty() {
-                            buf.push_str(new_string.trim_end());
+                        if !updated_line.trim().is_empty() {
+                            buf.push_str(&updated_line);
                             buf.push_str(line_ending);
                         }
                         // Skip writing newline if the line becomes empty after removing the ignore
                         continue;
                     }
-                    buf.push_str(line);
-                    buf.push_str(line_ending);
-                    continue;
                 }
                 buf.push_str(line);
                 buf.push_str(line_ending);
@@ -771,6 +846,21 @@ foo(
     }
 
     #[test]
+    fn test_keep_both_same_line_ignores() {
+        let input = r#"
+class A:
+    x = 1 + "oops"  # pyrefly: ignore[unsupported-operation]
+    y: int = ""  # pyrefly: ignore[bad-assignment]
+"#;
+        let want = r#"
+class A:
+    x = 1 + "oops"  # pyrefly: ignore[unsupported-operation]
+    y: int = ""  # pyrefly: ignore[bad-assignment]
+"#;
+        assert_remove_ignores(input, want, false, 0);
+    }
+
+    #[test]
     fn test_no_remove_suppression_generated() {
         let input = format!(
             r#"
@@ -816,6 +906,43 @@ def g() -> str:
     return "hello"
 "#;
         assert_remove_ignores(before, after, true, 1);
+    }
+
+    #[test]
+    fn test_strip_unused_error_code_from_multi_code_suppression() {
+        // Only bad-assignment is used, bad-override should be stripped
+        let before = r#"
+# pyrefly: ignore[bad-assignment,bad-override]
+a: int = ""
+"#;
+        let after = r#"
+# pyrefly: ignore [bad-assignment]
+a: int = ""
+"#;
+        assert_remove_ignores(before, after, false, 1);
+    }
+
+    #[test]
+    fn test_strip_unused_error_codes_keeps_all_used() {
+        // Both error codes are used, nothing should be stripped
+        let before = r#"
+def g() -> str:
+    # pyrefly: ignore [bad-return, unsupported-operation]
+    return 1 + []
+"#;
+        assert_remove_ignores(before, before, false, 0);
+    }
+
+    #[test]
+    fn test_strip_unused_error_code_inline() {
+        // Test inline comment with partial unused codes
+        let before = r#"
+a: int = "" # pyrefly: ignore[bad-assignment, bad-override]
+"#;
+        let after = r#"
+a: int = "" # pyrefly: ignore [bad-assignment]
+"#;
+        assert_remove_ignores(before, after, false, 1);
     }
     #[test]
     fn test_parse_ignore_comment() {
