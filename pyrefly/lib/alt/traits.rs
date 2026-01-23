@@ -85,6 +85,7 @@ pub trait Solve<Ans: LookupAnswer>: Keyed {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &Self::Value,
+        range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<Self::Answer>;
 
@@ -115,6 +116,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for Key {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &Binding,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<TypeInfo> {
         answers.solve_binding(binding, errors)
@@ -146,6 +148,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyExpect {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingExpect,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<EmptyAnswer> {
         answers.solve_expectation(binding, errors)
@@ -160,6 +163,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyConsistentOverrideCheck {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingConsistentOverrideCheck,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<EmptyAnswer> {
         answers.solve_consistent_override_check(binding, errors)
@@ -174,6 +178,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyExport {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingExport,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<Type> {
         Arc::new(answers.solve_binding(&binding.0, errors).arc_clone_ty())
@@ -202,6 +207,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyDecorator {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingDecorator,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<Decorator> {
         answers.solve_decorator(binding, errors)
@@ -219,6 +225,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyDecoratedFunction {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingDecoratedFunction,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<Type> {
         answers.solve_decorated_function(binding, errors)
@@ -235,6 +242,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyUndecoratedFunction {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingUndecoratedFunction,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<UndecoratedFunction> {
         answers.solve_undecorated_function(binding, errors)
@@ -250,6 +258,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyClass {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingClass,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<NoneIfRecursive<Class>> {
         answers.solve_class(binding, errors)
@@ -264,6 +273,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyTParams {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingTParams,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<TParams> {
         answers.solve_tparams(binding, errors)
@@ -278,6 +288,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyClassBaseType {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingClassBaseType,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<ClassBases> {
         answers.solve_class_base_type(binding, errors)
@@ -292,6 +303,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyClassField {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingClassField,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<ClassField> {
         answers.solve_class_field(binding, errors)
@@ -308,6 +320,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyClassSynthesizedFields {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingClassSynthesizedFields,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<ClassSynthesizedFields> {
         answers.solve_class_synthesized_fields(errors, binding)
@@ -322,6 +335,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyVariance {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingVariance,
+        _range: TextRange,
         _errors: &ErrorCollector,
     ) -> Arc<VarianceMap> {
         answers.solve_variance_binding(binding)
@@ -336,6 +350,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyAnnotation {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingAnnotation,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<AnnotationWithTarget> {
         answers.solve_annotation(binding, errors)
@@ -353,6 +368,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyClassMetadata {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingClassMetadata,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<ClassMetadata> {
         answers.solve_class_metadata(binding, errors)
@@ -367,6 +383,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyClassMro {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingClassMro,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<ClassMro> {
         answers.solve_class_mro(binding, errors)
@@ -381,6 +398,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyAbstractClassCheck {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingAbstractClassCheck,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<AbstractClassMembers> {
         if let Some(cls) = &answers.get_idx(binding.class_idx).0 {
@@ -399,6 +417,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyLegacyTypeParam {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingLegacyTypeParam,
+        _range: TextRange,
         _errors: &ErrorCollector,
     ) -> Arc<LegacyTypeParameterLookup> {
         answers.solve_legacy_tparam(binding)
@@ -413,6 +432,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyYield {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingYield,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<YieldResult> {
         answers.solve_yield(binding, errors)
@@ -428,6 +448,7 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyYieldFrom {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingYieldFrom,
+        _range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<YieldFromResult> {
         answers.solve_yield_from(binding, errors)

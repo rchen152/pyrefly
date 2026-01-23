@@ -618,16 +618,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
     {
         let binding = self.bindings().get(idx);
+        // Note that we intentionally do not pass in the key when solving the binding,
+        // as the result of a binding should not depend on the key it was bound to.
+        // We use the range for error reporting.
+        let range = self.bindings().idx_to_key(idx).range();
 
         // Solve the binding with a local error collector.
         //
         // Only write the errors if we actually write the result - if another thread
         // or cycle unwinding already wrote the result, we discard the errors.
         let local_errors = self.error_collector();
-        let (answer, did_write) = calculation
-            .record_value(K::solve(self, binding, &local_errors), |var, answer| {
-                self.finalize_recursive_answer::<K>(idx, var, answer, &local_errors)
-            });
+        let (answer, did_write) = calculation.record_value(
+            K::solve(self, binding, range, &local_errors),
+            |var, answer| self.finalize_recursive_answer::<K>(idx, var, answer, &local_errors),
+        );
         if did_write {
             self.base_errors.extend(local_errors);
         }
