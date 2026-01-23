@@ -7,7 +7,9 @@
 
 use lsp_types::CompletionItem;
 use lsp_types::CompletionItemKind;
+use pyrefly_build::handle::Handle;
 use pyrefly_python::dunder;
+use pyrefly_python::keywords::get_keywords;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
 use ruff_python_ast::Identifier;
@@ -70,5 +72,18 @@ impl Transaction<'_> {
                 });
             }
         }
+    }
+
+    /// Adds completions for Python keywords (e.g., `if`, `for`, `class`, etc.).
+    pub(crate) fn add_keyword_completions(handle: &Handle, completions: &mut Vec<CompletionItem>) {
+        get_keywords(handle.sys_info().version())
+            .iter()
+            .for_each(|name| {
+                completions.push(CompletionItem {
+                    label: (*name).to_owned(),
+                    kind: Some(CompletionItemKind::KEYWORD),
+                    ..Default::default()
+                })
+            });
     }
 }

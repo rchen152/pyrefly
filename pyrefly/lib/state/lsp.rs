@@ -21,7 +21,6 @@ use pyrefly_build::handle::Handle;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::docstring::Docstring;
 use pyrefly_python::dunder;
-use pyrefly_python::keywords::get_keywords;
 use pyrefly_python::module::Module;
 use pyrefly_python::module::TextRangeWithModule;
 use pyrefly_python::module_name::ModuleName;
@@ -2733,18 +2732,6 @@ impl<'a> Transaction<'a> {
         has_added_any
     }
 
-    fn add_keyword_completions(&self, handle: &Handle, completions: &mut Vec<CompletionItem>) {
-        get_keywords(handle.sys_info().version())
-            .iter()
-            .for_each(|name| {
-                completions.push(CompletionItem {
-                    label: (*name).to_owned(),
-                    kind: Some(CompletionItemKind::KEYWORD),
-                    ..Default::default()
-                })
-            });
-    }
-
     fn get_docstring_for_attribute(
         &self,
         handle: &Handle,
@@ -2976,7 +2963,7 @@ impl<'a> Transaction<'a> {
                     Self::add_magic_method_completions(&identifier, &mut result);
                 }
                 self.add_kwargs_completions(handle, position, &mut result);
-                self.add_keyword_completions(handle, &mut result);
+                Self::add_keyword_completions(handle, &mut result);
                 let has_local_completions = self.add_local_variable_completions(
                     handle,
                     Some(&identifier),
@@ -3012,7 +2999,7 @@ impl<'a> Transaction<'a> {
                 if let Some(mod_module) = self.get_ast(handle) {
                     let nodes = Ast::locate_node(&mod_module, position);
                     if nodes.is_empty() {
-                        self.add_keyword_completions(handle, &mut result);
+                        Self::add_keyword_completions(handle, &mut result);
                         self.add_local_variable_completions(handle, None, position, &mut result);
                         self.add_builtins_autoimport_completions(handle, None, &mut result);
                     }
