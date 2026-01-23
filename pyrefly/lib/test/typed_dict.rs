@@ -2169,3 +2169,51 @@ def test_literal_union_not_in(clients: Clients, name: Literal['a', 'b', 'c']):
     return client
 "#,
 );
+
+testcase!(
+    test_typed_dict_contains_narrowing_inheritance,
+    r#"
+from typing import TypedDict, Literal, reveal_type
+
+class Base(TypedDict):
+    a: int
+
+class Extended(Base):
+    b: str
+
+def test_inherited_in(e: Extended, k: str):
+    # Should narrow to all keys including inherited ones
+    if k in e:
+        reveal_type(k)  # E: revealed type: Literal['a', 'b']
+
+def test_inherited_not_in(e: Extended, k: Literal['a', 'b', 'c']):
+    if k not in e:
+        reveal_type(k)  # E: revealed type: Literal['c']
+    else:
+        reveal_type(k)  # E: revealed type: Literal['a', 'b']
+"#,
+);
+
+testcase!(
+    test_typed_dict_contains_narrowing_empty,
+    r#"
+from typing import TypedDict, Literal, reveal_type
+
+class Empty(TypedDict):
+    pass
+
+def test_empty_in(e: Empty, k: str):
+    # Empty TypedDict - `in` check is always false, so type narrows to Never
+    if k in e:
+        reveal_type(k)  # E: revealed type: Never
+    else:
+        reveal_type(k)  # E: revealed type: str
+
+def test_empty_not_in(e: Empty, k: str):
+    # Empty TypedDict - `not in` check is always true, type is unchanged
+    if k not in e:
+        reveal_type(k)  # E: revealed type: str
+    else:
+        reveal_type(k)  # E: revealed type: Never
+"#,
+);

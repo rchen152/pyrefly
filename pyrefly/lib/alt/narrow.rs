@@ -677,8 +677,34 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 })
             }
             AtomicNarrowOp::In(v) => {
-                // First, check if the right operand is a TypedDict
-                // If so, we can narrow the left operand to the union of the TypedDict's keys
+                // First, check for List, Tuple, and Set literal expressions (syntactic check,
+                // avoids type inference on the container itself)
+                let exprs = match v {
+                    Expr::List(list) => Some(list.elts.clone()),
+                    Expr::Tuple(tuple) => Some(tuple.elts.clone()),
+                    Expr::Set(set) => Some(set.elts.clone()),
+                    _ => None,
+                };
+                if let Some(exprs) = exprs {
+                    // Bail out if any element is a starred expression (e.g., `x in [*y, 1]`).
+                    // We can't know all values at compile time when unpacking occurs.
+                    if exprs.iter().any(|e| matches!(e, Expr::Starred(_))) {
+                        return ty.clone();
+                    }
+                    let mut literal_types = Vec::new();
+                    for expr in exprs {
+                        let expr_ty = self.expr_infer(&expr, errors);
+                        if matches!(expr_ty, Type::Literal(_) | Type::None) {
+                            literal_types.push(expr_ty);
+                        } else {
+                            return ty.clone();
+                        }
+                    }
+                    return self.intersect(ty, &self.unions(literal_types));
+                }
+
+                // Check if the right operand is a TypedDict.
+                // If so, we can narrow the left operand to the union of the TypedDict's keys.
                 let right_ty = self.expr_infer(v, errors);
                 if let Type::TypedDict(typed_dict) = &right_ty {
                     let fields = self.typed_dict_fields(typed_dict);
@@ -693,35 +719,60 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     return self.intersect(ty, &self.unions(key_types));
                 }
 
-                // Handle List, Tuple, and Set expressions
+                ty.clone()
+            }
+            AtomicNarrowOp::NotIn(v) => {
+                // First, check for List, Tuple, and Set literal expressions (syntactic check,
+                // avoids type inference on the container itself)
                 let exprs = match v {
                     Expr::List(list) => Some(list.elts.clone()),
                     Expr::Tuple(tuple) => Some(tuple.elts.clone()),
                     Expr::Set(set) => Some(set.elts.clone()),
                     _ => None,
                 };
-                let Some(exprs) = exprs else {
-                    return ty.clone();
-                };
-                // Bail out if any element is a starred expression (e.g., `x in [*y, 1]`).
-                // We can't know all values at compile time when unpacking occurs.
-                if exprs.iter().any(|e| matches!(e, Expr::Starred(_))) {
-                    return ty.clone();
-                }
-                let mut literal_types = Vec::new();
-                for expr in exprs {
-                    let expr_ty = self.expr_infer(&expr, errors);
-                    if matches!(expr_ty, Type::Literal(_) | Type::None) {
-                        literal_types.push(expr_ty);
-                    } else {
+                if let Some(exprs) = exprs {
+                    // Bail out if any element is a starred expression (e.g., `x not in [*y, 1]`).
+                    // We can't know all values at compile time when unpacking occurs.
+                    if exprs.iter().any(|e| matches!(e, Expr::Starred(_))) {
                         return ty.clone();
                     }
+                    let mut literal_types = Vec::new();
+                    for expr in exprs {
+                        let expr_ty = self.expr_infer(&expr, errors);
+                        if matches!(expr_ty, Type::Literal(_) | Type::None) {
+                            literal_types.push(expr_ty);
+                        } else {
+                            return ty.clone();
+                        }
+                    }
+                    return self.distribute_over_union(ty, |t| {
+                        let mut result = t.clone();
+                        for right in &literal_types {
+                            match (t, right) {
+                                (_, _) if self.literal_equal(t, right) => {
+                                    result = Type::never();
+                                }
+                                (Type::ClassType(cls), Type::Literal(lit))
+                                    if cls.is_builtin("bool")
+                                        && let Lit::Bool(b) = &lit.value =>
+                                {
+                                    result = Lit::Bool(!b).to_implicit_type();
+                                }
+                                (Type::ClassType(left_cls), Type::Literal(right))
+                                    if let Lit::Enum(right) = &right.value
+                                        && left_cls == &right.class =>
+                                {
+                                    result = self.subtract_enum_member(left_cls, &right.member);
+                                }
+                                _ => {}
+                            }
+                        }
+                        result
+                    });
                 }
-                self.intersect(ty, &self.unions(literal_types))
-            }
-            AtomicNarrowOp::NotIn(v) => {
-                // First, check if the right operand is a TypedDict
-                // If so, we can narrow the left operand if it's exactly one of the TypedDict's keys
+
+                // Check if the right operand is a TypedDict.
+                // If so, we can narrow the left operand if it's exactly one of the TypedDict's keys.
                 let right_ty = self.expr_infer(v, errors);
                 if let Type::TypedDict(typed_dict) = &right_ty {
                     let fields = self.typed_dict_fields(typed_dict);
@@ -729,8 +780,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         // Empty TypedDict - the `not in` check is always true
                         return ty.clone();
                     }
-                    // For `not in` with TypedDict, we can only narrow if the left side is exactly
-                    // one of the keys (it becomes Never in that case)
                     let key_types: Vec<Type> = fields
                         .keys()
                         .map(|name| Lit::Str(name.as_str().into()).to_implicit_type())
@@ -745,54 +794,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     });
                 }
 
-                // Handle List, Tuple, and Set expressions
-                let exprs = match v {
-                    Expr::List(list) => Some(list.elts.clone()),
-                    Expr::Tuple(tuple) => Some(tuple.elts.clone()),
-                    Expr::Set(set) => Some(set.elts.clone()),
-                    _ => None,
-                };
-                let Some(exprs) = exprs else {
-                    return ty.clone();
-                };
-                // Bail out if any element is a starred expression (e.g., `x not in [*y, 1]`).
-                // We can't know all values at compile time when unpacking occurs.
-                if exprs.iter().any(|e| matches!(e, Expr::Starred(_))) {
-                    return ty.clone();
-                }
-                let mut literal_types = Vec::new();
-                for expr in exprs {
-                    let expr_ty = self.expr_infer(&expr, errors);
-                    if matches!(expr_ty, Type::Literal(_) | Type::None) {
-                        literal_types.push(expr_ty);
-                    } else {
-                        return ty.clone();
-                    }
-                }
-                self.distribute_over_union(ty, |t| {
-                    let mut result = t.clone();
-                    for right in &literal_types {
-                        match (t, right) {
-                            (_, _) if self.literal_equal(t, right) => {
-                                result = Type::never();
-                            }
-                            (Type::ClassType(cls), Type::Literal(lit))
-                                if cls.is_builtin("bool")
-                                    && let Lit::Bool(b) = &lit.value =>
-                            {
-                                result = Lit::Bool(!b).to_implicit_type();
-                            }
-                            (Type::ClassType(left_cls), Type::Literal(right))
-                                if let Lit::Enum(right) = &right.value
-                                    && left_cls == &right.class =>
-                            {
-                                result = self.subtract_enum_member(left_cls, &right.member);
-                            }
-                            _ => {}
-                        }
-                    }
-                    result
-                })
+                ty.clone()
             }
             AtomicNarrowOp::Is(v) => {
                 let right = self.expr_infer(v, errors);
