@@ -1569,7 +1569,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     pub fn solve_binding(
         &self,
         binding: &Binding,
-        _range: TextRange,
+        range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<TypeInfo> {
         // Special case for forward, as we don't want to re-expand the type
@@ -1588,7 +1588,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Binding::NameAssign { .. } | Binding::PartialTypeWithUpstreamsCompleted(..)
                 );
             if !skip_pinning {
-                self.pin_all_placeholder_types(ty, Some(errors));
+                self.pin_all_placeholder_types(ty, range, errors);
             }
             self.expand_vars_mut(ty);
         });
@@ -2847,7 +2847,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     // (everything that isn't either an answer or a Recursive var).
     // If an ErrorCollector is provided and a PartialContained variable is pinned
     // to Any, an ImplicitAny error will be emitted.
-    fn pin_all_placeholder_types(&self, ty: &mut Type, errors: Option<&ErrorCollector>) {
+    fn pin_all_placeholder_types(
+        &self,
+        ty: &mut Type,
+        _ty_range: TextRange,
+        errors: &ErrorCollector,
+    ) {
         // Expand the type, in case unexpanded `Vars` are hiding further `Var`s that
         // need to be pinned.
         self.solver().expand_vars_mut(ty);
@@ -2862,11 +2867,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         f(ty, &mut vars);
         // Pin all relevant vars and collect ranges of PartialContained vars
         for var in vars {
-            if let Some(range) = self.solver().pin_placeholder_type(var)
-                && let Some(errors) = errors
-            {
+            if let Some(container_range) = self.solver().pin_placeholder_type(var) {
                 errors.add(
-                    range,
+                    container_range,
                     ErrorInfo::Kind(ErrorKind::ImplicitAny),
                     vec1![
                         "Cannot infer type of empty container; it will be treated as containing `Any`".to_owned(),
@@ -3977,7 +3980,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn solve_decorator(&self, x: &BindingDecorator, errors: &ErrorCollector) -> Arc<Decorator> {
         let mut ty = self.expr_infer(&x.expr, errors);
-        self.pin_all_placeholder_types(&mut ty, Some(errors));
+        self.pin_all_placeholder_types(&mut ty, x.expr.range(), errors);
         self.expand_vars_mut(&mut ty);
         let deprecation = parse_deprecation(&x.expr);
         Arc::new(Decorator { ty, deprecation })
