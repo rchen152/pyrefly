@@ -1467,8 +1467,6 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                     // The `unify` function preserves the Variable data from its second argument,
                     // so we call it with the stricter bound in the v2 position.
                     (Variable::Quantified(q1), Variable::Quantified(q2))
-                    | (Variable::PartialQuantified(q1), Variable::Quantified(q2))
-                    | (Variable::Quantified(q1), Variable::PartialQuantified(q2))
                     | (Variable::PartialQuantified(q1), Variable::PartialQuantified(q2)) => {
                         let r1 = q1.restriction().clone();
                         let r2 = q2.restriction().clone();
@@ -1514,6 +1512,15 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                                 }
                             }
                         }
+                        Ok(())
+                    }
+                    (_, Variable::Quantified(_)) => {
+                        drop(variable1);
+                        drop(variable2);
+                        // `unify` preserves the Variable in its second argument. When a Quantified
+                        // and a non-Quantified are unified, we preserve the non-Quantified to
+                        // avoid leaking unsolved type parameters across bindings.
+                        variables.unify(*v2, *v1);
                         Ok(())
                     }
                     (_, _) => {
