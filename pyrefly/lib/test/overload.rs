@@ -1340,7 +1340,6 @@ def f(path: Any, data: Any) -> dict[str, Any]:
 );
 
 testcase!(
-    bug = "https://github.com/facebook/pyrefly/issues/2187",
     test_one_overload_is_typeis,
     r#"
 from typing import TypeIs, assert_type, overload
@@ -1357,7 +1356,7 @@ def f(x):
 
 def g(x: str, y: int):
     assert_type(f(x), str)
-    assert_type(f(y), bool)  # E: (TypeIs[bool], bool)
+    assert_type(f(y), bool)
     if f(x):
         assert_type(x, str)
     if f(y):
