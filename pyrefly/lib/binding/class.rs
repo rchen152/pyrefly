@@ -67,6 +67,7 @@ use crate::binding::binding::KeyVariance;
 use crate::binding::bindings::BindingsBuilder;
 use crate::binding::bindings::CurrentIdx;
 use crate::binding::bindings::LegacyTParamCollector;
+use crate::binding::django::DjangoFieldInfo;
 use crate::binding::pydantic::PydanticConfigDict;
 use crate::binding::scope::ClassIndices;
 use crate::binding::scope::FlowStyle;
@@ -386,9 +387,11 @@ impl<'a> BindingsBuilder<'a> {
                 decorators: decorators.into_boxed_slice(),
                 is_new_type: false,
                 pydantic_config_dict,
-                django_primary_key_field,
-                django_foreign_key_fields,
-                django_fields_with_choices,
+                django_field_info: Box::new(DjangoFieldInfo {
+                    primary_key_field: django_primary_key_field,
+                    foreign_key_fields: django_foreign_key_fields,
+                    fields_with_choices: django_fields_with_choices,
+                }),
             },
         );
         self.insert_binding_idx(
@@ -561,9 +564,7 @@ impl<'a> BindingsBuilder<'a> {
                 decorators: Box::new([]),
                 is_new_type,
                 pydantic_config_dict: PydanticConfigDict::default(),
-                django_primary_key_field: None,
-                django_foreign_key_fields: Vec::new(),
-                django_fields_with_choices: Vec::new(),
+                django_field_info: Box::default(),
             },
         );
         self.insert_binding_idx(

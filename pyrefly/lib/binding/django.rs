@@ -14,6 +14,17 @@ const PRIMARY_KEY: Name = Name::new_static("primary_key");
 const FOREIGN_KEY: Name = Name::new_static("ForeignKey");
 const CHOICES: Name = Name::new_static("choices");
 
+/// Django-specific field information detected during binding phase.
+#[derive(Clone, Debug, Default)]
+pub struct DjangoFieldInfo {
+    /// The name of the field that has primary_key=True, if any.
+    pub primary_key_field: Option<Name>,
+    /// Names of ForeignKey fields.
+    pub foreign_key_fields: Vec<Name>,
+    /// Names of fields with choices=...
+    pub fields_with_choices: Vec<Name>,
+}
+
 impl<'a> BindingsBuilder<'a> {
     /// Detect if a field has `primary_key=True` set. This will be used to support Django models with custom primary keys.
     pub fn extract_django_primary_key(&self, e: &Expr) -> bool {
