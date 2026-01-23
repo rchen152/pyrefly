@@ -1062,7 +1062,7 @@ impl<'a> Transaction<'a> {
         }
     }
 
-    fn resolve_attribute_definition(
+    pub(crate) fn resolve_attribute_definition(
         &self,
         handle: &Handle,
         attr_name: &Name,
@@ -2682,33 +2682,6 @@ impl<'a> Transaction<'a> {
             }
         }
         has_added_any
-    }
-
-    fn get_docstring_for_attribute(
-        &self,
-        handle: &Handle,
-        attr_info: &AttrInfo,
-    ) -> Option<lsp_types::Documentation> {
-        let definition = attr_info.definition.as_ref()?.clone();
-        let attribute_definition = self.resolve_attribute_definition(
-            handle,
-            &attr_info.name,
-            definition,
-            attr_info.docstring_range,
-            FindPreference::default(),
-        );
-
-        let (definition, Some(docstring_range)) = attribute_definition? else {
-            return None;
-        };
-        let docstring = Docstring(docstring_range, definition.module);
-
-        Some(lsp_types::Documentation::MarkupContent(
-            lsp_types::MarkupContent {
-                kind: lsp_types::MarkupKind::Markdown,
-                value: docstring.resolve().trim().to_owned(),
-            },
-        ))
     }
 
     fn add_literal_completions(

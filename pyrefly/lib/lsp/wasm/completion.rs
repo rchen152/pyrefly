@@ -16,7 +16,9 @@ use pyrefly_types::types::Union;
 use ruff_python_ast::Identifier;
 use ruff_text_size::TextSize;
 
+use crate::alt::attr::AttrInfo;
 use crate::export::exports::Export;
+use crate::state::lsp::FindPreference;
 use crate::state::state::Transaction;
 use crate::types::callable::Param;
 use crate::types::types::Type;
@@ -138,5 +140,33 @@ impl Transaction<'_> {
                 }
             }
         }
+    }
+
+    /// Gets docstring documentation for an attribute to display in completion items.
+    pub(crate) fn get_docstring_for_attribute(
+        &self,
+        handle: &Handle,
+        attr_info: &AttrInfo,
+    ) -> Option<lsp_types::Documentation> {
+        let definition = attr_info.definition.as_ref()?.clone();
+        let attribute_definition = self.resolve_attribute_definition(
+            handle,
+            &attr_info.name,
+            definition,
+            attr_info.docstring_range,
+            FindPreference::default(),
+        );
+
+        let (definition, Some(docstring_range)) = attribute_definition? else {
+            return None;
+        };
+        let docstring = Docstring(docstring_range, definition.module);
+
+        Some(lsp_types::Documentation::MarkupContent(
+            lsp_types::MarkupContent {
+                kind: lsp_types::MarkupKind::Markdown,
+                value: docstring.resolve().trim().to_owned(),
+            },
+        ))
     }
 }
