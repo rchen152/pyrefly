@@ -1357,29 +1357,25 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn format_missing_literal_cases(&self, ty: &Type) -> Option<String> {
-        fn collect_cases(ty: &Type, acc: &mut Vec<String>) -> bool {
-            match ty {
-                Type::Literal(lit) => {
-                    acc.push(format!("{}", lit.value));
-                    true
-                }
-                Type::Union(union) => {
-                    let union = union.as_ref();
-                    union
-                        .members
-                        .iter()
-                        .all(|member| collect_cases(member, acc))
-                }
-                _ => false,
+    /// Formats the missing cases for a non-exhaustive match error message.
+    /// Returns None if the remaining type can't be formatted nicely.
+    fn format_missing_cases(&self, ty: &Type) -> Option<String> {
+        match ty {
+            Type::Literal(lit) => Some(format!("{}", lit.value)),
+            Type::None => Some("None".to_owned()),
+            Type::ClassType(cls) => {
+                let display = self.for_display(Type::ClassType(cls.clone()));
+                Some(format!("{}", display))
             }
-        }
-
-        let mut cases = Vec::new();
-        if collect_cases(ty, &mut cases) {
-            Some(cases.join(", "))
-        } else {
-            None
+            Type::Union(union) => {
+                let formatted: Option<Vec<String>> = union
+                    .members
+                    .iter()
+                    .map(|m| self.format_missing_cases(m))
+                    .collect();
+                formatted.map(|cases| cases.join(", "))
+            }
+            _ => None,
         }
     }
 
@@ -1436,7 +1432,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             "Match on `{}` is not exhaustive",
             ctx.display(&subject_display)
         )];
-        if let Some(missing_cases) = self.format_missing_literal_cases(&remaining_ty) {
+        if let Some(missing_cases) = self.format_missing_cases(&remaining_ty) {
             msg.push(format!("Missing cases: {}", missing_cases));
         }
         errors.add(

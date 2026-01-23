@@ -559,3 +559,43 @@ def foo() -> str: # E: Function declared to return `str`, but one or more paths 
             return "two"
 "#,
 );
+
+testcase!(
+    test_non_exhaustive_match_shows_missing_none,
+    r#"
+from typing import final
+
+@final
+class A:
+    pass
+
+def process(x: A | None):
+    match x: # E: Match on `A | None` is not exhaustive
+        case A():
+            pass
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_match_shows_missing_class,
+    r#"
+from typing import final
+
+@final
+class A:
+    pass
+
+@final
+class B:
+    pass
+
+@final
+class C:
+    pass
+
+def process(x: A | B | C):
+    match x: # E: Match on `A | B | C` is not exhaustive
+        case A():
+            pass
+"#,
+);
