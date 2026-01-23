@@ -342,7 +342,7 @@ impl Solver {
     /// This allows callers to emit errors about uninferred empty containers.
     ///
     /// TODO: deduplicate Variable-to-gradual-type logic with `force_var`.
-    pub fn pin_placeholder_type(&self, var: Var) -> Option<TextRange> {
+    pub fn pin_placeholder_type(&self, var: Var, pin_partial_types: bool) -> Option<TextRange> {
         let variables = self.variables.lock();
         let mut variable = variables.get_mut(var);
         match &mut *variable {
@@ -356,14 +356,17 @@ impl Solver {
                 None
             }
             Variable::PartialQuantified(q) => {
-                *variable = Variable::Answer(q.as_gradual_type());
+                if pin_partial_types {
+                    *variable = Variable::Answer(q.as_gradual_type());
+                }
                 None
             }
-            Variable::PartialContained(range) => {
+            Variable::PartialContained(range) if pin_partial_types => {
                 let range = *range;
                 *variable = Variable::Answer(Type::any_implicit());
                 Some(range)
             }
+            Variable::PartialContained(_) => None,
             Variable::Unwrap => {
                 *variable = Variable::Answer(Type::any_implicit());
                 None

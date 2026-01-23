@@ -1579,17 +1579,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut type_info = self.binding_to_type_info(binding, errors);
         type_info.visit_mut(&mut |ty| {
             // Skip pinning for NameAssign and PartialTypeWithUpstreamsCompleted bindings
-            // when infer_with_first_use is enabled, as these bindings can contain placeholder
+            // when infer_with_first_use is enabled, as these bindings can contain partial
             // types that should be pinned by first use. When infer_with_first_use is disabled,
             // we pin immediately since there's no first-use inference mechanism.
-            let skip_pinning = self.solver().infer_with_first_use
-                && matches!(
+            let pin_partial_types = !self.solver().infer_with_first_use
+                || !matches!(
                     binding,
                     Binding::NameAssign { .. } | Binding::PartialTypeWithUpstreamsCompleted(..)
                 );
-            if !skip_pinning {
-                self.pin_all_placeholder_types(ty, range, errors);
-            }
+            self.pin_all_placeholder_types(ty, pin_partial_types, range, errors);
             self.expand_vars_mut(ty);
         });
         Arc::new(type_info)
@@ -2850,6 +2848,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn pin_all_placeholder_types(
         &self,
         ty: &mut Type,
+        pin_partial_types: bool,
         _ty_range: TextRange,
         errors: &ErrorCollector,
     ) {
@@ -2867,7 +2866,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         f(ty, &mut vars);
         // Pin all relevant vars and collect ranges of PartialContained vars
         for var in vars {
-            if let Some(container_range) = self.solver().pin_placeholder_type(var) {
+            if let Some(container_range) =
+                self.solver().pin_placeholder_type(var, pin_partial_types)
+            {
                 errors.add(
                     container_range,
                     ErrorInfo::Kind(ErrorKind::ImplicitAny),
@@ -3980,7 +3981,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn solve_decorator(&self, x: &BindingDecorator, errors: &ErrorCollector) -> Arc<Decorator> {
         let mut ty = self.expr_infer(&x.expr, errors);
-        self.pin_all_placeholder_types(&mut ty, x.expr.range(), errors);
+        self.pin_all_placeholder_types(&mut ty, true, x.expr.range(), errors);
         self.expand_vars_mut(&mut ty);
         let deprecation = parse_deprecation(&x.expr);
         Arc::new(Decorator { ty, deprecation })
