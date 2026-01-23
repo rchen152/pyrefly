@@ -2048,6 +2048,7 @@ impl Server {
                 diags.entry(path.to_owned()).or_default().push(diag);
             }
         }
+        drop(open_files);
         for (path, diagnostics) in diags.iter_mut() {
             for diagnostic in diagnostics.iter_mut() {
                 diagnostic.data = serde_json::to_value(source).ok()
