@@ -1466,3 +1466,14 @@ fn test_making_class_generic_propagates() {
     i.set("main", "from foo import Container\nx: Container[int]");
     i.check(&["main"], &["foo", "main"]);
 }
+
+#[test]
+fn test_adding_mro_attr_propagates() {
+    let mut i = Incremental::new();
+    i.set("foo", "class Foo: pass");
+    i.set("bar", "from foo import Foo\nclass Bar(Foo): pass");
+    i.set("main", "from bar import Bar\nBar().foo");
+    i.check_ignoring_expectations(&["main"], &["main", "foo", "bar"]);
+    i.set("foo", "class Foo: foo: int = 1");
+    i.check(&["main"], &["main", "foo", "bar"]);
+}
