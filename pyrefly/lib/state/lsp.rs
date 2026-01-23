@@ -7,6 +7,8 @@
 
 use std::cmp::Ordering;
 use std::cmp::Reverse;
+use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use dupe::Dupe;
 use fuzzy_matcher::FuzzyMatcher;
@@ -33,6 +35,7 @@ use pyrefly_python::sys_info::SysInfo;
 use pyrefly_types::display::LspDisplayMode;
 use pyrefly_types::types::Union;
 use pyrefly_util::gas::Gas;
+use pyrefly_util::lock::Mutex;
 use pyrefly_util::prelude::SliceExt;
 use pyrefly_util::prelude::VecExt;
 use pyrefly_util::task_heap::Cancelled;
@@ -128,6 +131,28 @@ pub struct InlayHintConfig {
     #[serde(default = "default_true")]
     pub variable_types: bool,
 }
+
+/// PEP 610 direct_url.json structure for detecting editable installs.
+#[allow(dead_code)]
+#[derive(Deserialize)]
+struct DirectUrl {
+    url: String,
+    #[serde(default)]
+    dir_info: DirInfo,
+}
+
+#[allow(dead_code)]
+#[derive(Deserialize, Default)]
+struct DirInfo {
+    #[serde(default)]
+    editable: bool,
+}
+
+/// Cache for editable source paths, keyed by sorted site-packages paths.
+/// This avoids re-scanning site-packages on every check.
+#[allow(dead_code)]
+static EDITABLE_PATHS_CACHE: LazyLock<Mutex<SmallMap<Vec<PathBuf>, Vec<PathBuf>>>> =
+    LazyLock::new(|| Mutex::new(SmallMap::new()));
 
 impl Default for InlayHintConfig {
     fn default() -> Self {
