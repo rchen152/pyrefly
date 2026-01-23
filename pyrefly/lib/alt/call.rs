@@ -40,6 +40,7 @@ use crate::config::error_kind::ErrorKind;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorContext;
 use crate::error::context::ErrorInfo;
+use crate::solver::solver::QuantifiedHandle;
 use crate::types::callable::Callable;
 use crate::types::callable::FuncMetadata;
 use crate::types::callable::Function;
@@ -572,13 +573,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         hint: Option<HintRef>,
     ) -> Type {
         // Based on https://typing.readthedocs.io/en/latest/spec/constructors.html.
-        if let Some(hint) = hint {
-            self.solver()
+        let vs = if let Some(hint) = hint {
+            let vs = self
+                .solver()
                 .freshen_class_targs(cls.targs_mut(), self.uniques);
 
             self.is_subset_eq(&cls.clone().to_type(), hint.ty());
             self.solver().generalize_class_targs(cls.targs_mut());
-        }
+            vs
+        } else {
+            QuantifiedHandle::empty()
+        };
         let hint = None; // discard hint
         let class_metadata = self.get_metadata_for_class(cls.class_object());
         if let Some(ret) =
@@ -697,6 +702,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
         self.solver()
             .finish_class_targs(cls.targs_mut(), self.uniques);
+        if let Err(e) = self
+            .solver()
+            .finish_quantified(vs, self.solver().infer_with_first_use)
+        {
+            for e in e {
+                self.error(
+                    errors,
+                    arguments_range,
+                    ErrorInfo::new(ErrorKind::BadSpecialization, context),
+                    e.to_error_msg(self),
+                );
+            }
+        }
         if let Some(mut ret) = dunder_new_ret {
             ret.subst_mut(&cls.targs().substitution_map());
             ret
@@ -715,12 +733,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         context: Option<&dyn Fn() -> ErrorContext>,
         hint: Option<HintRef>,
     ) -> Type {
-        if let Some(hint) = hint {
-            self.solver()
+        let vs = if let Some(hint) = hint {
+            let vs = self
+                .solver()
                 .freshen_class_targs(typed_dict.targs_mut(), self.uniques);
             self.is_subset_eq(&typed_dict.clone().to_type(), hint.ty());
             self.solver().generalize_class_targs(typed_dict.targs_mut());
-        }
+            vs
+        } else {
+            QuantifiedHandle::empty()
+        };
         let hint = None; // discard hint
         let init_method = self.get_typed_dict_dunder_init(&typed_dict);
         self.call_infer(
@@ -741,6 +763,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         );
         self.solver()
             .finish_class_targs(typed_dict.targs_mut(), self.uniques);
+        if let Err(e) = self
+            .solver()
+            .finish_quantified(vs, self.solver().infer_with_first_use)
+        {
+            for e in e {
+                self.error(
+                    errors,
+                    arguments_range,
+                    ErrorInfo::new(ErrorKind::BadSpecialization, context),
+                    e.to_error_msg(self),
+                );
+            }
+        }
         Type::TypedDict(TypedDict::TypedDict(typed_dict))
     }
 

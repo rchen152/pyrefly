@@ -996,16 +996,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         hint: Option<HintRef>,
         mut ctor_targs: Option<&mut TArgs>,
     ) -> Type {
-        let (qs, mut callable) = if let Some(tparams) = tparams {
+        let (callable_qs, mut callable) = if let Some(tparams) = tparams {
             // If we have a hint, we want to try to instantiate against it first, so we can contextually type
             // arguments. If we don't match the hint, we need to throw away any instantiations we might have made.
             // By invariant, hint will be None if we are calling a constructor.
             if let Some(hint) = hint {
-                let (qs_, callable_) = self.instantiate_fresh_callable(tparams, callable.clone());
+                let (qs, callable_) = self.instantiate_fresh_callable(tparams, callable.clone());
                 if self.is_subset_eq(&callable_.ret, hint.ty())
-                    && !self.solver().has_instantiation_errors(&qs_)
+                    && !self.solver().has_instantiation_errors(&qs)
                 {
-                    (qs_, callable_)
+                    (qs, callable_)
                 } else {
                     self.instantiate_fresh_callable(tparams, callable)
                 }
@@ -1015,8 +1015,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             (QuantifiedHandle::empty(), callable)
         };
-        if let Some(targs) = ctor_targs.as_mut() {
-            self.solver().freshen_class_targs(targs, self.uniques);
+        let ctor_qs = if let Some(targs) = ctor_targs.as_mut() {
+            let qs = self.solver().freshen_class_targs(targs, self.uniques);
             let mp = targs.substitution_map();
             callable.params.visit_mut(&mut |t| t.subst_mut(&mp));
             if let Some(obj) = self_obj.as_mut() {
@@ -1030,7 +1030,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self_obj = Some((*obj).clone().subst(&mp));
                 args = rest;
             }
-        }
+            qs
+        } else {
+            QuantifiedHandle::empty()
+        };
         let self_arg = self_obj.as_ref().map(|ty| CallArg::ty(ty, arguments_range));
         match callable.params {
             Params::List(params) => {
@@ -1131,18 +1134,23 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if let Some(targs) = ctor_targs {
             self.solver().generalize_class_targs(targs);
         }
+        let mut errors = self
+            .solver()
+            .finish_quantified(callable_qs, self.solver().infer_with_first_use)
+            .map_or_else(|e| e.to_vec(), |_| Vec::new());
         if let Err(e) = self
             .solver()
-            .finish_quantified(qs, self.solver().infer_with_first_use)
+            .finish_quantified(ctor_qs, self.solver().infer_with_first_use)
         {
-            for e in e {
-                self.error(
-                    call_errors,
-                    arguments_range,
-                    ErrorInfo::new(ErrorKind::BadSpecialization, context),
-                    e.to_error_msg(self),
-                );
-            }
+            errors.extend(e);
+        }
+        for e in errors {
+            self.error(
+                call_errors,
+                arguments_range,
+                ErrorInfo::new(ErrorKind::BadSpecialization, context),
+                e.to_error_msg(self),
+            );
         }
         self.solver().finish_function_return(callable.ret)
     }

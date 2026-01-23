@@ -790,17 +790,24 @@ impl Solver {
     /// Given targs which contain quantified (as come from `instantiate`), replace the quantifieds
     /// with fresh vars. We can avoid substitution because tparams can not appear in the bounds of
     /// another tparam. tparams can appear in the default, but those are not in quantified form yet.
-    pub fn freshen_class_targs(&self, targs: &mut TArgs, uniques: &UniqueFactory) {
+    pub fn freshen_class_targs(
+        &self,
+        targs: &mut TArgs,
+        uniques: &UniqueFactory,
+    ) -> QuantifiedHandle {
+        let mut vs = Vec::new();
         let mut lock = self.variables.lock();
         targs.iter_paired_mut().for_each(|(param, t)| {
             if let Type::Quantified(q) = t
                 && **q == param.quantified
             {
                 let v = Var::new(uniques);
+                vs.push(v);
                 *t = v.to_type();
                 lock.insert_fresh(v, Variable::Quantified(param.quantified.clone()));
             }
-        })
+        });
+        QuantifiedHandle(vs)
     }
 
     /// Solve each fresh var created in freshen_class_targs. If we still have a Var, we do not
@@ -815,7 +822,8 @@ impl Solver {
         let lock = self.variables.lock();
         targs.iter_paired_mut().for_each(|(param, t)| {
             if let Type::Var(v) = t
-                && !matches!(&*lock.get(*v), Variable::Answer(_))
+                && let Variable::Quantified(q) = &*lock.get(*v)
+                && *q == param.quantified
             {
                 *t = param.quantified.clone().to_type();
             }
