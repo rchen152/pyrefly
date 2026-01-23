@@ -14,9 +14,11 @@ use pyrefly_python::keywords::get_keywords;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
 use ruff_python_ast::Identifier;
+use ruff_text_size::TextSize;
 
 use crate::export::exports::Export;
 use crate::state::state::Transaction;
+use crate::types::callable::Param;
 use crate::types::types::Type;
 
 impl Transaction<'_> {
@@ -103,5 +105,38 @@ impl Transaction<'_> {
             value: docstring,
         });
         Some(documentation)
+    }
+
+    /// Adds keyword argument completions (e.g., `arg=`) for function/method calls.
+    pub(crate) fn add_kwargs_completions(
+        &self,
+        handle: &Handle,
+        position: TextSize,
+        completions: &mut Vec<CompletionItem>,
+    ) {
+        if let Some((callables, overload_idx, _, _)) =
+            self.get_callables_from_call(handle, position)
+            && let Some(callable) = callables.get(overload_idx).cloned()
+            && let Some(params) = Self::normalize_singleton_function_type_into_params(callable)
+        {
+            for param in params {
+                match param {
+                    Param::Pos(name, ty, _)
+                    | Param::PosOnly(Some(name), ty, _)
+                    | Param::KwOnly(name, ty, _)
+                    | Param::VarArg(Some(name), ty) => {
+                        if name.as_str() != "self" {
+                            completions.push(CompletionItem {
+                                label: format!("{}=", name.as_str()),
+                                detail: Some(ty.to_string()),
+                                kind: Some(CompletionItemKind::VARIABLE),
+                                ..Default::default()
+                            });
+                        }
+                    }
+                    Param::VarArg(None, _) | Param::Kwargs(_, _) | Param::PosOnly(None, _, _) => {}
+                }
+            }
+        }
     }
 }

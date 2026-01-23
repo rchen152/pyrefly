@@ -76,7 +76,6 @@ use crate::state::require::Require;
 use crate::state::state::CancellableTransaction;
 use crate::state::state::Transaction;
 use crate::state::state::TransactionHandle;
-use crate::types::callable::Param;
 use crate::types::module::ModuleType;
 use crate::types::type_var::Restriction;
 use crate::types::types::Type;
@@ -2462,38 +2461,6 @@ impl<'a> Transaction<'a> {
             }
         }
         Some(references)
-    }
-
-    fn add_kwargs_completions(
-        &self,
-        handle: &Handle,
-        position: TextSize,
-        completions: &mut Vec<CompletionItem>,
-    ) {
-        if let Some((callables, overload_idx, _, _)) =
-            self.get_callables_from_call(handle, position)
-            && let Some(callable) = callables.get(overload_idx).cloned()
-            && let Some(params) = Self::normalize_singleton_function_type_into_params(callable)
-        {
-            for param in params {
-                match param {
-                    Param::Pos(name, ty, _)
-                    | Param::PosOnly(Some(name), ty, _)
-                    | Param::KwOnly(name, ty, _)
-                    | Param::VarArg(Some(name), ty) => {
-                        if name.as_str() != "self" {
-                            completions.push(CompletionItem {
-                                label: format!("{}=", name.as_str()),
-                                detail: Some(ty.to_string()),
-                                kind: Some(CompletionItemKind::VARIABLE),
-                                ..Default::default()
-                            });
-                        }
-                    }
-                    Param::VarArg(None, _) | Param::Kwargs(_, _) | Param::PosOnly(None, _, _) => {}
-                }
-            }
-        }
     }
 
     fn add_builtins_autoimport_completions(
