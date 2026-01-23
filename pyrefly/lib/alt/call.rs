@@ -41,6 +41,7 @@ use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorContext;
 use crate::error::context::ErrorInfo;
 use crate::solver::solver::QuantifiedHandle;
+use crate::solver::solver::TypeVarSpecializationError;
 use crate::types::callable::Callable;
 use crate::types::callable::FuncMetadata;
 use crate::types::callable::Function;
@@ -561,6 +562,23 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         Some(ret)
     }
 
+    pub fn add_specialization_errors(
+        &self,
+        specialization_errors: Vec1<TypeVarSpecializationError>,
+        range: TextRange,
+        errors: &ErrorCollector,
+        context: Option<&dyn Fn() -> ErrorContext>,
+    ) {
+        for e in specialization_errors {
+            self.error(
+                errors,
+                range,
+                ErrorInfo::new(ErrorKind::BadSpecialization, context),
+                e.to_error_msg(self),
+            );
+        }
+    }
+
     fn construct_class(
         &self,
         mut cls: ClassType,
@@ -706,14 +724,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .solver()
             .finish_quantified(vs, self.solver().infer_with_first_use)
         {
-            for e in e {
-                self.error(
-                    errors,
-                    arguments_range,
-                    ErrorInfo::new(ErrorKind::BadSpecialization, context),
-                    e.to_error_msg(self),
-                );
-            }
+            self.add_specialization_errors(e, arguments_range, errors, context);
         }
         if let Some(mut ret) = dunder_new_ret {
             ret.subst_mut(&cls.targs().substitution_map());
@@ -767,14 +778,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .solver()
             .finish_quantified(vs, self.solver().infer_with_first_use)
         {
-            for e in e {
-                self.error(
-                    errors,
-                    arguments_range,
-                    ErrorInfo::new(ErrorKind::BadSpecialization, context),
-                    e.to_error_msg(self),
-                );
-            }
+            self.add_specialization_errors(e, arguments_range, errors, context);
         }
         Type::TypedDict(TypedDict::TypedDict(typed_dict))
     }

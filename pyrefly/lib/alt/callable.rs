@@ -25,6 +25,7 @@ use ruff_text_size::TextRange;
 use starlark_map::ordered_map::OrderedMap;
 use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
+use vec1::Vec1;
 
 use crate::alt::answers::LookupAnswer;
 use crate::alt::answers_solver::AnswersSolver;
@@ -1144,13 +1145,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         {
             errors.extend(e);
         }
-        for e in errors {
-            self.error(
-                call_errors,
-                arguments_range,
-                ErrorInfo::new(ErrorKind::BadSpecialization, context),
-                e.to_error_msg(self),
-            );
+        if let Ok(errors) = Vec1::try_from_vec(errors) {
+            self.add_specialization_errors(errors, arguments_range, call_errors, context);
         }
         self.solver().finish_function_return(callable.ret)
     }
