@@ -460,3 +460,102 @@ def process(x: A | B | None):
     # Missing None case
 "#,
 );
+
+testcase!(
+    test_exhaustive_enum_no_missing_return,
+    r#"
+from enum import Enum
+
+class Color(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+def describe(color: Color) -> str:
+    match color:
+        case Color.RED:
+            return "It's red"
+        case Color.BLUE:
+            return "It's blue"
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_enum_missing_return,
+    r#"
+from enum import Enum
+
+class Color(Enum):
+    RED = "red"
+    BLUE = "blue"
+    GREEN = "green"
+
+def describe(color: Color) -> str: # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
+    match color: # E: Match on `Color` is not exhaustive
+        case Color.RED:
+            return "It's red"
+        case Color.BLUE:
+            return "It's blue"
+    #   (Missing GREEN case here)
+"#,
+);
+
+testcase!(
+    test_exhaustive_literal_union_no_missing_return,
+    r#"
+from typing import Literal
+
+def describe(status: Literal["pending", "done"]) -> str:
+    match status:
+        case "pending":
+            return "Still working"
+        case "done":
+            return "Finished"
+"#,
+);
+
+// Test that an exhaustive match with a branch that doesn't return is correctly
+// identified as having an implicit None return.
+testcase!(
+    test_exhaustive_enum_with_branch_missing_return,
+    r#"
+from enum import Enum
+
+class Color(Enum):
+    RED = "red"
+    BLUE = "blue"
+
+def describe(color: Color) -> str: # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
+    match color:
+        case Color.RED:
+            return "It's red"
+        case Color.BLUE:
+            pass  # Exhaustive but no return here
+"#,
+);
+
+testcase!(
+    test_exhaustive_literal_with_branch_missing_return,
+    r#"
+from typing import Literal
+
+def describe(status: Literal["pending", "done"]) -> str: # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
+    match status:
+        case "pending":
+            return "Still working"
+        case "done":
+            pass  # Exhaustive but no return here
+"#,
+);
+
+// Regression test: match on a complex expression (not a name) should not cause
+// an internal error when checking for implicit returns. The subject `1 + 1` is
+// a BinOp which cannot be converted to a narrowing subject.
+testcase!(
+    test_match_on_complex_expr_no_internal_error,
+    r#"
+def foo() -> str: # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
+    match 1 + 1:
+        case 2:
+            return "two"
+"#,
+);

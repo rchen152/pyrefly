@@ -352,8 +352,13 @@ impl<'a> BindingsBuilder<'a> {
     /// to a panic).
     fn implicit_return(&mut self, body: &[Stmt], func_name: &Identifier) -> Idx<Key> {
         let last_exprs = function_last_expressions(body, self.sys_info).map(|x| {
-            x.into_map(|(last, x)| (last, self.last_statement_idx_for_implicit_return(last, x)))
-                .into_boxed_slice()
+            x.into_map(|(last, x)| {
+                (
+                    last.clone(),
+                    self.last_statement_idx_for_implicit_return(last, x),
+                )
+            })
+            .into_boxed_slice()
         });
         self.insert_binding(
             Key::ReturnImplicit(ShortIdentifier::new(func_name)),
@@ -859,16 +864,20 @@ fn function_last_expressions<'a>(
                 }
             }
             Stmt::Match(x) => {
-                let mut exhaustive = false;
+                let mut syntactically_exhaustive = false;
                 for case in x.cases.iter() {
                     f(sys_info, &case.body, res)?;
                     if case.pattern.is_wildcard() || case.pattern.is_irrefutable() {
-                        exhaustive = true;
+                        syntactically_exhaustive = true;
                         break;
                     }
                 }
-                if !exhaustive {
-                    return None;
+                if !syntactically_exhaustive {
+                    // The match is not syntactically exhaustive, but might be type-exhaustive.
+                    // Add a LastStmt::Match entry so we can check at solve time.
+                    // We use the subject expression as a placeholder; the actual exhaustiveness
+                    // check uses the match range to find the MatchExhaustive binding.
+                    res.push((LastStmt::Match(x.range), x.subject.as_ref()));
                 }
             }
             _ => return None,

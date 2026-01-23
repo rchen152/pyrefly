@@ -949,7 +949,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn get_facet_chain_type(
+    pub(crate) fn get_facet_chain_type(
         &self,
         base: &TypeInfo,
         facet_chain: &FacetChain,
@@ -1327,7 +1327,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     /// Determines if a type should be checked for match exhaustiveness.
     /// We check exhaustiveness when the type has a finite, known set of possible values.
-    fn should_check_exhaustiveness(&self, ty: &Type) -> bool {
+    pub(crate) fn should_check_exhaustiveness(&self, ty: &Type) -> bool {
         match ty {
             // Enums have a fixed set of members
             Type::ClassType(cls) | Type::SelfType(cls) => {

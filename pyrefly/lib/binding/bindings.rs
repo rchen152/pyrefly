@@ -752,6 +752,7 @@ impl<'a> BindingsBuilder<'a> {
         self.table.types.0.insert(match last {
             LastStmt::Expr => Key::StmtExpr(x.range()),
             LastStmt::With(_) => Key::ContextExpr(x.range()),
+            LastStmt::Match(match_range) => Key::MatchExhaustive(match_range),
         })
     }
 
