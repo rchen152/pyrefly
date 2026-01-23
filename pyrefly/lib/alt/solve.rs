@@ -106,6 +106,7 @@ use crate::error::context::TypeCheckKind;
 use crate::error::style::ErrorStyle;
 use crate::export::deprecation::parse_deprecation;
 use crate::export::special::SpecialExport;
+use crate::solver::solver::PinError;
 use crate::solver::solver::SubsetError;
 use crate::types::annotation::Annotation;
 use crate::types::annotation::Qualifier;
@@ -2866,17 +2867,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         f(ty, &mut vars);
         // Pin all relevant vars and collect ranges of PartialContained vars
         for var in vars {
-            if let Some(container_range) =
-                self.solver().pin_placeholder_type(var, pin_partial_types)
-            {
-                errors.add(
+            match self.solver().pin_placeholder_type(var, pin_partial_types) {
+                Some(PinError::ImplicitPartialContained(container_range)) => errors.add(
                     container_range,
                     ErrorInfo::Kind(ErrorKind::ImplicitAny),
                     vec1![
                         "Cannot infer type of empty container; it will be treated as containing `Any`".to_owned(),
                         "Consider adding a type annotation or initializing with a non-empty value".to_owned(),
                     ],
-                );
+                ),
+                None => {}
             }
         }
     }

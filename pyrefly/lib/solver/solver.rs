@@ -302,6 +302,11 @@ impl VarRecurser {
 }
 
 #[derive(Debug)]
+pub enum PinError {
+    ImplicitPartialContained(TextRange),
+}
+
+#[derive(Debug)]
 pub struct Solver {
     variables: Mutex<Variables>,
     instantiation_errors: RwLock<SmallMap<Var, TypeVarSpecializationError>>,
@@ -336,13 +341,8 @@ impl Solver {
     }
 
     /// Force all non-recursive Vars in `vars`.
-    ///
-    /// Returns `Some(range)` if a `PartialContained` variable was pinned to `Any`,
-    /// where `range` is the location of the empty container literal.
-    /// This allows callers to emit errors about uninferred empty containers.
-    ///
     /// TODO: deduplicate Variable-to-gradual-type logic with `force_var`.
-    pub fn pin_placeholder_type(&self, var: Var, pin_partial_types: bool) -> Option<TextRange> {
+    pub fn pin_placeholder_type(&self, var: Var, pin_partial_types: bool) -> Option<PinError> {
         let variables = self.variables.lock();
         let mut variable = variables.get_mut(var);
         match &mut *variable {
@@ -364,7 +364,7 @@ impl Solver {
             Variable::PartialContained(range) if pin_partial_types => {
                 let range = *range;
                 *variable = Variable::Answer(Type::any_implicit());
-                Some(range)
+                Some(PinError::ImplicitPartialContained(range))
             }
             Variable::PartialContained(_) => None,
             Variable::Unwrap => {
