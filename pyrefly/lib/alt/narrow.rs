@@ -1325,17 +1325,34 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .is_some_and(|meta| !meta.is_flag)
     }
 
-    fn is_enum_class_or_literal_union(&self, ty: &Type) -> bool {
+    /// Determines if a type should be checked for match exhaustiveness.
+    /// We check exhaustiveness when the type has a finite, known set of possible values.
+    fn should_check_exhaustiveness(&self, ty: &Type) -> bool {
         match ty {
-            Type::ClassType(cls) | Type::SelfType(cls) => self.is_non_flag_enum(cls),
+            // Enums have a fixed set of members
+            Type::ClassType(cls) | Type::SelfType(cls) => {
+                self.is_non_flag_enum(cls)
+                    // Final classes can't have subclasses, so they are exhaustible
+                    || self.get_metadata_for_class(cls.class_object()).is_final()
+                    // bool is effectively Literal[True] | Literal[False]
+                    || cls.is_builtin("bool")
+            }
+
+            // Literal types have explicit values
+            Type::Literal(_) => true,
+
+            // None is a singleton
+            Type::None => true,
+
+            // Unions are exhaustible if all members are exhaustible types
             Type::Union(union) => {
-                let union = union.as_ref();
                 !union.members.is_empty()
                     && union
                         .members
                         .iter()
-                        .all(|member| matches!(member, Type::Literal(_)))
+                        .all(|m| self.should_check_exhaustiveness(m))
             }
+
             _ => false,
         }
     }
@@ -1379,7 +1396,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut subject_ty = subject_info.ty().clone();
         self.expand_vars_mut(&mut subject_ty);
         // We only check match exhaustiveness if the subject is an enum or a union of enum literals
-        if !self.is_enum_class_or_literal_union(&subject_ty) {
+        if !self.should_check_exhaustiveness(&subject_ty) {
             return;
         }
         let ignore_errors = self.error_swallower();

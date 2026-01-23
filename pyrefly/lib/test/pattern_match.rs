@@ -399,3 +399,64 @@ def test_seq_pat_with_union(x: int | Sequence[int]) -> None:
             assert_never(x)
 "#,
 );
+
+testcase!(
+    test_exhaustive_bool_match_warning,
+    r#"
+def describe(flag: bool):
+    match flag:
+        case True:
+            return "yes"
+        case False:
+            return "no"
+    # This should NOT warn about missing return (Phase 2 will fix this)
+    # For now, we're just ensuring the NonExhaustiveMatch error doesn't fire
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_bool_match_warning,
+    r#"
+def describe(flag: bool):
+    match flag: # E: Match on `bool` is not exhaustive
+        case True:
+            pass
+    # Missing False case
+"#,
+);
+
+testcase!(
+    test_exhaustive_union_with_none,
+    r#"
+def process(x: int | None):
+    match x:
+        case int():
+            pass
+        case None:
+            pass
+    # Should not warn - union is exhausted
+"#,
+);
+
+testcase!(
+    test_non_exhaustive_union_with_none,
+    r#"
+from typing import final
+
+@final
+class A:
+    pass
+
+@final
+class B:
+    pass
+
+def process(x: A | B | None):
+    match x: # E: Match on `A | B | None` is not exhaustive
+        case A():
+            pass
+        case B():
+            pass
+    # Missing None case
+"#,
+);
