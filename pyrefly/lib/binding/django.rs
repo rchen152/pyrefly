@@ -11,6 +11,8 @@ use ruff_python_ast::name::Name;
 use crate::binding::bindings::BindingsBuilder;
 
 const PRIMARY_KEY: Name = Name::new_static("primary_key");
+const FOREIGN_KEY: Name = Name::new_static("ForeignKey");
+const CHOICES: Name = Name::new_static("choices");
 
 impl<'a> BindingsBuilder<'a> {
     /// Detect if a field has `primary_key=True` set. This will be used to support Django models with custom primary keys.
@@ -24,6 +26,32 @@ impl<'a> BindingsBuilder<'a> {
                 && let Expr::BooleanLiteral(bl) = &keyword.value
             {
                 return bl.value;
+            }
+        }
+
+        false
+    }
+
+    pub fn extract_django_foreign_key(&self, e: &Expr) -> bool {
+        let Some(call) = e.as_call_expr() else {
+            return false;
+        };
+        match &*call.func {
+            Expr::Name(name) => name.id.as_str() == FOREIGN_KEY.as_str(),
+            Expr::Attribute(attr) => attr.attr.as_str() == FOREIGN_KEY.as_str(),
+            _ => false,
+        }
+    }
+
+    pub fn extract_django_choices(&self, e: &Expr) -> bool {
+        let Some(call) = e.as_call_expr() else {
+            return false;
+        };
+        for keyword in &call.arguments.keywords {
+            if let Some(arg_name) = &keyword.arg
+                && arg_name.as_str() == CHOICES.as_str()
+            {
+                return true;
             }
         }
 

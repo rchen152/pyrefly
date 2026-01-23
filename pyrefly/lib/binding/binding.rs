@@ -105,7 +105,7 @@ assert_words!(BindingAnnotation, 15);
 assert_words!(BindingClass, 23);
 assert_words!(BindingTParams, 10);
 assert_words!(BindingClassBaseType, 3);
-assert_words!(BindingClassMetadata, 11);
+assert_words!(BindingClassMetadata, 17);
 assert_bytes!(BindingClassMro, 4);
 assert_bytes!(BindingAbstractClassCheck, 4);
 assert_words!(BindingClassField, 21);
@@ -2379,6 +2379,10 @@ pub struct BindingClassMetadata {
     /// The name of the field that has primary_key=True, if any (for Django models).
     /// Note that we calculate this field for all classes, but it is ignored unless the class is a django model.
     pub django_primary_key_field: Option<Name>,
+    /// Names of ForeignKey fields (for Django models).
+    pub django_foreign_key_fields: Vec<Name>,
+    /// Names of fields with choices=... (for Django models).
+    pub django_fields_with_choices: Vec<Name>,
 }
 
 impl DisplayWith<Bindings> for BindingClassMetadata {

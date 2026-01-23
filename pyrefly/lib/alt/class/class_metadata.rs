@@ -119,6 +119,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         is_new_type: bool,
         pydantic_config_dict: &PydanticConfigDict,
         django_primary_key_field: Option<&Name>,
+        django_foreign_key_fields: &[Name],
+        django_fields_with_choices: &[Name],
         errors: &ErrorCollector,
     ) -> ClassMetadata {
         // Get class decorators.
@@ -206,6 +208,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     custom_primary_key_field: django_primary_key_field.cloned().or_else(|| {
                         inherited_django_metadata.and_then(|dm| dm.custom_primary_key_field.clone())
                     }),
+                    foreign_key_fields: django_foreign_key_fields.to_vec(),
+                    fields_with_choices: django_fields_with_choices.to_vec(),
                 })
             } else {
                 None
