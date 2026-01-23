@@ -2850,7 +2850,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         &self,
         ty: &mut Type,
         pin_partial_types: bool,
-        _ty_range: TextRange,
+        ty_range: TextRange,
         errors: &ErrorCollector,
     ) {
         // Expand the type, in case unexpanded `Vars` are hiding further `Var`s that
@@ -2875,6 +2875,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         "Cannot infer type of empty container; it will be treated as containing `Any`".to_owned(),
                         "Consider adding a type annotation or initializing with a non-empty value".to_owned(),
                     ],
+                ),
+                Some(PinError::UnfinishedQuantified(q)) => errors.internal_error(
+                    ty_range,
+                    vec1![format!("Unfinished Variable::Quantified: {q}")],
                 ),
                 None => {}
             }

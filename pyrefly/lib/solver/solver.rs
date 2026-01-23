@@ -304,6 +304,7 @@ impl VarRecurser {
 #[derive(Debug)]
 pub enum PinError {
     ImplicitPartialContained(TextRange),
+    UnfinishedQuantified(Quantified),
 }
 
 #[derive(Debug)]
@@ -352,8 +353,13 @@ impl Solver {
                 None
             }
             Variable::Quantified(q) => {
+                let unfinished_quantified = q.clone();
                 *variable = Variable::Answer(q.as_gradual_type());
-                None
+                // A Variable::Quantified should always be finished (see `finish_quantified`) by
+                // the code that creates it, because we need to know when we're done collecting
+                // constraints. If we see a Quantified while pinning other placeholder types, that
+                // means we forgot to finish it.
+                Some(PinError::UnfinishedQuantified(unfinished_quantified))
             }
             Variable::PartialQuantified(q) => {
                 if pin_partial_types {
