@@ -2112,6 +2112,65 @@ impl<'a> Transaction<'a> {
         false
     }
 
+    /// Detect editable packages by scanning site-packages for direct_url.json files (PEP 610).
+    #[allow(dead_code)]
+    fn detect_editable_packages(site_packages: &[PathBuf]) -> Vec<PathBuf> {
+        let mut editable_paths = Vec::new();
+
+        for sp in site_packages {
+            let Ok(entries) = std::fs::read_dir(sp) else {
+                continue;
+            };
+
+            for entry in entries.filter_map(|e| e.ok()) {
+                let path = entry.path();
+
+                // Look for .dist-info directories
+                if !path.is_dir() {
+                    continue;
+                }
+                if path.extension().is_none_or(|ext| ext != "dist-info") {
+                    continue;
+                }
+
+                let direct_url_path = path.join("direct_url.json");
+                let Ok(content) = std::fs::read_to_string(&direct_url_path) else {
+                    continue;
+                };
+                let Ok(direct_url) = serde_json::from_str::<DirectUrl>(&content) else {
+                    continue;
+                };
+
+                if direct_url.dir_info.editable
+                    && let Some(source_path) = direct_url.url.strip_prefix("file://")
+                {
+                    let source_path = PathBuf::from(source_path);
+                    if source_path.is_dir() {
+                        editable_paths.push(source_path);
+                    }
+                }
+            }
+        }
+
+        editable_paths
+    }
+
+    /// Get editable source paths for the given site-packages, using cache.
+    #[allow(dead_code)]
+    fn get_editable_source_paths(site_packages: &[PathBuf]) -> Vec<PathBuf> {
+        let mut key: Vec<PathBuf> = site_packages.to_vec();
+        key.sort();
+
+        let mut cache = EDITABLE_PATHS_CACHE.lock();
+        if let Some(paths) = cache.get(&key) {
+            return paths.clone();
+        }
+
+        let paths = Self::detect_editable_packages(site_packages);
+        cache.insert(key, paths.clone());
+        paths
+    }
+
     pub fn prepare_rename(&self, handle: &Handle, position: TextSize) -> Option<TextRange> {
         let identifier_context = self.identifier_at(handle, position);
 
@@ -3393,6 +3452,8 @@ impl<'a> CancellableTransaction<'a> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use ruff_python_ast::name::Name;
 
     use super::Transaction;
@@ -3452,5 +3513,89 @@ mod tests {
     fn match_summary(params: &[Param], idx: usize) -> Option<(&str, bool)> {
         Transaction::<'static>::param_name_for_positional_argument(params, idx)
             .map(|match_| (match_.name.as_str(), match_.is_vararg_repeat))
+    }
+
+    #[test]
+    fn test_get_editable_source_paths_finds_editable_package() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let site_packages = temp_dir.path().join("site-packages");
+        fs::create_dir(&site_packages).unwrap();
+
+        let dist_info = site_packages.join("mypackage-1.0.0.dist-info");
+        fs::create_dir(&dist_info).unwrap();
+
+        let source_dir = temp_dir.path().join("mypackage_source");
+        fs::create_dir(&source_dir).unwrap();
+
+        let direct_url_content = format!(
+            r#"{{"url": "file://{}", "dir_info": {{"editable": true}}}}"#,
+            source_dir.display()
+        );
+        fs::write(dist_info.join("direct_url.json"), direct_url_content).unwrap();
+
+        let result =
+            Transaction::<'static>::get_editable_source_paths(std::slice::from_ref(&site_packages));
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0], source_dir);
+    }
+
+    #[test]
+    fn test_get_editable_source_paths_ignores_non_editable_package() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let site_packages = temp_dir.path().join("site-packages");
+        fs::create_dir(&site_packages).unwrap();
+
+        let dist_info = site_packages.join("requests-2.28.0.dist-info");
+        fs::create_dir(&dist_info).unwrap();
+
+        let source_dir = temp_dir.path().join("requests_source");
+        fs::create_dir(&source_dir).unwrap();
+
+        let direct_url_content = format!(
+            r#"{{"url": "file://{}", "dir_info": {{"editable": false}}}}"#,
+            source_dir.display()
+        );
+        fs::write(dist_info.join("direct_url.json"), direct_url_content).unwrap();
+
+        let result = Transaction::<'static>::get_editable_source_paths(&[site_packages]);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_editable_source_paths_ignores_missing_direct_url_json() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let site_packages = temp_dir.path().join("site-packages");
+        fs::create_dir(&site_packages).unwrap();
+
+        let dist_info = site_packages.join("somepackage-1.0.0.dist-info");
+        fs::create_dir(&dist_info).unwrap();
+
+        let result = Transaction::<'static>::get_editable_source_paths(&[site_packages]);
+
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_get_editable_source_paths_ignores_nonexistent_source_directory() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let site_packages = temp_dir.path().join("site-packages");
+        fs::create_dir(&site_packages).unwrap();
+
+        let dist_info = site_packages.join("mypackage-1.0.0.dist-info");
+        fs::create_dir(&dist_info).unwrap();
+
+        let nonexistent_path = temp_dir.path().join("does_not_exist");
+
+        let direct_url_content = format!(
+            r#"{{"url": "file://{}", "dir_info": {{"editable": true}}}}"#,
+            nonexistent_path.display()
+        );
+        fs::write(dist_info.join("direct_url.json"), direct_url_content).unwrap();
+
+        let result = Transaction::<'static>::get_editable_source_paths(&[site_packages]);
+
+        assert!(result.is_empty());
     }
 }
