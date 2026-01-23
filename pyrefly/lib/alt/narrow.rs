@@ -220,18 +220,33 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn narrow_isinstance(&self, left: &Type, right: &Type) -> Type {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
-            if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
-                let (vs, right) = self
-                    .solver()
-                    .fresh_quantified(&tparams, right, self.uniques);
-                res.push(self.intersect_with_fallback(left, &right, &|| right.clone()));
-                // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
-                // * If `left` is an invalid specialization, the error has already been reported at its definition site.
-                // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
-                let _specialization_errors = self.solver().finish_quantified(vs, false);
-            } else {
-                res.push(left.clone());
-            }
+            res.push(self.distribute_over_union(left, |l| {
+                if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
+                    let (vs, right) = self
+                        .solver()
+                        .fresh_quantified(&tparams, right, self.uniques);
+                    let result = self.intersect_with_fallback(l, &right, &|| {
+                        // TODO: falling back to Never when the lhs is a union is a hack to get
+                        // reasonable behavior in cases like this:
+                        //     def f(x: int | list[int]):
+                        //         if isinstance(x, Iterable):
+                        //             reveal_type(x)
+                        // We want to narrow x to just `list[int]`, rather than `(int & Iterable[Unknown]) | list[int]`
+                        if left.is_union() {
+                            Type::never()
+                        } else {
+                            right.clone()
+                        }
+                    });
+                    // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
+                    // * If `left` is an invalid specialization, the error has already been reported at its definition site.
+                    // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
+                    let _specialization_errors = self.solver().finish_quantified(vs, false);
+                    result
+                } else {
+                    l.clone()
+                }
+            }));
         }
         self.unions(res)
     }
@@ -239,18 +254,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn narrow_is_not_instance(&self, left: &Type, right: &Type) -> Type {
         let mut res = Vec::new();
         for right in self.as_class_info(right.clone()) {
-            if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
-                let (vs, right) = self
-                    .solver()
-                    .fresh_quantified(&tparams, right, self.uniques);
-                res.push(self.subtract(left, &right));
-                // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
-                // * If `left` is an invalid specialization, the error has already been reported at its definition site.
-                // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
-                let _specialization_errors = self.solver().finish_quantified(vs, false);
-            } else {
-                res.push(left.clone())
-            }
+            res.push(self.distribute_over_union(left, |l| {
+                if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
+                    let (vs, right) = self
+                        .solver()
+                        .fresh_quantified(&tparams, right, self.uniques);
+                    let result = self.subtract(l, &right);
+                    // These are safe to ignore, as the only possible specialization errors are handled elsewhere:
+                    // * If `left` is an invalid specialization, the error has already been reported at its definition site.
+                    // * Unsafe runtime protocol overlaps are separately checked for in special_calls.rs.
+                    let _specialization_errors = self.solver().finish_quantified(vs, false);
+                    result
+                } else {
+                    l.clone()
+                }
+            }));
         }
         self.intersects(&res)
     }
