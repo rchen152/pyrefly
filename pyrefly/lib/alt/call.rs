@@ -621,6 +621,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.record_resolved_trace(arguments_range, metaclass_dunder_call);
             }
             // Got something other than an instance of the class under construction.
+            if let Err(e) = self
+                .solver()
+                .finish_quantified(vs, self.solver().infer_with_first_use)
+            {
+                self.add_specialization_errors(e, arguments_range, errors, context);
+            }
             return ret;
         }
         let mut dunder_new_ret = None;
@@ -666,6 +672,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     // Any, using the class under construction is still more useful.
                     self.solver()
                         .finish_class_targs(cls.targs_mut(), self.uniques);
+                    if let Err(e) = self
+                        .solver()
+                        .finish_quantified(vs, self.solver().infer_with_first_use)
+                    {
+                        self.add_specialization_errors(e, arguments_range, errors, context);
+                    }
                     return ret.subst(&cls.targs().substitution_map());
                 }
                 (true, has_errors)

@@ -1008,6 +1008,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 {
                     (qs, callable_)
                 } else {
+                    // Even though these quantifieds aren't used, let's make sure to not leave
+                    // unfinished quantifieds around.
+                    let _ = self.solver().finish_quantified(qs, false);
                     self.instantiate_fresh_callable(tparams, callable)
                 }
             } else {
