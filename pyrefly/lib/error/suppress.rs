@@ -10,7 +10,6 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use anyhow::anyhow;
-use pyrefly_config::error_kind::Severity;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::ignore::Ignore;
 use pyrefly_python::ignore::Tool;
@@ -29,6 +28,37 @@ use tracing::info;
 use crate::error::error::Error;
 use crate::state::errors::Errors;
 
+/// A minimal representation of an error for suppression purposes.
+/// This struct holds only the fields needed to add or remove a suppression comment.
+pub struct SuppressableError {
+    /// The file path where the error occurs.
+    pub path: PathBuf,
+    /// The 0-indexed line number where the error occurs.
+    pub line: usize,
+    /// The kebab-case name of the error kind (e.g., "bad-assignment").
+    pub name: String,
+}
+
+impl SuppressableError {
+    /// Creates a SuppressableError from an internal Error.
+    /// Returns None if the error is not from a filesystem path.
+    pub fn from_error(error: &Error) -> Option<Self> {
+        if let ModulePathDetails::FileSystem(path) = error.path().details() {
+            Some(Self {
+                path: (**path).clone(),
+                line: error
+                    .display_range()
+                    .start
+                    .line_within_file()
+                    .to_zero_indexed() as usize,
+                name: error.error_kind().to_name().to_owned(),
+            })
+        } else {
+            None
+        }
+    }
+}
+
 /// Detects the line ending style used in a string.
 /// Returns "\r\n" if CRLF is detected, otherwise returns "\n".
 fn detect_line_ending(content: &str) -> &'static str {
@@ -41,16 +71,13 @@ fn detect_line_ending(content: &str) -> &'static str {
 
 /// Combines all errors that affect one line into a single entry.
 /// The current format is: `# pyrefly: ignore [error1, error2, ...]`
-fn dedup_errors(errors: &[Error]) -> SmallMap<usize, String> {
+fn dedup_errors(errors: &[SuppressableError]) -> SmallMap<usize, String> {
     let mut deduped_errors: SmallMap<usize, HashSet<String>> = SmallMap::new();
     for error in errors {
-        let line = error
-            .display_range()
-            .start
-            .line_within_file()
-            .to_zero_indexed() as usize;
-        let error_name = error.error_kind().to_name().to_owned();
-        deduped_errors.entry(line).or_default().insert(error_name);
+        deduped_errors
+            .entry(error.line)
+            .or_default()
+            .insert(error.name.clone());
     }
     let mut formatted_errors = SmallMap::new();
     for (line, error_set) in deduped_errors {
@@ -170,7 +197,7 @@ fn replace_ignore_comment(line: &str, merged_comment: &str) -> String {
 /// Returns a list of files that failed to be patched, and a list of files that were patched.
 /// The list of failures includes the error that occurred, which may be a read or write error.
 fn add_suppressions(
-    path_errors: &SmallMap<PathBuf, Vec<Error>>,
+    path_errors: &SmallMap<PathBuf, Vec<SuppressableError>>,
 ) -> (Vec<(&PathBuf, anyhow::Error)>, Vec<&PathBuf>) {
     let mut failures = vec![];
     let mut successes = vec![];
@@ -279,14 +306,12 @@ fn extract_error_codes(comment: &str) -> Vec<String> {
     parse_ignore_comment(comment).unwrap_or_default()
 }
 
-pub fn suppress_errors(errors: Vec<Error>) {
-    let mut path_errors: SmallMap<PathBuf, Vec<Error>> = SmallMap::new();
+/// Suppresses errors by adding ignore comments to source files.
+/// Takes a list of SuppressableErrors
+pub fn suppress_errors(errors: Vec<SuppressableError>) {
+    let mut path_errors: SmallMap<PathBuf, Vec<SuppressableError>> = SmallMap::new();
     for e in errors {
-        if e.severity() >= Severity::Warn
-            && let ModulePathDetails::FileSystem(path) = e.path().details()
-        {
-            path_errors.entry((**path).clone()).or_default().push(e);
-        }
+        path_errors.entry(e.path.clone()).or_default().push(e);
     }
     if path_errors.is_empty() {
         info!("No errors to suppress!");
@@ -488,6 +513,7 @@ mod tests {
 
     use dupe::Dupe;
     use pyrefly_build::handle::Handle;
+    use pyrefly_config::error_kind::Severity;
     use pyrefly_python::module_name::ModuleName;
     use pyrefly_python::module_path::ModulePath;
     use pyrefly_python::sys_info::SysInfo;
@@ -510,7 +536,14 @@ mod tests {
 
     fn assert_suppress_errors(before: &str, after: &str) {
         let (errors, tdir) = get_errors(before);
-        suppress::suppress_errors(errors.collect_errors().shown);
+        let suppressable_errors: Vec<SuppressableError> = errors
+            .collect_errors()
+            .shown
+            .iter()
+            .filter(|e| e.severity() >= Severity::Warn)
+            .filter_map(SuppressableError::from_error)
+            .collect();
+        suppress::suppress_errors(suppressable_errors);
         let got_file = fs_anyhow::read_to_string(&get_path(&tdir)).unwrap();
         assert_eq!(after, got_file);
     }

@@ -62,6 +62,7 @@ use crate::error::legacy::LegacyErrors;
 use crate::error::legacy::severity_to_str;
 use crate::error::summarize::print_error_summary;
 use crate::error::suppress;
+use crate::error::suppress::SuppressableError;
 use crate::module::typeshed::stdlib_search_path;
 use crate::report;
 use crate::state::load::FileContents;
@@ -997,7 +998,12 @@ impl CheckArgs {
         }
         if self.behavior.suppress_errors {
             // TODO: Move this into separate command
-            suppress::suppress_errors(shown_errors.clone());
+            let suppressable_errors: Vec<SuppressableError> = shown_errors
+                .iter()
+                .filter(|e| e.severity() >= Severity::Warn)
+                .filter_map(SuppressableError::from_error)
+                .collect();
+            suppress::suppress_errors(suppressable_errors);
         }
         if self.behavior.remove_unused_ignores {
             // TODO: Move this into separate command
