@@ -2076,6 +2076,8 @@ impl<'a> Transaction<'a> {
     ///
     /// Checks if the module's path is located within any of the configured
     /// site-packages directories (e.g., `site-packages/`, `dist-packages/`).
+    /// Modules in editable install source paths are NOT considered third-party,
+    /// even if they appear in sys.path.
     fn is_third_party_module(&self, module: &Module, handle: &Handle) -> bool {
         let config = self.get_config(handle);
         let module_path = module.path();
@@ -2104,6 +2106,15 @@ impl<'a> Transaction<'a> {
             // would incorrectly match all modules.
             for search_path in &config.search_path_from_file {
                 if module_path.as_path().starts_with(search_path) {
+                    return true;
+                }
+            }
+
+            // Check editable packages detected via direct_url.json (PEP 610)
+            let site_packages: Vec<PathBuf> = config.site_package_path().cloned().collect();
+            let editable_paths = Self::get_editable_source_paths(&site_packages);
+            for editable_path in &editable_paths {
+                if module_path.as_path().starts_with(editable_path) {
                     return true;
                 }
             }
