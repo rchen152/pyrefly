@@ -1453,6 +1453,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     name,
                     direct_annotation.as_ref(),
                     false,
+                    range,
                     errors,
                 );
                 (
@@ -1485,6 +1486,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     name,
                     direct_annotation.as_ref(),
                     false,
+                    range,
                     errors,
                 );
                 (
@@ -1540,6 +1542,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     name,
                     direct_annotation.as_ref(),
                     true,
+                    range,
                     errors,
                 );
                 if matches!(method.instance_or_class, MethodSelfKind::Instance) {
@@ -1562,7 +1565,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let initialization = ClassFieldInitialization::ClassBody(None);
                 // Evaluate the binding directly without analyzing inherited annotations
                 let binding = Binding::Forward(*definition);
-                let value_ty = Arc::unwrap_or_clone(self.solve_binding(&binding, errors)).into_ty();
+                let value_ty =
+                    Arc::unwrap_or_clone(self.solve_binding(&binding, range, errors)).into_ty();
                 (
                     initialization,
                     !has_return_annotation,
@@ -1576,7 +1580,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // Evaluate the binding directly without analyzing inherited annotations
                 let initialization = ClassFieldInitialization::ClassBody(None);
                 let binding = Binding::Forward(*definition);
-                let value_ty = Arc::unwrap_or_clone(self.solve_binding(&binding, errors)).into_ty();
+                let value_ty =
+                    Arc::unwrap_or_clone(self.solve_binding(&binding, range, errors)).into_ty();
                 (
                     initialization,
                     false,
@@ -1591,7 +1596,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let value =
                     value_storage.push(ExprOrBinding::Binding(Binding::Forward(*definition)));
                 let (value_ty, annotation, is_inherited) =
-                    self.analyze_class_field_value(value, class, name, None, false, errors);
+                    self.analyze_class_field_value(value, class, name, None, false, range, errors);
                 (
                     initialization,
                     false,
@@ -1611,7 +1616,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let value =
                     value_storage.push(ExprOrBinding::Binding(Binding::Type(Type::any_implicit())));
                 let (value_ty, annotation, is_inherited) =
-                    self.analyze_class_field_value(value, class, name, None, false, errors);
+                    self.analyze_class_field_value(value, class, name, None, false, range, errors);
                 (
                     initialization,
                     false,
@@ -2108,6 +2113,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         name: &Name,
         direct_annotation: Option<&Annotation>,
         inferred_from_method: bool,
+        range: TextRange,
         errors: &ErrorCollector,
     ) -> (Type, Option<Annotation>, IsInherited) {
         // If we have a direct annotation with a type, use it and skip analyzing the value
@@ -2175,7 +2181,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
             }
             ExprOrBinding::Binding(b) => {
-                Arc::unwrap_or_clone(self.solve_binding(b, errors)).into_ty()
+                Arc::unwrap_or_clone(self.solve_binding(b, range, errors)).into_ty()
             }
         };
         // Note that we use `final_annotation`'s `ty` rather than `inherited_ty`

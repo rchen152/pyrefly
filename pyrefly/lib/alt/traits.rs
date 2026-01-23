@@ -116,10 +116,10 @@ impl<Ans: LookupAnswer> Solve<Ans> for Key {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &Binding,
-        _range: TextRange,
+        range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<TypeInfo> {
-        answers.solve_binding(binding, errors)
+        answers.solve_binding(binding, range, errors)
     }
 
     fn create_recursive(answers: &AnswersSolver<Ans>, binding: &Self::Value) -> Var {
@@ -178,10 +178,14 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyExport {
     fn solve(
         answers: &AnswersSolver<Ans>,
         binding: &BindingExport,
-        _range: TextRange,
+        range: TextRange,
         errors: &ErrorCollector,
     ) -> Arc<Type> {
-        Arc::new(answers.solve_binding(&binding.0, errors).arc_clone_ty())
+        Arc::new(
+            answers
+                .solve_binding(&binding.0, range, errors)
+                .arc_clone_ty(),
+        )
     }
 
     fn create_recursive(answers: &AnswersSolver<Ans>, binding: &Self::Value) -> Var {

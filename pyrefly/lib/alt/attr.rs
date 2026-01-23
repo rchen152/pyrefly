@@ -766,7 +766,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let got = match got {
             ExprOrBinding::Expr(value) => TypeOrExpr::Expr(value),
             ExprOrBinding::Binding(got) => {
-                ty = self.solve_binding(got, errors);
+                ty = self.solve_binding(got, range, errors);
                 TypeOrExpr::Type(ty.ty(), range)
             }
         };

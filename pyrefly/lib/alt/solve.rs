@@ -1566,7 +1566,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         Arc::new(TParams::new(tparams))
     }
 
-    pub fn solve_binding(&self, binding: &Binding, errors: &ErrorCollector) -> Arc<TypeInfo> {
+    pub fn solve_binding(
+        &self,
+        binding: &Binding,
+        _range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Arc<TypeInfo> {
         // Special case for forward, as we don't want to re-expand the type
         if let Binding::Forward(fwd) = binding {
             return self.get_idx(*fwd);
@@ -2599,7 +2604,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             match value {
                 ExprOrBinding::Expr(e) => self.expr(e, Some((field_ty, context)), errors),
                 ExprOrBinding::Binding(b) => {
-                    let binding_ty = self.solve_binding(b, errors).arc_clone_ty();
+                    let binding_ty = self.solve_binding(b, assign_range, errors).arc_clone_ty();
                     self.check_and_return_type(binding_ty, field_ty, assign_range, errors, context)
                 }
             }
@@ -2710,7 +2715,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 )
                             }
                             ExprOrBinding::Binding(b) => {
-                                let binding_ty = self.solve_binding(b, errors).arc_clone_ty();
+                                let binding_ty = self
+                                    .solve_binding(b, subscript.range, errors)
+                                    .arc_clone_ty();
                                 // Use the subscript's location
                                 call_setitem(CallArg::ty(&binding_ty, subscript.range));
                                 binding_ty
