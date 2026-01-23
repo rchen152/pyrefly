@@ -2641,21 +2641,6 @@ impl<'a> Transaction<'a> {
         }
     }
 
-    fn get_documentation_from_export(
-        &self,
-        export_info: Option<(Handle, Export)>,
-    ) -> Option<lsp_types::Documentation> {
-        let (definition_handle, export) = export_info?;
-        let docstring_range = export.docstring_range?;
-        let def_module = self.get_module_info(&definition_handle)?;
-        let docstring = Docstring(docstring_range, def_module.clone()).resolve();
-        let documentation = lsp_types::Documentation::MarkupContent(lsp_types::MarkupContent {
-            kind: lsp_types::MarkupKind::Markdown,
-            value: docstring,
-        });
-        Some(documentation)
-    }
-
     /// Adds completions for local variables and returns true if we have added any
     /// If an identifier is present, filter matches
     fn add_local_variable_completions(

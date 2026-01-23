@@ -8,12 +8,14 @@
 use lsp_types::CompletionItem;
 use lsp_types::CompletionItemKind;
 use pyrefly_build::handle::Handle;
+use pyrefly_python::docstring::Docstring;
 use pyrefly_python::dunder;
 use pyrefly_python::keywords::get_keywords;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
 use ruff_python_ast::Identifier;
 
+use crate::export::exports::Export;
 use crate::state::state::Transaction;
 use crate::types::types::Type;
 
@@ -85,5 +87,21 @@ impl Transaction<'_> {
                     ..Default::default()
                 })
             });
+    }
+
+    /// Retrieves documentation for an export to display in completion items.
+    pub(crate) fn get_documentation_from_export(
+        &self,
+        export_info: Option<(Handle, Export)>,
+    ) -> Option<lsp_types::Documentation> {
+        let (definition_handle, export) = export_info?;
+        let docstring_range = export.docstring_range?;
+        let def_module = self.get_module_info(&definition_handle)?;
+        let docstring = Docstring(docstring_range, def_module.clone()).resolve();
+        let documentation = lsp_types::Documentation::MarkupContent(lsp_types::MarkupContent {
+            kind: lsp_types::MarkupKind::Markdown,
+            value: docstring,
+        });
+        Some(documentation)
     }
 }
