@@ -707,15 +707,17 @@ struct ScopeClass {
     indices: ClassIndices,
     attributes_from_recognized_methods: SmallMap<Name, SmallMap<Name, InstanceAttribute>>,
     attributes_from_other_methods: SmallMap<Name, SmallMap<Name, InstanceAttribute>>,
+    has_protocol_base: bool,
 }
 
 impl ScopeClass {
-    pub fn new(name: Identifier, indices: ClassIndices) -> Self {
+    pub fn new(name: Identifier, indices: ClassIndices, has_protocol_base: bool) -> Self {
         Self {
             name,
             indices,
             attributes_from_recognized_methods: SmallMap::new(),
             attributes_from_other_methods: SmallMap::new(),
+            has_protocol_base,
         }
     }
 
@@ -1029,11 +1031,16 @@ impl Scope {
         Self::new(range, FlowBarrier::AllowFlowChecked, ScopeKind::TypeAlias)
     }
 
-    pub fn class_body(range: TextRange, indices: ClassIndices, name: Identifier) -> Self {
+    pub fn class_body(
+        range: TextRange,
+        indices: ClassIndices,
+        name: Identifier,
+        has_protocol_base: bool,
+    ) -> Self {
         Self::new(
             range,
             FlowBarrier::AllowFlowChecked,
-            ScopeKind::Class(ScopeClass::new(name, indices)),
+            ScopeKind::Class(ScopeClass::new(name, indices, has_protocol_base)),
         )
     }
 
@@ -1243,6 +1250,16 @@ impl Scopes {
             }
         }
         None
+    }
+
+    /// Check if we're currently in the body of a class with `Protocol` in its base class list
+    pub fn is_in_protocol_class(&self) -> bool {
+        for scope in self.iter_rev() {
+            if let ScopeKind::Class(class_scope) = &scope.kind {
+                return class_scope.has_protocol_base;
+            }
+        }
+        false
     }
 
     /// Are we inside an async function or method?

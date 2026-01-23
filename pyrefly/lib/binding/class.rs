@@ -33,6 +33,7 @@ use starlark_map::small_map::SmallMap;
 
 use crate::binding::base_class::BaseClass;
 use crate::binding::base_class::BaseClassGeneric;
+use crate::binding::base_class::BaseClassGenericKind;
 use crate::binding::binding::AnnotationTarget;
 use crate::binding::binding::Binding;
 use crate::binding::binding::BindingAbstractClassCheck;
@@ -197,6 +198,16 @@ impl<'a> BindingsBuilder<'a> {
             base_class
         });
 
+        let has_protocol_base = bases.iter().any(|base| {
+            matches!(
+                base,
+                BaseClass::Generic(BaseClassGeneric {
+                    kind: BaseClassGenericKind::Protocol,
+                    ..
+                })
+            )
+        });
+
         let mut keywords = Vec::new();
         if let Some(args) = &mut x.arguments {
             args.keywords.iter_mut().for_each(|keyword| {
@@ -242,6 +253,7 @@ impl<'a> BindingsBuilder<'a> {
             x.range,
             class_indices.clone(),
             x.name.clone(),
+            has_protocol_base,
         ));
         self.init_static_scope(&body, false);
         self.stmts(

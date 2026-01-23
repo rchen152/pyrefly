@@ -537,17 +537,16 @@ impl<'a> BindingsBuilder<'a> {
         class_key: Option<Idx<KeyClass>>,
         metadata_key: Option<Idx<KeyClassMetadata>>,
     ) -> (FunctionStubOrImpl, Option<SelfAssignments>) {
-        let stub_or_impl = if (body.first().is_some_and(is_docstring)
-            && decorators.is_abstract_method)
-            || is_ellipse(&body)
-            || (body.first().is_some_and(is_docstring) && decorators.is_overload)
+        // If the first statement in the body is a docstring, remove it
+        let body_no_docstring = if let Some(s) = body.first()
+            && is_docstring(s)
         {
-            FunctionStubOrImpl::Stub
+            &body.as_slice()[1..]
         } else {
-            FunctionStubOrImpl::Impl
+            body.as_slice()
         };
-
-        let body_is_trivial = match body.as_slice() {
+        let body_is_trivial = match body_no_docstring {
+            [] => true,
             [Stmt::Pass(_)] => true,
             // raise NotImplementedError(...)
             [
@@ -563,14 +562,28 @@ impl<'a> BindingsBuilder<'a> {
                     ..
                 }),
             ] if self.as_special_export(val) == Some(SpecialExport::NotImplemented) => true,
+            [Stmt::Expr(StmtExpr { value, .. })] if value.is_ellipsis_literal_expr() => true,
             _ => false,
+        };
+        let body_is_ellipse = match body_no_docstring {
+            [Stmt::Expr(StmtExpr { value, .. })] if value.is_ellipsis_literal_expr() => true,
+            _ => false,
+        };
+        let stub_or_impl = if (self.scopes.is_in_protocol_class()
+            || decorators.is_abstract_method
+            || decorators.is_overload
+            || body_is_ellipse)
+            && body_is_trivial
+        {
+            FunctionStubOrImpl::Stub
+        } else {
+            FunctionStubOrImpl::Impl
         };
         let should_report_unused_parameters = stub_or_impl == FunctionStubOrImpl::Impl
             && !body_is_trivial
             && !decorators.is_overload
             && !decorators.is_override
-            && !decorators.is_abstract_method
-            && !is_ellipse(&body);
+            && !decorators.is_abstract_method;
         let method_self_kind = if class_key.is_some()
             && (decorators.is_classmethod
                 || func_name.id == dunder::INIT_SUBCLASS
@@ -893,13 +906,6 @@ fn function_last_expressions<'a>(
 fn is_docstring(x: &Stmt) -> bool {
     match x {
         Stmt::Expr(StmtExpr { value, .. }) => value.is_string_literal_expr(),
-        _ => false,
-    }
-}
-
-fn is_ellipse(x: &[Stmt]) -> bool {
-    match x.iter().find(|x| !is_docstring(x)) {
-        Some(Stmt::Expr(StmtExpr { value, .. })) => value.is_ellipsis_literal_expr(),
         _ => false,
     }
 }
