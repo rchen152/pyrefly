@@ -376,3 +376,16 @@ pub(super) fn line_end_position(source: &str, position: TextSize) -> TextSize {
         TextSize::try_from(source.len()).unwrap_or(position)
     }
 }
+
+/// Validates that a selection is non-empty and contains non-whitespace content.
+/// Returns the selection text if valid, `None` otherwise.
+pub(super) fn validate_non_empty_selection<'a>(
+    selection: TextRange,
+    selection_text: &'a str,
+) -> Option<&'a str> {
+    if selection.is_empty() || selection_text.trim().is_empty() {
+        None
+    } else {
+        Some(selection_text)
+    }
+}

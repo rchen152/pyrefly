@@ -37,6 +37,7 @@ use super::extract_shared::is_exact_expression;
 use super::extract_shared::is_local_scope_stmt;
 use super::extract_shared::split_selection;
 use super::extract_shared::unique_name;
+use super::extract_shared::validate_non_empty_selection;
 use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
@@ -90,15 +91,9 @@ pub(crate) fn introduce_parameter_code_actions(
     handle: &Handle,
     selection: TextRange,
 ) -> Option<Vec<LocalRefactorCodeAction>> {
-    if selection.is_empty() {
-        return None;
-    }
     let module_info = transaction.get_module_info(handle)?;
     let ast = transaction.get_ast(handle)?;
-    let selection_text = module_info.code_at(selection);
-    if selection_text.trim().is_empty() {
-        return None;
-    }
+    let selection_text = validate_non_empty_selection(selection, module_info.code_at(selection))?;
     let (leading_ws, expression_text, trailing_ws, expression_range) =
         split_selection(selection_text, selection)?;
     if !is_exact_expression(ast.as_ref(), expression_range) {

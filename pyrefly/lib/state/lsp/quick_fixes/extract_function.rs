@@ -27,6 +27,7 @@ use super::extract_shared::MethodInfo;
 use super::extract_shared::first_parameter_name;
 use super::extract_shared::is_static_or_class_method;
 use super::extract_shared::line_indent_and_start;
+use super::extract_shared::validate_non_empty_selection;
 use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
@@ -39,16 +40,10 @@ pub(crate) fn extract_function_code_actions(
     handle: &Handle,
     selection: TextRange,
 ) -> Option<Vec<LocalRefactorCodeAction>> {
-    if selection.is_empty() {
-        return None;
-    }
     let module_info = transaction.get_module_info(handle)?;
     let module_source = module_info.contents();
     let ast = transaction.get_ast(handle)?;
-    let selection_text = module_info.code_at(selection);
-    if selection_text.trim().is_empty() {
-        return None;
-    }
+    let selection_text = validate_non_empty_selection(selection, module_info.code_at(selection))?;
     let module_len = TextSize::try_from(module_info.contents().len()).unwrap_or(TextSize::new(0));
     let module_stmt_range =
         find_enclosing_module_statement_range(ast.as_ref(), selection, module_len);
