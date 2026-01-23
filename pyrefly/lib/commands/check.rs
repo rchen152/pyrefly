@@ -996,9 +996,11 @@ impl CheckArgs {
             fs_anyhow::write(path, report::trace::trace(transaction))?;
         }
         if self.behavior.suppress_errors {
+            // TODO: Move this into separate command
             suppress::suppress_errors(shown_errors.clone());
         }
         if self.behavior.remove_unused_ignores {
+            // TODO: Move this into separate command
             suppress::remove_unused_ignores(&loads, self.behavior.all);
         }
         if self.behavior.expectations {
