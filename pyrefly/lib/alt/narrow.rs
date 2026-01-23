@@ -677,6 +677,23 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 })
             }
             AtomicNarrowOp::In(v) => {
+                // First, check if the right operand is a TypedDict
+                // If so, we can narrow the left operand to the union of the TypedDict's keys
+                let right_ty = self.expr_infer(v, errors);
+                if let Type::TypedDict(typed_dict) = &right_ty {
+                    let fields = self.typed_dict_fields(typed_dict);
+                    if fields.is_empty() {
+                        // Empty TypedDict - the `in` check is always false
+                        return Type::never();
+                    }
+                    let key_types: Vec<Type> = fields
+                        .keys()
+                        .map(|name| Lit::Str(name.as_str().into()).to_implicit_type())
+                        .collect();
+                    return self.intersect(ty, &self.unions(key_types));
+                }
+
+                // Handle List, Tuple, and Set expressions
                 let exprs = match v {
                     Expr::List(list) => Some(list.elts.clone()),
                     Expr::Tuple(tuple) => Some(tuple.elts.clone()),
@@ -703,6 +720,32 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.intersect(ty, &self.unions(literal_types))
             }
             AtomicNarrowOp::NotIn(v) => {
+                // First, check if the right operand is a TypedDict
+                // If so, we can narrow the left operand if it's exactly one of the TypedDict's keys
+                let right_ty = self.expr_infer(v, errors);
+                if let Type::TypedDict(typed_dict) = &right_ty {
+                    let fields = self.typed_dict_fields(typed_dict);
+                    if fields.is_empty() {
+                        // Empty TypedDict - the `not in` check is always true
+                        return ty.clone();
+                    }
+                    // For `not in` with TypedDict, we can only narrow if the left side is exactly
+                    // one of the keys (it becomes Never in that case)
+                    let key_types: Vec<Type> = fields
+                        .keys()
+                        .map(|name| Lit::Str(name.as_str().into()).to_implicit_type())
+                        .collect();
+                    return self.distribute_over_union(ty, |t| {
+                        for key_type in &key_types {
+                            if self.literal_equal(t, key_type) {
+                                return Type::never();
+                            }
+                        }
+                        t.clone()
+                    });
+                }
+
+                // Handle List, Tuple, and Set expressions
                 let exprs = match v {
                     Expr::List(list) => Some(list.elts.clone()),
                     Expr::Tuple(tuple) => Some(tuple.elts.clone()),
