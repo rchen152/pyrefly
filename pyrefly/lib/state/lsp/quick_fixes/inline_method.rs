@@ -26,8 +26,8 @@ use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::FindPreference;
 use crate::state::lsp::Transaction;
 use crate::state::lsp::quick_fixes::extract_shared::first_parameter_name;
-use crate::state::lsp::quick_fixes::extract_shared::function_has_decorator;
 use crate::state::lsp::quick_fixes::extract_shared::is_disallowed_scope_expr;
+use crate::state::lsp::quick_fixes::extract_shared::is_static_or_class_method;
 
 pub(crate) fn inline_method_code_actions(
     transaction: &Transaction<'_>,
@@ -159,12 +159,6 @@ fn find_function_def_with_context(
     }
 
     search_in_body(&ast.body, definition_range, false)
-}
-
-/// Returns true if the function is a @staticmethod.
-fn is_static_or_class_method(function_def: &StmtFunctionDef) -> bool {
-    function_has_decorator(function_def, "staticmethod")
-        || function_has_decorator(function_def, "classmethod")
 }
 
 /// Returns true if the expression needs parentheses when inlined.

@@ -316,3 +316,63 @@ pub(super) fn code_at_range<'a>(source: &'a str, range: TextRange) -> Option<&'a
         None
     }
 }
+
+/// Returns true if the function has a @staticmethod or @classmethod decorator.
+pub(super) fn is_static_or_class_method(function_def: &StmtFunctionDef) -> bool {
+    function_has_decorator(function_def, "staticmethod")
+        || function_has_decorator(function_def, "classmethod")
+}
+
+/// Reindent every non-blank line in `text` from `from_indent` to `to_indent`.
+pub(super) fn reindent_block(text: &str, from_indent: &str, to_indent: &str) -> String {
+    let mut result = String::new();
+    for line in text.split_inclusive('\n') {
+        let (line_body, line_end) = match line.strip_suffix('\n') {
+            Some(body) => (body, "\n"),
+            None => (line, ""),
+        };
+        if line_body.trim().is_empty() {
+            result.push_str(line_body);
+            result.push_str(line_end);
+            continue;
+        }
+        if !from_indent.is_empty() && line_body.starts_with(from_indent) {
+            result.push_str(to_indent);
+            result.push_str(&line_body[from_indent.len()..]);
+        } else if from_indent.is_empty() {
+            result.push_str(to_indent);
+            result.push_str(line_body);
+        } else {
+            let trimmed = line_body.trim_start_matches([' ', '\t']);
+            result.push_str(to_indent);
+            result.push_str(trimmed);
+        }
+        result.push_str(line_end);
+    }
+    result
+}
+
+/// Prepares text for insertion at a given position, adding a newline prefix if needed.
+pub(super) fn prepare_insertion_text(
+    source: &str,
+    position: TextSize,
+    member_text: &str,
+) -> String {
+    let mut text = String::new();
+    let idx = position.to_usize().min(source.len());
+    if idx > 0 && source.as_bytes().get(idx - 1) != Some(&b'\n') {
+        text.push('\n');
+    }
+    text.push_str(member_text);
+    text
+}
+
+/// Returns the byte position of the end of the line containing the given position.
+pub(super) fn line_end_position(source: &str, position: TextSize) -> TextSize {
+    let idx = position.to_usize().min(source.len());
+    if let Some(offset) = source[idx..].find('\n') {
+        TextSize::try_from(idx + offset + 1).unwrap_or(position)
+    } else {
+        TextSize::try_from(source.len()).unwrap_or(position)
+    }
+}

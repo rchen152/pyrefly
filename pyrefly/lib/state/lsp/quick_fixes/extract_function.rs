@@ -25,7 +25,7 @@ use ruff_text_size::TextSize;
 
 use super::extract_shared::MethodInfo;
 use super::extract_shared::first_parameter_name;
-use super::extract_shared::function_has_decorator;
+use super::extract_shared::is_static_or_class_method;
 use super::extract_shared::line_indent_and_start;
 use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::FindPreference;
@@ -358,11 +358,6 @@ fn method_context_from_function(
         insert_position,
         method_indent,
     })
-}
-
-fn is_static_or_class_method(function_def: &StmtFunctionDef) -> bool {
-    function_has_decorator(function_def, "staticmethod")
-        || function_has_decorator(function_def, "classmethod")
 }
 
 fn detect_block_indent(selection_text: &str) -> String {
