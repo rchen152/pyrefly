@@ -42,6 +42,7 @@ use crate::binding::narrow::AtomicNarrowOp;
 use crate::binding::narrow::FacetOrigin;
 use crate::binding::narrow::FacetSubject;
 use crate::binding::narrow::NarrowOp;
+use crate::binding::narrow::NarrowSource;
 use crate::binding::narrow::NarrowingSubject;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
@@ -197,9 +198,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if args.args.len() > 1 {
             let second_arg = &args.args[1];
             let op = match func_ty.callee_kind() {
-                Some(CalleeKind::Function(FunctionKind::IsInstance)) => {
-                    Some(AtomicNarrowOp::IsInstance(second_arg.clone()))
-                }
+                Some(CalleeKind::Function(FunctionKind::IsInstance)) => Some(
+                    AtomicNarrowOp::IsInstance(second_arg.clone(), NarrowSource::Call),
+                ),
                 Some(CalleeKind::Function(FunctionKind::IsSubclass)) => {
                     Some(AtomicNarrowOp::IsSubclass(second_arg.clone()))
                 }
@@ -850,32 +851,30 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                 })
             }
-            AtomicNarrowOp::IsInstance(v) => {
+            AtomicNarrowOp::IsInstance(v, source) => {
                 let right = self.expr_infer(v, errors);
+                // For patterns, validation happens here since there's no call site.
+                // For calls, validation already happened in special_calls.rs.
+                if matches!(source, NarrowSource::Pattern) {
+                    let mut contains_subscript = false;
+                    v.visit(&mut |e| {
+                        if matches!(e, Expr::Subscript(_)) {
+                            contains_subscript = true;
+                        }
+                    });
+                    self.check_type_is_class_object(
+                        right.clone(),
+                        Some(ty.clone()),
+                        contains_subscript,
+                        v.range(),
+                        &FunctionKind::IsInstance,
+                        errors,
+                        ErrorKind::InvalidPattern,
+                    );
+                }
                 self.narrow_isinstance(ty, &right)
             }
-            // Unlike IsInstance (where validation happens during call processing in special_calls.rs),
-            // class patterns in match statements need validation here since there's no call site.
-            AtomicNarrowOp::IsInstancePattern(v) => {
-                let right = self.expr_infer(v, errors);
-                let mut contains_subscript = false;
-                v.visit(&mut |e| {
-                    if matches!(e, Expr::Subscript(_)) {
-                        contains_subscript = true;
-                    }
-                });
-                self.check_type_is_class_object(
-                    right.clone(),
-                    Some(ty.clone()),
-                    contains_subscript,
-                    v.range(),
-                    &FunctionKind::IsInstance,
-                    errors,
-                    ErrorKind::InvalidPattern,
-                );
-                self.narrow_isinstance(ty, &right)
-            }
-            AtomicNarrowOp::IsNotInstance(v) => {
+            AtomicNarrowOp::IsNotInstance(v, _source) => {
                 let right = self.expr_infer(v, errors);
                 self.narrow_is_not_instance(ty, &right)
             }
