@@ -771,7 +771,6 @@ fn test_deep_submodule_chain_reexport_completion() {
     interaction.client.did_open("main.py");
 
     // Test completion on `a.b.` - should show `c` as a module
-    // BUG: Currently returns `c` with kind FIELD instead of MODULE
     interaction
         .client
         .did_change("main.py", "import a.b.c\n\na.b.");
@@ -779,16 +778,13 @@ fn test_deep_submodule_chain_reexport_completion() {
         .client
         .completion("main.py", 2, 4)
         .expect_completion_response_with(|list| {
-            list.items.iter().any(|item| {
-                item.label == "c"
-                    // BUG: Should be CompletionItemKind::MODULE, but currently returns FIELD
-                    && item.kind == Some(CompletionItemKind::FIELD)
-            })
+            list.items
+                .iter()
+                .any(|item| item.label == "c" && item.kind == Some(CompletionItemKind::MODULE))
         })
         .unwrap();
 
     // Test completion on `a.b.c.` - should show `D` as a class
-    // BUG: Currently returns `D` with kind FIELD instead of CLASS
     interaction
         .client
         .did_change("main.py", "import a.b.c\n\na.b.c.");
@@ -796,11 +792,9 @@ fn test_deep_submodule_chain_reexport_completion() {
         .client
         .completion("main.py", 2, 6)
         .expect_completion_response_with(|list| {
-            list.items.iter().any(|item| {
-                item.label == "D"
-                    // BUG: Should be CompletionItemKind::CLASS, but currently returns FIELD
-                    && item.kind == Some(CompletionItemKind::FIELD)
-            })
+            list.items
+                .iter()
+                .any(|item| item.label == "D" && item.kind == Some(CompletionItemKind::CLASS))
         })
         .unwrap();
 

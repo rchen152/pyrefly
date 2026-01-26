@@ -2957,7 +2957,11 @@ impl<'a> Transaction<'a> {
                             .for_each(|x| {
                                 let kind = match x.ty {
                                     Some(Type::BoundMethod(_)) => Some(CompletionItemKind::METHOD),
-                                    Some(Type::Function(_)) => Some(CompletionItemKind::FUNCTION),
+                                    Some(Type::Function(_) | Type::Overload(_)) => {
+                                        Some(CompletionItemKind::FUNCTION)
+                                    }
+                                    Some(Type::Module(_)) => Some(CompletionItemKind::MODULE),
+                                    Some(Type::ClassDef(_)) => Some(CompletionItemKind::CLASS),
                                     _ => Some(CompletionItemKind::FIELD),
                                 };
                                 let ty = &x.ty;

@@ -2367,9 +2367,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
         if include_types {
             for info in res {
-                if let Some(definition) = &info.definition
-                    && matches!(definition, AttrDefinition::FullyResolved(..))
-                {
+                if info.definition.is_some() {
                     let found_attrs = self
                         .lookup_attr_from_attribute_base(base.clone(), &info.name)
                         .found;
