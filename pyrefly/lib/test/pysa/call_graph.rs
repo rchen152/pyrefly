@@ -6808,3 +6808,59 @@ def foo():
         )]
     }
 );
+
+call_graph_testcase!(
+    test_attribute_access_on_type,
+    TEST_MODULE_NAME,
+    r#"
+class A:
+  def __init__(self, x: type[str]):
+    self.x = x
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.A.__init__",
+            vec![
+                (
+                    "4:14-4:15|identifier|x",
+                    identifier_callees(
+                        /* call_targets */ vec![],
+                        /* init_targets */
+                        vec![
+                            create_call_target("builtins.object.__init__", TargetType::Function)
+                                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
+                        ],
+                        /* new_targets */
+                        vec![
+                            create_call_target("builtins.str.__new__", TargetType::Function)
+                                .with_is_static_method(true),
+                        ],
+                        /* higher_order_parameters */ vec![],
+                        /* unresolved */ Unresolved::False,
+                    ),
+                ),
+                (
+                    "4:5-4:11",
+                    attribute_access_callees(
+                        /* call_targets */ vec![],
+                        /* init_targets */
+                        vec![
+                            create_call_target("builtins.object.__init__", TargetType::Function)
+                                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
+                        ],
+                        /* new_targets */
+                        vec![
+                            create_call_target("builtins.str.__new__", TargetType::Function)
+                                .with_is_static_method(true),
+                        ],
+                        /* property_setters */ vec![],
+                        /* property_getters */ vec![],
+                        /* higher_order_parameters */ vec![],
+                        /* unresolved */ Unresolved::False,
+                        /* is_attribute */ true,
+                    ),
+                ),
+            ],
+        )]
+    }
+);
