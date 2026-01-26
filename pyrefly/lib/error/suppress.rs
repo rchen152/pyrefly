@@ -19,6 +19,7 @@ use pyrefly_util::fs_anyhow;
 use pyrefly_util::lined_buffer::LineNumber;
 use regex::Regex;
 use ruff_python_ast::PySourceType;
+use serde::Deserialize;
 use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
 use starlark_map::smallset;
@@ -30,6 +31,7 @@ use crate::state::errors::Errors;
 
 /// A minimal representation of an error for suppression purposes.
 /// This struct holds only the fields needed to add or remove a suppression comment.
+#[derive(Deserialize)]
 pub struct SuppressableError {
     /// The file path where the error occurs.
     pub path: PathBuf,

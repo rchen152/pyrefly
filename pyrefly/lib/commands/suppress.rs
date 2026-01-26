@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::path::PathBuf;
+
 use clap::Parser;
 use pyrefly_config::args::ConfigOverrideArgs;
 use pyrefly_config::error_kind::Severity;
@@ -24,25 +26,36 @@ pub struct SuppressArgs {
     /// Configuration override options.
     #[command(flatten, next_help_heading = "Config Overrides")]
     config_override: ConfigOverrideArgs,
+
+    /// Path to a JSON file containing errors to suppress.
+    /// The JSON should be an array of objects with "path", "line", and "name" fields.
+    #[arg(long)]
+    json: Option<PathBuf>,
 }
 
 impl SuppressArgs {
     pub fn run(&self) -> anyhow::Result<CommandExitStatus> {
-        self.config_override.validate()?;
-        let (files_to_check, config_finder) =
-            self.files.clone().resolve(self.config_override.clone())?;
+        let suppressable_errors = if let Some(json_path) = &self.json {
+            // Parse errors from JSON file
+            let json_content = std::fs::read_to_string(json_path)?;
+            serde_json::from_str(&json_content)?
+        } else {
+            // Run type checking to collect errors
+            self.config_override.validate()?;
+            let (files_to_check, config_finder) =
+                self.files.clone().resolve(self.config_override.clone())?;
 
-        // Run type checking to collect errors
-        let check_args =
-            super::check::CheckArgs::parse_from(["check", "--output-format", "omit-errors"]);
-        let (_, errors) = check_args.run_once(files_to_check, config_finder)?;
+            let check_args =
+                super::check::CheckArgs::parse_from(["check", "--output-format", "omit-errors"]);
+            let (_, errors) = check_args.run_once(files_to_check, config_finder)?;
 
-        // Convert to SuppressableErrors, filtering by severity
-        let suppressable_errors: Vec<SuppressableError> = errors
-            .into_iter()
-            .filter(|e| e.severity() >= Severity::Warn)
-            .filter_map(|e| SuppressableError::from_error(&e))
-            .collect();
+            // Convert to SuppressableErrors, filtering by severity
+            errors
+                .into_iter()
+                .filter(|e| e.severity() >= Severity::Warn)
+                .filter_map(|e| SuppressableError::from_error(&e))
+                .collect()
+        };
 
         // Apply suppressions
         suppress::suppress_errors(suppressable_errors);
