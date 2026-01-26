@@ -2913,7 +2913,7 @@ def foo(obj: Token):
                         property_setters: vec![],
                         property_getters: vec![],
                         global_targets: vec![],
-                        is_attribute: false, // TODO: This should be true
+                        is_attribute: true,
                     }),
                 ),
             ],

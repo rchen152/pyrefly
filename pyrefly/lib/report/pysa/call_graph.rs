@@ -2516,13 +2516,15 @@ impl<'a> CallGraphVisitor<'a> {
             "resolve_magic_dunder_attr",
             /* exclude_object_methods */ false,
         );
+        // Treat attribute accesses that are not callables as regular attributes.
+        let is_attribute = !callees.is_partially_resolved() || *attribute == dunder::CLASS; // Special case for `__class__`
         AttributeAccessCallees {
             if_called: callees,
             // Property getters and setters are always found via the normal attribute lookup
             property_setters: vec![],
             property_getters: vec![],
             global_targets: vec![],
-            is_attribute: *attribute == dunder::CLASS, // Hardcode for `__class__`
+            is_attribute,
         }
     }
 
