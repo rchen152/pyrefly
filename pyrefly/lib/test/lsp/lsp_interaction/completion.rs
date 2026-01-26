@@ -755,3 +755,54 @@ fn test_completion_autoimport_shown_when_local_no_longer_matches() {
 
     interaction.shutdown().unwrap();
 }
+
+#[test]
+fn test_deep_submodule_chain_reexport_completion() {
+    // Test completion on submodule attributes in `a.b.c.` after `import a.b.c`
+    // This tests that submodules are properly available for completion when using
+    // explicit re-exports (`from . import x as x` pattern).
+    let root = get_test_files_root();
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root.path().join("deep_submodule_chain_reexport"));
+    interaction
+        .initialize(InitializeSettings::default())
+        .unwrap();
+
+    interaction.client.did_open("main.py");
+
+    // Test completion on `a.b.` - should show `c` as a module
+    // BUG: Currently returns `c` with kind FIELD instead of MODULE
+    interaction
+        .client
+        .did_change("main.py", "import a.b.c\n\na.b.");
+    interaction
+        .client
+        .completion("main.py", 2, 4)
+        .expect_completion_response_with(|list| {
+            list.items.iter().any(|item| {
+                item.label == "c"
+                    // BUG: Should be CompletionItemKind::MODULE, but currently returns FIELD
+                    && item.kind == Some(CompletionItemKind::FIELD)
+            })
+        })
+        .unwrap();
+
+    // Test completion on `a.b.c.` - should show `D` as a class
+    // BUG: Currently returns `D` with kind FIELD instead of CLASS
+    interaction
+        .client
+        .did_change("main.py", "import a.b.c\n\na.b.c.");
+    interaction
+        .client
+        .completion("main.py", 2, 6)
+        .expect_completion_response_with(|list| {
+            list.items.iter().any(|item| {
+                item.label == "D"
+                    // BUG: Should be CompletionItemKind::CLASS, but currently returns FIELD
+                    && item.kind == Some(CompletionItemKind::FIELD)
+            })
+        })
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
