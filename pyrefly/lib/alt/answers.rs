@@ -838,6 +838,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             .or_default()
                             .push(attribute_reference_range);
                     }
+                    Some(AttrDefinition::Submodule { module_name }) => {
+                        // For submodule access (e.g., `b` in `a.b`), record as a reference to
+                        // the submodule. The last component of module_name is the attribute name.
+                        if let Some(parent) = module_name.parent() {
+                            index
+                                .lock()
+                                .externally_defined_variable_references
+                                .entry((parent, attribute_name.clone()))
+                                .or_default()
+                                .push(attribute_reference_range);
+                        }
+                    }
                     None => {}
                 }
             }

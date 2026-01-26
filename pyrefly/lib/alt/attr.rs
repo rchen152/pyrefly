@@ -2153,7 +2153,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 #[derive(Debug, Clone)]
 pub enum AttrDefinition {
     FullyResolved(TextRangeWithModule),
-    PartiallyResolvedImportedModuleAttribute { module_name: ModuleName },
+    PartiallyResolvedImportedModuleAttribute {
+        module_name: ModuleName,
+    },
+    /// A submodule accessed as an attribute (e.g., `b` in `a.b` when `import a.b.c`).
+    /// The module_name is the full submodule path (e.g., `a.b`).
+    Submodule {
+        module_name: ModuleName,
+    },
 }
 
 #[derive(Debug)]
@@ -2259,6 +2266,26 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         expected_attribute_name: Option<&Name>,
         res: &mut Vec<AttrInfo>,
     ) {
+        // Check for submodule access first (takes precedence over exports, same as get_module_attr).
+        // This handles cases like `a.b.c` where `import a.b.c` was used - accessing `b` on `a`
+        // should resolve to the submodule `a.b`, not look for an export named `b` in `a`.
+        if let Some(attr_name) = expected_attribute_name {
+            let submodule = module.push_part(attr_name.clone());
+            if submodule.is_submodules_imported_directly() {
+                res.push(AttrInfo {
+                    name: attr_name.clone(),
+                    ty: None,
+                    is_deprecated: false,
+                    definition: Some(AttrDefinition::Submodule {
+                        module_name: ModuleName::from_parts(submodule.parts()),
+                    }),
+                    docstring_range: None,
+                    is_reexport: false,
+                });
+                return;
+            }
+        }
+
         let module_name = ModuleName::from_parts(module.parts());
         if let Some(exports) = self.get_module_exports(module_name) {
             match expected_attribute_name {

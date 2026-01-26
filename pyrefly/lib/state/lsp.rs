@@ -1124,6 +1124,16 @@ impl<'a> Transaction<'a> {
                     export.docstring_range,
                 ))
             }
+            AttrDefinition::Submodule { module_name } => {
+                // For submodule access (e.g., `b` in `a.b` when `import a.b.c`),
+                // resolve by finding the submodule's __init__.py
+                let def =
+                    self.find_definition_for_imported_module(handle, module_name, preference)?;
+                Some((
+                    TextRangeWithModule::new(def.module, def.definition_range),
+                    def.docstring_range,
+                ))
+            }
         }
     }
 
