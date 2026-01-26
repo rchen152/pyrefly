@@ -4197,7 +4197,7 @@ def foo(x: Union[A, B]):
                         /* property_getters */ vec![],
                         /* higher_order_parameters */ vec![],
                         /* unresolved */ Unresolved::False,
-                        /* is_attribute */ true,
+                        /* is_attribute */ false,
                     ),
                 ),
                 // TODO: Handle `object.__class__`
@@ -4287,7 +4287,7 @@ def foo(x: A):
                         /* property_getters */ vec![],
                         /* higher_order_parameters */ vec![],
                         /* unresolved */ Unresolved::False,
-                        /* is_attribute */ true,
+                        /* is_attribute */ false,
                     ),
                 ),
                 (

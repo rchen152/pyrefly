@@ -2517,7 +2517,7 @@ impl<'a> CallGraphVisitor<'a> {
             /* exclude_object_methods */ false,
         );
         // Treat attribute accesses that are not callables as regular attributes.
-        let is_attribute = !callees.is_partially_resolved() || *attribute == dunder::CLASS; // Special case for `__class__`
+        let is_attribute = !callees.is_partially_resolved();
         AttributeAccessCallees {
             if_called: callees,
             // Property getters and setters are always found via the normal attribute lookup
