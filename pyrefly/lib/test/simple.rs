@@ -814,11 +814,11 @@ testcase!(
 val = 42
 def foo(arg): ...
 def test(
-    a: foo(arg=val),  # E: function call cannot be used in annotations
-    b: lambda: None,  # E: lambda definition cannot be used in annotations
-    c: [foo(arg=val)], # E: list literal cannot be used in annotations
-    d: (1, 2), # E: tuple literal cannot be used in annotations
-    e: 1 + 2,  # E: binary operation `+` cannot be used in annotations
+    a: foo(arg=val),  # E: Function call cannot be used in annotations
+    b: lambda: None,  # E: Lambda definition cannot be used in annotations
+    c: [foo(arg=val)], # E: List literal cannot be used in annotations
+    d: (1, 2), # E: Tuple literal cannot be used in annotations
+    e: 1 + 2,  # E: Binary operation `+` cannot be used in annotations
 ): ...
 "#,
 );

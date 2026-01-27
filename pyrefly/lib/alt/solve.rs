@@ -563,26 +563,26 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 | Expr::StringLiteral(..)
                 | Expr::NoneLiteral(..)
                 | Expr::Attribute(..) => return true,
-                _ => "invalid subscript expression",
+                _ => "Invalid subscript expression",
             },
-            Expr::Call(..) => "function call",
-            Expr::Lambda(..) => "lambda definition",
-            Expr::List(..) => "list literal",
-            Expr::NumberLiteral(..) => "number literal",
-            Expr::Tuple(..) => "tuple literal",
-            Expr::Dict(..) => "dict literal",
-            Expr::ListComp(..) => "list comprehension",
-            Expr::If(..) => "if expression",
-            Expr::BooleanLiteral(..) => "bool literal",
-            Expr::BoolOp(..) => "boolean operation",
-            Expr::FString(..) => "f-string",
-            Expr::TString(..) => "t-string",
-            Expr::UnaryOp(..) => "unary operation",
-            Expr::BinOp(ExprBinOp { op, .. }) => &format!("binary operation `{}`", op.as_str()),
+            Expr::Call(..) => "Function call",
+            Expr::Lambda(..) => "Lambda definition",
+            Expr::List(..) => "List literal",
+            Expr::NumberLiteral(..) => "Number literal",
+            Expr::Tuple(..) => "Tuple literal",
+            Expr::Dict(..) => "Dict literal",
+            Expr::ListComp(..) => "List comprehension",
+            Expr::If(..) => "If expression",
+            Expr::BooleanLiteral(..) => "Bool literal",
+            Expr::BoolOp(..) => "Boolean operation",
+            Expr::FString(..) => "F-string",
+            Expr::TString(..) => "T-string",
+            Expr::UnaryOp(..) => "Unary operation",
+            Expr::BinOp(ExprBinOp { op, .. }) => &format!("Binary operation `{}`", op.as_str()),
             // There are many Expr variants. Not all of them are likely to be used
             // in annotations, even accidentally. We can add branches for specific
             // expression constructs if desired.
-            _ => "expression",
+            _ => "Expression",
         };
         self.error(
             errors,
