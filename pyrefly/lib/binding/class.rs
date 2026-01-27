@@ -912,15 +912,15 @@ impl<'a> BindingsBuilder<'a> {
                     defaults.splice(n_members - n_defaults.., elts.map(|x| Some(x.clone())));
                 }
             } else {
-                let maybe_name = if let Some(name) = &kw.arg {
-                    format!(" `{name}`")
+                let msg = if let Some(name) = &kw.arg {
+                    format!("Unrecognized keyword argument `{name}`")
                 } else {
-                    "".to_owned()
+                    "Unpacking is not supported".to_owned()
                 };
                 self.error(
                     kw.range(),
                     ErrorInfo::Kind(ErrorKind::InvalidArgument),
-                    format!("Unrecognized argument{maybe_name} for named tuple definition"),
+                    format!("{msg} in named tuple definition"),
                 );
             }
         }
@@ -1067,15 +1067,15 @@ impl<'a> BindingsBuilder<'a> {
             if let Some(kw_name) = recognized_kw {
                 base_class_keywords.push((kw_name.clone(), kw.value.clone()));
             } else {
-                let maybe_name = if let Some(name) = &kw.arg {
-                    format!(" `{name}`")
+                let msg = if let Some(name) = &kw.arg {
+                    format!("Unrecognized keyword argument `{name}`")
                 } else {
-                    "".to_owned()
+                    "Unpacking is not supported".to_owned()
                 };
                 self.error(
                     kw.range(),
                     ErrorInfo::Kind(ErrorKind::InvalidArgument),
-                    format!("Unrecognized argument{maybe_name} for typed dictionary definition"),
+                    format!("{msg} in typed dictionary definition"),
                 );
             }
         }

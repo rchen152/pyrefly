@@ -10434,8 +10434,8 @@
     {
       "code": -2,
       "column": 72,
-      "concise_description": "Unrecognized argument `other` for typed dictionary definition",
-      "description": "Unrecognized argument `other` for typed dictionary definition",
+      "concise_description": "Unrecognized keyword argument `other` in typed dictionary definition",
+      "description": "Unrecognized keyword argument `other` in typed dictionary definition",
       "line": 35,
       "name": "invalid-argument",
       "severity": "error",
@@ -10456,8 +10456,8 @@
     {
       "code": -2,
       "column": 30,
-      "concise_description": "Unrecognized argument `name` for typed dictionary definition",
-      "description": "Unrecognized argument `name` for typed dictionary definition",
+      "concise_description": "Unrecognized keyword argument `name` in typed dictionary definition",
+      "description": "Unrecognized keyword argument `name` in typed dictionary definition",
       "line": 41,
       "name": "invalid-argument",
       "severity": "error",
@@ -10467,8 +10467,8 @@
     {
       "code": -2,
       "column": 40,
-      "concise_description": "Unrecognized argument `year` for typed dictionary definition",
-      "description": "Unrecognized argument `year` for typed dictionary definition",
+      "concise_description": "Unrecognized keyword argument `year` in typed dictionary definition",
+      "description": "Unrecognized keyword argument `year` in typed dictionary definition",
       "line": 41,
       "name": "invalid-argument",
       "severity": "error",

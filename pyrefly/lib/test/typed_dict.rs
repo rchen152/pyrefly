@@ -1541,9 +1541,9 @@ testcase!(
     test_functional_form_unexpected_keyword,
     r#"
 from typing import TypedDict
-X = TypedDict('X', {}, nonsense=True)  # E: Unrecognized argument `nonsense` for typed dictionary definition
+X = TypedDict('X', {}, nonsense=True)  # E: Unrecognized keyword argument `nonsense` in typed dictionary definition
 def f(kwargs):
-    Y = TypedDict('Y', {}, **kwargs)  # E: Unrecognized argument for typed dictionary definition
+    Y = TypedDict('Y', {}, **kwargs)  # E: Unpacking is not supported in typed dictionary definition
     "#,
 );
 

@@ -373,9 +373,9 @@ testcase!(
     test_collections_namedtuple_unexpected_keyword,
     r#"
 from collections import namedtuple
-X = namedtuple('X', [], nonsense=True)  # E: Unrecognized argument `nonsense` for named tuple definition
+X = namedtuple('X', [], nonsense=True)  # E: Unrecognized keyword argument `nonsense` in named tuple definition
 def f(kwargs):
-    Y = namedtuple('Y', [], **kwargs)  # E: Unrecognized argument for named tuple definition
+    Y = namedtuple('Y', [], **kwargs)  # E: Unpacking is not supported in named tuple definition
     "#,
 );
 
