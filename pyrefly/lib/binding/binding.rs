@@ -82,7 +82,7 @@ use crate::types::types::Type;
 use crate::types::types::Var;
 
 assert_words!(Key, 6);
-assert_words!(KeyExpect, 1);
+assert_bytes!(KeyExpect, 12);
 assert_words!(KeyExport, 3);
 assert_words!(KeyClass, 1);
 assert_bytes!(KeyTParams, 4);
@@ -640,6 +640,22 @@ impl DisplayWith<Bindings> for Key {
 /// New expectation types should add their own variant rather than reusing `Uncategorized`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum KeyExpect {
+    /// Expression that needs type checking without using the result.
+    TypeCheckExpr(TextRange),
+    /// Expression in base class list that needs additional checks.
+    TypeCheckBaseClassExpr(TextRange),
+    /// Expected number of values in an unpacked iterable.
+    UnpackedLength(TextRange),
+    /// Exception and cause from a raise statement.
+    CheckRaisedException(TextRange),
+    /// Redefinition check for matching annotations.
+    Redefinition(TextRange),
+    /// Expression used in a boolean context.
+    Bool(TextRange),
+    /// Match statement exhaustiveness check.
+    MatchExhaustiveness(TextRange),
+    /// Private attribute access validation.
+    PrivateAttributeAccess(TextRange),
     /// Uncategorized expectations. This is a catch-all for existing expectations
     /// that haven't been migrated to their own variants yet.
     /// TODO: Gradually migrate these to specific variants.
@@ -649,18 +665,33 @@ pub enum KeyExpect {
 impl Ranged for KeyExpect {
     fn range(&self) -> TextRange {
         match self {
-            KeyExpect::Uncategorized(range) => *range,
+            KeyExpect::TypeCheckExpr(range)
+            | KeyExpect::TypeCheckBaseClassExpr(range)
+            | KeyExpect::UnpackedLength(range)
+            | KeyExpect::CheckRaisedException(range)
+            | KeyExpect::Redefinition(range)
+            | KeyExpect::Bool(range)
+            | KeyExpect::MatchExhaustiveness(range)
+            | KeyExpect::PrivateAttributeAccess(range)
+            | KeyExpect::Uncategorized(range) => *range,
         }
     }
 }
 
 impl DisplayWith<ModuleInfo> for KeyExpect {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, ctx: &ModuleInfo) -> fmt::Result {
-        match self {
-            KeyExpect::Uncategorized(range) => {
-                write!(f, "KeyExpect::Uncategorized({})", ctx.display(range))
-            }
-        }
+        let (name, range) = match self {
+            KeyExpect::TypeCheckExpr(r) => ("TypeCheckExpr", r),
+            KeyExpect::TypeCheckBaseClassExpr(r) => ("TypeCheckBaseClassExpr", r),
+            KeyExpect::UnpackedLength(r) => ("UnpackedLength", r),
+            KeyExpect::CheckRaisedException(r) => ("CheckRaisedException", r),
+            KeyExpect::Redefinition(r) => ("Redefinition", r),
+            KeyExpect::Bool(r) => ("Bool", r),
+            KeyExpect::MatchExhaustiveness(r) => ("MatchExhaustiveness", r),
+            KeyExpect::PrivateAttributeAccess(r) => ("PrivateAttributeAccess", r),
+            KeyExpect::Uncategorized(r) => ("Uncategorized", r),
+        };
+        write!(f, "KeyExpect::{}({})", name, ctx.display(range))
     }
 }
 
