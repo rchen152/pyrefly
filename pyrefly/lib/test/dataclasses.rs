@@ -1654,7 +1654,7 @@ class DescB:
 
 @dataclass
 class C:
-    x: DescA = DescA()  # E: Non-data descriptor `x` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.
+    x: DescA = DescA()  # E: Cannot set field `x` to non-data descriptor `DescA`\n  Hint: add a `__set__` method to make `DescA` a data descriptor
     y: DescB = DescB()
 
 # Regardless of any errors, any descriptors assigned in the class body do have default values.

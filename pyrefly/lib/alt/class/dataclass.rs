@@ -18,6 +18,7 @@ use ruff_text_size::TextRange;
 use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
 use vec1::Vec1;
+use vec1::vec1;
 
 use crate::alt::answers::LookupAnswer;
 use crate::alt::answers_solver::AnswersSolver;
@@ -228,16 +229,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     continue;
                 }
 
-                self.error(
-                    errors,
+                let cls = descriptor_cls.name();
+                errors.add(
                     range,
                     ErrorInfo::Kind(ErrorKind::BadClassDefinition),
-                    format!(
-                        "Non-data descriptor `{name}` in dataclass is unsound. \
-                         The dataclass __init__ writes to the instance dict, \
-                         shadowing the descriptor. Add a __set__ method to make \
-                         it a data descriptor."
-                    ),
+                    vec1![
+                        format!("Cannot set field `{name}` to non-data descriptor `{cls}`"),
+                        format!("Hint: add a `__set__` method to make `{cls}` a data descriptor"),
+                    ],
                 );
             }
         }

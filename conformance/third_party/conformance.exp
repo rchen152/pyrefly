@@ -3315,8 +3315,8 @@
     {
       "code": -2,
       "column": 5,
-      "concise_description": "Non-data descriptor `z` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.",
-      "description": "Non-data descriptor `z` in dataclass is unsound. The dataclass __init__ writes to the instance dict, shadowing the descriptor. Add a __set__ method to make it a data descriptor.",
+      "concise_description": "Cannot set field `z` to non-data descriptor `Desc2`",
+      "description": "Cannot set field `z` to non-data descriptor `Desc2`\n  Hint: add a `__set__` method to make `Desc2` a data descriptor",
       "line": 58,
       "name": "bad-class-definition",
       "severity": "error",
