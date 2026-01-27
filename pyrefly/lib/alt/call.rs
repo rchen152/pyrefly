@@ -852,7 +852,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         errors,
                         arguments_range,
                         ErrorInfo::new(ErrorKind::BadInstantiation, context),
-                        format!("`{}` can not be instantiated", cls.name()),
+                        format!("`{}` cannot be instantiated", cls.name()),
                     );
                 }
                 let metadata = self.get_metadata_for_class(cls.class_object());
