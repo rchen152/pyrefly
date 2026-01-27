@@ -31,7 +31,7 @@ def func(x: object) -> None:
        val = x.value # Pyrefly knows that `x` has the `value` attribute and won’t error here
 ```
 
-Some fields are declared on the class but not always initialized, so accesses have to be done with \`getattr\`. To support this pattern, any checks on \`getattr(x, “field”)\` will generally narrow the type the same way as the same check on \`x.field\`. This means that using \`getattr()\` in a guard will narrow the field to be truthy.
+Some fields are declared on the class but not always initialized, so accesses have to be done with `getattr`. To support this pattern, any checks on `getattr(x, “field”)` will generally narrow the type the same way as the same check on `x.field`. This means that using `getattr()` in a guard will narrow the field to be truthy.
 
 ```python
 from typing import Literal, assert_type
