@@ -98,7 +98,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 range,
                 ErrorInfo::Kind(ErrorKind::BadArgumentCount),
                 format!(
-                    "assert_type needs 2 positional arguments, got {:#?}",
+                    "assert_type needs 2 positional arguments, got {}",
                     args.len()
                 ),
             );
