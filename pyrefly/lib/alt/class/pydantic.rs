@@ -375,24 +375,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     "allow" | "ignore" => true,
                     "forbid" => false,
                     _ => {
-                        self.error(
-                    errors,
-                    range,
-                    ErrorInfo::Kind(ErrorKind::InvalidLiteral),
-                    "Invalid value for `extra`. Expected one of 'allow', 'ignore', or 'forbid'"
-                        .to_owned(),
-                );
+                        self.invalid_extra_value_error(errors, range);
                         true
                     }
                 },
                 _ => {
-                    self.error(
-                        errors,
-                        range,
-                        ErrorInfo::Kind(ErrorKind::InvalidLiteral),
-                        "Invalid value for `extra`. Expected one of 'allow', 'ignore', or 'forbid'"
-                            .to_owned(),
-                    );
+                    self.invalid_extra_value_error(errors, range);
                     true
                 }
             },
@@ -434,6 +422,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             strict: Some(strict),
             pydantic_model_kind,
         })
+    }
+
+    fn invalid_extra_value_error(&self, errors: &ErrorCollector, range: TextRange) {
+        self.error(
+            errors,
+            range,
+            ErrorInfo::Kind(ErrorKind::InvalidLiteral),
+            "Invalid value for `extra`. Expected one of 'allow', 'ignore', or 'forbid'".to_owned(),
+        );
     }
 
     fn get_bool_config_value(
