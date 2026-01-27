@@ -480,15 +480,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let Some(val) = bound_val else { continue };
             if !self.is_subset_eq(val, field_ty) {
                 self.error(
-                        errors,
-                        range,
-                        ErrorInfo::Kind(ErrorKind::BadArgumentType),
-                        format!(
-                            "Pydantic `{label}` value is of type `{}` but the field is annotated with `{}`",
-                            self.for_display(val.clone()),
-                            self.for_display(field_ty.clone())
-                        ),
-                    );
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::BadArgumentType),
+                    format!(
+                        "Pydantic `{label}` value has type `{}`, which is not assignable to field type `{}`",
+                        self.for_display(val.clone()),
+                        self.for_display(field_ty.clone())
+                    ),
+                );
             }
         }
         self.check_pydantic_range_default(field_name, keywords, range, errors);
