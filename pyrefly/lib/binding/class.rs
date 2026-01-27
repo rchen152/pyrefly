@@ -219,10 +219,7 @@ impl<'a> BindingsBuilder<'a> {
                     self.error(
                         keyword.range(),
                         ErrorInfo::Kind(ErrorKind::InvalidInheritance),
-                        format!(
-                            "The use of unpacking in class header of `{}` is not supported",
-                            x.name
-                        ),
+                        "Unpacking is not supported in class header".to_owned(),
                     )
                 }
             });
