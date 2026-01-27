@@ -1853,7 +1853,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         errors,
                         range,
                         ErrorInfo::Kind(ErrorKind::ProtocolImplicitlyDefinedAttribute),
-                        "Instance or class variables within a Protocol class must be explicitly declared within the class body".to_owned(),
+                        "Protocol variables must be explicitly declared in the class body"
+                            .to_owned(),
                     );
                 } else if !recognized_attribute_defining_method {
                     self.error(

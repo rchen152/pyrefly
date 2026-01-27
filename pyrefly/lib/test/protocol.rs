@@ -382,10 +382,10 @@ class P(Protocol):
     x: int
     def __init__(self, x: int, z: str):
         self.x = x  # ok
-        self.z = z  # E: Instance or class variables within a Protocol class must be explicitly declared within the class body
+        self.z = z  # E: Protocol variables must be explicitly declared in the class body
     def f(self, x: int, y: str):
         self.x = x  # ok
-        self.y = y  # E: Instance or class variables within a Protocol class must be explicitly declared within the class body
+        self.y = y  # E: Protocol variables must be explicitly declared in the class body
     "#,
 );
 
