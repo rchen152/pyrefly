@@ -821,7 +821,7 @@ impl<'a> BindingsBuilder<'a> {
             class_idx: self.scopes.current_method_context(),
         };
         self.insert_binding(
-            KeyExpect(attr.attr.range()),
+            KeyExpect::Uncategorized(attr.attr.range()),
             BindingExpect::PrivateAttributeAccess(expect),
         );
     }

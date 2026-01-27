@@ -121,7 +121,7 @@ impl<'a> BindingsBuilder<'a> {
             SizeExpectation::Eq(elts.len())
         };
         self.insert_binding(
-            KeyExpect(range),
+            KeyExpect::Uncategorized(range),
             BindingExpect::UnpackedLength(unpack_idx, range, expect),
         );
     }

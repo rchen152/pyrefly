@@ -129,7 +129,7 @@ impl<'a> BindingsBuilder<'a> {
             let mut msg = self.declare_current_idx(Key::UsageLink(msg_expr.range()));
             self.ensure_expr(&mut msg_expr, msg.usage());
             let idx = self.insert_binding(
-                KeyExpect(msg_expr.range()),
+                KeyExpect::Uncategorized(msg_expr.range()),
                 BindingExpect::TypeCheckExpr(msg_expr),
             );
             self.insert_binding_current(msg, Binding::UsageLink(LinkedKey::Expect(idx)));
@@ -562,7 +562,7 @@ impl<'a> BindingsBuilder<'a> {
                     // check that in that case the annotations match.
                     if let Some(ann) = canonical_ann_idx {
                         self.insert_binding(
-                            KeyExpect(name.range),
+                            KeyExpect::Uncategorized(name.range),
                             BindingExpect::Redefinition {
                                 new: ann_idx,
                                 existing: ann,
@@ -759,7 +759,10 @@ impl<'a> BindingsBuilder<'a> {
                     NarrowUseLocation::Span(x.range),
                     &Usage::Narrowing(None),
                 );
-                self.insert_binding(KeyExpect(x.test.range()), BindingExpect::Bool(*x.test));
+                self.insert_binding(
+                    KeyExpect::Uncategorized(x.test.range()),
+                    BindingExpect::Bool(*x.test),
+                );
                 self.stmts(x.body, parent);
                 // For while True: loops, the loop body definitely runs at least once
                 self.teardown_loop(
@@ -817,7 +820,7 @@ impl<'a> BindingsBuilder<'a> {
                     if let Some(test_expr) = test {
                         // Typecheck the test condition during solving.
                         self.insert_binding(
-                            KeyExpect(test_expr.range()),
+                            KeyExpect::Uncategorized(test_expr.range()),
                             BindingExpect::Bool(test_expr),
                         );
                     }
@@ -890,7 +893,7 @@ impl<'a> BindingsBuilder<'a> {
                         RaisedException::WithoutCause(*exc)
                     };
                     let idx = self.insert_binding(
-                        KeyExpect(x.range),
+                        KeyExpect::Uncategorized(x.range),
                         BindingExpect::CheckRaisedException(raised),
                     );
                     self.insert_binding_current(

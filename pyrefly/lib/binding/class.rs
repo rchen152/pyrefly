@@ -192,7 +192,7 @@ impl<'a> BindingsBuilder<'a> {
             // usage tracking.
             if matches!(base_class, BaseClass::BaseClassExpr(..)) {
                 self.insert_binding(
-                    KeyExpect(base.range()),
+                    KeyExpect::Uncategorized(base.range()),
                     BindingExpect::TypeCheckBaseClassExpr(base),
                 );
             }
