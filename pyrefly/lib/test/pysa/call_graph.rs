@@ -6817,7 +6817,7 @@ class A:
   def __init__(self, x: type[str]):
     self.x = x
 "#,
-    &|context: &ModuleContext| {
+    &|_context: &ModuleContext| {
         vec![(
             "test.A.__init__",
             vec![
