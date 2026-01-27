@@ -1517,7 +1517,7 @@ class Desc:
     def __set__(self, obj, value: str) -> None: ...
 @dataclass
 class C:
-    x: Desc = Desc()  # E: Data descriptor `x` has incompatible default
+    x: Desc = Desc()  # E: Cannot set field `x` to data descriptor `Desc` with inconsistent types
 c = C('')
 assert_type(c.x, int)
 c.x = 'cat'
@@ -1683,7 +1683,7 @@ class DescB:
 @dataclass
 class C:
     x: DescA = DescA()
-    y: DescB = DescB()  # E: Data descriptor `y` has incompatible default: `__get__` returns `int` which is not assignable to `__set__` value type `str`. The class-level descriptor value cannot be used as a default.
+    y: DescB = DescB()  # E: Cannot set field `y` to data descriptor `DescB` with inconsistent types\n  Return type `int` of `DescB.__get__` is not assignable to value type `str` of `DescB.__set__`
 
 # The field has a default, and accepts the `__set__` type if provided.
 c = C()

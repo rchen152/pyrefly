@@ -3304,8 +3304,8 @@
     {
       "code": -2,
       "column": 5,
-      "concise_description": "Data descriptor `y` has incompatible default: `__get__` returns `Desc1 | int` which is not assignable to `__set__` value type `int`. The class-level descriptor value cannot be used as a default.",
-      "description": "Data descriptor `y` has incompatible default: `__get__` returns `Desc1 | int` which is not assignable to `__set__` value type `int`. The class-level descriptor value cannot be used as a default.",
+      "concise_description": "Cannot set field `y` to data descriptor `Desc1` with inconsistent types",
+      "description": "Cannot set field `y` to data descriptor `Desc1` with inconsistent types\n  Return type `Desc1 | int` of `Desc1.__get__` is not assignable to value type `int` of `Desc1.__set__`",
       "line": 32,
       "name": "bad-class-definition",
       "severity": "error",
