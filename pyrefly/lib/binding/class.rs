@@ -505,11 +505,11 @@ impl<'a> BindingsBuilder<'a> {
                         );
                         None
                     }
-                    _ => {
+                    elts => {
                         self.error(
                             item.range(),
                             ErrorInfo::Kind(ErrorKind::InvalidArgument),
-                            "Expected a pair".to_owned(),
+                            format!("Expected (name, type) pair, got {}-tuple", elts.len()),
                         );
                         None
                     }

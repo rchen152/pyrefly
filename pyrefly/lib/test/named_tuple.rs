@@ -378,3 +378,11 @@ from typing import NamedTuple
 N = NamedTuple('N', ())
     "#,
 );
+
+testcase!(
+    test_bad_field_def,
+    r#"
+from typing import NamedTuple
+N = NamedTuple('N', [('x', int, 'oops')])  # E: Expected (name, type) pair, got 3-tuple
+    "#,
+);
