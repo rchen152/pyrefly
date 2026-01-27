@@ -2300,6 +2300,7 @@ impl<'a> CallGraphVisitor<'a> {
             .and_then(|definition| {
                 FunctionNode::exported_function_from_definition_item_with_docstring(
                     definition,
+                    /* skip_property_getter */ false,
                     self.module_context,
                 )
             })
@@ -2601,11 +2602,25 @@ impl<'a> CallGraphVisitor<'a> {
                     .unwrap_or(Either::Right(definition))
             });
 
+        // Go-to-definition always resolves to the property getters, even when used as a left hand side of an
+        // assignment. Therefore we use heuristics to differentiate setters from getters.
+        let is_assignment_lhs = assignment_targets.is_some_and(|assignment_targets| {
+            assignment_targets
+                .iter()
+                .any(|assignment_target| match assignment_target {
+                    Expr::Attribute(assignment_target_attribute) => {
+                        assignment_target_attribute.range() == callee_range
+                    }
+                    _ => false,
+                })
+        });
+
         let functions_from_go_to_def = go_to_definitions
             .into_iter()
             .filter_map(|definition| {
                 FunctionNode::exported_function_from_definition_item_with_docstring(
                     &definition,
+                    /* skip_property_getter */ is_assignment_lhs,
                     self.module_context,
                 )
             })
@@ -2632,20 +2647,8 @@ impl<'a> CallGraphVisitor<'a> {
                         })
                 });
 
-        let in_assignment_lhs = assignment_targets.is_some_and(|assignment_targets| {
-            assignment_targets
-                .iter()
-                .any(|assignment_target| match assignment_target {
-                    Expr::Attribute(assignment_target_attribute) => {
-                        assignment_target_attribute.range() == callee_range
-                    }
-                    _ => false,
-                })
-        });
         let has_non_property_callees = !non_property_callees.is_empty();
-        // Go-to-definition always resolves to the property getters, even when used as a left hand side of an
-        // assignment. Therefore we use heuristics to differentiate setters from getters.
-        let (property_setters, property_getters) = if in_assignment_lhs {
+        let (property_setters, property_getters) = if is_assignment_lhs {
             (property_callees, vec![])
         } else {
             (vec![], property_callees)
