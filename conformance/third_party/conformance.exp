@@ -10735,8 +10735,8 @@
     {
       "code": -2,
       "column": 5,
-      "concise_description": "TypedDict `MovieBase2` with non-read-only `extra_items` cannot be extended with required extra item `year`",
-      "description": "TypedDict `MovieBase2` with non-read-only `extra_items` cannot be extended with required extra item `year`",
+      "concise_description": "Cannot add required field `year` to TypedDict `MovieBase2` with non-read-only `extra_items`",
+      "description": "Cannot add required field `year` to TypedDict `MovieBase2` with non-read-only `extra_items`",
       "line": 185,
       "name": "bad-typed-dict-key",
       "severity": "error",

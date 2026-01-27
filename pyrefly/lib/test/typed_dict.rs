@@ -1421,7 +1421,7 @@ class Parent(TypedDict, extra_items=int):
 class GoodChild(Parent):
     x: NotRequired[int]
 class BadChild1(Parent):
-    x: Required[int]  # E: cannot be extended with required extra item `x`
+    x: Required[int]  # E: Cannot add required field `x`
 class BadChild2(Parent):
     x: NotRequired[bool]  # E: `bool` is not consistent with `extra_items` type `int`
     "#,
