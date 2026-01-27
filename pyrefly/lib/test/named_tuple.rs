@@ -221,6 +221,14 @@ Tup2 = namedtuple("Tup2", ["a", "b"], defaults=[None, x])
 );
 
 testcase!(
+    test_too_many_defaults,
+    r#"
+from collections import namedtuple
+Tup = namedtuple("Tup", ["a", "b"], defaults=(1, 2, 3))  # E: Too many defaults: expected at most 2, got 3
+    "#,
+);
+
+testcase!(
     test_named_tuple_dunder_unpack,
     r#"
 from typing import NamedTuple

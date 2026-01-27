@@ -903,7 +903,7 @@ impl<'a> BindingsBuilder<'a> {
                         kw.value.range(),
                         ErrorInfo::Kind(ErrorKind::InvalidArgument),
                         format!(
-                            "Too many defaults values: expected up to {n_members}, got {n_defaults}",
+                            "Too many defaults: expected at most {n_members}, got {n_defaults}",
                         ),
                     );
                     let n_to_drop = n_defaults - n_members;
