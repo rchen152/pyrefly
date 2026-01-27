@@ -595,15 +595,14 @@ impl<'a> BindingsBuilder<'a> {
                         .record_self_attr_assign(&attr, value.clone(), Some(ann_key))
                     {
                         self.error(
-                             x.range,
-                             ErrorInfo::Kind(ErrorKind::BadAssignment),
-                             format!(
-                                "Type cannot be declared in assignment to non-self attribute `{}.{}`",
+                            x.range,
+                            ErrorInfo::Kind(ErrorKind::BadAssignment),
+                            format!(
+                                "Cannot annotate non-self attribute `{}.{}`",
                                 self.module_info.display(&attr.value),
                                 attr_name,
                             ),
-
-                         );
+                        );
                     }
                 }
                 mut target => {
