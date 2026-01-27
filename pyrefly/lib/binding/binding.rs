@@ -637,7 +637,6 @@ impl DisplayWith<Bindings> for Key {
 ///
 /// This is an enum to ensure that different kinds of expectations at the same source
 /// location don't collide. Each variant represents a distinct category of expectation.
-/// New expectation types should add their own variant rather than reusing `Uncategorized`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum KeyExpect {
     /// Expression that needs type checking without using the result.
@@ -656,10 +655,6 @@ pub enum KeyExpect {
     MatchExhaustiveness(TextRange),
     /// Private attribute access validation.
     PrivateAttributeAccess(TextRange),
-    /// Uncategorized expectations. This is a catch-all for existing expectations
-    /// that haven't been migrated to their own variants yet.
-    /// TODO: Gradually migrate these to specific variants.
-    Uncategorized(TextRange),
 }
 
 impl Ranged for KeyExpect {
@@ -672,8 +667,7 @@ impl Ranged for KeyExpect {
             | KeyExpect::Redefinition(range)
             | KeyExpect::Bool(range)
             | KeyExpect::MatchExhaustiveness(range)
-            | KeyExpect::PrivateAttributeAccess(range)
-            | KeyExpect::Uncategorized(range) => *range,
+            | KeyExpect::PrivateAttributeAccess(range) => *range,
         }
     }
 }
@@ -689,7 +683,6 @@ impl DisplayWith<ModuleInfo> for KeyExpect {
             KeyExpect::Bool(r) => ("Bool", r),
             KeyExpect::MatchExhaustiveness(r) => ("MatchExhaustiveness", r),
             KeyExpect::PrivateAttributeAccess(r) => ("PrivateAttributeAccess", r),
-            KeyExpect::Uncategorized(r) => ("Uncategorized", r),
         };
         write!(f, "KeyExpect::{}({})", name, ctx.display(range))
     }
