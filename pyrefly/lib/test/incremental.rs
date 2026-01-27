@@ -1477,3 +1477,114 @@ fn test_adding_mro_attr_propagates() {
     i.set("foo", "class Foo: foo: int = 1");
     i.check(&["main"], &["main", "foo", "bar"]);
 }
+
+/// Test that adding a name listed in __all__ clears the error.
+///
+/// When __all__ lists a name that doesn't exist, there should be an error.
+/// After adding the missing name, the error should disappear.
+#[test]
+fn test_dunder_all_missing_name_error_clears() {
+    let mut i = Incremental::new();
+
+    // foo has __all__ = ["test"] but doesn't define test - should error
+    i.set(
+        "foo",
+        "__all__ = [\"test\"] # E: Name `test` is listed in `__all__` but is not defined in the module",
+    );
+    i.check(&["foo"], &["foo"]);
+
+    let foo_handle = i.handle("foo");
+
+    // Verify there's an error with the expected message
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&foo_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected error when __all__ lists undefined name"
+    );
+    assert!(
+        errors.shown.iter().any(|e| e
+            .msg()
+            .contains("Name `test` is listed in `__all__` but is not defined in the module")),
+        "Expected error message about missing __all__ name, but got: {:?}",
+        errors.shown.iter().map(|e| e.msg()).collect::<Vec<_>>()
+    );
+
+    // Add the missing name - error should disappear
+    i.set("foo", "__all__ = [\"test\"]\ntest = 1");
+    i.check_ignoring_expectations(&["foo"], &["foo"]);
+
+    let errors_after = i
+        .state
+        .transaction()
+        .get_errors([&foo_handle])
+        .collect_errors();
+    assert!(
+        errors_after.shown.is_empty(),
+        "Expected no errors after defining the missing name, but got: {:?}",
+        errors_after.shown
+    );
+}
+
+/// Test that modifying __all__ to include a name clears errors in importing files.
+///
+/// When foo has `x` and `y` but `__all__ = ["x"]`, a star import only brings in `x`.
+/// A file using `y` after `from foo import *` will error until `__all__` is updated.
+/// This tests export information affecting errors in another file.
+///
+/// BUG: Currently, when only `__all__` changes (without adding/removing definitions),
+/// star importers are not invalidated. This causes the error to persist even after
+/// `y` is added to `__all__`.
+#[test]
+#[ignore] // TODO: fix incremental invalidation when __all__ changes
+fn test_dunder_all_star_import_error_clears() {
+    let mut i = Incremental::new();
+
+    // foo has x and y, but __all__ only exports x
+    i.set("foo", "x = 1\ny = 2\n__all__ = [\"x\"]");
+    // main does star import and tries to use y - should error
+    i.set(
+        "main",
+        "from foo import *\nz = y # E: Could not find name `y`",
+    );
+    i.check(&["main", "foo"], &["main", "foo"]);
+
+    let main_handle = i.handle("main");
+
+    // Verify there's an error with the expected message
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected error when using name not in __all__"
+    );
+    assert!(
+        errors
+            .shown
+            .iter()
+            .any(|e| e.msg().contains("Could not find name `y`")),
+        "Expected error about missing name y, but got: {:?}",
+        errors.shown.iter().map(|e| e.msg()).collect::<Vec<_>>()
+    );
+
+    // Update __all__ to include y - error should disappear
+    i.set("foo", "x = 1\ny = 2\n__all__ = [\"x\", \"y\"]");
+    i.check_ignoring_expectations(&["main"], &["foo", "main"]);
+
+    let errors_after = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        errors_after.shown.is_empty(),
+        "Expected no errors after adding y to __all__, but got: {:?}",
+        errors_after.shown
+    );
+}
