@@ -6,10 +6,10 @@
  */
 
 use pyrefly_graph::index::Idx;
+use pyrefly_python::ast::Ast;
 use pyrefly_python::dunder;
 use pyrefly_types::literal::LitStyle;
 use ruff_python_ast::CmpOp;
-use ruff_python_ast::Expr;
 use ruff_python_ast::ExprBinOp;
 use ruff_python_ast::ExprCompare;
 use ruff_python_ast::ExprUnaryOp;
@@ -224,17 +224,24 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             ];
             self.try_binop_calls(&calls_to_try, range, errors, &context)
         };
-        // If the expression is of the form [X] * Y where Y is a number, pass down the contextual
-        // type hint when evaluating [X]
         let lhs;
         let rhs;
-        if matches!(&*x.left, Expr::List(_)) && x.op == Operator::Mult {
+        if Ast::is_list_literal_or_comprehension(&x.left) && x.op == Operator::Mult {
+            // If the expression is of the form [X] * Y where Y is a number, pass down the contextual
+            // type hint when evaluating [X]
             rhs = self.expr_infer(&x.right, errors);
             if self.is_subset_eq(&rhs, &self.stdlib.int().clone().to_type()) {
                 lhs = self.expr_infer_with_hint(&x.left, hint, errors);
             } else {
                 lhs = self.expr_infer(&x.left, errors);
             }
+        } else if x.op == Operator::Add
+            && Ast::is_list_literal_or_comprehension(&x.left)
+            && Ast::is_list_literal_or_comprehension(&x.right)
+        {
+            // If both operands are list literals, pass the contextual hint down
+            lhs = self.expr_infer_with_hint(&x.left, hint, errors);
+            rhs = self.expr_infer_with_hint(&x.right, hint, errors);
         } else {
             lhs = self.expr_infer(&x.left, errors);
             rhs = self.expr_infer(&x.right, errors);
