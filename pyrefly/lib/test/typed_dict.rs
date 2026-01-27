@@ -2217,3 +2217,12 @@ def test_empty_not_in(e: Empty, k: str):
         reveal_type(k)  # E: revealed type: Never
 "#,
 );
+
+testcase!(
+    test_illegal_unpacking_in_def,
+    r#"
+from typing import TypedDict
+def f() -> dict: ...
+X = TypedDict("X", {"k1": int, **f()})  # E: Unpacking is not supported
+    "#,
+);

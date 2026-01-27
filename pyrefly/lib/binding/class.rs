@@ -791,7 +791,8 @@ impl<'a> BindingsBuilder<'a> {
                             self.error(
                                 item.range(),
                                 ErrorInfo::Kind(ErrorKind::InvalidArgument),
-                                "Expected a key-value pair".to_owned(),
+                                "Unpacking is not supported in functional enum definition"
+                                    .to_owned(),
                             );
                             None
                         }
@@ -1106,7 +1107,8 @@ impl<'a> BindingsBuilder<'a> {
                             self.error(
                                 item.range(),
                                 ErrorInfo::Kind(ErrorKind::InvalidArgument),
-                                "Expected a key-value pair".to_owned(),
+                                "Unpacking is not supported in functional typed dictionary definition"
+                                    .to_owned(),
                             );
                             None
                         }

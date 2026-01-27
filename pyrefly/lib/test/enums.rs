@@ -746,3 +746,12 @@ class TrafficLight(Enum):
 assert_type(TrafficLight.AMBER, Literal[TrafficLight.YELLOW])
     "#,
 );
+
+testcase!(
+    test_illegal_unpacking_in_def,
+    r#"
+from enum import Enum
+def f() -> dict: ...
+X = Enum("X", {'FOO': 1, **f()})  # E: Unpacking is not supported
+    "#,
+);
