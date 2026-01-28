@@ -363,11 +363,16 @@ impl<'a> TransactionData<'a> {
     /// underlying state is unchanged, otherwise the transaction data might make inconsistent
     /// assumptions, in particular about deps/rdeps.
     pub(crate) fn restore(self) -> Option<Transaction<'a>> {
+        let start = Instant::now();
         let readable = self.state.state.read();
+        let state_lock_blocked = start.elapsed();
         if self.base == readable.now {
             Some(Transaction {
                 data: self,
-                stats: Default::default(),
+                stats: Mutex::new(TelemetryTransactionStats {
+                    state_lock_blocked,
+                    ..Default::default()
+                }),
                 readable,
             })
         } else {
@@ -2304,12 +2309,17 @@ impl State {
         default_require: Require,
         subscriber: Option<Box<dyn Subscriber + 'a>>,
     ) -> Transaction<'a> {
+        let start = Instant::now();
         let readable = self.state.read();
+        let state_lock_blocked = start.elapsed();
         let now = readable.now;
         let stdlib = readable.stdlib.clone();
         Transaction {
             readable,
-            stats: Default::default(),
+            stats: Mutex::new(TelemetryTransactionStats {
+                state_lock_blocked,
+                ..Default::default()
+            }),
             data: TransactionData {
                 state: self,
                 stdlib,
@@ -2402,17 +2412,19 @@ impl State {
         let mut stats = stats.into_inner();
         stats.committed = true;
 
-        if let Some(telemetry) = telemetry {
-            telemetry.set_transaction_stats(stats);
-        }
-
         // If you make a transaction dirty, e.g. by calling an invalidate method,
         // you must subsequently call `run` to drain the dirty queue.
         // We could relax this restriction by storing `dirty` in the `State`,
         // but no one wants to do this, so don't bother.
         assert!(dirty.into_inner().is_empty(), "Transaction is dirty");
 
+        let state_lock_start = Instant::now();
         let mut state = self.state.write();
+        stats.state_lock_blocked += state_lock_start.elapsed();
+
+        if let Some(telemetry) = telemetry {
+            telemetry.set_transaction_stats(stats);
+        }
         assert_eq!(
             state.now, base,
             "Attempted to commit a stale transaction from epoch {:?} into state at epoch {:?}",

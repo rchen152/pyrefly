@@ -74,6 +74,7 @@ pub struct TelemetryTransactionStats {
     pub run_steps: usize,
     pub run_time: Duration,
     pub committed: bool,
+    pub state_lock_blocked: Duration,
 }
 
 #[derive(Clone)]

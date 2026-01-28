@@ -2096,15 +2096,20 @@ impl Server {
             Ok(transaction) => {
                 self.state.commit_transaction(transaction, Some(telemetry));
                 *self.currently_streaming_diagnostics_for_handles.write() = None;
+                let state_lock_blocked_start = Instant::now();
                 // In the case where we can commit transactions, `State` already has latest updates.
                 // Therefore, we can compute errors from transactions freshly created from `State``.
                 let transaction = self.state.transaction();
+                let state_lock_blocked = state_lock_blocked_start.elapsed();
                 self.publish_for_handles(
                     &transaction,
                     &handles,
                     DiagnosticSource::CommittingTransaction,
                 );
                 info!("Validated open files and committed transaction.");
+                if let Some(transaction_telemetry) = &mut telemetry.transaction_stats {
+                    transaction_telemetry.state_lock_blocked += state_lock_blocked;
+                }
             }
             Err(transaction) => {
                 // Check if there's an ongoing committable transaction streaming diagnostics.
