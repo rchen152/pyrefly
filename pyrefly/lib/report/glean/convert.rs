@@ -1480,74 +1480,22 @@ impl Glean {
             GleanEntry::SchemaId {
                 schema_id: builtin::SCHEMA_ID.to_owned(),
             },
-            GleanEntry::Predicate {
-                predicate: python::Name::GLEAN_name(),
-                facts: vec![json(python::Name::new("".to_owned()))],
-            },
-            GleanEntry::Predicate {
-                predicate: python::Module::GLEAN_name(),
-                facts: facts.modules.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: src::FileLanguage::GLEAN_name(),
-                facts: vec![json(file_language_fact)],
-            },
-            GleanEntry::Predicate {
-                predicate: src::FileLines::GLEAN_name(),
-                facts: vec![json(file_lines)],
-            },
-            GleanEntry::Predicate {
-                predicate: digest::FileDigest::GLEAN_name(),
-                facts: vec![json(digest_fact)],
-            },
-            GleanEntry::Predicate {
-                predicate: python::DeclarationLocation::GLEAN_name(),
-                facts: facts.decl_locations.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::DefinitionLocation::GLEAN_name(),
-                facts: facts.def_locations.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::ImportStarLocation::GLEAN_name(),
-                facts: facts.import_star_locations.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::FileCall::GLEAN_name(),
-                facts: facts.file_calls.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::CalleeToCaller::GLEAN_name(),
-                facts: facts.callee_to_callers.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::ContainingTopLevelDeclaration::GLEAN_name(),
-                facts: facts
-                    .containing_top_level_declarations
-                    .into_iter()
-                    .map(json)
-                    .collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::XRefsViaNameByFile::GLEAN_name(),
-                facts: vec![json(xrefs_via_name_by_file_fact)],
-            },
-            GleanEntry::Predicate {
-                predicate: python::XRefsViaNameByTarget::GLEAN_name(),
-                facts: xrefs_by_target.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::DeclarationDocstring::GLEAN_name(),
-                facts: facts.declaration_docstrings.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: python::NameToSName::GLEAN_name(),
-                facts: facts.name_to_sname.into_iter().map(json).collect(),
-            },
-            GleanEntry::Predicate {
-                predicate: gencode::GenCode::GLEAN_name(),
-                facts: gencode_fact.map_or(vec![], |f| vec![json(f)]),
-            },
+            python::Name::new("".to_owned()).glean_entry(),
+            facts.modules.glean_entry(),
+            file_language_fact.glean_entry(),
+            file_lines.glean_entry(),
+            digest_fact.glean_entry(),
+            facts.decl_locations.glean_entry(),
+            facts.def_locations.glean_entry(),
+            facts.import_star_locations.glean_entry(),
+            facts.file_calls.glean_entry(),
+            facts.callee_to_callers.glean_entry(),
+            facts.containing_top_level_declarations.glean_entry(),
+            xrefs_via_name_by_file_fact.glean_entry(),
+            xrefs_by_target.glean_entry(),
+            facts.declaration_docstrings.glean_entry(),
+            facts.name_to_sname.glean_entry(),
+            gencode_fact.glean_entry(),
         ];
         Glean { entries }
     }
