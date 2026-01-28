@@ -334,15 +334,28 @@ impl<'a> BindingsBuilder<'a> {
             } => {
                 // Uninitialized local errors are only reported when we are neither in a stub
                 // nor a static type context.
-                if !used_in_static_type
-                    && !self.module_info.path().is_interface()
-                    && let Some(error_message) = is_initialized.as_error_message(&name.id)
-                {
-                    self.error(
-                        name.range,
-                        ErrorInfo::Kind(ErrorKind::UnboundName),
-                        error_message,
-                    );
+                if !used_in_static_type && !self.module_info.path().is_interface() {
+                    if let Some(termination_keys) = is_initialized
+                        .deferred_termination_keys()
+                        .map(|s| s.to_vec())
+                    {
+                        // Defer the uninitialized check to solve time.
+                        // At solve time, we'll check if all termination keys have Never type.
+                        self.insert_binding(
+                            KeyExpect::UninitializedCheck(name.range),
+                            BindingExpect::UninitializedCheck {
+                                name: name.id.clone(),
+                                range: name.range,
+                                termination_keys,
+                            },
+                        );
+                    } else if let Some(error_message) = is_initialized.as_error_message(&name.id) {
+                        self.error(
+                            name.range,
+                            ErrorInfo::Kind(ErrorKind::UnboundName),
+                            error_message,
+                        );
+                    }
                 }
 
                 // For static type context, create binding immediately since it

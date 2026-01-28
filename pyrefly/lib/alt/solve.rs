@@ -1797,7 +1797,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             BindingExpect::UninitializedCheck { .. } => {
                 // TODO: Implement solve-time uninitialized variable checking.
                 // This will be implemented in a follow-up commit.
-                unreachable!("UninitializedCheck bindings are not yet created")
             }
         }
         Arc::new(EmptyAnswer)

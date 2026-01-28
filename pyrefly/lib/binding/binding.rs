@@ -655,6 +655,8 @@ pub enum KeyExpect {
     MatchExhaustiveness(TextRange),
     /// Private attribute access validation.
     PrivateAttributeAccess(TextRange),
+    /// Deferred uninitialized variable check.
+    UninitializedCheck(TextRange),
 }
 
 impl Ranged for KeyExpect {
@@ -667,7 +669,8 @@ impl Ranged for KeyExpect {
             | KeyExpect::Redefinition(range)
             | KeyExpect::Bool(range)
             | KeyExpect::MatchExhaustiveness(range)
-            | KeyExpect::PrivateAttributeAccess(range) => *range,
+            | KeyExpect::PrivateAttributeAccess(range)
+            | KeyExpect::UninitializedCheck(range) => *range,
         }
     }
 }
@@ -683,6 +686,7 @@ impl DisplayWith<ModuleInfo> for KeyExpect {
             KeyExpect::Bool(r) => ("Bool", r),
             KeyExpect::MatchExhaustiveness(r) => ("MatchExhaustiveness", r),
             KeyExpect::PrivateAttributeAccess(r) => ("PrivateAttributeAccess", r),
+            KeyExpect::UninitializedCheck(r) => ("UninitializedCheck", r),
         };
         write!(f, "KeyExpect::{}({})", name, ctx.display(range))
     }

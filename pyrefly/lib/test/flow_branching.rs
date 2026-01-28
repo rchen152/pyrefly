@@ -1546,7 +1546,6 @@ def f(x: int) -> str:
 );
 
 testcase!(
-    bug = "False positive: variable declared before if/elif/else with NoReturn else branch",
     test_declared_variable_with_noreturn_else_false_positive,
     r#"
 from typing import NoReturn
@@ -1555,19 +1554,13 @@ def raises() -> NoReturn:
     raise Exception()
 
 def f(x: int) -> str:
-    # Variable is declared (with type annotation) but not initialized.
-    # This creates a FlowStyle::Uninitialized entry that flows into all branches.
     y: str
     if x == 1:
         y = "one"
     elif x == 2:
         y = "two"
     else:
-        raises()  # NoReturn - this branch never completes
-    # All completing branches define y, so this should NOT produce a warning.
-    # But currently we get a false positive because the Uninitialized style
-    # from the else branch (which inherits from before the if) is included
-    # in the style merge.
-    return y  # E: `y` may be uninitialized
+        raises()
+    return y
 "#,
 );

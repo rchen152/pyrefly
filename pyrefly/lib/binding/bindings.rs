@@ -136,7 +136,6 @@ pub enum InitializedInFlow {
     No,
     /// Initialization depends on whether these termination keys have Never type.
     /// If ALL termination keys are Never, the variable is initialized; otherwise it may be uninitialized.
-    #[allow(dead_code)] // Used in commit 3/4
     DeferredCheck(Vec<Idx<Key>>),
 }
 
@@ -150,7 +149,6 @@ impl InitializedInFlow {
         }
     }
 
-    #[allow(dead_code)] // Used in commit 3/4
     pub fn deferred_termination_keys(&self) -> Option<&[Idx<Key>]> {
         match self {
             InitializedInFlow::DeferredCheck(keys) => Some(keys),
