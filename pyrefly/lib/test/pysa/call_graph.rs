@@ -2909,7 +2909,7 @@ def foo(obj: Token):
                             init_targets: vec![],
                             new_targets: vec![],
                             higher_order_parameters: HashMap::new(),
-                            unresolved: Unresolved::True(UnresolvedReason::EmptyPyreflyTarget),
+                            unresolved: Unresolved::True(UnresolvedReason::EmptyPyreflyCallTarget),
                         },
                         property_setters: vec![],
                         property_getters: vec![],
@@ -6930,6 +6930,36 @@ def foo():
                         .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
                         .with_return_type(ScalarTypeProperties::int())
                         .with_receiver_class_for_test("builtins.dict", context),
+                ]),
+            )],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_callable_global_variable,
+    TEST_MODULE_NAME,
+    r#"
+class P:
+  def __call__(self, arg: str) -> str: ...
+
+def returns_p() -> P: ...
+
+p: P = returns_p()
+
+def foo() -> str:
+  return p("a")
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.foo",
+            vec![(
+                "10:10-10:16",
+                regular_call_callees(vec![
+                    create_call_target("test.P.__call__", TargetType::Function)
+                        .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                        .with_implicit_dunder_call(true)
+                        .with_receiver_class_for_test("test.P", context),
                 ]),
             )],
         )]

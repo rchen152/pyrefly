@@ -483,7 +483,7 @@ pub enum UnresolvedReason {
     // Unexpected pyrefly::CallTarget type.
     UnexpectedPyreflyTarget,
     // Empty pyrefly::CallTarget type.
-    EmptyPyreflyTarget,
+    EmptyPyreflyCallTarget,
     // Could not find the given field on a class or its parents.
     UnknownClassField,
     // The given field can only be found in `object`.
@@ -800,6 +800,19 @@ impl<Function: FunctionTrait> CallCallees<Function> {
         }
         self.unresolved = self.unresolved.clone().join(other.unresolved);
     }
+
+    // If this is the `if_called` of an attribute access or name access, and it is
+    // empty because the attribute/name isn't a function, normalize the result.
+    fn strip_unresolved_if_called(&mut self) {
+        if self.call_targets.is_empty()
+            && self.init_targets.is_empty()
+            && self.new_targets.is_empty()
+            && self.higher_order_parameters.is_empty()
+            && self.unresolved == Unresolved::True(UnresolvedReason::EmptyPyreflyCallTarget)
+        {
+            self.unresolved = Unresolved::False;
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -865,6 +878,10 @@ impl<Function: FunctionTrait> AttributeAccessCallees<Function> {
         self.global_targets.sort();
         self.global_targets.dedup();
     }
+
+    fn strip_unresolved_if_called(&mut self) {
+        self.if_called.strip_unresolved_if_called();
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -912,6 +929,10 @@ impl<Function: FunctionTrait> IdentifierCallees<Function> {
         self.global_targets.dedup();
         self.captured_variables.sort();
         self.captured_variables.dedup();
+    }
+
+    fn strip_unresolved_if_called(&mut self) {
+        self.if_called.strip_unresolved_if_called();
     }
 }
 
@@ -2266,7 +2287,7 @@ impl<'a> CallGraphVisitor<'a> {
                         "Empty pyrefly target CallTargetLookup::Ok([]) or Error([]) for `{}`",
                         callee_expr.display_with(self.module_context),
                     );
-                    CallCallees::new_unresolved(UnresolvedReason::EmptyPyreflyTarget)
+                    CallCallees::new_unresolved(UnresolvedReason::EmptyPyreflyCallTarget)
                 } else {
                     targets
                         .into_iter()
@@ -2287,6 +2308,14 @@ impl<'a> CallGraphVisitor<'a> {
                         })
                         .unwrap()
                 }
+            }
+            None => {
+                debug_println!(
+                    self.debug,
+                    "Empty pyrefly target `None` for `{}`",
+                    callee_expr.display_with(self.module_context),
+                );
+                CallCallees::new_unresolved(UnresolvedReason::EmptyPyreflyCallTarget)
             }
             _ => {
                 debug_println!(
@@ -2379,32 +2408,31 @@ impl<'a> CallGraphVisitor<'a> {
         }
 
         // Check if this is a global variable.
-        if let Some(global) = go_to_definition.as_ref().and_then(|definition| {
-            let module_id = self
-                .module_context
-                .module_ids
-                .get(ModuleKey::from_module(&definition.module))?;
+        let global_targets = if let Some(global) =
+            go_to_definition.as_ref().and_then(|definition| {
+                let module_id = self
+                    .module_context
+                    .module_ids
+                    .get(ModuleKey::from_module(&definition.module))?;
 
-            self.global_variables
-                .get_for_module(module_id)?
-                .get(ShortIdentifier::from_text_range(
-                    definition.definition_range,
-                ))
-                .map(|global_var| GlobalVariableRef {
-                    module_id,
-                    module_name: definition.module.name(),
-                    name: global_var.name.clone(),
-                })
-        }) {
-            return IdentifierCallees {
-                if_called: CallCallees::empty(),
-                global_targets: vec![global],
-                captured_variables: vec![],
-            };
-        }
+                self.global_variables
+                    .get_for_module(module_id)?
+                    .get(ShortIdentifier::from_text_range(
+                        definition.definition_range,
+                    ))
+                    .map(|global_var| GlobalVariableRef {
+                        module_id,
+                        module_name: definition.module.name(),
+                        name: global_var.name.clone(),
+                    })
+            }) {
+            vec![global]
+        } else {
+            vec![]
+        };
 
         // Check if this is a captured variable.
-        if let Some(current_function) = self.current_function.as_ref()
+        let captured_variables = if let Some(current_function) = self.current_function.as_ref()
             && let Some(current_module_captured_variables) = self
                 .captured_variables
                 .get_for_module(self.module_context.module_id)
@@ -2415,14 +2443,11 @@ impl<'a> CallGraphVisitor<'a> {
                 .map(|outer_function| CapturedVariableRef {
                     outer_function,
                     name: name.id().clone(),
-                })
-        {
-            return IdentifierCallees {
-                if_called: CallCallees::empty(),
-                global_targets: vec![],
-                captured_variables: vec![captured],
-            };
-        }
+                }) {
+            vec![captured]
+        } else {
+            vec![]
+        };
 
         let callee_type = self.module_context.answers.get_type_trace(name.range());
         let callee_expr = Some(AnyNodeRef::from(name));
@@ -2450,8 +2475,8 @@ impl<'a> CallGraphVisitor<'a> {
         );
         IdentifierCallees {
             if_called: callees,
-            global_targets: vec![],
-            captured_variables: vec![],
+            global_targets,
+            captured_variables,
         }
     }
 
@@ -3643,11 +3668,12 @@ impl<'a> CallGraphVisitor<'a> {
                     "Resolving callees for name `{}`",
                     expr.display_with(self.module_context)
                 );
-                let callees = self.resolve_name(
+                let mut callees = self.resolve_name(
                     name,
                     /* call_arguments */ None,
                     self.get_return_type_for_callee(expr_type().as_ref()), // This is the return type when `expr` is called
                 );
+                callees.strip_unresolved_if_called();
                 if !callees.is_empty() {
                     self.add_callees(
                         ExpressionIdentifier::expr_name(name, &self.module_context.module_info),
@@ -3662,7 +3688,7 @@ impl<'a> CallGraphVisitor<'a> {
                     expr.display_with(self.module_context)
                 );
                 let callee_expr = Some(AnyNodeRef::from(attribute));
-                let callees = self.resolve_attribute_access(
+                let mut callees = self.resolve_attribute_access(
                     &attribute.value,
                     attribute.attr.id(),
                     callee_expr,
@@ -3672,6 +3698,7 @@ impl<'a> CallGraphVisitor<'a> {
                     self.get_return_type_for_callee(expr_type().as_ref()), // This is the return type when `expr` is called
                     assignment_targets(current_statement),
                 );
+                callees.strip_unresolved_if_called();
                 if !callees.is_empty() {
                     self.add_callees(
                         ExpressionIdentifier::regular(
