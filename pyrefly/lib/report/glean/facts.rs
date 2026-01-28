@@ -32,3 +32,8 @@ pub enum GleanEntry {
 pub fn json(x: impl Serialize) -> Value {
     serde_json::to_value(x).unwrap()
 }
+
+pub trait GleanPredicate {
+    #[allow(non_snake_case)]
+    fn GLEAN_name() -> String;
+}
