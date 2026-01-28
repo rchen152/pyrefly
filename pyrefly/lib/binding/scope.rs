@@ -472,7 +472,10 @@ impl Flow {
 /// Bound names can accumulate facet narrows from long assignment chains (e.g. huge
 /// literal dictionaries). Limiting how many consecutive narrows we remember keeps
 /// the flow graph shallow enough to avoid recursive explosions in the solver.
-const MAX_FLOW_NARROW_DEPTH: usize = 512;
+///
+/// When this limit is reached, lookups return the base value instead of the narrow
+/// chain, breaking the recursion. This is checked in `FlowInfo::idx()`.
+const MAX_FLOW_NARROW_DEPTH: usize = 100;
 
 /// Flow information about a name. At least one of `narrow` and `value` will always
 /// be non-None (although in some cases the value may have FlowStyle::Uninitialized,
@@ -563,12 +566,14 @@ impl FlowInfo {
         }
     }
 
-    fn clear_narrow(&mut self) {
-        self.narrow = None;
-        self.narrow_depth = 0;
-    }
-
     fn idx(&self) -> Idx<Key> {
+        // When the narrow depth limit is exceeded, return the base value instead
+        // of the narrow chain to break recursion in the solver.
+        if self.narrow_depth >= MAX_FLOW_NARROW_DEPTH
+            && let Some(FlowValue { idx, .. }) = &self.value
+        {
+            return *idx;
+        }
         match (&self.narrow, &self.value) {
             (Some(FlowNarrow { idx, .. }), _) => *idx,
             (None, Some(FlowValue { idx, .. })) => *idx,
@@ -1679,11 +1684,7 @@ impl Scopes {
                 e.insert(FlowInfo::new_narrow(idx));
             }
             Entry::Occupied(mut e) => {
-                let mut info = e.get().clone();
-                if info.narrow_depth >= MAX_FLOW_NARROW_DEPTH {
-                    info.clear_narrow();
-                }
-                *e.get_mut() = info.updated_narrow(idx, in_loop);
+                *e.get_mut() = e.get().updated_narrow(idx, in_loop);
             }
         }
     }

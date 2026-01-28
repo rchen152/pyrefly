@@ -404,13 +404,12 @@ def use2(mapping: NotDict) -> None:
 
 // This test verifies behavior related to MAX_FLOW_NARROW_DEPTH in scope.rs.
 // By assigning to the same key repeatedly, we increment the narrow depth.
-// The depth limit should break the narrow chain to prevent stack overflow,
-// but currently the limit (512) is too high and the check happens too late.
+// After exceeding the depth limit (100), the narrow chain is broken and we
+// fall back to the base type to prevent stack overflow during solving.
 testcase!(
-    bug = "MAX_FLOW_NARROW_DEPTH check is ineffective; should limit to ~100 and check in idx()",
     test_many_consecutive_subscript_assigns,
     r#"
-from typing import assert_type, Literal
+from typing import assert_type
 
 def test() -> None:
     d: dict[str, int] = {}
@@ -519,9 +518,8 @@ def test() -> None:
     d["k"] = 102
     d["k"] = 103
     d["k"] = 104
-    # After 105 assignments, the narrow depth limit should be exceeded and we
-    # should fall back to `int`. But currently we still track Literal[104]
-    # because MAX_FLOW_NARROW_DEPTH=512 is too high and the check is ineffective.
-    assert_type(d["k"], Literal[104])
+    # After 105 assignments, the narrow depth limit (100) is exceeded and we
+    # fall back to `int` instead of tracking the literal value.
+    assert_type(d["k"], int)
 "#,
 );
