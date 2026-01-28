@@ -56,6 +56,7 @@ mod protocol;
 mod pydantic;
 mod pysa;
 mod query;
+mod recursive_alias;
 mod redundant_cast;
 mod returns;
 mod scope;
