@@ -469,10 +469,8 @@ impl ReportArgs {
         }
 
         let mut report: HashMap<String, FileReport> = HashMap::new();
-
+        transaction.run(handles.as_slice(), Require::Everything);
         for handle in handles {
-            transaction.run(&[handle.dupe()], Require::Everything);
-
             if let Some(bindings) = transaction.get_bindings(&handle)
                 && let Some(module) = transaction.get_module_info(&handle)
                 && let Some(answers) = transaction.get_answers(&handle)
