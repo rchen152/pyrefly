@@ -295,6 +295,25 @@ class F(Generic[_b]):
 );
 
 testcase!(
+    bug = "conformance: Constrained TypeVar with subtype should resolve to constraint, not subtype",
+    test_constrained_typevar_subtype_resolves_to_constraint,
+    r#"
+from typing import TypeVar, assert_type
+
+AnyStr = TypeVar("AnyStr", str, bytes)
+
+def concat(x: AnyStr, y: AnyStr) -> AnyStr:
+    return x + y  # E: `+` is not supported  # E: `+` is not supported
+
+class MyStr(str): ...
+
+def test(m: MyStr, s: str):
+    assert_type(concat(m, m), str)  # E: assert_type(MyStr, str) failed
+    assert_type(concat(m, s), str)  # E: assert_type(MyStr, str) failed  # E: Argument `str` is not assignable to parameter `y` with type `MyStr`
+"#,
+);
+
+testcase!(
     bug = "Update should know about string arguments",
     test_dict_update,
     r#"
