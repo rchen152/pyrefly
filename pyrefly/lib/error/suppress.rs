@@ -43,8 +43,13 @@ pub struct SuppressableError {
 
 impl SuppressableError {
     /// Creates a SuppressableError from an internal Error.
-    /// Returns None if the error is not from a filesystem path.
+    /// Returns None if the error is not from a filesystem path or if the error
+    /// is an UnusedIgnore (which cannot be suppressed).
     pub fn from_error(error: &Error) -> Option<Self> {
+        // UnusedIgnore errors cannot be suppressed
+        if error.error_kind() == pyrefly_config::error_kind::ErrorKind::UnusedIgnore {
+            return None;
+        }
         if let ModulePathDetails::FileSystem(path) = error.path().details() {
             Some(Self {
                 path: (**path).clone(),
