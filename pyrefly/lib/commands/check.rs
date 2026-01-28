@@ -184,7 +184,6 @@ impl SnippetCheckArgs {
                 suppress_errors: false,
                 expectations: false,
                 remove_unused_ignores: false,
-                all: false,
             },
         };
         match check_args.run_once_with_snippet(self.code, config_finder) {
@@ -305,9 +304,6 @@ struct BehaviorArgs {
     /// Remove unused ignores from the input files.
     #[arg(long)]
     remove_unused_ignores: bool,
-    /// If we are removing unused ignores, should we remove all unused ignores or only Pyrefly specific `pyrefly: ignore`s?
-    #[arg(long, requires("remove_unused_ignores"))]
-    all: bool,
 }
 
 impl OutputFormat {
@@ -1024,7 +1020,8 @@ impl CheckArgs {
         }
         if self.behavior.remove_unused_ignores {
             // TODO: Move this into separate command
-            suppress::remove_unused_ignores(&loads, self.behavior.all);
+            let unused_errors = loads.collect_unused_ignore_errors();
+            suppress::remove_unused_ignores(unused_errors);
         }
         if self.behavior.expectations {
             loads.check_against_expectations()?;
