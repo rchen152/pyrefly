@@ -1582,6 +1582,7 @@ impl<'a> Transaction<'a> {
 
     /// Compute the transitive dependencies of the given handles.
     /// Returns a set of all handles that are direct or transitive dependencies.
+    #[expect(dead_code)]
     fn compute_transitive_deps(&self, handles: &[Handle]) -> HashSet<Handle> {
         let mut visited: HashSet<Handle> = HashSet::new();
         let mut to_visit: Vec<Handle> = handles.iter().map(|h| h.dupe()).collect();
@@ -1625,11 +1626,8 @@ impl<'a> Transaction<'a> {
 
     fn run_internal(&mut self, handles: &[Handle], require: Require) -> Result<(), Cancelled> {
         let run_number = self.data.state.run_count.fetch_add(1, Ordering::SeqCst);
-        let transitive_deps_of_handles = if handles.is_empty() {
-            HashSet::new()
-        } else {
-            self.compute_transitive_deps(handles)
-        };
+        // TODO(dannyyang): fix tdeps regression
+        let transitive_deps_of_handles = HashSet::new();
         // We first compute all the modules that are either new or have changed.
         // Then we repeatedly compute all the modules who depend on modules that changed.
         //
