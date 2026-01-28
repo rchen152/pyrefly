@@ -1507,6 +1507,45 @@ def f(x: int | str):
 );
 
 testcase!(
+    bug = "We should detect that x may be uninitialized, but termination keys cause false negative",
+    test_non_noreturn_with_termination_key_false_negative,
+    r#"
+from typing import assert_type
+
+def maybe_raises() -> None:
+    """Not NoReturn - might return normally."""
+    if True:
+        raise Exception()
+
+def f(cond: bool) -> str:
+    if cond:
+        x = "defined"
+    else:
+        maybe_raises()  # Has termination key, but is NOT NoReturn
+    return x  # Should error: `x` may be uninitialized
+"#,
+);
+
+testcase!(
+    bug = "We should detect that y may be uninitialized, but termination keys cause false negative",
+    test_non_noreturn_elif_false_negative,
+    r#"
+def maybe_raises() -> None:
+    if True:
+        raise Exception()
+
+def f(x: int) -> str:
+    if x == 1:
+        y = "one"
+    elif x == 2:
+        maybe_raises()
+    else:
+        maybe_raises()
+    return y  # Should error: `y` may be uninitialized
+"#,
+);
+
+testcase!(
     bug = "False positive: variable declared before if/elif/else with NoReturn else branch",
     test_declared_variable_with_noreturn_else_false_positive,
     r#"
