@@ -134,6 +134,10 @@ pub enum InitializedInFlow {
     Yes,
     Conditionally,
     No,
+    /// Initialization depends on whether these termination keys have Never type.
+    /// If ALL termination keys are Never, the variable is initialized; otherwise it may be uninitialized.
+    #[allow(dead_code)] // Used in commit 3/4
+    DeferredCheck(Vec<Idx<Key>>),
 }
 
 impl InitializedInFlow {
@@ -142,6 +146,15 @@ impl InitializedInFlow {
             InitializedInFlow::Yes => None,
             InitializedInFlow::Conditionally => Some(format!("`{name}` may be uninitialized")),
             InitializedInFlow::No => Some(format!("`{name}` is uninitialized")),
+            InitializedInFlow::DeferredCheck(_) => None, // Checked at solve time
+        }
+    }
+
+    #[allow(dead_code)] // Used in commit 3/4
+    pub fn deferred_termination_keys(&self) -> Option<&[Idx<Key>]> {
+        match self {
+            InitializedInFlow::DeferredCheck(keys) => Some(keys),
+            _ => None,
         }
     }
 }

@@ -1794,6 +1794,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             BindingExpect::PrivateAttributeAccess(expectation) => {
                 self.check_private_attribute_access(expectation, errors);
             }
+            BindingExpect::UninitializedCheck { .. } => {
+                // TODO: Implement solve-time uninitialized variable checking.
+                // This will be implemented in a follow-up commit.
+                unreachable!("UninitializedCheck bindings are not yet created")
+            }
         }
         Arc::new(EmptyAnswer)
     }

@@ -742,6 +742,19 @@ pub enum BindingExpect {
     },
     /// Track private attribute accesses that need semantic validation.
     PrivateAttributeAccess(PrivateAttributeAccessCheck),
+    /// Deferred check for uninitialized variables. This is a "dangling" binding
+    /// that doesn't affect any other types - it only exists to emit an error at
+    /// solve time if any of the termination keys don't have Never type.
+    UninitializedCheck {
+        /// The variable name (for error messages).
+        name: Name,
+        /// The range of the variable usage (for error location).
+        range: TextRange,
+        /// Termination keys from branches that don't define the variable.
+        /// At solve time, we check if ALL of these have Never type.
+        /// If any don't, the variable may be uninitialized.
+        termination_keys: Vec<Idx<Key>>,
+    },
 }
 
 impl DisplayWith<Bindings> for BindingExpect {
@@ -813,6 +826,19 @@ impl DisplayWith<Bindings> for BindingExpect {
                     "MatchExhaustiveness({}, {})",
                     ctx.display(*subject_idx),
                     ctx.module().display(range)
+                )
+            }
+            Self::UninitializedCheck {
+                name,
+                range,
+                termination_keys,
+            } => {
+                write!(
+                    f,
+                    "UninitializedCheck({}, {}, {:?})",
+                    name,
+                    ctx.module().display(range),
+                    termination_keys
                 )
             }
         }
