@@ -2449,35 +2449,46 @@ impl<'a> CallGraphVisitor<'a> {
             vec![]
         };
 
-        let callee_type = self.module_context.answers.get_type_trace(name.range());
-        let callee_expr = Some(AnyNodeRef::from(name));
-        let callee_expr_suffix = Some(name.id.as_str());
-
-        // There is no go-to-definition when for example an `ExprName` is a class definition,
-        // a local variable, or a parameter.
-        let pyrefly_target = self
-            .module_context
-            .transaction
-            .ad_hoc_solve(&self.module_context.handle, |solver| {
-                callee_type
-                    .as_ref()
-                    .map(|type_| solver.as_call_target(type_.clone()))
-            })
-            .flatten();
-        let callees = self.resolve_pyrefly_target(
-            pyrefly_target,
-            callee_expr,
-            callee_type.as_ref(),
+        let callees = self.resolve_callees_from_expression_type(
+            /* expression */ Some(AnyNodeRef::from(name)),
+            /* expression_type */
+            self.module_context
+                .answers
+                .get_type_trace(name.range())
+                .as_ref(),
             return_type,
-            callee_expr_suffix,
-            /* unknown_callee_as_direct_call */ true,
-            /* exclude_object_methods */ false,
+            /* expression_suffix */ Some(name.id.as_str()),
         );
         IdentifierCallees {
             if_called: callees,
             global_targets,
             captured_variables,
         }
+    }
+
+    fn resolve_callees_from_expression_type(
+        &self,
+        expression: Option<AnyNodeRef>,
+        expression_type: Option<&Type>,
+        return_type: ScalarTypeProperties,
+        expression_suffix: Option<&str>,
+    ) -> CallCallees<FunctionRef> {
+        let pyrefly_target = self
+            .module_context
+            .transaction
+            .ad_hoc_solve(&self.module_context.handle, |solver| {
+                expression_type.map(|type_| solver.as_call_target(type_.clone()))
+            })
+            .flatten();
+        self.resolve_pyrefly_target(
+            pyrefly_target,
+            expression,
+            expression_type,
+            return_type,
+            /* callee_expr_suffix */ expression_suffix,
+            /* unknown_callee_as_direct_call */ true,
+            /* exclude_object_methods */ false,
+        )
     }
 
     fn call_targets_from_magic_dunder_attr(
@@ -2710,7 +2721,7 @@ impl<'a> CallGraphVisitor<'a> {
                         })
                 });
 
-        let has_non_property_callees = !non_property_callees.is_empty();
+        let has_property_callees = !property_callees.is_empty();
         let (property_setters, property_getters) = if is_assignment_lhs {
             (property_callees, vec![])
         } else {
@@ -2718,29 +2729,42 @@ impl<'a> CallGraphVisitor<'a> {
         };
 
         let unknown_callee_as_direct_call = true;
-        let if_called = CallCallees {
-            call_targets: non_property_callees
-                .into_iter()
-                .map(|function| {
-                    self.call_target_from_static_or_virtual_call(
-                        function,
-                        callee_expr,
-                        callee_type,
-                        receiver_type.as_ref(),
-                        return_type,
-                        callee_expr_suffix,
-                        /* override_implicit_receiver*/ None,
-                        /* override_is_direct_call */ None,
-                        unknown_callee_as_direct_call,
-                    )
-                })
-                .collect::<Vec<_>>(),
-            init_targets: vec![],
-            new_targets: vec![],
-            higher_order_parameters: HashMap::new(),
-            unresolved: Unresolved::False,
+        let if_called = if non_property_callees.is_empty() {
+            // If a property returns a callable, we can resolve its callees using the attribute access type.
+            self.resolve_callees_from_expression_type(
+                /* expression */ callee_expr,
+                /* expression_type */ callee_type,
+                return_type,
+                /* expression_suffix */ callee_expr_suffix,
+            )
+        } else {
+            CallCallees {
+                call_targets: non_property_callees
+                    .into_iter()
+                    .map(|function| {
+                        self.call_target_from_static_or_virtual_call(
+                            function,
+                            callee_expr,
+                            callee_type,
+                            receiver_type.as_ref(),
+                            return_type,
+                            callee_expr_suffix,
+                            /* override_implicit_receiver*/ None,
+                            /* override_is_direct_call */ None,
+                            unknown_callee_as_direct_call,
+                        )
+                    })
+                    .collect::<Vec<_>>(),
+                init_targets: vec![],
+                new_targets: vec![],
+                higher_order_parameters: HashMap::new(),
+                unresolved: Unresolved::False,
+            }
         };
         AttributeAccessCallees {
+            // Don't treat attributes that are functions (those are usually methods) as "regular" attributes so we don't propagate taint from the base to the attribute
+            is_attribute: (if_called.is_empty() && !has_property_callees)
+                || !global_targets.is_empty(),
             if_called,
             property_setters: property_setters
                 .into_iter()
@@ -2783,8 +2807,6 @@ impl<'a> CallGraphVisitor<'a> {
                     })
                     .collect::<Vec<_>>()
             },
-            // TODO: Should be `false` if `non_property_callees` are non-empty but are functions, since functions rarely propagate taint.
-            is_attribute: has_non_property_callees || !global_targets.is_empty(),
             global_targets,
         }
     }

@@ -479,7 +479,7 @@ fn property_setter_callees(
     })
 }
 
-fn regular_attribute_access_callees(
+fn attribute_access_callable_callees(
     call_targets: Vec<CallTarget<FunctionRefForTest>>,
 ) -> ExpressionCallees<FunctionRefForTest> {
     ExpressionCallees::AttributeAccess(AttributeAccessCallees {
@@ -493,7 +493,7 @@ fn regular_attribute_access_callees(
         property_setters: vec![],
         property_getters: vec![],
         global_targets: vec![],
-        is_attribute: true,
+        is_attribute: false,
     })
 }
 
@@ -2245,7 +2245,7 @@ def foo(c: C) -> int:
                     init_targets: vec![],
                     new_targets: vec![],
                     higher_order_parameters: HashMap::new(),
-                    unresolved: Unresolved::False,
+                    unresolved: Unresolved::True(UnresolvedReason::UnexpectedPyreflyTarget),
                 }),
             )],
         )]
@@ -2366,7 +2366,7 @@ def f(foo: Foo):
                 ),
                 (
                     "8:13-8:20",
-                    regular_attribute_access_callees(foo_bar.clone()),
+                    attribute_access_callable_callees(foo_bar.clone()),
                 ),
                 ("8:22-8:25|identifier|baz", regular_identifier_callees(baz)),
                 (
@@ -2949,7 +2949,7 @@ def foo(obj: Token):
                 ),
                 (
                     "5:3-5:30|artificial-attribute-access|get-attr-constant-literal",
-                    regular_attribute_access_callees(token),
+                    attribute_access_callable_callees(token),
                 ),
                 (
                     "5:3-5:32",
@@ -5225,7 +5225,7 @@ def foo(c: C):
             "test.foo",
             vec![(
                 "6:7-6:10",
-                regular_attribute_access_callees(vec![
+                attribute_access_callable_callees(vec![
                     create_call_target("test.C.m", TargetType::Function)
                         .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
                         .with_receiver_class_for_test("test.C", context),
@@ -6962,6 +6962,45 @@ def foo() -> str:
                         .with_receiver_class_for_test("test.P", context),
                 ]),
             )],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_implicit_dunder_call,
+    TEST_MODULE_NAME,
+    r#"
+class PropertyCallableReturn:
+    def __init__(self, x: str) -> None:
+        self.x = x
+    def __call__(self, y):
+        return self.x
+class PropertyCallable:
+    def __init__(self, z: str) -> None:
+        self.z = z
+    @property
+    def attribute(self) -> PropertyCallableReturn:
+        return PropertyCallableReturn("")
+def foo(x: PropertyCallable, y: PropertyCallableReturn):
+    x.attribute(0)
+    y(0)
+"#,
+    &|context: &ModuleContext| {
+        let dunder_call_target = vec![
+            create_call_target("test.PropertyCallableReturn.__call__", TargetType::Function)
+                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                .with_implicit_dunder_call(true)
+                .with_receiver_class_for_test("test.PropertyCallableReturn", context),
+        ];
+        vec![(
+            "test.foo",
+            vec![
+                (
+                    "14:5-14:19",
+                    regular_call_callees(dunder_call_target.clone()),
+                ),
+                ("15:5-15:9", regular_call_callees(dunder_call_target)),
+            ],
         )]
     }
 );
