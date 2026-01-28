@@ -556,3 +556,18 @@ def g(t: type):
     pass
     "#,
 );
+
+testcase!(
+    bug = "conformance: Should error on inconsistent type variable ordering in base classes",
+    test_inconsistent_type_var_ordering_in_bases,
+    r#"
+from typing import Generic, TypeVar
+
+T1 = TypeVar("T1")
+T2 = TypeVar("T2")
+
+class Grandparent(Generic[T1, T2]): ...
+class Parent(Grandparent[T1, T2]): ...
+class BadChild(Parent[T1, T2], Grandparent[T2, T1]): ...  # should be an error
+"#,
+);
