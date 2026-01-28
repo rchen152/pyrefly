@@ -2606,3 +2606,23 @@ def f(o: C):
         o.x.foo
     "#,
 );
+
+testcase!(
+    test_narrow_to_intersection_of_mapping_and_iterable,
+    r#"
+from collections.abc import Iterable, Mapping
+from typing import Any, assert_type
+
+def test1(arg: Mapping[str, int] | Iterable[tuple[str, int]]) -> None:
+    if isinstance(arg, Mapping):
+        assert_type(arg, Mapping[str, int] | Mapping[tuple[str, int], Any])
+    else:
+        assert_type(arg, Iterable[tuple[str, int]])
+
+def test2(arg: Mapping[str, int] | Iterable[tuple[str, int]]) -> None:
+    if not isinstance(arg, Mapping):
+        assert_type(arg, Iterable[tuple[str, int]])
+    else:
+        assert_type(arg, Mapping[str, int] | Mapping[tuple[str, int], Any])
+    "#,
+);
