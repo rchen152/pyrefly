@@ -13,6 +13,7 @@ use dupe::Dupe;
 use pyrefly_graph::index::Idx;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::dunder;
+use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_types::facet::FacetKind;
 use pyrefly_types::type_info::JoinStyle;
@@ -23,8 +24,11 @@ use pyrefly_util::prelude::SliceExt;
 use pyrefly_util::visit::Visit;
 use pyrefly_util::visit::VisitMut;
 use ruff_python_ast::Expr;
+use ruff_python_ast::ExprAttribute;
 use ruff_python_ast::ExprBinOp;
+use ruff_python_ast::ExprCall;
 use ruff_python_ast::ExprSubscript;
+use ruff_python_ast::Identifier;
 use ruff_python_ast::TypeParams;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
@@ -74,6 +78,7 @@ use crate::binding::binding::BindingUndecoratedFunction;
 use crate::binding::binding::BindingVariance;
 use crate::binding::binding::BindingYield;
 use crate::binding::binding::BindingYieldFrom;
+use crate::binding::binding::BranchInfo;
 use crate::binding::binding::EmptyAnswer;
 use crate::binding::binding::ExprOrBinding;
 use crate::binding::binding::FirstUse;
@@ -81,6 +86,8 @@ use crate::binding::binding::FunctionParameter;
 use crate::binding::binding::FunctionStubOrImpl;
 use crate::binding::binding::IsAsync;
 use crate::binding::binding::Key;
+use crate::binding::binding::KeyAnnotation;
+use crate::binding::binding::KeyClass;
 use crate::binding::binding::KeyExport;
 use crate::binding::binding::KeyLegacyTypeParam;
 use crate::binding::binding::KeyUndecoratedFunction;
@@ -89,11 +96,15 @@ use crate::binding::binding::LinkedKey;
 use crate::binding::binding::NoneIfRecursive;
 use crate::binding::binding::PrivateAttributeAccessCheck;
 use crate::binding::binding::RaisedException;
+use crate::binding::binding::ReturnExplicit;
+use crate::binding::binding::ReturnImplicit;
+use crate::binding::binding::ReturnType;
 use crate::binding::binding::ReturnTypeKind;
 use crate::binding::binding::SizeExpectation;
 use crate::binding::binding::SuperStyle;
 use crate::binding::binding::TypeParameter;
 use crate::binding::binding::UnpackedPosition;
+use crate::binding::narrow::NarrowOp;
 use crate::binding::narrow::NarrowingSubject;
 use crate::binding::narrow::identifier_and_chain_for_expr;
 use crate::binding::narrow::identifier_and_chain_prefix_for_expr;
@@ -2311,6 +2322,1340 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
+    // =========================================================================
+    // Helper functions for binding_to_type - extracted to reduce stack frame size
+    // =========================================================================
+
+    /// Handle `Binding::MatchExhaustive` - check if a match statement is exhaustive.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_match_exhaustive(
+        &self,
+        subject_idx: Idx<Key>,
+        subject_range: TextRange,
+        exhaustiveness_info: &Option<(NarrowingSubject, (Box<NarrowOp>, TextRange))>,
+    ) -> Type {
+        // If we couldn't determine narrowing info, conservatively assume not exhaustive
+        let Some((narrowing_subject, (op, narrow_range))) = exhaustiveness_info else {
+            return Type::None;
+        };
+
+        let subject_info = self.get_idx(subject_idx);
+        let mut subject_ty = subject_info.ty().clone();
+        self.expand_vars_mut(&mut subject_ty);
+
+        // Check if this type should have exhaustiveness checked
+        if !self.should_check_exhaustiveness(&subject_ty) {
+            return Type::None; // Not exhaustible, assume fall-through
+        }
+
+        let ignore_errors = self.error_swallower();
+        let narrowing_subject_info = match narrowing_subject {
+            NarrowingSubject::Name(_) => &subject_info,
+            NarrowingSubject::Facets(_, facets) => {
+                let Some(resolved_chain) = self.resolve_facet_chain(facets.chain.clone()) else {
+                    return Type::None;
+                };
+                let type_info = TypeInfo::of_ty(Type::any_implicit());
+                &type_info.with_narrow(resolved_chain.facets(), subject_ty.clone())
+            }
+        };
+
+        let narrowed = self.narrow(
+            narrowing_subject_info,
+            op.as_ref(),
+            *narrow_range,
+            &ignore_errors,
+        );
+
+        let mut remaining_ty = match narrowing_subject {
+            NarrowingSubject::Name(_) => narrowed.ty().clone(),
+            NarrowingSubject::Facets(_, facets) => {
+                let Some(resolved_chain) = self.resolve_facet_chain(facets.chain.clone()) else {
+                    return Type::None;
+                };
+                self.get_facet_chain_type(&narrowed, &resolved_chain, subject_range)
+            }
+        };
+        self.expand_vars_mut(&mut remaining_ty);
+
+        // If the result is `Never` then the cases were exhaustive
+        if remaining_ty.is_never() {
+            Type::never()
+        } else {
+            Type::None
+        }
+    }
+
+    /// Handle `Binding::PatternMatchClassPositional` - extract positional pattern from __match_args__.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_pattern_match_class_positional(
+        &self,
+        idx: usize,
+        key: Idx<Key>,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Type {
+        // TODO: check that value matches class
+        // TODO: check against duplicate keys (optional)
+        let binding = self.get_idx(key);
+        let context = || ErrorContext::MatchPositional(self.for_display(binding.ty().clone()));
+        let match_args = self
+            .attr_infer(&binding, &dunder::MATCH_ARGS, range, errors, Some(&context))
+            .into_ty();
+        match match_args {
+            Type::Tuple(Tuple::Concrete(ts)) => {
+                if idx < ts.len() {
+                    if let Some(Type::Literal(lit)) = ts.get(idx)
+                        && let Lit::Str(attr_name) = &lit.value
+                    {
+                        self.attr_infer(
+                            &binding,
+                            &Name::new(attr_name),
+                            range,
+                            errors,
+                            Some(&context),
+                        )
+                        .into_ty()
+                    } else {
+                        self.error(
+                            errors,
+                            range,
+                            ErrorInfo::Context(&context),
+                            format!(
+                                "Expected literal string in `__match_args__`, got `{}`",
+                                ts[idx]
+                            ),
+                        )
+                    }
+                } else {
+                    self.error(
+                        errors,
+                        range,
+                        ErrorInfo::Context(&context),
+                        format!("Index {idx} out of range for `__match_args__`"),
+                    )
+                }
+            }
+            Type::Any(AnyStyle::Error) => match_args,
+            _ => self.error(
+                errors,
+                range,
+                ErrorInfo::Context(&context),
+                format!("Expected concrete tuple for `__match_args__`, got `{match_args}`",),
+            ),
+        }
+    }
+
+    /// Handle `Binding::NameAssign` - process name assignment with optional annotation.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_name_assign(
+        &self,
+        name: &Name,
+        annot_key: Option<(AnnotationStyle, Idx<KeyAnnotation>)>,
+        expr: &Expr,
+        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
+        is_in_function_scope: bool,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let (has_type_alias_qualifier, ty) = match annot_key.as_ref() {
+            // First infer the type as a normal value
+            Some((style, k)) => {
+                let annot = self.get_idx(*k);
+                let tcc: &dyn Fn() -> TypeCheckContext = &|| {
+                    TypeCheckContext::of_kind(match style {
+                        AnnotationStyle::Direct => TypeCheckKind::AnnAssign,
+                        AnnotationStyle::Forwarded => TypeCheckKind::AnnotatedName(name.clone()),
+                    })
+                };
+                if annot.annotation.is_final() && style == &AnnotationStyle::Forwarded {
+                    self.error(
+                        errors,
+                        expr.range(),
+                        ErrorInfo::Kind(ErrorKind::BadAssignment),
+                        format!("`{name}` is marked final"),
+                    );
+                }
+                let annot_ty = annot.ty(self.stdlib);
+                let hint = annot_ty.as_ref().map(|t| (t, tcc));
+                let expr_ty = self.expr(expr, hint, errors);
+                let ty = if style == &AnnotationStyle::Direct {
+                    // For direct assignments, user-provided annotation takes
+                    // precedence over inferred expr type.
+                    annot_ty.unwrap_or(expr_ty)
+                } else {
+                    // For forwarded assignment, user-provided annotation is treated
+                    // as just an upper-bound hint.
+                    expr_ty
+                };
+                (
+                    Some(annot.annotation.qualifiers.contains(&Qualifier::TypeAlias)),
+                    ty,
+                )
+            }
+            None if matches!(expr, Expr::EllipsisLiteral(_))
+                && self.module().path().is_interface() =>
+            {
+                // `x = ...` in a stub file means that the type of `x` is unknown
+                (None, Type::any_implicit())
+            }
+            None => (None, self.expr(expr, None, errors)),
+        };
+        let is_bare_annotated = has_type_alias_qualifier != Some(true)
+            && matches!(expr, Expr::Name(_) | Expr::Attribute(_))
+            && matches!(
+                &ty,
+                Type::Type(inner)
+                    if matches!(inner.as_ref(), Type::SpecialForm(SpecialForm::Annotated))
+            );
+        if is_bare_annotated {
+            ty
+        } else {
+            // Then, handle the possibility that we need to treat the type as a type alias
+            match has_type_alias_qualifier {
+                Some(true) => self.as_type_alias(
+                    name,
+                    TypeAliasStyle::LegacyExplicit,
+                    ty,
+                    expr,
+                    None,
+                    legacy_tparams,
+                    errors,
+                ),
+                None if Self::may_be_implicit_type_alias(&ty)
+                    && !is_in_function_scope
+                    && self.has_valid_annotation_syntax(expr, &self.error_swallower()) =>
+                {
+                    self.as_type_alias(
+                        name,
+                        TypeAliasStyle::LegacyImplicit,
+                        ty,
+                        expr,
+                        None,
+                        legacy_tparams,
+                        errors,
+                    )
+                }
+                _ => {
+                    if annot_key.is_some() {
+                        self.wrap_callable_legacy_typevars(ty)
+                    } else {
+                        ty
+                    }
+                }
+            }
+        }
+    }
+
+    /// Handle `Binding::ReturnType` - compute the return type of a function.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_return_type(&self, x: &ReturnType, errors: &ErrorCollector) -> Type {
+        match &x.kind {
+            ReturnTypeKind::ShouldValidateAnnotation {
+                range,
+                annotation,
+                stub_or_impl,
+                decorators,
+                implicit_return,
+                is_generator,
+                has_explicit_return,
+            } => {
+                // TODO: A return type annotation like `Final` is invalid in this context.
+                // It will result in an implicit Any type, which is reasonable, but we should
+                // at least error here.
+                let ty = self.get_idx(*annotation).annotation.get_type().clone();
+                // If the function body is stubbed out or if the function is decorated with
+                // `@abstractmethod`, we blindly accept the return type annotation.
+                if *stub_or_impl != FunctionStubOrImpl::Stub
+                    && !decorators.iter().any(|k| {
+                        let decorator = self.get_idx(*k);
+                        match decorator.ty.callee_kind() {
+                            Some(CalleeKind::Function(FunctionKind::AbstractMethod)) => true,
+                            _ => false,
+                        }
+                    })
+                {
+                    let implicit_return = self.get_idx(*implicit_return);
+                    self.check_implicit_return_against_annotation(
+                        implicit_return,
+                        &ty,
+                        x.is_async,
+                        *is_generator,
+                        *has_explicit_return,
+                        *range,
+                        errors,
+                    );
+                }
+                self.return_type_from_annotation(ty, x.is_async, *is_generator)
+            }
+            ReturnTypeKind::ShouldTrustAnnotation {
+                annotation,
+                is_generator,
+            } => {
+                // TODO: A return type annotation like `Final` is invalid in this context.
+                // It will result in an implicit Any type, which is reasonable, but we should
+                // at least error here.
+                let ty = self.get_idx(*annotation).annotation.get_type().clone();
+                self.return_type_from_annotation(ty, x.is_async, *is_generator)
+            }
+            ReturnTypeKind::ShouldReturnAny { is_generator } => {
+                self.return_type_from_annotation(Type::any_implicit(), x.is_async, *is_generator)
+            }
+            ReturnTypeKind::ShouldInferType {
+                returns,
+                implicit_return,
+                yields,
+                yield_froms,
+                body_is_trivial,
+                class_metadata_key,
+            } => {
+                let is_generator = !(yields.is_empty() && yield_froms.is_empty());
+                let returns = returns.iter().map(|k| self.get_idx(*k).arc_clone_ty());
+                let implicit_return = self.get_idx(*implicit_return);
+                // TODO: It should always be a no-op to include a `Type::Never` in unions, but
+                // `simple::test_solver_variables` fails if we do, because `solver::unions` does
+                // `is_subset_eq` to force free variables, causing them to be equated to
+                // `Type::Never` instead of becoming `Type::Any`.
+                let return_ty = if implicit_return.ty().is_never() {
+                    self.unions(returns.collect())
+                } else {
+                    self.unions(
+                        returns
+                            .chain(iter::once(implicit_return.arc_clone_ty()))
+                            .collect(),
+                    )
+                };
+                // If this is a method with a trivial body (e.g., `raise NotImplementedError()`)
+                // in a class that extends ABC, treat it as an abstract method and return Any
+                // instead of Never. This handles transitive ABC inheritance.
+                let is_abstract_method = *body_is_trivial
+                    && return_ty.is_never()
+                    && class_metadata_key.is_some_and(|key| self.get_idx(key).extends_abc());
+                let return_ty = if is_abstract_method {
+                    Type::any_implicit()
+                } else {
+                    return_ty
+                };
+                if is_generator {
+                    let yield_ty = self.unions({
+                        let yield_tys =
+                            yields.iter().map(|idx| self.get_idx(*idx).yield_ty.clone());
+                        let yield_from_tys = yield_froms
+                            .iter()
+                            .map(|idx| self.get_idx(*idx).yield_ty.clone());
+                        yield_tys.chain(yield_from_tys).collect()
+                    });
+                    if x.is_async {
+                        self.stdlib
+                            .async_generator(yield_ty, Type::any_implicit())
+                            .to_type()
+                    } else {
+                        self.stdlib
+                            .generator(yield_ty, Type::any_implicit(), return_ty)
+                            .to_type()
+                    }
+                } else if x.is_async {
+                    self.stdlib
+                        .coroutine(Type::any_implicit(), Type::any_implicit(), return_ty)
+                        .to_type()
+                } else {
+                    return_ty
+                }
+            }
+        }
+    }
+
+    /// Handle `Binding::ReturnExplicit` - process explicit return statement.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_return_explicit(&self, x: &ReturnExplicit, errors: &ErrorCollector) -> Type {
+        let annot = x.annot.map(|k| self.get_idx(k));
+        let hint = annot.as_ref().and_then(|ann| ann.ty(self.stdlib));
+        if x.is_unreachable {
+            if let Some(box expr) = &x.expr {
+                self.expr_infer(expr, errors);
+            }
+            self.error(
+                errors,
+                x.range,
+                ErrorInfo::Kind(ErrorKind::Unreachable),
+                "This `return` statement is unreachable".to_owned(),
+            )
+        } else if x.is_async && x.is_generator {
+            if let Some(box expr) = &x.expr {
+                self.expr_infer(expr, errors);
+                self.error(
+                    errors,
+                    expr.range(),
+                    ErrorInfo::Kind(ErrorKind::BadReturn),
+                    "Return statement with value is not allowed in async generator".to_owned(),
+                )
+            } else {
+                Type::None
+            }
+        } else if x.is_generator {
+            let hint = hint.and_then(|ty| self.decompose_generator(&ty).map(|(_, _, r)| r));
+            let tcc: &dyn Fn() -> TypeCheckContext =
+                &|| TypeCheckContext::of_kind(TypeCheckKind::ExplicitFunctionReturn);
+            if let Some(box expr) = &x.expr {
+                self.expr(expr, hint.as_ref().map(|t| (t, tcc)), errors)
+            } else if let Some(hint) = hint {
+                self.check_type(&Type::None, &hint, x.range, errors, tcc);
+                Type::None
+            } else {
+                Type::None
+            }
+        } else if matches!(hint, Some(Type::TypeGuard(_) | Type::TypeIs(_))) {
+            let hint = Some(Type::ClassType(self.stdlib.bool().clone()));
+            let tcc: &dyn Fn() -> TypeCheckContext =
+                &|| TypeCheckContext::of_kind(TypeCheckKind::TypeGuardReturn);
+            if let Some(box expr) = &x.expr {
+                self.expr(expr, hint.as_ref().map(|t| (t, tcc)), errors)
+            } else if let Some(hint) = hint {
+                self.check_type(&Type::None, &hint, x.range, errors, tcc);
+                Type::None
+            } else {
+                Type::None
+            }
+        } else {
+            let tcc: &dyn Fn() -> TypeCheckContext =
+                &|| TypeCheckContext::of_kind(TypeCheckKind::ExplicitFunctionReturn);
+            if let Some(box expr) = &x.expr {
+                self.expr(expr, hint.as_ref().map(|t| (t, tcc)), errors)
+            } else if let Some(hint) = hint {
+                self.check_type(&Type::None, &hint, x.range, errors, tcc);
+                Type::None
+            } else {
+                Type::None
+            }
+        }
+    }
+
+    /// Handle `Binding::ReturnImplicit` - compute the implicit return type.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_return_implicit(&self, x: &ReturnImplicit) -> Type {
+        // Would context have caught something:
+        // https://typing.python.org/en/latest/spec/exceptions.html#context-managers.
+        let context_catch = |x: &Type| -> bool {
+            match x {
+                Type::Literal(lit) if let Lit::Bool(b) = lit.value => b,
+                Type::ClassType(cls) => cls == self.stdlib.bool(),
+                _ => false, // Default to assuming exceptions are not suppressed
+            }
+        };
+
+        if self.module().path().is_interface() {
+            Type::any_implicit() // .pyi file, functions don't have bodies
+        } else if x.last_exprs.as_ref().is_some_and(|xs| {
+            xs.iter().all(|(last, k)| {
+                let e = self.get_idx(*k);
+                match last {
+                    LastStmt::Expr => e.ty().is_never(),
+                    LastStmt::With(kind) => {
+                        let res = self.context_value_exit(
+                            e.ty(),
+                            *kind,
+                            TextRange::default(),
+                            &self.error_swallower(),
+                            None,
+                        );
+                        !context_catch(&res)
+                    }
+                    LastStmt::Match(_) => {
+                        // Check if the MatchExhaustive binding at this range resolved to Never
+                        e.ty().is_never()
+                    }
+                }
+            })
+        }) {
+            Type::never()
+        } else {
+            Type::None
+        }
+    }
+
+    /// Handle `Binding::ExceptionHandler` - process exception handler clause.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_exception_handler(
+        &self,
+        ann: &Expr,
+        is_star: bool,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let base_exception_type = self.stdlib.base_exception().clone().to_type();
+        let base_exception_group_any_type = if is_star {
+            // Only query for `BaseExceptionGroup` if we see an `except*` handler (which
+            // was introduced in Python3.11).
+            // We can't unconditionally query for `BaseExceptionGroup` until Python3.10
+            // is out of its EOL period.
+            let res = self
+                .stdlib
+                .base_exception_group(Type::Any(AnyStyle::Implicit))
+                .map(|x| x.to_type());
+            if res.is_none() {
+                self.error(
+                    errors,
+                    ann.range(),
+                    ErrorInfo::Kind(ErrorKind::Unsupported),
+                    "`expect*` is unsupported until Python 3.11".to_owned(),
+                );
+            }
+            res
+        } else {
+            None
+        };
+        let check_exception_type = |exception_type: Type, range| {
+            let exception = self.untype(exception_type, range, errors);
+            self.check_type(&exception, &base_exception_type, range, errors, &|| {
+                TypeCheckContext::of_kind(TypeCheckKind::ExceptionClass)
+            });
+            if let Some(base_exception_group_any_type) = base_exception_group_any_type.as_ref()
+                && !self.behaves_like_any(&exception)
+                && self.is_subset_eq(&exception, base_exception_group_any_type)
+            {
+                self.error(
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::InvalidInheritance),
+                    "Exception handler annotation in `except*` clause may not extend `BaseExceptionGroup`".to_owned());
+            }
+            exception
+        };
+        let exceptions = match ann {
+            // if the exception classes are written as a tuple literal, use each annotation's position for error reporting
+            Expr::Tuple(tup) => tup
+                .elts
+                .iter()
+                .map(|e| check_exception_type(self.expr_infer(e, errors), e.range()))
+                .collect(),
+            _ => {
+                let exception_types = self.expr_infer(ann, errors);
+                match exception_types {
+                    Type::Tuple(Tuple::Concrete(ts)) => ts
+                        .into_iter()
+                        .map(|t| check_exception_type(t, ann.range()))
+                        .collect(),
+                    Type::Tuple(Tuple::Unbounded(t)) => {
+                        vec![check_exception_type(*t, ann.range())]
+                    }
+                    _ => vec![check_exception_type(exception_types, ann.range())],
+                }
+            }
+        };
+        let exceptions = self.unions(exceptions);
+        if is_star && let Some(t) = self.stdlib.exception_group(exceptions.clone()) {
+            t.to_type()
+        } else {
+            exceptions
+        }
+    }
+
+    /// Handle `Binding::IterableValue` - extract value type from an iterable.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_iterable_value(
+        &self,
+        ann: Option<Idx<KeyAnnotation>>,
+        e: &Expr,
+        is_async: IsAsync,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let ann = ann.map(|k| self.get_idx(k));
+        if let Some(ann) = &ann
+            && ann.annotation.is_final()
+        {
+            self.error(
+                errors,
+                e.range(),
+                ErrorInfo::Kind(ErrorKind::BadAssignment),
+                format!("Cannot assign to {} because it is marked final", ann.target),
+            );
+        }
+        let tcc: &dyn Fn() -> TypeCheckContext = &|| {
+            let (name, annot_type) = {
+                match &ann {
+                    None => (None, None),
+                    Some(t) => (
+                        match &t.target {
+                            AnnotationTarget::Assign(name, _)
+                            | AnnotationTarget::ClassMember(name) => Some(name.clone()),
+                            _ => None,
+                        },
+                        t.ty(self.stdlib).clone(),
+                    ),
+                }
+            };
+            TypeCheckContext::of_kind(TypeCheckKind::IterationVariableMismatch(
+                name.unwrap_or_else(|| Name::new_static("_")),
+                self.for_display(annot_type.unwrap_or_else(Type::any_implicit)),
+            ))
+        };
+        let iterables = if is_async.is_async() {
+            let infer_hint = ann.clone().and_then(|x| {
+                x.ty(self.stdlib)
+                    .map(|ty| self.stdlib.async_iterable(ty.clone()).to_type())
+            });
+            let iterable =
+                self.expr_infer_with_hint(e, infer_hint.as_ref().map(HintRef::soft), errors);
+            self.async_iterate(&iterable, e.range(), errors)
+        } else {
+            let infer_hint = ann.clone().and_then(|x| {
+                x.ty(self.stdlib)
+                    .map(|ty| self.stdlib.iterable(ty.clone()).to_type())
+            });
+            let iterable =
+                self.expr_infer_with_hint(e, infer_hint.as_ref().map(HintRef::soft), errors);
+            self.iterate(&iterable, e.range(), errors, None)
+        };
+        let value = self.get_produced_type(iterables);
+        let check_hint = ann.clone().and_then(|x| x.ty(self.stdlib));
+        if let Some(check_hint) = check_hint {
+            self.check_and_return_type(value, &check_hint, e.range(), errors, tcc)
+        } else {
+            value
+        }
+    }
+
+    /// Handle `Binding::UnpackedValue` - extract value from unpacking.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_unpacked_value(
+        &self,
+        ann: Option<Idx<KeyAnnotation>>,
+        to_unpack: Idx<Key>,
+        range: TextRange,
+        pos: &UnpackedPosition,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let iterables = self.iterate(self.get_idx(to_unpack).ty(), range, errors, None);
+        let mut values = Vec::new();
+        for iterable in iterables {
+            values.push(match iterable {
+                Iterable::OfType(ty) => match pos {
+                    UnpackedPosition::Index(_) | UnpackedPosition::ReverseIndex(_) => ty,
+                    UnpackedPosition::Slice(_, _) => self.stdlib.list(ty).to_type(),
+                },
+                Iterable::OfTypeVarTuple(_) => {
+                    // Type var tuples can resolve to anything so we fall back to object
+                    let object_type = self.stdlib.object().clone().to_type();
+                    match pos {
+                        UnpackedPosition::Index(_) | UnpackedPosition::ReverseIndex(_) => {
+                            object_type
+                        }
+                        UnpackedPosition::Slice(_, _) => self.stdlib.list(object_type).to_type(),
+                    }
+                }
+                Iterable::FixedLen(ts) => {
+                    match pos {
+                        UnpackedPosition::Index(i) | UnpackedPosition::ReverseIndex(i) => {
+                            let idx = if matches!(pos, UnpackedPosition::Index(_)) {
+                                Some(*i)
+                            } else {
+                                ts.len().checked_sub(*i)
+                            };
+                            if let Some(idx) = idx
+                                && let Some(element) = ts.get(idx)
+                            {
+                                element.clone()
+                            } else {
+                                // We'll report this error when solving for Binding::UnpackedLength.
+                                Type::any_error()
+                            }
+                        }
+                        UnpackedPosition::Slice(i, j) => {
+                            let start = *i;
+                            let end = ts.len().checked_sub(*j);
+                            if let Some(end) = end
+                                && end >= start
+                                && let Some(items) = ts.get(start..end)
+                            {
+                                let elem_ty = self.unions(items.to_vec());
+                                self.stdlib.list(elem_ty).to_type()
+                            } else {
+                                // We'll report this error when solving for Binding::UnpackedLength.
+                                Type::any_error()
+                            }
+                        }
+                    }
+                }
+            })
+        }
+        let got = self.unions(values);
+        if let Some(ann) = ann.map(|idx| self.get_idx(idx)) {
+            if ann.annotation.is_final() {
+                self.error(
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::BadAssignment),
+                    format!("Cannot assign to {} because it is marked final", ann.target),
+                );
+            }
+            if let Some(want) = ann.ty(self.stdlib) {
+                self.check_type(&got, &want, range, errors, &|| {
+                    TypeCheckContext::of_kind(TypeCheckKind::UnpackedAssign)
+                });
+            }
+        }
+        got
+    }
+
+    // =========================================================================
+    // Helper functions for binding_to_type - Phase 2 (medium arms)
+    // =========================================================================
+
+    /// Handle `Binding::Expr` - process expression with optional annotation.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_expr(
+        &self,
+        ann: Option<Idx<KeyAnnotation>>,
+        e: &Expr,
+        errors: &ErrorCollector,
+    ) -> Type {
+        match ann {
+            Some(k) => {
+                let annot = self.get_idx(k);
+                let tcc: &dyn Fn() -> TypeCheckContext = &|| {
+                    TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(&annot.target))
+                };
+                if annot.annotation.is_final() {
+                    self.error(
+                        errors,
+                        e.range(),
+                        ErrorInfo::Kind(ErrorKind::BadAssignment),
+                        format!(
+                            "Cannot assign to {} because it is marked final",
+                            annot.target
+                        ),
+                    );
+                }
+                self.expr(e, annot.ty(self.stdlib).as_ref().map(|t| (t, tcc)), errors)
+            }
+            None => {
+                // TODO(stroxler): propagate attribute narrows here
+                self.expr(e, None, errors)
+            }
+        }
+    }
+
+    /// Handle `Binding::MultiTargetAssign` - process multi-target assignment.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_multi_target_assign(
+        &self,
+        ann: Option<Idx<KeyAnnotation>>,
+        idx: Idx<Key>,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let type_info = self.get_idx(idx);
+        let ty = type_info.ty();
+        if let Some(ann_idx) = ann {
+            let annot = self.get_idx(ann_idx);
+            if annot.annotation.is_final() {
+                self.error(
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::BadAssignment),
+                    format!(
+                        "Cannot assign to {} because it is marked final",
+                        annot.target
+                    ),
+                );
+            }
+            if let Some(annot_ty) = annot.ty(self.stdlib)
+                && !self.is_subset_eq(ty, &annot_ty)
+            {
+                self.error(
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::BadAssignment),
+                    format!(
+                        "Wrong type for assignment, expected `{}` and got `{}`",
+                        &annot_ty, ty
+                    ),
+                );
+                return annot_ty;
+            }
+        }
+        ty.clone()
+    }
+
+    /// Handle `Binding::SelfTypeLiteral` - create Self type for class.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_self_type_literal(
+        &self,
+        class_key: Idx<KeyClass>,
+        r: TextRange,
+        errors: &ErrorCollector,
+    ) -> Type {
+        if let Some(cls) = &self.get_idx(class_key).as_ref().0 {
+            match self.instantiate(cls) {
+                Type::ClassType(class_type) => Type::type_form(Type::SelfType(class_type)),
+                ty => self.error(
+                    errors,
+                    r,
+                    ErrorInfo::Kind(ErrorKind::InvalidSelfType),
+                    format!(
+                        "Cannot apply `typing.Self` to non-class-instance type `{}`",
+                        self.for_display(ty)
+                    ),
+                ),
+            }
+        } else {
+            self.error(
+                errors,
+                r,
+                ErrorInfo::Kind(ErrorKind::InvalidSelfType),
+                "Could not resolve the class for `typing.Self` (may indicate unexpected recursion resolving types)".to_owned(),
+            )
+        }
+    }
+
+    /// Handle `Binding::ClassBodyUnknownName` - resolve unknown name in class body.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_class_body_unknown_name(
+        &self,
+        class_key: Idx<KeyClass>,
+        name: &Identifier,
+        suggestion: &Option<Name>,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let add_unknown_name_error = |errors: &ErrorCollector| {
+            let mut msg = vec1![format!("Could not find name `{name}`")];
+            if let Some(suggestion) = suggestion {
+                msg.push(format!("Did you mean `{suggestion}`?"));
+            }
+            errors.add(name.range, ErrorInfo::Kind(ErrorKind::UnknownName), msg);
+            Type::any_error()
+        };
+        // We're specifically looking for attributes that are inherited from the parent class
+        if let Some(cls) = &self.get_idx(class_key).as_ref().0
+            && !self.get_class_field_map(cls).contains_key(&name.id)
+        {
+            // If the attribute lookup fails here, we'll emit an `unknown-name` error, since this
+            // is a deferred lookup that can't be calculated at the bindings step
+            let error_swallower = self.error_swallower();
+            let attr_ty = self.attr_infer_for_type(
+                &Type::ClassDef(cls.clone()),
+                &name.id,
+                name.range(),
+                &error_swallower,
+                None,
+            );
+            if attr_ty.is_error() {
+                add_unknown_name_error(errors)
+            } else {
+                attr_ty
+            }
+        } else {
+            add_unknown_name_error(errors)
+        }
+    }
+
+    /// Handle `Binding::ContextValue` - extract value from context manager.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_context_value(
+        &self,
+        ann: Option<Idx<KeyAnnotation>>,
+        e: Idx<Key>,
+        range: TextRange,
+        kind: IsAsync,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let context_manager = self.get_idx(e);
+        let context_value = self.context_value(context_manager.ty(), kind, range, errors);
+        let ann = ann.map(|k| self.get_idx(k));
+        if let Some(ann) = ann {
+            if ann.annotation.is_final() {
+                self.error(
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::BadAssignment),
+                    format!("Cannot assign to {} because it is marked final", ann.target),
+                );
+            }
+            if let Some(ty) = ann.ty(self.stdlib) {
+                self.check_and_return_type(context_value, &ty, range, errors, &|| {
+                    TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(&ann.target))
+                })
+            } else {
+                context_value
+            }
+        } else {
+            context_value
+        }
+    }
+
+    /// Handle `Binding::ScopedTypeAlias` - process PEP 695 type alias.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_scoped_type_alias(
+        &self,
+        name: &Name,
+        params: &Option<TypeParams>,
+        expr: &Expr,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let ty = self.expr_infer(expr, errors);
+        let ta = self.as_type_alias(name, TypeAliasStyle::Scoped, ty, expr, None, &None, errors);
+        match ta {
+            Type::Forall(..) => self.error(
+                errors,
+                expr.range(),
+                ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
+                format!("Type parameters used in `{name}` but not declared"),
+            ),
+            Type::TypeAlias(ta) => {
+                let params_range = params.as_ref().map_or(expr.range(), |x| x.range);
+                Forallable::TypeAlias(*ta).forall(self.validated_tparams(
+                    params_range,
+                    self.scoped_type_params(params.as_ref(), errors),
+                    TParamsSource::TypeAlias,
+                    errors,
+                ))
+            }
+            _ => ta,
+        }
+    }
+
+    /// Handle `Binding::TypeAliasType` - process TypeAliasType constructor.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_type_alias_type(
+        &self,
+        ann: Option<Idx<KeyAnnotation>>,
+        name: &Identifier,
+        x: &ExprCall,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let Some((expr, type_param_exprs)) = self.typealiastype_from_call(name.clone(), x, errors)
+        else {
+            return Type::any_error();
+        };
+        let ty = self.expr_infer(&expr, errors);
+        let ta = self.as_type_alias(
+            &name.id,
+            TypeAliasStyle::Scoped,
+            ty,
+            &expr,
+            Some(type_param_exprs),
+            &None,
+            errors,
+        );
+        if let Some(k) = ann
+            && let AnnotationWithTarget {
+                target,
+                annotation:
+                    Annotation {
+                        ty: Some(want),
+                        qualifiers: _,
+                    },
+            } = &*self.get_idx(k)
+        {
+            self.check_and_return_type(ta.clone(), want, x.range, errors, &|| {
+                TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(target))
+            })
+        } else {
+            ta
+        }
+    }
+
+    /// Handle `Binding::FunctionParameter` - compute function parameter type.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_function_parameter(&self, param: &FunctionParameter) -> Type {
+        let finalize = |target: &AnnotationTarget, ty| match target {
+            AnnotationTarget::ArgsParam(_) => Type::unbounded_tuple(ty),
+            AnnotationTarget::KwargsParam(_) => self
+                .stdlib
+                .dict(self.stdlib.str().clone().to_type(), ty)
+                .to_type(),
+            _ => ty,
+        };
+        match param {
+            FunctionParameter::Annotated(key) => {
+                let annotation = self.get_idx(*key);
+                annotation.ty(self.stdlib).clone().unwrap_or_else(|| {
+                    // This annotation isn't valid. It's something like `: Final` that doesn't
+                    // have enough information to create a real type.
+                    finalize(&annotation.target, Type::any_implicit())
+                })
+            }
+            FunctionParameter::Unannotated(var, function_idx, target) => {
+                // It's important that we force the undecorated function binding before reading
+                // from this var. Solving the undecorated function binding pins the type of the var,
+                // either to a concrete type or to any. Without this we can have non-determinism
+                // where the reader can observe an unresolved var or a resolved type, depending on
+                // the order of solved bindings.
+                self.get_idx(*function_idx);
+                let ty = self.solver().force_var(*var);
+                finalize(target, ty)
+            }
+        }
+    }
+
+    /// Handle `Binding::TypeVarTuple` - process TypeVarTuple definition.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_type_var_tuple(
+        &self,
+        ann: Option<Idx<KeyAnnotation>>,
+        name: &Identifier,
+        x: &ExprCall,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let ty = self
+            .typevartuple_from_call(name.clone(), x, errors)
+            .to_type();
+        if let Some(k) = ann
+            && let AnnotationWithTarget {
+                target,
+                annotation:
+                    Annotation {
+                        ty: Some(want),
+                        qualifiers: _,
+                    },
+            } = &*self.get_idx(k)
+        {
+            self.check_and_return_type(ty, want, x.range, errors, &|| {
+                TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(target))
+            })
+        } else {
+            ty
+        }
+    }
+
+    /// Handle `Binding::StmtExpr` - process statement expression.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_stmt_expr(
+        &self,
+        e: &Expr,
+        special_export: Option<SpecialExport>,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let result = self.expr(e, None, errors);
+        if special_export != Some(SpecialExport::AssertType)
+            && let Type::ClassType(cls) = &result
+            && self.is_coroutine(&result)
+            && !self.extends_any(cls.class_object())
+        {
+            self.error(
+                errors,
+                e.range(),
+                ErrorInfo::Kind(ErrorKind::UnusedCoroutine),
+                "Result of async function call is unused. Did you forget to `await`?".to_owned(),
+            );
+        }
+        result
+    }
+
+    /// Handle `Binding::Module` - create module type.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_module(&self, m: ModuleName, path: &[Name], prev: Option<Idx<Key>>) -> Type {
+        let prev = prev.and_then(|x| self.get_idx(x).ty().as_module().cloned());
+        match prev {
+            Some(prev) if prev.parts() == path => prev.add_module(m).to_type(),
+            _ => {
+                if path.len() == 1 {
+                    Type::Module(ModuleType::new(path[0].clone(), OrderedSet::from_iter([m])))
+                } else {
+                    assert_eq!(&m.components(), path);
+                    Type::Module(ModuleType::new_as(m))
+                }
+            }
+        }
+    }
+
+    // =========================================================================
+    // Helper functions for binding_to_type_info
+    // =========================================================================
+
+    /// Handle `Binding::Phi` in binding_to_type_info - join multiple branches.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_info_phi(
+        &self,
+        join_style: &JoinStyle<Idx<Key>>,
+        branches: &[BranchInfo],
+    ) -> TypeInfo {
+        if branches.len() == 1 {
+            self.get_idx(branches[0].value_key).arc_clone()
+        } else {
+            // Filter branches based on type-based termination (Never/NoReturn)
+            let live_value_keys: Vec<Idx<Key>> = branches
+                .iter()
+                .filter_map(|branch| {
+                    match branch.termination_key {
+                        None => {
+                            // No terminal statement, branch is live
+                            Some(branch.value_key)
+                        }
+                        Some(term_key) => {
+                            let term_type = self.get_idx(term_key);
+                            if term_type.ty().is_never() {
+                                // Branch terminated with Never/NoReturn
+                                None
+                            } else {
+                                // Terminal statement doesn't return Never, branch is live
+                                Some(branch.value_key)
+                            }
+                        }
+                    }
+                })
+                .collect();
+
+            // If all branches terminated, use all value keys (consistent with binding-time)
+            let keys_to_use = if live_value_keys.is_empty() {
+                branches.iter().map(|b| b.value_key).collect()
+            } else {
+                live_value_keys
+            };
+
+            let type_infos = keys_to_use
+                .iter()
+                .filter_map(|k| {
+                    let t: Arc<TypeInfo> = self.get_idx(*k);
+                    // Filter out all `@overload`-decorated types except the one that
+                    // accumulates all signatures into a Type::Overload.
+                    if matches!(t.ty(), Type::Overload(_)) || !t.ty().is_overload() {
+                        Some(t.arc_clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+
+            TypeInfo::join(
+                type_infos,
+                &|ts| self.unions(ts),
+                &|got, want| self.is_subset_eq(got, want),
+                join_style.map(|idx| self.get_idx(*idx)),
+            )
+        }
+    }
+
+    /// Handle `Binding::LoopPhi` in binding_to_type_info - join loop branches.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_info_loop_phi(
+        &self,
+        default: Idx<Key>,
+        ks: &SmallSet<Idx<Key>>,
+    ) -> TypeInfo {
+        // We force the default first so that if we hit a recursive case it is already available
+        self.get_idx(default);
+        // Then solve the phi like a regular Phi binding
+        if ks.len() == 1 {
+            self.get_idx(*ks.first().unwrap()).arc_clone()
+        } else {
+            let type_infos = ks
+                .iter()
+                .filter_map(|k| {
+                    let t: Arc<TypeInfo> = self.get_idx(*k);
+                    // Filter out all `@overload`-decorated types except the one that
+                    // accumulates all signatures into a Type::Overload.
+                    if matches!(t.ty(), Type::Overload(_)) || !t.ty().is_overload() {
+                        Some(t.arc_clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
+            TypeInfo::join(
+                type_infos,
+                &|ts| self.unions(ts),
+                &|got, want| self.is_subset_eq(got, want),
+                JoinStyle::SimpleMerge,
+            )
+        }
+    }
+
+    /// Handle `Binding::AssignToAttribute` in binding_to_type_info.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_info_assign_to_attribute(
+        &self,
+        attr: &ExprAttribute,
+        got: &ExprOrBinding,
+        allow_assign_to_final: bool,
+        errors: &ErrorCollector,
+    ) -> TypeInfo {
+        // NOTE: Deterministic pinning of placeholder types based on first use relies on an
+        // invariant: if `got` is used in the binding for a class field, we must always solve
+        // that `ClassField` binding *before* analyzing `got`.
+        //
+        // This should be the case since contextual typing requires working out the class field
+        // type information first, but is difficult to see from a skim.
+        let base = self.expr_infer(&attr.value, errors);
+        let narrowed = self.check_assign_to_attribute_and_infer_narrow(
+            &base,
+            &attr.attr.id,
+            got,
+            allow_assign_to_final,
+            attr.range,
+            errors,
+        );
+        if let Some((identifier, unresolved_chain)) =
+            identifier_and_chain_for_expr(&Expr::Attribute(attr.clone()))
+            && let Some(chain) = self.resolve_facet_chain(unresolved_chain)
+        {
+            // Note that the value we are doing `self.get` on is the same one we did in infer_expr, which is a bit sad.
+            // But avoiding the duplicate get/clone would require us to duplicate some of infer_expr here, which might
+            // fall out of sync.
+            let mut type_info = self
+                .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
+                .arc_clone();
+            type_info.update_for_assignment(chain.facets(), narrowed);
+            type_info
+        } else if let Some((identifier, unresolved_facets)) =
+            identifier_and_chain_prefix_for_expr(&Expr::Attribute(attr.clone()))
+        {
+            // If the chain contains an unknown subscript index, we clear narrowing for
+            // all indexes of its parent. If any facet in the prefix can't be resolved,
+            // we give up on narrowing.
+            let mut facets = Vec::new();
+            for unresolved in unresolved_facets {
+                if let Some(resolved) = self.resolve_facet_kind(unresolved) {
+                    facets.push(resolved)
+                } else {
+                    break;
+                }
+            }
+            let mut type_info = self
+                .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
+                .arc_clone();
+            type_info.invalidate_all_indexes_for_assignment(&facets);
+            type_info
+        } else {
+            // Placeholder: in this case, we're assigning to an anonymous base and the
+            // type info will not propagate anywhere.
+            TypeInfo::of_ty(Type::never())
+        }
+    }
+
+    /// Handle `Binding::AssignToSubscript` in binding_to_type_info.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_info_assign_to_subscript(
+        &self,
+        subscript: &ExprSubscript,
+        value: &ExprOrBinding,
+        errors: &ErrorCollector,
+    ) -> TypeInfo {
+        // If we can't assign to this subscript, then we don't narrow the type
+        let assigned_ty = self.check_assign_to_subscript(subscript, value, errors);
+        let narrowed = if assigned_ty.is_any() {
+            None
+        } else {
+            Some(assigned_ty)
+        };
+        if let Some((identifier, unresolved_chain)) =
+            identifier_and_chain_for_expr(&Expr::Subscript(subscript.clone()))
+            && let Some(chain) = self.resolve_facet_chain(unresolved_chain)
+        {
+            let mut type_info = self
+                .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
+                .arc_clone();
+            type_info.update_for_assignment(chain.facets(), narrowed);
+            type_info
+        } else if let Some((identifier, unresolved_facets)) =
+            identifier_and_chain_prefix_for_expr(&Expr::Subscript(subscript.clone()))
+        {
+            // If the chain contains an unknown subscript index, we clear narrowing for
+            // all indexes of its parent. If any facet in the prefix can't be resolved,
+            // we give up on narrowing.
+            let mut facets = Vec::new();
+            for unresolved in unresolved_facets {
+                if let Some(resolved) = self.resolve_facet_kind(unresolved) {
+                    facets.push(resolved)
+                } else {
+                    break;
+                }
+            }
+            let mut type_info = self
+                .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
+                .arc_clone();
+            type_info.invalidate_all_indexes_for_assignment(&facets);
+            type_info
+        } else {
+            // Placeholder: in this case, we're assigning to an anonymous base and the
+            // type info will not propagate anywhere.
+            TypeInfo::of_ty(Type::never())
+        }
+    }
+
+    /// Handle `Binding::PossibleLegacyTParam` in binding_to_type_info.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_info_possible_legacy_tparam(
+        &self,
+        key: Idx<KeyLegacyTypeParam>,
+        range_if_scoped_params_exist: &Option<TextRange>,
+        errors: &ErrorCollector,
+    ) -> TypeInfo {
+        let ty = match &*self.get_idx(key) {
+            LegacyTypeParameterLookup::Parameter(p) => {
+                // This class or function has scoped (PEP 695) type parameters. Mixing legacy-style parameters is an error.
+                if let Some(r) = range_if_scoped_params_exist {
+                    self.error(
+                        errors,
+                        *r,
+                        ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
+                        format!(
+                            "Type parameter {} is not included in the type parameter list",
+                            self.module().display(&self.bindings().idx_to_key(key).0)
+                        ),
+                    );
+                }
+                p.quantified.clone().to_value()
+            }
+            LegacyTypeParameterLookup::NotParameter(ty) => ty.clone(),
+        };
+        match self.bindings().get(key) {
+            BindingLegacyTypeParam::ModuleKeyed(idx, attr) => {
+                // `idx` points to a module whose `attr` attribute may be a legacy type
+                // variable that needs to be replaced with a QuantifiedValue. Since the
+                // ModuleKeyed binding is for the module itself, we use the mechanism for
+                // attribute ("facet") type narrowing to change the type that will be
+                // produced when `attr` is accessed.
+                let module = (*self.get_idx(*idx)).clone();
+                if matches!(ty, Type::QuantifiedValue(_)) {
+                    module.with_narrow(&vec1![FacetKind::Attribute((**attr).clone())], ty)
+                } else {
+                    module
+                }
+            }
+            BindingLegacyTypeParam::ParamKeyed(_) => TypeInfo::of_ty(ty),
+        }
+    }
+
+    /// Handle `Binding::NameAssign` in binding_to_type_info - process name assignment with dict facets.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_info_name_assign(
+        &self,
+        binding: &Binding,
+        expr: &Expr,
+        errors: &ErrorCollector,
+    ) -> TypeInfo {
+        let ty = self.binding_to_type(binding, errors);
+        let mut type_info = TypeInfo::of_ty(ty);
+        let mut prefix = Vec::new();
+        self.populate_dict_literal_facets(&mut type_info, &mut prefix, expr);
+        type_info
+    }
+
     fn binding_to_type_info(&self, binding: &Binding, errors: &ErrorCollector) -> TypeInfo {
         match binding {
             Binding::Forward(k) => self.get_idx(*k).arc_clone(),
@@ -2318,237 +3663,35 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.narrow(self.get_idx(*k).as_ref(), op, range.range(), errors)
             }
             Binding::Phi(join_style, branches) => {
-                if branches.len() == 1 {
-                    self.get_idx(branches[0].value_key).arc_clone()
-                } else {
-                    // Filter branches based on type-based termination (Never/NoReturn)
-                    let live_value_keys: Vec<Idx<Key>> = branches
-                        .iter()
-                        .filter_map(|branch| {
-                            match branch.termination_key {
-                                None => {
-                                    // No terminal statement, branch is live
-                                    Some(branch.value_key)
-                                }
-                                Some(term_key) => {
-                                    let term_type = self.get_idx(term_key);
-                                    if term_type.ty().is_never() {
-                                        // Branch terminated with Never/NoReturn
-                                        None
-                                    } else {
-                                        // Terminal statement doesn't return Never, branch is live
-                                        Some(branch.value_key)
-                                    }
-                                }
-                            }
-                        })
-                        .collect();
-
-                    // If all branches terminated, use all value keys (consistent with binding-time)
-                    let keys_to_use = if live_value_keys.is_empty() {
-                        branches.iter().map(|b| b.value_key).collect()
-                    } else {
-                        live_value_keys
-                    };
-
-                    let type_infos = keys_to_use
-                        .iter()
-                        .filter_map(|k| {
-                            let t: Arc<TypeInfo> = self.get_idx(*k);
-                            // Filter out all `@overload`-decorated types except the one that
-                            // accumulates all signatures into a Type::Overload.
-                            if matches!(t.ty(), Type::Overload(_)) || !t.ty().is_overload() {
-                                Some(t.arc_clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-
-                    TypeInfo::join(
-                        type_infos,
-                        &|ts| self.unions(ts),
-                        &|got, want| self.is_subset_eq(got, want),
-                        join_style.map(|idx| self.get_idx(*idx)),
-                    )
-                }
+                self.binding_to_type_info_phi(join_style, branches)
             }
-            Binding::LoopPhi(default, ks) => {
-                // We force the default first so that if we hit a recursive case it is already available
-                self.get_idx(*default);
-                // Then solve the phi like a regular Phi binding
-                if ks.len() == 1 {
-                    self.get_idx(*ks.first().unwrap()).arc_clone()
-                } else {
-                    let type_infos = ks
-                        .iter()
-                        .filter_map(|k| {
-                            let t: Arc<TypeInfo> = self.get_idx(*k);
-                            // Filter out all `@overload`-decorated types except the one that
-                            // accumulates all signatures into a Type::Overload.
-                            if matches!(t.ty(), Type::Overload(_)) || !t.ty().is_overload() {
-                                Some(t.arc_clone())
-                            } else {
-                                None
-                            }
-                        })
-                        .collect::<Vec<_>>();
-                    TypeInfo::join(
-                        type_infos,
-                        &|ts| self.unions(ts),
-                        &|got, want| self.is_subset_eq(got, want),
-                        JoinStyle::SimpleMerge,
-                    )
-                }
-            }
+            Binding::LoopPhi(default, ks) => self.binding_to_type_info_loop_phi(*default, ks),
             Binding::NameAssign {
                 name: _,
                 annotation: _,
                 expr,
                 legacy_tparams: _,
                 is_in_function_scope: _,
-            } => {
-                let ty = self.binding_to_type(binding, errors);
-                let mut type_info = TypeInfo::of_ty(ty);
-                let mut prefix = Vec::new();
-                self.populate_dict_literal_facets(&mut type_info, &mut prefix, expr.as_ref());
-                type_info
-            }
+            } => self.binding_to_type_info_name_assign(binding, expr.as_ref(), errors),
             Binding::AssignToAttribute {
                 attr,
                 value: got,
                 allow_assign_to_final,
-            } => {
-                // NOTE: Deterministic pinning of placeholder types based on first use relies on an
-                // invariant: if `got` is used in the binding for a class field, we must always solve
-                // that `ClassField` binding *before* analyzing `got`.
-                //
-                // This should be the case since contextual typing requires working out the class field
-                // type information first, but is difficult to see from a skim.
-                let base = self.expr_infer(&attr.value, errors);
-                let narrowed = self.check_assign_to_attribute_and_infer_narrow(
-                    &base,
-                    &attr.attr.id,
-                    got,
-                    *allow_assign_to_final,
-                    attr.range,
-                    errors,
-                );
-                if let Some((identifier, unresolved_chain)) =
-                    identifier_and_chain_for_expr(&Expr::Attribute(attr.clone()))
-                    && let Some(chain) = self.resolve_facet_chain(unresolved_chain)
-                {
-                    // Note that the value we are doing `self.get` on is the same one we did in infer_expr, which is a bit sad.
-                    // But avoiding the duplicate get/clone would require us to duplicate some of infer_expr here, which might
-                    // fall out of sync.
-                    let mut type_info = self
-                        .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
-                        .arc_clone();
-                    type_info.update_for_assignment(chain.facets(), narrowed);
-                    type_info
-                } else if let Some((identifier, unresolved_facets)) =
-                    identifier_and_chain_prefix_for_expr(&Expr::Attribute(attr.clone()))
-                {
-                    // If the chain contains an unknown subscript index, we clear narrowing for
-                    // all indexes of its parent. If any facet in the prefix can't be resolved,
-                    // we give up on narrowing.
-                    let mut facets = Vec::new();
-                    for unresolved in unresolved_facets {
-                        if let Some(resolved) = self.resolve_facet_kind(unresolved) {
-                            facets.push(resolved)
-                        } else {
-                            break;
-                        }
-                    }
-                    let mut type_info = self
-                        .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
-                        .arc_clone();
-                    type_info.invalidate_all_indexes_for_assignment(&facets);
-                    type_info
-                } else {
-                    // Placeholder: in this case, we're assigning to an anonymous base and the
-                    // type info will not propagate anywhere.
-                    TypeInfo::of_ty(Type::never())
-                }
-            }
+            } => self.binding_to_type_info_assign_to_attribute(
+                attr,
+                got,
+                *allow_assign_to_final,
+                errors,
+            ),
             Binding::AssignToSubscript(subscript, value) => {
-                // If we can't assign to this subscript, then we don't narrow the type
-                let assigned_ty = self.check_assign_to_subscript(subscript, value, errors);
-                let narrowed = if assigned_ty.is_any() {
-                    None
-                } else {
-                    Some(assigned_ty)
-                };
-                if let Some((identifier, unresolved_chain)) =
-                    identifier_and_chain_for_expr(&Expr::Subscript(subscript.clone()))
-                    && let Some(chain) = self.resolve_facet_chain(unresolved_chain)
-                {
-                    let mut type_info = self
-                        .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
-                        .arc_clone();
-                    type_info.update_for_assignment(chain.facets(), narrowed);
-                    type_info
-                } else if let Some((identifier, unresolved_facets)) =
-                    identifier_and_chain_prefix_for_expr(&Expr::Subscript(subscript.clone()))
-                {
-                    // If the chain contains an unknown subscript index, we clear narrowing for
-                    // all indexes of its parent. If any facet in the prefix can't be resolved,
-                    // we give up on narrowing.
-                    let mut facets = Vec::new();
-                    for unresolved in unresolved_facets {
-                        if let Some(resolved) = self.resolve_facet_kind(unresolved) {
-                            facets.push(resolved)
-                        } else {
-                            break;
-                        }
-                    }
-                    let mut type_info = self
-                        .get(&Key::BoundName(ShortIdentifier::new(&identifier)))
-                        .arc_clone();
-                    type_info.invalidate_all_indexes_for_assignment(&facets);
-                    type_info
-                } else {
-                    // Placeholder: in this case, we're assigning to an anonymous base and the
-                    // type info will not propagate anywhere.
-                    TypeInfo::of_ty(Type::never())
-                }
+                self.binding_to_type_info_assign_to_subscript(subscript, value, errors)
             }
-            Binding::PossibleLegacyTParam(key, range_if_scoped_params_exist) => {
-                let ty = match &*self.get_idx(*key) {
-                    LegacyTypeParameterLookup::Parameter(p) => {
-                        // This class or function has scoped (PEP 695) type parameters. Mixing legacy-style parameters is an error.
-                        if let Some(r) = range_if_scoped_params_exist {
-                            self.error(
-                                errors,
-                                *r,
-                                ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
-                                format!(
-                                    "Type parameter {} is not included in the type parameter list",
-                                    self.module().display(&self.bindings().idx_to_key(*key).0)
-                                ),
-                            );
-                        }
-                        p.quantified.clone().to_value()
-                    }
-                    LegacyTypeParameterLookup::NotParameter(ty) => ty.clone(),
-                };
-                match self.bindings().get(*key) {
-                    BindingLegacyTypeParam::ModuleKeyed(idx, attr) => {
-                        // `idx` points to a module whose `attr` attribute may be a legacy type
-                        // variable that needs to be replaced with a QuantifiedValue. Since the
-                        // ModuleKeyed binding is for the module itself, we use the mechanism for
-                        // attribute ("facet") type narrowing to change the type that will be
-                        // produced when `attr` is accessed.
-                        let module = (*self.get_idx(*idx)).clone();
-                        if matches!(ty, Type::QuantifiedValue(_)) {
-                            module.with_narrow(&vec1![FacetKind::Attribute((**attr).clone())], ty)
-                        } else {
-                            module
-                        }
-                    }
-                    BindingLegacyTypeParam::ParamKeyed(_) => TypeInfo::of_ty(ty),
-                }
-            }
+            Binding::PossibleLegacyTParam(key, range_if_scoped_params_exist) => self
+                .binding_to_type_info_possible_legacy_tparam(
+                    *key,
+                    range_if_scoped_params_exist,
+                    errors,
+                ),
             Binding::PartialTypeWithUpstreamsCompleted(raw_idx, first_used_by) => {
                 // Force all of the upstream `Pin`s for which this was the first use.
                 for idx in first_used_by {
@@ -2933,118 +4076,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.binding_to_type_info(binding, errors).into_ty()
             }
             Binding::SelfTypeLiteral(class_key, r) => {
-                if let Some(cls) = &self.get_idx(*class_key).as_ref().0 {
-                    match self.instantiate(cls) {
-                        Type::ClassType(class_type) => Type::type_form(Type::SelfType(class_type)),
-                        ty => self.error(
-                            errors,
-                            *r,
-                            ErrorInfo::Kind(ErrorKind::InvalidSelfType),
-                            format!(
-                                "Cannot apply `typing.Self` to non-class-instance type `{}`",
-                                self.for_display(ty)
-                            ),
-                        ),
-                    }
-                } else {
-                    self.error(
-                        errors,
-                        *r,
-                        ErrorInfo::Kind(ErrorKind::InvalidSelfType),
-                        "Could not resolve the class for `typing.Self` (may indicate unexpected recursion resolving types)".to_owned(),
-                    )
-                }
+                self.binding_to_type_self_type_literal(*class_key, *r, errors)
             }
             Binding::ClassBodyUnknownName(class_key, name, suggestion) => {
-                let add_unknown_name_error = |errors: &ErrorCollector| {
-                    let mut msg = vec1![format!("Could not find name `{name}`")];
-                    if let Some(suggestion) = &suggestion {
-                        msg.push(format!("Did you mean `{suggestion}`?"));
-                    }
-                    errors.add(name.range, ErrorInfo::Kind(ErrorKind::UnknownName), msg);
-                    Type::any_error()
-                };
-                // We're specifically looking for attributes that are inherited from the parent class
-                if let Some(cls) = &self.get_idx(*class_key).as_ref().0
-                    && !self.get_class_field_map(cls).contains_key(&name.id)
-                {
-                    // If the attribute lookup fails here, we'll emit an `unknown-name` error, since this
-                    // is a deferred lookup that can't be calculated at the bindings step
-                    let error_swallower = self.error_swallower();
-                    let attr_ty = self.attr_infer_for_type(
-                        &Type::ClassDef(cls.clone()),
-                        &name.id,
-                        name.range(),
-                        &error_swallower,
-                        None,
-                    );
-                    if attr_ty.is_error() {
-                        add_unknown_name_error(errors)
-                    } else {
-                        attr_ty
-                    }
-                } else {
-                    add_unknown_name_error(errors)
-                }
+                self.binding_to_type_class_body_unknown_name(*class_key, name, suggestion, errors)
             }
             Binding::MatchExhaustive {
                 subject_idx,
                 subject_range,
                 exhaustiveness_info,
-            } => {
-                // If we couldn't determine narrowing info, conservatively assume not exhaustive
-                let Some((narrowing_subject, (op, narrow_range))) = exhaustiveness_info else {
-                    return Type::None;
-                };
-
-                let subject_info = self.get_idx(*subject_idx);
-                let mut subject_ty = subject_info.ty().clone();
-                self.expand_vars_mut(&mut subject_ty);
-
-                // Check if this type should have exhaustiveness checked
-                if !self.should_check_exhaustiveness(&subject_ty) {
-                    return Type::None; // Not exhaustible, assume fall-through
-                }
-
-                let ignore_errors = self.error_swallower();
-                let narrowing_subject_info = match narrowing_subject {
-                    NarrowingSubject::Name(_) => &subject_info,
-                    NarrowingSubject::Facets(_, facets) => {
-                        let Some(resolved_chain) = self.resolve_facet_chain(facets.chain.clone())
-                        else {
-                            return Type::None;
-                        };
-                        let type_info = TypeInfo::of_ty(Type::any_implicit());
-                        &type_info.with_narrow(resolved_chain.facets(), subject_ty.clone())
-                    }
-                };
-
-                let narrowed = self.narrow(
-                    narrowing_subject_info,
-                    op.as_ref(),
-                    *narrow_range,
-                    &ignore_errors,
-                );
-
-                let mut remaining_ty = match narrowing_subject {
-                    NarrowingSubject::Name(_) => narrowed.ty().clone(),
-                    NarrowingSubject::Facets(_, facets) => {
-                        let Some(resolved_chain) = self.resolve_facet_chain(facets.chain.clone())
-                        else {
-                            return Type::None;
-                        };
-                        self.get_facet_chain_type(&narrowed, &resolved_chain, *subject_range)
-                    }
-                };
-                self.expand_vars_mut(&mut remaining_ty);
-
-                // If the result is `Never` then the cases were exhaustive
-                if remaining_ty.is_never() {
-                    Type::never()
-                } else {
-                    Type::None
-                }
-            }
+            } => self.binding_to_type_match_exhaustive(
+                *subject_idx,
+                *subject_range,
+                exhaustiveness_info,
+            ),
             Binding::CompletedPartialType(unpinned_idx, first_use) => {
                 // Calculate the first use for its side-effects (it might pin `Var`s)
                 match first_use {
@@ -3063,81 +4108,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 self.get_idx(*raw_idx).arc_clone().into_ty()
             }
-            Binding::Expr(ann, e) => match ann {
-                Some(k) => {
-                    let annot = self.get_idx(*k);
-                    let tcc: &dyn Fn() -> TypeCheckContext = &|| {
-                        TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(
-                            &annot.target,
-                        ))
-                    };
-                    if annot.annotation.is_final() {
-                        self.error(
-                            errors,
-                            e.range(),
-                            ErrorInfo::Kind(ErrorKind::BadAssignment),
-                            format!(
-                                "Cannot assign to {} because it is marked final",
-                                annot.target
-                            ),
-                        );
-                    }
-                    self.expr(e, annot.ty(self.stdlib).as_ref().map(|t| (t, tcc)), errors)
-                }
-                None => {
-                    // TODO(stroxler): propagate attribute narrows here
-                    self.expr(e, None, errors)
-                }
-            },
+            Binding::Expr(ann, e) => self.binding_to_type_expr(*ann, e, errors),
             Binding::StmtExpr(e, special_export) => {
-                let result = self.expr(e, None, errors);
-                if *special_export != Some(SpecialExport::AssertType)
-                    && let Type::ClassType(cls) = &result
-                    && self.is_coroutine(&result)
-                    && !self.extends_any(cls.class_object())
-                {
-                    self.error(
-                        errors,
-                        e.range(),
-                        ErrorInfo::Kind(ErrorKind::UnusedCoroutine),
-                        "Result of async function call is unused. Did you forget to `await`?"
-                            .to_owned(),
-                    );
-                }
-                result
+                self.binding_to_type_stmt_expr(e, *special_export, errors)
             }
             Binding::MultiTargetAssign(ann, idx, range) => {
-                let type_info = self.get_idx(*idx);
-                let ty = type_info.ty();
-                if let Some(ann_idx) = ann {
-                    let annot = self.get_idx(*ann_idx);
-                    if annot.annotation.is_final() {
-                        self.error(
-                            errors,
-                            *range,
-                            ErrorInfo::Kind(ErrorKind::BadAssignment),
-                            format!(
-                                "Cannot assign to {} because it is marked final",
-                                annot.target
-                            ),
-                        );
-                    }
-                    if let Some(annot_ty) = annot.ty(self.stdlib)
-                        && !self.is_subset_eq(ty, &annot_ty)
-                    {
-                        self.error(
-                            errors,
-                            *range,
-                            ErrorInfo::Kind(ErrorKind::BadAssignment),
-                            format!(
-                                "Wrong type for assignment, expected `{}` and got `{}`",
-                                &annot_ty, ty
-                            ),
-                        );
-                        return annot_ty;
-                    }
-                }
-                ty.clone()
+                self.binding_to_type_multi_target_assign(*ann, *idx, *range, errors)
             }
             Binding::PatternMatchMapping(mapping_key, binding_key) => {
                 // TODO: check that value is a mapping
@@ -3156,66 +4132,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 )
             }
             Binding::PatternMatchClassPositional(_, idx, key, range) => {
-                // TODO: check that value matches class
-                // TODO: check against duplicate keys (optional)
-                let binding = self.get_idx(*key);
-                let context =
-                    || ErrorContext::MatchPositional(self.for_display(binding.ty().clone()));
-                let match_args = self
-                    .attr_infer(
-                        &binding,
-                        &dunder::MATCH_ARGS,
-                        *range,
-                        errors,
-                        Some(&context),
-                    )
-                    .into_ty();
-                match match_args {
-                    Type::Tuple(Tuple::Concrete(ts)) => {
-                        if *idx < ts.len() {
-                            if let Some(Type::Literal(lit)) = ts.get(*idx)
-                                && let Lit::Str(attr_name) = &lit.value
-                            {
-                                self.attr_infer(
-                                    &binding,
-                                    &Name::new(attr_name),
-                                    *range,
-                                    errors,
-                                    Some(&context),
-                                )
-                                .into_ty()
-                            } else {
-                                self.error(
-                                    errors,
-                                    *range,
-                                    ErrorInfo::Context(&context),
-                                    format!(
-                                        "Expected literal string in `__match_args__`, got `{}`",
-                                        ts[*idx]
-                                    ),
-                                )
-                            }
-                        } else {
-                            self.error(
-                                errors,
-                                *range,
-                                ErrorInfo::Context(&context),
-                                format!("Index {idx} out of range for `__match_args__`"),
-                            )
-                        }
-                    }
-                    Type::Any(AnyStyle::Error) => match_args,
-                    _ => {
-                        self.error(
-                            errors,
-                            *range,
-                            ErrorInfo::Context(&context),
-                            format!(
-                                "Expected concrete tuple for `__match_args__`, got `{match_args}`",
-                            ),
-                        )
-                    }
-                }
+                self.binding_to_type_pattern_match_class_positional(*idx, *key, *range, errors)
             }
             Binding::PatternMatchClassKeyword(_, attr, key) => {
                 // TODO: check that value matches class
@@ -3230,97 +4147,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 expr,
                 legacy_tparams,
                 is_in_function_scope,
-            } => {
-                let (has_type_alias_qualifier, ty) = match annot_key.as_ref() {
-                    // First infer the type as a normal value
-                    Some((style, k)) => {
-                        let annot = self.get_idx(*k);
-                        let tcc: &dyn Fn() -> TypeCheckContext = &|| {
-                            TypeCheckContext::of_kind(match style {
-                                AnnotationStyle::Direct => TypeCheckKind::AnnAssign,
-                                AnnotationStyle::Forwarded => {
-                                    TypeCheckKind::AnnotatedName(name.clone())
-                                }
-                            })
-                        };
-                        if annot.annotation.is_final() && style == &AnnotationStyle::Forwarded {
-                            self.error(
-                                errors,
-                                expr.range(),
-                                ErrorInfo::Kind(ErrorKind::BadAssignment),
-                                format!("`{name}` is marked final"),
-                            );
-                        }
-                        let annot_ty = annot.ty(self.stdlib);
-                        let hint = annot_ty.as_ref().map(|t| (t, tcc));
-                        let expr_ty = self.expr(expr, hint, errors);
-                        let ty = if style == &AnnotationStyle::Direct {
-                            // For direct assignments, user-provided annotation takes
-                            // precedence over inferred expr type.
-                            annot_ty.unwrap_or(expr_ty)
-                        } else {
-                            // For forwarded assignment, user-provided annotation is treated
-                            // as just an upper-bound hint.
-                            expr_ty
-                        };
-                        (
-                            Some(annot.annotation.qualifiers.contains(&Qualifier::TypeAlias)),
-                            ty,
-                        )
-                    }
-                    None if matches!(&**expr, Expr::EllipsisLiteral(_))
-                        && self.module().path().is_interface() =>
-                    {
-                        // `x = ...` in a stub file means that the type of `x` is unknown
-                        (None, Type::any_implicit())
-                    }
-                    None => (None, self.expr(expr, None, errors)),
-                };
-                let is_bare_annotated = has_type_alias_qualifier != Some(true)
-                    && matches!(expr.as_ref(), Expr::Name(_) | Expr::Attribute(_))
-                    && matches!(
-                        &ty,
-                        Type::Type(inner)
-                            if matches!(inner.as_ref(), Type::SpecialForm(SpecialForm::Annotated))
-                    );
-                if is_bare_annotated {
-                    ty
-                } else {
-                    // Then, handle the possibility that we need to treat the type as a type alias
-                    match has_type_alias_qualifier {
-                        Some(true) => self.as_type_alias(
-                            name,
-                            TypeAliasStyle::LegacyExplicit,
-                            ty,
-                            expr,
-                            None,
-                            legacy_tparams,
-                            errors,
-                        ),
-                        None if Self::may_be_implicit_type_alias(&ty)
-                            && !is_in_function_scope
-                            && self.has_valid_annotation_syntax(expr, &self.error_swallower()) =>
-                        {
-                            self.as_type_alias(
-                                name,
-                                TypeAliasStyle::LegacyImplicit,
-                                ty,
-                                expr,
-                                None,
-                                legacy_tparams,
-                                errors,
-                            )
-                        }
-                        _ => {
-                            if annot_key.is_some() {
-                                self.wrap_callable_legacy_typevars(ty)
-                            } else {
-                                ty
-                            }
-                        }
-                    }
-                }
-            }
+            } => self.binding_to_type_name_assign(
+                name,
+                *annot_key,
+                expr,
+                legacy_tparams,
+                *is_in_function_scope,
+                errors,
+            ),
             Binding::TypeVar(ann, name, x) => {
                 let ty = self.typevar_from_call(name.clone(), x, errors).to_type();
                 if let Some(k) = ann
@@ -3360,481 +4194,23 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
             }
             Binding::TypeVarTuple(ann, name, x) => {
-                let ty = self
-                    .typevartuple_from_call(name.clone(), x, errors)
-                    .to_type();
-                if let Some(k) = ann
-                    && let AnnotationWithTarget {
-                        target,
-                        annotation:
-                            Annotation {
-                                ty: Some(want),
-                                qualifiers: _,
-                            },
-                    } = &*self.get_idx(*k)
-                {
-                    self.check_and_return_type(ty, want, x.range, errors, &|| {
-                        TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(target))
-                    })
-                } else {
-                    ty
-                }
+                self.binding_to_type_type_var_tuple(*ann, name, x, errors)
             }
-            Binding::ReturnType(x) => {
-                match &x.kind {
-                    ReturnTypeKind::ShouldValidateAnnotation {
-                        range,
-                        annotation,
-                        stub_or_impl,
-                        decorators,
-                        implicit_return,
-                        is_generator,
-                        has_explicit_return,
-                    } => {
-                        // TODO: A return type annotation like `Final` is invalid in this context.
-                        // It will result in an implicit Any type, which is reasonable, but we should
-                        // at least error here.
-                        let ty = self.get_idx(*annotation).annotation.get_type().clone();
-                        // If the function body is stubbed out or if the function is decorated with
-                        // `@abstractmethod`, we blindly accept the return type annotation.
-                        if *stub_or_impl != FunctionStubOrImpl::Stub
-                            && !decorators.iter().any(|k| {
-                                let decorator = self.get_idx(*k);
-                                match decorator.ty.callee_kind() {
-                                    Some(CalleeKind::Function(FunctionKind::AbstractMethod)) => {
-                                        true
-                                    }
-                                    _ => false,
-                                }
-                            })
-                        {
-                            let implicit_return = self.get_idx(*implicit_return);
-                            self.check_implicit_return_against_annotation(
-                                implicit_return,
-                                &ty,
-                                x.is_async,
-                                *is_generator,
-                                *has_explicit_return,
-                                *range,
-                                errors,
-                            );
-                        }
-                        self.return_type_from_annotation(ty, x.is_async, *is_generator)
-                    }
-                    ReturnTypeKind::ShouldTrustAnnotation {
-                        annotation,
-                        is_generator,
-                    } => {
-                        // TODO: A return type annotation like `Final` is invalid in this context.
-                        // It will result in an implicit Any type, which is reasonable, but we should
-                        // at least error here.
-                        let ty = self.get_idx(*annotation).annotation.get_type().clone();
-                        self.return_type_from_annotation(ty, x.is_async, *is_generator)
-                    }
-                    ReturnTypeKind::ShouldReturnAny { is_generator } => self
-                        .return_type_from_annotation(
-                            Type::any_implicit(),
-                            x.is_async,
-                            *is_generator,
-                        ),
-                    ReturnTypeKind::ShouldInferType {
-                        returns,
-                        implicit_return,
-                        yields,
-                        yield_froms,
-                        body_is_trivial,
-                        class_metadata_key,
-                    } => {
-                        let is_generator = !(yields.is_empty() && yield_froms.is_empty());
-                        let returns = returns.iter().map(|k| self.get_idx(*k).arc_clone_ty());
-                        let implicit_return = self.get_idx(*implicit_return);
-                        // TODO: It should always be a no-op to include a `Type::Never` in unions, but
-                        // `simple::test_solver_variables` fails if we do, because `solver::unions` does
-                        // `is_subset_eq` to force free variables, causing them to be equated to
-                        // `Type::Never` instead of becoming `Type::Any`.
-                        let return_ty = if implicit_return.ty().is_never() {
-                            self.unions(returns.collect())
-                        } else {
-                            self.unions(
-                                returns
-                                    .chain(iter::once(implicit_return.arc_clone_ty()))
-                                    .collect(),
-                            )
-                        };
-                        // If this is a method with a trivial body (e.g., `raise NotImplementedError()`)
-                        // in a class that extends ABC, treat it as an abstract method and return Any
-                        // instead of Never. This handles transitive ABC inheritance.
-                        let is_abstract_method = *body_is_trivial
-                            && return_ty.is_never()
-                            && class_metadata_key
-                                .is_some_and(|key| self.get_idx(key).extends_abc());
-                        let return_ty = if is_abstract_method {
-                            Type::any_implicit()
-                        } else {
-                            return_ty
-                        };
-                        if is_generator {
-                            let yield_ty = self.unions({
-                                let yield_tys =
-                                    yields.iter().map(|idx| self.get_idx(*idx).yield_ty.clone());
-                                let yield_from_tys = yield_froms
-                                    .iter()
-                                    .map(|idx| self.get_idx(*idx).yield_ty.clone());
-                                yield_tys.chain(yield_from_tys).collect()
-                            });
-                            if x.is_async {
-                                self.stdlib
-                                    .async_generator(yield_ty, Type::any_implicit())
-                                    .to_type()
-                            } else {
-                                self.stdlib
-                                    .generator(yield_ty, Type::any_implicit(), return_ty)
-                                    .to_type()
-                            }
-                        } else if x.is_async {
-                            self.stdlib
-                                .coroutine(Type::any_implicit(), Type::any_implicit(), return_ty)
-                                .to_type()
-                        } else {
-                            return_ty
-                        }
-                    }
-                }
-            }
-            Binding::ReturnExplicit(x) => {
-                let annot = x.annot.map(|k| self.get_idx(k));
-                let hint = annot.as_ref().and_then(|ann| ann.ty(self.stdlib));
-                if x.is_unreachable {
-                    if let Some(box expr) = &x.expr {
-                        self.expr_infer(expr, errors);
-                    }
-                    self.error(
-                        errors,
-                        x.range,
-                        ErrorInfo::Kind(ErrorKind::Unreachable),
-                        "This `return` statement is unreachable".to_owned(),
-                    )
-                } else if x.is_async && x.is_generator {
-                    if let Some(box expr) = &x.expr {
-                        self.expr_infer(expr, errors);
-                        self.error(
-                            errors,
-                            expr.range(),
-                            ErrorInfo::Kind(ErrorKind::BadReturn),
-                            "Return statement with value is not allowed in async generator"
-                                .to_owned(),
-                        )
-                    } else {
-                        Type::None
-                    }
-                } else if x.is_generator {
-                    let hint = hint.and_then(|ty| self.decompose_generator(&ty).map(|(_, _, r)| r));
-                    let tcc: &dyn Fn() -> TypeCheckContext =
-                        &|| TypeCheckContext::of_kind(TypeCheckKind::ExplicitFunctionReturn);
-                    if let Some(box expr) = &x.expr {
-                        self.expr(expr, hint.as_ref().map(|t| (t, tcc)), errors)
-                    } else if let Some(hint) = hint {
-                        self.check_type(&Type::None, &hint, x.range, errors, tcc);
-                        Type::None
-                    } else {
-                        Type::None
-                    }
-                } else if matches!(hint, Some(Type::TypeGuard(_) | Type::TypeIs(_))) {
-                    let hint = Some(Type::ClassType(self.stdlib.bool().clone()));
-                    let tcc: &dyn Fn() -> TypeCheckContext =
-                        &|| TypeCheckContext::of_kind(TypeCheckKind::TypeGuardReturn);
-                    if let Some(box expr) = &x.expr {
-                        self.expr(expr, hint.as_ref().map(|t| (t, tcc)), errors)
-                    } else if let Some(hint) = hint {
-                        self.check_type(&Type::None, &hint, x.range, errors, tcc);
-                        Type::None
-                    } else {
-                        Type::None
-                    }
-                } else {
-                    let tcc: &dyn Fn() -> TypeCheckContext =
-                        &|| TypeCheckContext::of_kind(TypeCheckKind::ExplicitFunctionReturn);
-                    if let Some(box expr) = &x.expr {
-                        self.expr(expr, hint.as_ref().map(|t| (t, tcc)), errors)
-                    } else if let Some(hint) = hint {
-                        self.check_type(&Type::None, &hint, x.range, errors, tcc);
-                        Type::None
-                    } else {
-                        Type::None
-                    }
-                }
-            }
-            Binding::ReturnImplicit(x) => {
-                // Would context have caught something:
-                // https://typing.python.org/en/latest/spec/exceptions.html#context-managers.
-                let context_catch = |x: &Type| -> bool {
-                    match x {
-                        Type::Literal(lit) if let Lit::Bool(b) = lit.value => b,
-                        Type::ClassType(cls) => cls == self.stdlib.bool(),
-                        _ => false, // Default to assuming exceptions are not suppressed
-                    }
-                };
-
-                if self.module().path().is_interface() {
-                    Type::any_implicit() // .pyi file, functions don't have bodies
-                } else if x.last_exprs.as_ref().is_some_and(|xs| {
-                    xs.iter().all(|(last, k)| {
-                        let e = self.get_idx(*k);
-                        match last {
-                            LastStmt::Expr => e.ty().is_never(),
-                            LastStmt::With(kind) => {
-                                let res = self.context_value_exit(
-                                    e.ty(),
-                                    *kind,
-                                    TextRange::default(),
-                                    &self.error_swallower(),
-                                    None,
-                                );
-                                !context_catch(&res)
-                            }
-                            LastStmt::Match(_) => {
-                                // Check if the MatchExhaustive binding at this range resolved to Never
-                                e.ty().is_never()
-                            }
-                        }
-                    })
-                }) {
-                    Type::never()
-                } else {
-                    Type::None
-                }
-            }
+            Binding::ReturnType(x) => self.binding_to_type_return_type(x, errors),
+            Binding::ReturnExplicit(x) => self.binding_to_type_return_explicit(x, errors),
+            Binding::ReturnImplicit(x) => self.binding_to_type_return_implicit(x),
             Binding::ExceptionHandler(ann, is_star) => {
-                let base_exception_type = self.stdlib.base_exception().clone().to_type();
-                let base_exception_group_any_type = if *is_star {
-                    // Only query for `BaseExceptionGroup` if we see an `except*` handler (which
-                    // was introduced in Python3.11).
-                    // We can't unconditionally query for `BaseExceptionGroup` until Python3.10
-                    // is out of its EOL period.
-                    let res = self
-                        .stdlib
-                        .base_exception_group(Type::Any(AnyStyle::Implicit))
-                        .map(|x| x.to_type());
-                    if res.is_none() {
-                        self.error(
-                            errors,
-                            ann.range(),
-                            ErrorInfo::Kind(ErrorKind::Unsupported),
-                            "`expect*` is unsupported until Python 3.11".to_owned(),
-                        );
-                    }
-                    res
-                } else {
-                    None
-                };
-                let check_exception_type = |exception_type: Type, range| {
-                    let exception = self.untype(exception_type, range, errors);
-                    self.check_type(&exception, &base_exception_type, range, errors, &|| {
-                        TypeCheckContext::of_kind(TypeCheckKind::ExceptionClass)
-                    });
-                    if let Some(base_exception_group_any_type) =
-                        base_exception_group_any_type.as_ref()
-                        && !self.behaves_like_any(&exception)
-                        && self.is_subset_eq(&exception, base_exception_group_any_type)
-                    {
-                        self.error(
-                            errors,
-                            range,
-                            ErrorInfo::Kind(ErrorKind::InvalidInheritance),
-                            "Exception handler annotation in `except*` clause may not extend `BaseExceptionGroup`".to_owned());
-                    }
-                    exception
-                };
-                let exceptions = match &**ann {
-                    // if the exception classes are written as a tuple literal, use each annotation's position for error reporting
-                    Expr::Tuple(tup) => tup
-                        .elts
-                        .iter()
-                        .map(|e| check_exception_type(self.expr_infer(e, errors), e.range()))
-                        .collect(),
-                    _ => {
-                        let exception_types = self.expr_infer(ann, errors);
-                        match exception_types {
-                            Type::Tuple(Tuple::Concrete(ts)) => ts
-                                .into_iter()
-                                .map(|t| check_exception_type(t, ann.range()))
-                                .collect(),
-                            Type::Tuple(Tuple::Unbounded(t)) => {
-                                vec![check_exception_type(*t, ann.range())]
-                            }
-                            _ => vec![check_exception_type(exception_types, ann.range())],
-                        }
-                    }
-                };
-                let exceptions = self.unions(exceptions);
-                if *is_star && let Some(t) = self.stdlib.exception_group(exceptions.clone()) {
-                    t.to_type()
-                } else {
-                    exceptions
-                }
+                self.binding_to_type_exception_handler(ann, *is_star, errors)
             }
             Binding::AugAssign(ann, x) => self.augassign_infer(*ann, x, errors),
             Binding::IterableValue(ann, e, is_async) => {
-                let ann = ann.map(|k| self.get_idx(k));
-                if let Some(ann) = &ann
-                    && ann.annotation.is_final()
-                {
-                    self.error(
-                        errors,
-                        e.range(),
-                        ErrorInfo::Kind(ErrorKind::BadAssignment),
-                        format!("Cannot assign to {} because it is marked final", ann.target),
-                    );
-                }
-                let tcc: &dyn Fn() -> TypeCheckContext = &|| {
-                    let (name, annot_type) = {
-                        match &ann {
-                            None => (None, None),
-                            Some(t) => (
-                                match &t.target {
-                                    AnnotationTarget::Assign(name, _)
-                                    | AnnotationTarget::ClassMember(name) => Some(name.clone()),
-                                    _ => None,
-                                },
-                                t.ty(self.stdlib).clone(),
-                            ),
-                        }
-                    };
-                    TypeCheckContext::of_kind(TypeCheckKind::IterationVariableMismatch(
-                        name.unwrap_or_else(|| Name::new_static("_")),
-                        self.for_display(annot_type.unwrap_or_else(Type::any_implicit)),
-                    ))
-                };
-                let iterables = if is_async.is_async() {
-                    let infer_hint = ann.clone().and_then(|x| {
-                        x.ty(self.stdlib)
-                            .map(|ty| self.stdlib.async_iterable(ty.clone()).to_type())
-                    });
-                    let iterable = self.expr_infer_with_hint(
-                        e,
-                        infer_hint.as_ref().map(HintRef::soft),
-                        errors,
-                    );
-                    self.async_iterate(&iterable, e.range(), errors)
-                } else {
-                    let infer_hint = ann.clone().and_then(|x| {
-                        x.ty(self.stdlib)
-                            .map(|ty| self.stdlib.iterable(ty.clone()).to_type())
-                    });
-                    let iterable = self.expr_infer_with_hint(
-                        e,
-                        infer_hint.as_ref().map(HintRef::soft),
-                        errors,
-                    );
-                    self.iterate(&iterable, e.range(), errors, None)
-                };
-                let value = self.get_produced_type(iterables);
-                let check_hint = ann.clone().and_then(|x| x.ty(self.stdlib));
-                if let Some(check_hint) = check_hint {
-                    self.check_and_return_type(value, &check_hint, e.range(), errors, tcc)
-                } else {
-                    value
-                }
+                self.binding_to_type_iterable_value(*ann, e, *is_async, errors)
             }
             Binding::ContextValue(ann, e, range, kind) => {
-                let context_manager = self.get_idx(*e);
-                let context_value = self.context_value(context_manager.ty(), *kind, *range, errors);
-                let ann = ann.map(|k| self.get_idx(k));
-                if let Some(ann) = ann {
-                    if ann.annotation.is_final() {
-                        self.error(
-                            errors,
-                            *range,
-                            ErrorInfo::Kind(ErrorKind::BadAssignment),
-                            format!("Cannot assign to {} because it is marked final", ann.target),
-                        );
-                    }
-                    if let Some(ty) = ann.ty(self.stdlib) {
-                        self.check_and_return_type(context_value, &ty, *range, errors, &|| {
-                            TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(
-                                &ann.target,
-                            ))
-                        })
-                    } else {
-                        context_value
-                    }
-                } else {
-                    context_value
-                }
+                self.binding_to_type_context_value(*ann, *e, *range, *kind, errors)
             }
             Binding::UnpackedValue(ann, to_unpack, range, pos) => {
-                let iterables = self.iterate(self.get_idx(*to_unpack).ty(), *range, errors, None);
-                let mut values = Vec::new();
-                for iterable in iterables {
-                    values.push(match iterable {
-                        Iterable::OfType(ty) => match pos {
-                            UnpackedPosition::Index(_) | UnpackedPosition::ReverseIndex(_) => ty,
-                            UnpackedPosition::Slice(_, _) => self.stdlib.list(ty).to_type(),
-                        },
-                        Iterable::OfTypeVarTuple(_) => {
-                            // Type var tuples can resolve to anything so we fall back to object
-                            let object_type = self.stdlib.object().clone().to_type();
-                            match pos {
-                                UnpackedPosition::Index(_) | UnpackedPosition::ReverseIndex(_) => {
-                                    object_type
-                                }
-                                UnpackedPosition::Slice(_, _) => {
-                                    self.stdlib.list(object_type).to_type()
-                                }
-                            }
-                        }
-                        Iterable::FixedLen(ts) => {
-                            match pos {
-                                UnpackedPosition::Index(i) | UnpackedPosition::ReverseIndex(i) => {
-                                    let idx = if matches!(pos, UnpackedPosition::Index(_)) {
-                                        Some(*i)
-                                    } else {
-                                        ts.len().checked_sub(*i)
-                                    };
-                                    if let Some(idx) = idx
-                                        && let Some(element) = ts.get(idx)
-                                    {
-                                        element.clone()
-                                    } else {
-                                        // We'll report this error when solving for Binding::UnpackedLength.
-                                        Type::any_error()
-                                    }
-                                }
-                                UnpackedPosition::Slice(i, j) => {
-                                    let start = *i;
-                                    let end = ts.len().checked_sub(*j);
-                                    if let Some(end) = end
-                                        && end >= start
-                                        && let Some(items) = ts.get(start..end)
-                                    {
-                                        let elem_ty = self.unions(items.to_vec());
-                                        self.stdlib.list(elem_ty).to_type()
-                                    } else {
-                                        // We'll report this error when solving for Binding::UnpackedLength.
-                                        Type::any_error()
-                                    }
-                                }
-                            }
-                        }
-                    })
-                }
-                let got = self.unions(values);
-                if let Some(ann) = ann.map(|idx| self.get_idx(idx)) {
-                    if ann.annotation.is_final() {
-                        self.error(
-                            errors,
-                            *range,
-                            ErrorInfo::Kind(ErrorKind::BadAssignment),
-                            format!("Cannot assign to {} because it is marked final", ann.target),
-                        );
-                    }
-                    if let Some(want) = ann.ty(self.stdlib) {
-                        self.check_type(&got, &want, *range, errors, &|| {
-                            TypeCheckContext::of_kind(TypeCheckKind::UnpackedAssign)
-                        });
-                    }
-                }
-                got
+                self.binding_to_type_unpacked_value(*ann, *to_unpack, *range, pos, errors)
             }
             &Binding::Function(idx, mut pred, class_meta) => {
                 let def = self.get_decorated_function(idx);
@@ -3874,112 +4250,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Binding::TypeParameter(tp) => {
                 self.quantified_from_type_parameter(tp, errors).to_value()
             }
-            Binding::Module(m, path, prev) => {
-                let prev = prev
-                    .as_ref()
-                    .and_then(|x| self.get_idx(*x).ty().as_module().cloned());
-                match prev {
-                    Some(prev) if prev.parts() == path => prev.add_module(*m).to_type(),
-                    _ => {
-                        if path.len() == 1 {
-                            Type::Module(ModuleType::new(
-                                path[0].clone(),
-                                OrderedSet::from_iter([(*m)]),
-                            ))
-                        } else {
-                            assert_eq!(&m.components(), path);
-                            Type::Module(ModuleType::new_as(*m))
-                        }
-                    }
-                }
-            }
+            Binding::Module(m, path, prev) => self.binding_to_type_module(*m, path, *prev),
             Binding::ScopedTypeAlias(name, params, expr) => {
-                let ty = self.expr_infer(expr, errors);
-                let ta =
-                    self.as_type_alias(name, TypeAliasStyle::Scoped, ty, expr, None, &None, errors);
-                match ta {
-                    Type::Forall(..) => self.error(
-                        errors,
-                        expr.range(),
-                        ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
-                        format!("Type parameters used in `{name}` but not declared"),
-                    ),
-                    Type::TypeAlias(ta) => {
-                        let params_range = params.as_ref().map_or(expr.range(), |x| x.range);
-                        Forallable::TypeAlias(*ta).forall(self.validated_tparams(
-                            params_range,
-                            self.scoped_type_params(params.as_ref(), errors),
-                            TParamsSource::TypeAlias,
-                            errors,
-                        ))
-                    }
-                    _ => ta,
-                }
+                self.binding_to_type_scoped_type_alias(name, params, expr, errors)
             }
             Binding::TypeAliasType(ann, name, x) => {
-                let Some((expr, type_param_exprs)) =
-                    self.typealiastype_from_call(name.clone(), x, errors)
-                else {
-                    return Type::any_error();
-                };
-                let ty = self.expr_infer(&expr, errors);
-                let ta = self.as_type_alias(
-                    &name.id,
-                    TypeAliasStyle::Scoped,
-                    ty,
-                    &expr,
-                    Some(type_param_exprs),
-                    &None,
-                    errors,
-                );
-                if let Some(k) = ann
-                    && let AnnotationWithTarget {
-                        target,
-                        annotation:
-                            Annotation {
-                                ty: Some(want),
-                                qualifiers: _,
-                            },
-                    } = &*self.get_idx(*k)
-                {
-                    self.check_and_return_type(ta.clone(), want, x.range, errors, &|| {
-                        TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(target))
-                    })
-                } else {
-                    ta
-                }
+                self.binding_to_type_type_alias_type(*ann, name, x, errors)
             }
             Binding::LambdaParameter(var) => var.to_type(),
-            Binding::FunctionParameter(param) => {
-                let finalize = |target: &AnnotationTarget, ty| match target {
-                    AnnotationTarget::ArgsParam(_) => Type::unbounded_tuple(ty),
-                    AnnotationTarget::KwargsParam(_) => self
-                        .stdlib
-                        .dict(self.stdlib.str().clone().to_type(), ty)
-                        .to_type(),
-                    _ => ty,
-                };
-                match param {
-                    FunctionParameter::Annotated(key) => {
-                        let annotation = self.get_idx(*key);
-                        annotation.ty(self.stdlib).clone().unwrap_or_else(|| {
-                            // This annotation isn't valid. It's something like `: Final` that doesn't
-                            // have enough information to create a real type.
-                            finalize(&annotation.target, Type::any_implicit())
-                        })
-                    }
-                    FunctionParameter::Unannotated(var, function_idx, target) => {
-                        // It's important that we force the undecorated function binding before reading
-                        // from this var. Solving the undecorated function binding pins the type of the var,
-                        // either to a concrete type or to any. Without this we can have non-determinism
-                        // where the reader can observe an unresolved var or a resolved type, depending on
-                        // the order of solved bindings.
-                        self.get_idx(*function_idx);
-                        let ty = self.solver().force_var(*var);
-                        finalize(target, ty)
-                    }
-                }
-            }
+            Binding::FunctionParameter(param) => self.binding_to_type_function_parameter(param),
             Binding::SuperInstance(style, range) => self.solve_super_binding(style, *range, errors),
             // For first-usage-based type inference, we occasionally just want a way to force
             // some other `K::Value` type in order to deterministically pin `Var`s introduced by a definition.
