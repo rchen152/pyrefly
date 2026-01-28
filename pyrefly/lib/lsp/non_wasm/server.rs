@@ -197,6 +197,7 @@ use pyrefly_util::telemetry::Telemetry;
 use pyrefly_util::telemetry::TelemetryEvent;
 use pyrefly_util::telemetry::TelemetryEventKind;
 use pyrefly_util::telemetry::TelemetryFileStats;
+use pyrefly_util::telemetry::TelemetryFileWatcherStats;
 use pyrefly_util::telemetry::TelemetryServerState;
 use pyrefly_util::telemetry::TelemetryTaskId;
 use pyrefly_util::watch_pattern::WatchPattern;
@@ -1071,7 +1072,7 @@ impl Server {
                 if !invalidated_source_dbs.is_empty() {
                     // a sourcedb rebuild completed before this, so it's okay
                     // to re-setup the file watcher right now
-                    self.setup_file_watcher_if_necessary();
+                    self.setup_file_watcher_if_necessary(Some(telemetry_event));
                     let invalidated_configs = invalidated_source_dbs
                         .into_iter()
                         .flat_map(|db| self.workspaces.get_configs_for_source_db(db))
@@ -1185,7 +1186,7 @@ impl Server {
                 self.did_change_watched_files(params, telemetry, telemetry_event);
             }
             LspEvent::DidChangeWorkspaceFolders(params) => {
-                self.workspace_folders_changed(params);
+                self.workspace_folders_changed(params, telemetry_event);
             }
             LspEvent::DidChangeConfiguration(params) => {
                 self.did_change_configuration(params);
@@ -1782,7 +1783,7 @@ impl Server {
             }
         }
 
-        s.setup_file_watcher_if_necessary();
+        s.setup_file_watcher_if_necessary(None);
         s.request_settings_for_all_workspaces();
         s
     }
@@ -2474,7 +2475,7 @@ impl Server {
         self.populate_project_files_if_necessary(config_to_populate_files, telemetry_event);
         self.populate_workspace_files_if_necessary(telemetry_event);
         // rewatch files in case we loaded or dropped any configs
-        self.setup_file_watcher_if_necessary();
+        self.setup_file_watcher_if_necessary(Some(telemetry_event));
         Ok(())
     }
 
@@ -2701,7 +2702,7 @@ impl Server {
         // Rewatch files if necessary (config changed, files added/removed, etc.)
         if Self::should_rewatch(&events) {
             info!("[Pyrefly] Re-registering file watchers");
-            self.setup_file_watcher_if_necessary();
+            self.setup_file_watcher_if_necessary(Some(telemetry_event));
         }
 
         self.invalidate(TelemetryEventKind::InvalidateFind, move |t| {
@@ -2793,9 +2794,13 @@ impl Server {
         );
     }
 
-    fn workspace_folders_changed(&self, params: DidChangeWorkspaceFoldersParams) {
+    fn workspace_folders_changed(
+        &self,
+        params: DidChangeWorkspaceFoldersParams,
+        telemetry_event: &mut TelemetryEvent,
+    ) {
         self.workspaces.changed(params.event);
-        self.setup_file_watcher_if_necessary();
+        self.setup_file_watcher_if_necessary(Some(telemetry_event));
         self.request_settings_for_all_workspaces();
     }
 
@@ -3871,7 +3876,9 @@ impl Server {
         }
     }
 
-    fn setup_file_watcher_if_necessary(&self) {
+    fn setup_file_watcher_if_necessary(&self, telemetry_event: Option<&mut TelemetryEvent>) {
+        let start = Instant::now();
+        let mut pattern_count = 0;
         let roots = self.workspaces.roots();
         match self.initialize_params.capabilities.workspace {
             Some(WorkspaceClientCapabilities {
@@ -3924,6 +3931,7 @@ impl Server {
                         kind: Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
                     })
                     .collect::<Vec<_>>();
+                pattern_count = watchers.len();
                 self.send_request::<RegisterCapability>(RegistrationParams {
                     registrations: Vec::from([Registration {
                         id: Self::FILEWATCHER_ID.to_owned(),
@@ -3939,6 +3947,12 @@ impl Server {
                 self.filewatcher_registered.store(true, Ordering::Relaxed);
             }
             _ => (),
+        }
+        if let Some(telemetry_event) = telemetry_event {
+            telemetry_event.set_file_watcher_stats(TelemetryFileWatcherStats {
+                count: pattern_count,
+                duration: start.elapsed(),
+            });
         }
     }
 

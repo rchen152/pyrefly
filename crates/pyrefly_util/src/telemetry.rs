@@ -51,6 +51,7 @@ pub struct TelemetryEvent {
     pub task_id: Option<TelemetryTaskId>,
     pub sourcedb_rebuild_stats: Option<TelemetrySourceDbRebuildStats>,
     pub sourcedb_rebuild_instance_stats: Option<TelemetrySourceDbRebuildInstanceStats>,
+    pub file_watcher_stats: Option<TelemetryFileWatcherStats>,
     pub activity_key: Option<ActivityKey>,
     pub canceled: bool,
 }
@@ -113,6 +114,12 @@ pub struct TelemetrySourceDbRebuildInstanceStats {
     pub raw_size: Option<usize>,
 }
 
+#[derive(Default)]
+pub struct TelemetryFileWatcherStats {
+    pub duration: Duration,
+    pub count: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ActivityKey {
     pub id: String,
@@ -141,6 +148,7 @@ impl TelemetryEvent {
                 task_id: None,
                 sourcedb_rebuild_stats: None,
                 sourcedb_rebuild_instance_stats: None,
+                file_watcher_stats: None,
                 activity_key: None,
                 canceled: false,
             },
@@ -167,6 +175,7 @@ impl TelemetryEvent {
             task_id,
             sourcedb_rebuild_stats: None,
             sourcedb_rebuild_instance_stats: None,
+            file_watcher_stats: None,
             activity_key: None,
             canceled: false,
         }
@@ -205,6 +214,10 @@ impl TelemetryEvent {
         stats: TelemetrySourceDbRebuildInstanceStats,
     ) {
         self.sourcedb_rebuild_instance_stats = Some(stats);
+    }
+
+    pub fn set_file_watcher_stats(&mut self, stats: TelemetryFileWatcherStats) {
+        self.file_watcher_stats = Some(stats);
     }
 
     pub fn finish_and_record(self, telemetry: &dyn Telemetry, error: Option<&Error>) -> Duration {
