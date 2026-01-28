@@ -454,7 +454,7 @@ impl ReportArgs {
         let holder = Forgetter::new(state, false);
         let handles = Handles::new(expanded_file_list);
         let mut forgetter = Forgetter::new(
-            holder.as_ref().new_transaction(Require::Everything, None),
+            holder.as_ref().new_transaction(Require::Exports, None),
             true,
         );
 
