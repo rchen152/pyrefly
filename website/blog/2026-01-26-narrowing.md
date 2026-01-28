@@ -2,7 +2,7 @@
 title: 4 Pyrefly Type Narrowing Patterns that make Type Checking more Intuitive
 description: Learn about 4 ways Pyrefly narrows types, reducing the need to explicitly cast in your code.
 slug: type-narrowing
-authors: [yangdanny, abbym]
+authors: [yangdanny, rebeccachen, abbym]
 tags: [typechecking]
 image: https://pyrefly.org/assets/images/type-narrowing-blog-688b8aae77abd588a29ddb9d5bab231f.png
 hide_table_of_contents: false
