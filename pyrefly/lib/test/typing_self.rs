@@ -193,3 +193,19 @@ class C:
         assert_type(self(), Self)
 "#,
 );
+
+testcase!(
+    bug = "conformance: Should error when returning concrete class instead of Self",
+    test_self_return_concrete_class,
+    r#"
+from typing import Self
+
+class Shape:
+    def method(self) -> Self:
+        return Shape()  # should error: returns Shape, not Self
+
+    @classmethod
+    def cls_method(cls) -> Self:
+        return Shape()  # should error: returns Shape, not Self
+"#,
+);
