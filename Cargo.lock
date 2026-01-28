@@ -10,9 +10,9 @@ checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
 
 [[package]]
 name = "addr2line"
-version = "0.24.2"
+version = "0.25.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dfbe277e56a376000877090da837660b4427aad530e3028d44e0bffe4f89a1c1"
+checksum = "1b5d307320b3181d6d7954e663bd7c774a838b8220fe0593c86d9fb09f498b4b"
 dependencies = [
  "gimli",
 ]
@@ -230,9 +230,8 @@ checksum = "d468802bab17cbc0cc575e9b053f41e72aa36bfa6b7f55e3529ffa43161b97fa"
 
 [[package]]
 name = "backtrace"
-version = "0.3.75"
+version = "0.3.76"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6806a6321ec58106fea15becdad98371e28d92ccbc7c8f1b3b6dd724fe8f1002"
 dependencies = [
  "addr2line",
  "cfg-if",
@@ -240,7 +239,7 @@ dependencies = [
  "miniz_oxide",
  "object",
  "rustc-demangle",
- "windows-targets 0.52.6",
+ "windows-link 0.2.1",
 ]
 
 [[package]]
@@ -1089,9 +1088,9 @@ dependencies = [
 
 [[package]]
 name = "gimli"
-version = "0.31.1"
+version = "0.32.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07e28edb80900c19c28f1072f2e8aeca7fa06b23cd4169cefe1af5aa3260783f"
+checksum = "e629b9b98ef3dd8afe6ca2bd0f89306cec16d43d907889945bc5d6687f2f13c7"
 
 [[package]]
 name = "glob"
@@ -1830,9 +1829,9 @@ dependencies = [
 
 [[package]]
 name = "object"
-version = "0.36.7"
+version = "0.37.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62948e14d923ea95ea2c7c86c71013138b66525b86bdc08d2dcc262bdb497b87"
+checksum = "ff76201f031d8863c38aa7f905eca4f53abbfa15f609db4277d44cd8938f33fe"
 dependencies = [
  "memchr",
 ]
@@ -2115,7 +2114,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "anstream",
  "anyhow",
@@ -2173,7 +2172,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_build"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "anyhow",
  "dupe",
@@ -2193,7 +2192,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_bundled"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "anyhow",
  "sha2",
@@ -2204,7 +2203,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_config"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2239,7 +2238,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_derive"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2248,7 +2247,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_graph"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "dupe",
  "itertools 0.14.0",
@@ -2258,7 +2257,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_python"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2285,7 +2284,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_types"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "compact_str 0.8.0",
  "dupe",
@@ -2305,7 +2304,7 @@ dependencies = [
 
 [[package]]
 name = "pyrefly_util"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "anstream",
  "anyhow",
@@ -3492,7 +3491,7 @@ dependencies = [
 
 [[package]]
 name = "tsp_types"
-version = "0.50.0"
+version = "0.50.1"
 dependencies = [
  "lsp-server",
  "serde",
