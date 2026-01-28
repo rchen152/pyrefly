@@ -8,6 +8,7 @@
 #![cfg(test)]
 
 mod abstract_methods;
+mod annotation;
 mod assign;
 mod attribute_narrow;
 mod attributes;
