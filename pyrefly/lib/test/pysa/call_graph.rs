@@ -6772,14 +6772,16 @@ def foo():
     d["bar"]
     d["foo"] = 0
 "#,
-    &|_context: &ModuleContext| {
+    &|context: &ModuleContext| {
         let mapping_getitem_target = vec![
             create_call_target("typing.Mapping.__getitem__", TargetType::Function)
-                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
+                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                .with_receiver_class_for_test("test.SimpleTypedDict", context),
         ];
         let init_targets = vec![
             create_call_target("test.SimpleTypedDict.__init__", TargetType::Function)
-                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
+                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                .with_receiver_class_for_test("test.SimpleTypedDict", context),
         ];
         let new_targets = vec![
             create_call_target("builtins.object.__new__", TargetType::Function)
@@ -6906,6 +6908,30 @@ class C(A):
                     ]),
                 ),
             ],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_dict_pop,
+    TEST_MODULE_NAME,
+    r#"
+def foo():
+    d = {"a": 1, "b": 2}
+    d.pop("a")
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.foo",
+            vec![(
+                "4:5-4:15",
+                regular_call_callees(vec![
+                    create_call_target("builtins.dict.pop", TargetType::AllOverrides)
+                        .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                        .with_return_type(ScalarTypeProperties::int())
+                        .with_receiver_class_for_test("builtins.dict", context),
+                ]),
+            )],
         )]
     }
 );

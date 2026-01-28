@@ -1583,6 +1583,20 @@ impl<'a> CallGraphVisitor<'a> {
                 )),
                 is_class_def: false,
             },
+            Type::TypedDict(TypedDict::Anonymous(_)) => ReceiverClassResult {
+                class: Some(ClassRef::from_class(
+                    self.module_context.stdlib.dict_object(),
+                    self.module_context.module_ids,
+                )),
+                is_class_def: false,
+            },
+            Type::TypedDict(TypedDict::TypedDict(typed_dict)) => ReceiverClassResult {
+                class: Some(ClassRef::from_class(
+                    typed_dict.class_object(),
+                    self.module_context.module_ids,
+                )),
+                is_class_def: false,
+            },
             _ => ReceiverClassResult {
                 class: None,
                 is_class_def: false,
