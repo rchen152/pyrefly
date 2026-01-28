@@ -277,6 +277,8 @@ pub enum ErrorKind {
     UntypedImport,
     /// Result of async function call is never used or awaited
     UnusedCoroutine,
+    /// A suppression comment is unused (no error to suppress, or specific codes are unused)
+    UnusedIgnore,
 }
 
 impl std::str::FromStr for ErrorKind {
@@ -331,6 +333,7 @@ impl ErrorKind {
             ErrorKind::MissingOverrideDecorator => Severity::Ignore,
             ErrorKind::OpenUnpacking => Severity::Ignore,
             ErrorKind::NonExhaustiveMatch => Severity::Warn,
+            ErrorKind::UnusedIgnore => Severity::Ignore,
             _ => Severity::Error,
         }
     }

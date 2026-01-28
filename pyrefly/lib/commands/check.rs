@@ -884,6 +884,23 @@ impl CheckArgs {
             errors.shown
         };
 
+        // Collect unused ignore errors for display (respects severity configuration)
+        let unused_ignore_errors = loads.collect_unused_ignore_errors_for_display();
+        let shown_errors: Vec<_> = if let Some(only) = &self.output.only {
+            let only = only.iter().collect::<SmallSet<_>>();
+            let filtered: Vec<_> = unused_ignore_errors
+                .shown
+                .into_iter()
+                .filter(|e| only.contains(&e.error_kind()))
+                .collect();
+            shown_errors.into_iter().chain(filtered).collect()
+        } else {
+            shown_errors
+                .into_iter()
+                .chain(unused_ignore_errors.shown)
+                .collect()
+        };
+
         // We update the baseline file if requested, after reporting any new errors using the old baseline
         if self.output.update_baseline
             && let Some(baseline_path) = &self.output.baseline
