@@ -651,8 +651,7 @@ impl FunctionNode {
             item.module.path().dupe(),
             context.handle.sys_info().dupe(),
         );
-        let context =
-            ModuleContext::create(handle, context.transaction, context.module_ids).unwrap();
+        let context = ModuleContext::create(handle, context.transaction, context.module_ids)?;
         let key_decorated_function =
             KeyDecoratedFunction(ShortIdentifier::from_text_range(item.definition_range));
         context

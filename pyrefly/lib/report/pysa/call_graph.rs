@@ -2344,8 +2344,7 @@ impl<'a> CallGraphVisitor<'a> {
             let module_id = self
                 .module_context
                 .module_ids
-                .get(ModuleKey::from_module(&definition.module))
-                .unwrap();
+                .get(ModuleKey::from_module(&definition.module))?;
 
             self.global_variables
                 .get_for_module(module_id)?
