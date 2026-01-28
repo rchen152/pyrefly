@@ -1794,9 +1794,24 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             BindingExpect::PrivateAttributeAccess(expectation) => {
                 self.check_private_attribute_access(expectation, errors);
             }
-            BindingExpect::UninitializedCheck { .. } => {
-                // TODO: Implement solve-time uninitialized variable checking.
-                // This will be implemented in a follow-up commit.
+            BindingExpect::UninitializedCheck {
+                name,
+                range,
+                termination_keys,
+            } => {
+                // Check if all branches that appeared uninitialized at binding time
+                // actually terminate due to Never/NoReturn. If any don't terminate,
+                // the variable may be uninitialized at this use.
+                let all_terminate = termination_keys
+                    .iter()
+                    .all(|key| self.get_idx(*key).ty().is_never());
+                if !all_terminate {
+                    errors.add(
+                        *range,
+                        ErrorInfo::Kind(ErrorKind::UnboundName),
+                        vec1![format!("`{name}` may be uninitialized")],
+                    );
+                }
             }
         }
         Arc::new(EmptyAnswer)

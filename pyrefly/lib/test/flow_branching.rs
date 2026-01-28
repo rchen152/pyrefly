@@ -1507,8 +1507,7 @@ def f(x: int | str):
 );
 
 testcase!(
-    bug = "We should detect that x may be uninitialized, but termination keys cause false negative",
-    test_non_noreturn_with_termination_key_false_negative,
+    test_non_noreturn_with_termination_key,
     r#"
 from typing import assert_type
 
@@ -1522,13 +1521,12 @@ def f(cond: bool) -> str:
         x = "defined"
     else:
         maybe_raises()  # Has termination key, but is NOT NoReturn
-    return x  # Should error: `x` may be uninitialized
+    return x  # E: `x` may be uninitialized
 "#,
 );
 
 testcase!(
-    bug = "We should detect that y may be uninitialized, but termination keys cause false negative",
-    test_non_noreturn_elif_false_negative,
+    test_non_noreturn_elif,
     r#"
 def maybe_raises() -> None:
     if True:
@@ -1541,7 +1539,7 @@ def f(x: int) -> str:
         maybe_raises()
     else:
         maybe_raises()
-    return y  # Should error: `y` may be uninitialized
+    return y  # E: `y` may be uninitialized
 "#,
 );
 
