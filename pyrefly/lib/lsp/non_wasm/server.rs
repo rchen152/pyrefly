@@ -2137,7 +2137,9 @@ impl Server {
     }
 
     fn invalidate_find_for_configs(&self, invalidated_configs: SmallSet<ArcId<ConfigFile>>) {
-        self.invalidate(|t| t.invalidate_find_for_configs(invalidated_configs));
+        self.invalidate(TelemetryEventKind::InvalidateFind, |t| {
+            t.invalidate_find_for_configs(invalidated_configs)
+        });
     }
 
     fn populate_project_files_if_necessary(
@@ -2206,11 +2208,15 @@ impl Server {
         }
     }
 
-    fn invalidate(&self, f: impl FnOnce(&mut Transaction) + Send + Sync + 'static) {
+    fn invalidate(
+        &self,
+        kind: TelemetryEventKind,
+        f: impl FnOnce(&mut Transaction) + Send + Sync + 'static,
+    ) {
         let open_handles = self.get_open_file_handles();
         let stream_diagnostics = self.stream_diagnostics;
         self.recheck_queue.queue_task(
-            TelemetryEventKind::Invalidate,
+            kind,
             Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
                 // Take a snapshot of the open files at the beginning of the transaction
                 // we'll stream diagnostics for those files as they become available
@@ -2403,7 +2409,9 @@ impl Server {
 
     fn did_save(&self, url: Url) {
         if let Some(path) = self.path_for_uri(&url) {
-            self.invalidate(move |t| t.invalidate_disk(&[path]))
+            self.invalidate(TelemetryEventKind::InvalidateDisk, move |t| {
+                t.invalidate_disk(&[path])
+            })
         }
     }
 
@@ -2691,7 +2699,9 @@ impl Server {
             self.setup_file_watcher_if_necessary();
         }
 
-        self.invalidate(move |t| t.invalidate_events(&events));
+        self.invalidate(TelemetryEventKind::InvalidateFind, move |t| {
+            t.invalidate_events(&events)
+        });
 
         // If a non-Python, non-config file was changed, then try rebuilding build systems.
         // If no build system file was changed, then we should just not do anything. If
