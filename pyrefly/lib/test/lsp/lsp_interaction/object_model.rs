@@ -977,6 +977,47 @@ impl TestClient {
         Ok(())
     }
 
+    /// The next publishDiagnostics for that path should have diagnostic count in this inclusive range, otherwise error
+    pub fn expect_publish_diagnostics_must_have_error_count_between(
+        &self,
+        path: PathBuf,
+        min: usize,
+        max: usize,
+    ) -> Result<(), LspMessageError> {
+        self.expect_message(
+            &format!(
+                "Next publishDiagnostics notification for file {} should have {min}-{max} errors",
+                path.display()
+            ),
+            |msg| {
+                if let Message::Notification(x) = msg
+                    && x.method == PublishDiagnostics::METHOD
+                {
+                    let params =
+                        serde_json::from_value::<PublishDiagnosticsParams>(x.params).unwrap();
+                    if params.uri.to_file_path().unwrap() == path {
+                        if params.diagnostics.len() >= min && params.diagnostics.len() <= max {
+                            Some(Ok(()))
+                        } else {
+                            Some(Err(LspMessageError::Custom {
+                                description: format!(
+                                    "Expected next publish diagnostics for file {} to have {min}-{max} errors, but got {}",
+                                    path.display(),
+                                    params.diagnostics.len()
+                                ),
+                            }))
+                        }
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            },
+        )?;
+        Ok(())
+    }
+
     pub fn expect_publish_diagnostics_uri(
         &self,
         uri: &Url,
