@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::borrow::Cow;
 use std::ffi::OsStr;
 use std::ffi::OsString;
 use std::fmt;
@@ -229,29 +230,30 @@ impl PythonLibraryManifest {
         if let Some(relative_to) = &mut self.relative_to {
             *relative_to = root.join(&relative_to);
         }
-        let relative_to = self.relative_to.as_deref().unwrap_or(root);
+
+        // VSCode resolves symlinks, so we also need to so our lookups
+        // will match what VSCode (and our language server) give us.
+        let relative_to = self
+            .relative_to
+            .as_deref()
+            .map(|p| p.canonicalize().map(Cow::Owned).unwrap_or(Cow::Borrowed(p)))
+            .unwrap_or(Cow::Borrowed(root));
+        let rewrite_paths = |paths: &mut Vec1<ModulePathBuf>| {
+            paths.iter_mut().for_each(|p| {
+                let mut file = relative_to.join(&**p);
+                if !p.starts_with(&self.buildfile_path) && self.relative_to.is_none() {
+                    // do the same as above, but cover the case where `relative_to` isn't relevant
+                    file = file.canonicalize().unwrap_or(file);
+                }
+                *p = ModulePathBuf::new(file)
+            })
+        };
         self.srcs.iter_mut().for_each(|(_, paths)| {
-            paths.iter_mut().for_each(|p| {
-                let resolved = relative_to.join(&**p);
-                // canonicalize it, since VSCode will do it for us anyway and
-                // then path lookups won't work
-                // TODO(connernilsen): do we need to store canonicalized files and
-                // buck-provided files?
-                let file = resolved.canonicalize().unwrap_or(resolved);
-                *p = ModulePathBuf::new(file)
-            })
+            rewrite_paths(paths);
         });
-        self.packages.iter_mut().for_each(|(_, paths)| {
-            paths.iter_mut().for_each(|p| {
-                let resolved = relative_to.join(&**p);
-                // canonicalize it, since VSCode will do it for us anyway and
-                // then path lookups won't work
-                // TODO(connernilsen): do we need to store canonicalized files and
-                // buck-provided files?
-                let file = resolved.canonicalize().unwrap_or(resolved);
-                *p = ModulePathBuf::new(file)
-            })
-        });
+        self.packages
+            .iter_mut()
+            .for_each(|(_, paths)| rewrite_paths(paths));
         self.buildfile_path = root.join(&self.buildfile_path);
     }
 
