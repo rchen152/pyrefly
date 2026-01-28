@@ -2740,7 +2740,8 @@ class Foo:
                         create_call_target("test.Foo.bar", TargetType::Function)
                             .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
                             .with_is_class_method(true)
-                            .with_return_type(ScalarTypeProperties::int()),
+                            .with_return_type(ScalarTypeProperties::int())
+                            .with_receiver_class_for_test("test.Foo", context),
                     ]),
                 ),
             ],
@@ -6859,6 +6860,50 @@ class A:
                         /* unresolved */ Unresolved::False,
                         /* is_attribute */ true,
                     ),
+                ),
+            ],
+        )]
+    }
+);
+
+call_graph_testcase!(
+    test_class_method_call_with_inheritance,
+    TEST_MODULE_NAME,
+    r#"
+class A:
+  @classmethod
+  def foo(cls):
+    cls.bar()
+  @classmethod
+  def bar(cls):
+    pass
+
+class B(A):
+  @classmethod
+  def bar(cls):
+    pass
+
+class C(A):
+  @classmethod
+  def bar(cls):
+    pass
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.A.foo",
+            vec![
+                (
+                    "5:5-5:8|identifier|cls",
+                    class_identifier_without_constructors("test.A", context),
+                ),
+                (
+                    "5:5-5:14",
+                    regular_call_callees(vec![
+                        create_call_target("test.A.bar", TargetType::AllOverrides)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_receiver_class_for_test("test.A", context)
+                            .with_is_class_method(true),
+                    ]),
                 ),
             ],
         )]

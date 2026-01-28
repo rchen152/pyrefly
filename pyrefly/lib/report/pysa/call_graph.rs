@@ -1424,6 +1424,7 @@ fn string_conversion_redirection<'a>(
     }
 }
 
+#[derive(Debug)]
 enum DirectCall {
     True,
     False,
@@ -1473,17 +1474,17 @@ impl DirectCall {
         Self::is_super_call(callee).or({
             match callee_type {
                 Some(Type::BoundMethod(box BoundMethod {
-                    obj: Type::ClassDef(_) | Type::Type(_),
-                    ..
-                })) => Self::from_bool(true),
-                Some(Type::BoundMethod(box BoundMethod {
-                    obj: Type::ClassType(_) | Type::SelfType(_),
+                    obj: Type::ClassType(_) | Type::SelfType(_) | Type::Type(box Type::SelfType(_)),
                     ..
                 })) => {
                     // Dynamic dispatch if calling a method via an attribute lookup
                     // on an instance
                     Self::from_bool(false)
                 }
+                Some(Type::BoundMethod(box BoundMethod {
+                    obj: Type::ClassDef(_) | Type::Type(_),
+                    ..
+                })) => Self::from_bool(true),
                 Some(Type::BoundMethod(_)) => {
                     debug_println!(
                         debug,
@@ -1523,6 +1524,11 @@ struct CallGraphVisitor<'a> {
     matching_graphql_decorators: Vec<Option<GraphQLDecoratorRef>>, // The matching graphql method decorator for each scope.
 }
 
+struct ReceiverClassResult {
+    class: Option<ClassRef>,
+    is_class_def: bool,
+}
+
 impl<'a> CallGraphVisitor<'a> {
     fn pysa_location(&self, location: TextRange) -> PysaLocation {
         PysaLocation::new(self.module_context.module_info.display_range(location))
@@ -1543,23 +1549,23 @@ impl<'a> CallGraphVisitor<'a> {
         &self,
         receiver_type: &Type,
         is_class_method: bool,
-    ) -> (Option<ClassRef>, bool) {
+    ) -> ReceiverClassResult {
         let receiver_type = strip_none_from_union(receiver_type);
         match receiver_type {
             Type::ClassType(class_type)
             | Type::SelfType(class_type)
-            | Type::SuperInstance(box (_, SuperObj::Instance(class_type))) => (
-                Some(ClassRef::from_class(
+            | Type::SuperInstance(box (_, SuperObj::Instance(class_type))) => ReceiverClassResult {
+                class: Some(ClassRef::from_class(
                     class_type.class_object(),
                     self.module_context.module_ids,
                 )),
-                false, // Whether the receiver is `type(SomeClass)`
-            ),
+                is_class_def: false,
+            },
             Type::ClassDef(class_def) => {
                 // The receiver is the class itself. Technically, the receiver class type should be `type(SomeClass)`.
                 // However, we strip away the `type` part since it is implied by the `is_class_method` flag.
-                (
-                    if is_class_method {
+                ReceiverClassResult {
+                    class: if is_class_method {
                         Some(ClassRef::from_class(
                             &class_def,
                             self.module_context.module_ids,
@@ -1567,10 +1573,20 @@ impl<'a> CallGraphVisitor<'a> {
                     } else {
                         None
                     },
-                    true,
-                )
+                    is_class_def: true,
+                }
             }
-            _ => (None, false),
+            Type::Type(box Type::SelfType(class_type)) if is_class_method => ReceiverClassResult {
+                class: Some(ClassRef::from_class(
+                    class_type.class_object(),
+                    self.module_context.module_ids,
+                )),
+                is_class_def: false,
+            },
+            _ => ReceiverClassResult {
+                class: None,
+                is_class_def: false,
+            },
         }
     }
 
@@ -1648,7 +1664,10 @@ impl<'a> CallGraphVisitor<'a> {
         }
         let receiver_type = receiver_type.unwrap();
         let callee_definition = self.get_base_definition(&callee);
-        let (receiver_class, _) = self.receiver_class_from_type(
+        let ReceiverClassResult {
+            class: receiver_class,
+            ..
+        } = self.receiver_class_from_type(
             receiver_type,
             callee_definition.is_some_and(|definition| definition.is_classmethod),
         );
@@ -1730,9 +1749,15 @@ impl<'a> CallGraphVisitor<'a> {
             function_definition.is_some_and(|definition| definition.is_classmethod);
         let is_staticmethod =
             function_definition.is_some_and(|definition| definition.is_staticmethod);
-        let (receiver_class, is_receiver_class_def) = match receiver_type {
+        let ReceiverClassResult {
+            class: receiver_class,
+            is_class_def: is_receiver_class_def,
+        } = match receiver_type {
             Some(receiver_type) => self.receiver_class_from_type(receiver_type, is_classmethod),
-            None => (None, false),
+            None => ReceiverClassResult {
+                class: None,
+                is_class_def: false,
+            },
         };
         CallTarget {
             implicit_receiver: override_implicit_receiver.unwrap_or(has_implicit_receiver(

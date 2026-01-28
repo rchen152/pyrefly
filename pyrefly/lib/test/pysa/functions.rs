@@ -1113,6 +1113,72 @@ class C(B):
 );
 
 exported_functions_testcase!(
+    test_export_overridden_class_method,
+    r#"
+class A:
+    @classmethod
+    def method(cls):
+        pass
+
+class B(A):
+    @classmethod
+    def method(cls):
+        pass
+"#,
+    &|context: &ModuleContext| {
+        vec![
+            create_function_definition(
+                "method",
+                ScopeParent::Class {
+                    location: create_location(2, 7, 2, 8),
+                },
+                /* overloads */
+                vec![create_simple_signature(
+                    vec![FunctionParameter::Pos {
+                        name: "cls".into(),
+                        annotation: PysaType::from_type(
+                            &Type::Type(Box::new(Type::ClassType(ClassType::new(
+                                get_class("test", "A", context),
+                                Default::default(),
+                            )))),
+                            context,
+                        ),
+                        required: true,
+                    }],
+                    PysaType::none(),
+                )],
+            )
+            .with_is_classmethod(true)
+            .with_defining_class(get_class_ref("test", "A", context)),
+            create_function_definition(
+                "method",
+                ScopeParent::Class {
+                    location: create_location(7, 7, 7, 8),
+                },
+                /* overloads */
+                vec![create_simple_signature(
+                    vec![FunctionParameter::Pos {
+                        name: "cls".into(),
+                        annotation: PysaType::from_type(
+                            &Type::Type(Box::new(Type::ClassType(ClassType::new(
+                                get_class("test", "B", context),
+                                Default::default(),
+                            )))),
+                            context,
+                        ),
+                        required: true,
+                    }],
+                    PysaType::none(),
+                )],
+            )
+            .with_is_classmethod(true)
+            .with_defining_class(get_class_ref("test", "B", context))
+            .with_overridden_base_method(get_method_ref("test", "A", "method", context)),
+        ]
+    },
+);
+
+exported_functions_testcase!(
     test_export_overridden_base_method_class_field,
     r#"
 from dataclasses import dataclass
