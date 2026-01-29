@@ -404,6 +404,45 @@ fn resolve_third_party_stub(
     None // No typeshed stub precedence applies, continue to normal handling
 }
 
+/// Combines stub and normal search results into a final FindingOrError.
+///
+/// When a namespace package is found, it is accumulated into `namespaces_found`
+/// and `None` is returned to allow the search to continue in other paths.
+fn combine_normal_and_stub_results(
+    module: ModuleName,
+    stub_result: Option<FindResult>,
+    normal_result: Option<FindResult>,
+    namespaces_found: &mut Vec<PathBuf>,
+) -> Option<FindingOrError<ModulePath>> {
+    match (normal_result, stub_result) {
+        (None, Some(stub_result)) => Some(
+            stub_result
+                .module_path()
+                .with_error(FindError::NoSource(module)),
+        ),
+        (Some(_), Some(stub_result)) => Some(stub_result.module_path()),
+        (Some(FindResult::NamespacePackage(namespaces)), _) => {
+            namespaces_found.append(&mut namespaces.into_vec());
+            None
+        }
+        (Some(normal_result), None) => {
+            if let Some(missing_stub_result) = recommended_stubs_package(module) {
+                Some(
+                    normal_result
+                        .module_path()
+                        .with_error(FindError::MissingStubs(
+                            module,
+                            missing_stub_result.as_str().to_owned().into(),
+                        )),
+                )
+            } else {
+                Some(normal_result.module_path())
+            }
+        }
+        (None, _) => None,
+    }
+}
+
 /// Search for the given [`ModuleName`] in the given `include`, which is
 /// a list of paths denoting import roots. A [`FindError`] result indicates
 /// searching should be discontinued because of a special condition, whereas
@@ -451,33 +490,7 @@ where
                 return Some(result);
             }
 
-            match (normal_result, stub_result) {
-                (None, Some(stub_result)) => Some(
-                    stub_result
-                        .module_path()
-                        .with_error(FindError::NoSource(module)),
-                ),
-                (Some(_), Some(stub_result)) => Some(stub_result.module_path()),
-                (Some(FindResult::NamespacePackage(namespaces)), _) => {
-                    namespaces_found.append(&mut namespaces.into_vec());
-                    None
-                }
-                (Some(normal_result), None) => {
-                    if let Some(missing_stub_result) = recommended_stubs_package(module) {
-                        Some(
-                            normal_result
-                                .module_path()
-                                .with_error(FindError::MissingStubs(
-                                    module,
-                                    missing_stub_result.as_str().to_owned().into(),
-                                )),
-                        )
-                    } else {
-                        Some(normal_result.module_path())
-                    }
-                }
-                (None, _) => None,
-            }
+            combine_normal_and_stub_results(module, stub_result, normal_result, namespaces_found)
         }
     }
 }
