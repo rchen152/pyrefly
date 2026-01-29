@@ -14,13 +14,17 @@ use lsp_types::CompletionItemLabelDetails;
 use lsp_types::CompletionItemTag;
 use lsp_types::TextEdit;
 use pyrefly_build::handle::Handle;
+use pyrefly_python::ast::Ast;
 use pyrefly_python::docstring::Docstring;
 use pyrefly_python::dunder;
 use pyrefly_python::keywords::get_keywords;
 use pyrefly_python::module_name::ModuleName;
+use pyrefly_types::display::LspDisplayMode;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
+use ruff_python_ast::AnyNodeRef;
 use ruff_python_ast::Identifier;
+use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
@@ -32,6 +36,8 @@ use crate::export::exports::ExportLocation;
 use crate::state::ide::import_regular_import_edit;
 use crate::state::ide::insert_import_edit;
 use crate::state::lsp::FindPreference;
+use crate::state::lsp::IdentifierContext;
+use crate::state::lsp::IdentifierWithContext;
 use crate::state::lsp::ImportFormat;
 use crate::state::lsp::MIN_CHARACTERS_TYPED_AUTOIMPORT;
 use crate::state::state::Transaction;
@@ -430,5 +436,208 @@ impl Transaction<'_> {
                 }
             }
         }
+    }
+
+    /// Core completion implementation returning items and incomplete flag.
+    pub(crate) fn completion_sorted_opt_with_incomplete(
+        &self,
+        handle: &Handle,
+        position: TextSize,
+        import_format: ImportFormat,
+        supports_completion_item_details: bool,
+    ) -> (Vec<CompletionItem>, bool) {
+        let mut result = Vec::new();
+        let mut is_incomplete = false;
+        // Because of parser error recovery, `from x impo...` looks like `from x import impo...`
+        // If the user might be typing the `import` keyword, add that as an autocomplete option.
+        match self.identifier_at(handle, position) {
+            Some(IdentifierWithContext {
+                identifier,
+                context: IdentifierContext::ImportedName { module_name, .. },
+            }) => {
+                if let Some(handle) = self.import_handle(handle, module_name, None).finding() {
+                    if "import".starts_with(identifier.as_str()) {
+                        result.push(CompletionItem {
+                            label: "import".to_owned(),
+                            kind: Some(CompletionItemKind::KEYWORD),
+                            ..Default::default()
+                        })
+                    }
+                    let exports = self.get_exports(&handle);
+                    for (name, export) in exports.iter() {
+                        let is_deprecated = match export {
+                            ExportLocation::ThisModule(export) => export.deprecation.is_some(),
+                            ExportLocation::OtherModule(_, _) => false,
+                        };
+                        result.push(CompletionItem {
+                            label: name.to_string(),
+                            // todo(kylei): completion kind for exports
+                            kind: Some(CompletionItemKind::VARIABLE),
+                            tags: if is_deprecated {
+                                Some(vec![CompletionItemTag::DEPRECATED])
+                            } else {
+                                None
+                            },
+                            ..Default::default()
+                        })
+                    }
+                }
+            }
+            // TODO: Handle relative import (via ModuleName::new_maybe_relative)
+            Some(IdentifierWithContext {
+                identifier,
+                context: IdentifierContext::ImportedModule { .. },
+            }) => self
+                .import_prefixes(handle, ModuleName::from_name(identifier.id()))
+                .iter()
+                .for_each(|module_name| {
+                    result.push(CompletionItem {
+                        label: module_name
+                            .components()
+                            .last()
+                            .unwrap_or(&Name::empty())
+                            .to_string(),
+                        detail: Some(module_name.to_string()),
+                        kind: Some(CompletionItemKind::MODULE),
+                        ..Default::default()
+                    })
+                }),
+            Some(IdentifierWithContext {
+                identifier: _,
+                context: IdentifierContext::Attribute { base_range, .. },
+            }) => {
+                if let Some(answers) = self.get_answers(handle)
+                    && let Some(base_type) = answers.get_type_trace(base_range)
+                {
+                    self.ad_hoc_solve(handle, |solver| {
+                        solver
+                            .completions(base_type, None, true)
+                            .iter()
+                            .for_each(|x| {
+                                let kind = match x.ty {
+                                    Some(Type::BoundMethod(_)) => Some(CompletionItemKind::METHOD),
+                                    Some(Type::Function(_) | Type::Overload(_)) => {
+                                        Some(CompletionItemKind::FUNCTION)
+                                    }
+                                    Some(Type::Module(_)) => Some(CompletionItemKind::MODULE),
+                                    Some(Type::ClassDef(_)) => Some(CompletionItemKind::CLASS),
+                                    _ => Some(CompletionItemKind::FIELD),
+                                };
+                                let ty = &x.ty;
+                                let detail =
+                                    ty.clone().map(|t| t.as_lsp_string(LspDisplayMode::Hover));
+                                let documentation = self.get_docstring_for_attribute(handle, x);
+                                result.push(CompletionItem {
+                                    label: x.name.as_str().to_owned(),
+                                    detail,
+                                    kind,
+                                    documentation,
+                                    sort_text: if x.is_reexport {
+                                        Some("1".to_owned())
+                                    } else {
+                                        None
+                                    },
+                                    tags: if x.is_deprecated {
+                                        Some(vec![CompletionItemTag::DEPRECATED])
+                                    } else {
+                                        None
+                                    },
+                                    ..Default::default()
+                                });
+                            });
+                    });
+                }
+            }
+            Some(IdentifierWithContext {
+                identifier,
+                context,
+            }) => {
+                if matches!(context, IdentifierContext::MethodDef { .. }) {
+                    Self::add_magic_method_completions(&identifier, &mut result);
+                }
+                self.add_kwargs_completions(handle, position, &mut result);
+                Self::add_keyword_completions(handle, &mut result);
+                let has_local_completions = self.add_local_variable_completions(
+                    handle,
+                    Some(&identifier),
+                    position,
+                    &mut result,
+                );
+                if !has_local_completions {
+                    self.add_autoimport_completions(
+                        handle,
+                        &identifier,
+                        &mut result,
+                        import_format,
+                        supports_completion_item_details,
+                    );
+                }
+                // Mark results as incomplete in the following cases so clients keep asking
+                // for completions as the user types more:
+                // 1. If identifier is below MIN_CHARACTERS_TYPED_AUTOIMPORT threshold,
+                //    autoimport completions are skipped and will be checked once threshold
+                //    is reached.
+                // 2. If local completions exist and blocked autoimport completions,
+                //    the local completions might not match as the user continues typing,
+                //    and autoimport completions should then be shown.
+                if identifier.as_str().len() < MIN_CHARACTERS_TYPED_AUTOIMPORT
+                    || has_local_completions
+                {
+                    is_incomplete = true;
+                }
+                self.add_builtins_autoimport_completions(handle, Some(&identifier), &mut result);
+            }
+            None => {
+                // todo(kylei): optimization, avoid duplicate ast walkss
+                if let Some(mod_module) = self.get_ast(handle) {
+                    let nodes = Ast::locate_node(&mod_module, position);
+                    if nodes.is_empty() {
+                        Self::add_keyword_completions(handle, &mut result);
+                        self.add_local_variable_completions(handle, None, position, &mut result);
+                        self.add_builtins_autoimport_completions(handle, None, &mut result);
+                    }
+                    let in_string_literal = nodes
+                        .iter()
+                        .any(|node| matches!(node, AnyNodeRef::ExprStringLiteral(_)));
+                    self.add_literal_completions(handle, position, &mut result, in_string_literal);
+                    self.add_dict_key_completions(
+                        handle,
+                        mod_module.as_ref(),
+                        position,
+                        &mut result,
+                    );
+                    // in foo(x=<>, y=2<>), the first containing node is AnyNodeRef::Arguments(_)
+                    // in foo(<>), the first containing node is AnyNodeRef::ExprCall
+                    if let Some(first) = nodes.first()
+                        && matches!(first, AnyNodeRef::ExprCall(_) | AnyNodeRef::Arguments(_))
+                    {
+                        self.add_kwargs_completions(handle, position, &mut result);
+                    }
+                }
+            }
+        }
+        for item in &mut result {
+            let sort_text = if item
+                .tags
+                .as_ref()
+                .is_some_and(|tags| tags.contains(&CompletionItemTag::DEPRECATED))
+            {
+                "9"
+            } else if item.additional_text_edits.is_some() {
+                "4"
+            } else if item.label.starts_with("__") {
+                "3"
+            } else if item.label.as_str().starts_with("_") {
+                "2"
+            } else if let Some(sort_text) = &item.sort_text {
+                // 1 is reserved for re-exports
+                sort_text.as_str()
+            } else {
+                "0"
+            }
+            .to_owned();
+            item.sort_text = Some(sort_text);
+        }
+        (result, is_incomplete)
     }
 }
