@@ -357,3 +357,33 @@ class CoToContraToContra_WithTA(Contra_TA[Co_TA[Contra_TA[T_contra]]]): ...  # s
 class ContraToContraToContra_WithTA(Contra_TA[Contra_TA[Contra_TA[T_co]]]): ...  # should error
 "#,
 );
+
+testcase!(
+    bug = "conformance: Should warn when inferred variance differs from declared variance in protocols",
+    test_protocols_variance_conformance,
+    r#"
+from typing import Protocol, TypeVar
+
+T1 = TypeVar("T1")
+T1_co = TypeVar("T1_co", covariant=True)
+T1_contra = TypeVar("T1_contra", contravariant=True)
+
+class AnotherBox(Protocol[T1]):  # should warn: T should be covariant
+    def content(self) -> T1: ...
+
+class Protocol4(Protocol[T1]):  # should warn: T1 should be contravariant
+    def m1(self, p0: T1) -> None: ...
+
+class Protocol5(Protocol[T1_co]):  # should warn: T1_co should be contravariant
+    def m1(self, p0: T1_co) -> None: ... # should error on the parameter type
+
+class Protocol6(Protocol[T1]):  # should warn: T1 should be covariant
+    def m1(self) -> T1: ...
+
+class Protocol7(Protocol[T1_contra]):  # should warn: T1_contra should be covariant
+    def m1(self) -> T1_contra: ... # should error on the return type
+
+class Protocol12(Protocol[T1]):  # should warn: T1 should be covariant
+    def __init__(self, x: T1) -> None: ...
+"#,
+);
