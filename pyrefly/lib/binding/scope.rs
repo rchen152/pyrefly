@@ -1761,6 +1761,12 @@ impl Scopes {
         mut module: ModuleName,
         lookup: &dyn LookupExport,
     ) -> Option<SpecialExport> {
+        // Fast check to avoid calculating exports, reducing contention
+        if let Some(special) = SpecialExport::new(&name)
+            && special.defined_in(module)
+        {
+            return Some(special);
+        }
         let mut seen = HashSet::new();
         let mut exports = lookup.get(module).finding()?.exports(lookup);
         loop {
