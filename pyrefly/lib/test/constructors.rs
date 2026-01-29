@@ -686,3 +686,18 @@ takes_Cstr(C)
 takes_Cstr_wrong(C) # E: Argument `type[C]` is not assignable to parameter `x` with type `(str) -> C[int]` in function `takes_Cstr_wrong`
     "#,
 );
+
+testcase!(
+    bug = "conformance: Should error when class-scoped type variables are used in self annotation of __init__",
+    test_init_class_scoped_typevars_in_self,
+    r#"
+from typing import Generic, TypeVar
+
+T1 = TypeVar("T1")
+T2 = TypeVar("T2")
+
+class Class8(Generic[T1, T2]):
+    def __init__(self: "Class8[T2, T1]") -> None:  # should error: class-scoped type vars used in self annotation
+        pass
+"#,
+);
