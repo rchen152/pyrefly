@@ -20,6 +20,7 @@ use pyrefly_types::type_info::JoinStyle;
 use pyrefly_types::typed_dict::ExtraItems;
 use pyrefly_types::typed_dict::TypedDict;
 use pyrefly_types::types::Union;
+use pyrefly_util::display::pluralize;
 use pyrefly_util::prelude::SliceExt;
 use pyrefly_util::visit::Visit;
 use pyrefly_util::visit::VisitMut;
@@ -1521,16 +1522,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 default.collect_raw_legacy_type_variables(&mut out_of_scope_names);
                 out_of_scope_names.retain(|name| !seen.contains(name));
                 if !out_of_scope_names.is_empty() {
-                    self.error(errors, range, ErrorInfo::Kind(ErrorKind::InvalidTypeVar), format!(
-                        "Default of type parameter `{}` refers to out-of-scope type parameter{} {}",
-                        tparam.quantified.name(),
-                        if out_of_scope_names.len() != 1 {
-                            "s"
-                        } else {
-                            ""
-                        },
-                        out_of_scope_names.map(|n| format!("`{n}`")).join(", "),
-                    ));
+                    self.error(
+                        errors,
+                        range,
+                        ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
+                        format!(
+                            "Default of type parameter `{}` refers to out-of-scope {} {}",
+                            tparam.quantified.name(),
+                            pluralize(out_of_scope_names.len(), "type parameter"),
+                            out_of_scope_names.map(|n| format!("`{n}`")).join(", "),
+                        ),
+                    );
                 }
                 if tparam.quantified.is_type_var()
                     && let Some(tvt) = &typevartuple
