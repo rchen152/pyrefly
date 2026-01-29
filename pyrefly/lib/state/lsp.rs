@@ -2589,45 +2589,6 @@ impl<'a> Transaction<'a> {
         Some(references)
     }
 
-    fn add_builtins_autoimport_completions(
-        &self,
-        handle: &Handle,
-        identifier: Option<&Identifier>,
-        completions: &mut Vec<CompletionItem>,
-    ) {
-        if let Some(builtin_handle) = self
-            .import_handle(handle, ModuleName::builtins(), None)
-            .finding()
-        {
-            let builtin_exports = self.get_exports(&builtin_handle);
-            for (name, location) in builtin_exports.iter() {
-                if let Some(identifier) = identifier
-                    && SkimMatcherV2::default()
-                        .smart_case()
-                        .fuzzy_match(name.as_str(), identifier.as_str())
-                        .is_none()
-                {
-                    continue;
-                }
-                let kind = match location {
-                    ExportLocation::OtherModule(..) => continue,
-                    ExportLocation::ThisModule(export) => export
-                        .symbol_kind
-                        .map_or(Some(CompletionItemKind::VARIABLE), |k| {
-                            Some(k.to_lsp_completion_item_kind())
-                        }),
-                };
-                completions.push(CompletionItem {
-                    label: name.as_str().to_owned(),
-                    detail: None,
-                    kind,
-                    data: Some(serde_json::json!("builtin")),
-                    ..Default::default()
-                });
-            }
-        }
-    }
-
     fn add_autoimport_completions(
         &self,
         handle: &Handle,

@@ -5,12 +5,15 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use fuzzy_matcher::FuzzyMatcher;
+use fuzzy_matcher::skim::SkimMatcherV2;
 use lsp_types::CompletionItem;
 use lsp_types::CompletionItemKind;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::docstring::Docstring;
 use pyrefly_python::dunder;
 use pyrefly_python::keywords::get_keywords;
+use pyrefly_python::module_name::ModuleName;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
 use ruff_python_ast::Identifier;
@@ -18,6 +21,7 @@ use ruff_text_size::TextSize;
 
 use crate::alt::attr::AttrInfo;
 use crate::export::exports::Export;
+use crate::export::exports::ExportLocation;
 use crate::state::lsp::FindPreference;
 use crate::state::state::Transaction;
 use crate::types::callable::Param;
@@ -168,5 +172,45 @@ impl Transaction<'_> {
                 value: docstring.resolve().trim().to_owned(),
             },
         ))
+    }
+
+    /// Adds completions from the builtins module, optionally filtered by fuzzy match.
+    pub(crate) fn add_builtins_autoimport_completions(
+        &self,
+        handle: &Handle,
+        identifier: Option<&Identifier>,
+        completions: &mut Vec<CompletionItem>,
+    ) {
+        if let Some(builtin_handle) = self
+            .import_handle(handle, ModuleName::builtins(), None)
+            .finding()
+        {
+            let builtin_exports = self.get_exports(&builtin_handle);
+            for (name, location) in builtin_exports.iter() {
+                if let Some(identifier) = identifier
+                    && SkimMatcherV2::default()
+                        .smart_case()
+                        .fuzzy_match(name.as_str(), identifier.as_str())
+                        .is_none()
+                {
+                    continue;
+                }
+                let kind = match location {
+                    ExportLocation::OtherModule(..) => continue,
+                    ExportLocation::ThisModule(export) => export
+                        .symbol_kind
+                        .map_or(Some(CompletionItemKind::VARIABLE), |k| {
+                            Some(k.to_lsp_completion_item_kind())
+                        }),
+                };
+                completions.push(CompletionItem {
+                    label: name.as_str().to_owned(),
+                    detail: None,
+                    kind,
+                    data: Some(serde_json::json!("builtin")),
+                    ..Default::default()
+                });
+            }
+        }
     }
 }
