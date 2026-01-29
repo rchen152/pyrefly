@@ -655,7 +655,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             if !nontuples.is_empty() {
                 // The non-tuple options may contain a type like Sequence[T] that provides an additional default hint.
-                // Filter out top-level Vars: they don't provide any hints, and we don't want to pin them.
+                // TODO: we filter out top-level Vars to prevent premature pinning
+                // (https://github.com/facebook/pyrefly/issues/105), but this also prevents us from picking up hints
+                // from Quantified restrictions. See test::contextual::test_sequence_hint_in_typevar_bound.
                 let nontuple_hint = self.unions(
                     nontuples
                         .into_iter()
