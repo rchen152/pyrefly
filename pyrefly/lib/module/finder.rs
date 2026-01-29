@@ -349,41 +349,45 @@ where
     }
 }
 
-/// Determines whether to use a typeshed third-party stub based on the search results.
+/// Determines whether to use a bundled stub based on the search results.
 ///
-/// Returns `Some(result)` if we should use the typeshed stub (possibly with an error attached).
+/// Returns `Some(result)` if we should use the bundled stub (possibly with an error attached).
 /// Returns `None` if we should continue to the normal result handling - this happens when:
-/// - No typeshed stub was provided, OR
+/// - No bundled stub was provided, OR
 /// - A `-stubs` package was found (higher priority), OR
 /// - Using a real config file with no source package installed
 fn resolve_third_party_stub(
     module: ModuleName,
     stub_result: Option<&FindResult>,
     normal_result: Option<&FindResult>,
-    typeshed_third_party_stub: Option<FindingOrError<ModulePath>>,
+    bundled_stub: Option<FindingOrError<ModulePath>>,
     from_real_config_file: bool,
 ) -> Option<FindingOrError<ModulePath>> {
     // This is the case where we do have a config file, the package is installed, but there are no stubs
-    // available besides the typeshed third party stubs. In this case
+    // available besides the bundled stubs. In this case
     // return the stub but with the error attached telling the user to install stubs.
-    if let Some(ref ts_stub) = typeshed_third_party_stub
+    if let Some(ref bundled) = bundled_stub
         && from_real_config_file
         && normal_result.is_some()
         && stub_result.is_none()
     {
-        let pip_package = format!("{}-stubs", module.components()[0]);
-        return Some(
-            ts_stub
-                .clone()
-                .with_error(FindError::MissingStubs(module, pip_package.into())),
-        );
+        if let Some(pip_package) = recommended_stubs_package(module) {
+            return Some(bundled.clone().with_error(FindError::MissingStubs(
+                module,
+                pip_package.to_string().into(),
+            )));
+        } else {
+            // If we do not have a stub package that we recommend, just return the bundled stub without
+            // the error
+            return Some(bundled.clone());
+        }
     }
 
-    // If we do have a third party typeshed stub and we also do not find a
+    // If we do have a bundled stub and we also do not find a
     // higher priority stub from the site packages, then we should use the
-    // third party typeshed stub. However, if we also don't find the actual
+    // bundled stub. However, if we also don't find the actual
     // package (normal_result), we should attach a NoSource error.
-    if let Some(ts_stub) = typeshed_third_party_stub
+    if let Some(bundled) = bundled_stub
         && stub_result.is_none()
     {
         if normal_result.is_none() {
@@ -393,11 +397,11 @@ fn resolve_third_party_stub(
                 return None;
             } else {
                 // Keep existing behavior for non-real config files
-                return Some(ts_stub.with_error(FindError::NoSourceForStubs(module)));
+                return Some(bundled.with_error(FindError::NoSourceForStubs(module)));
             }
         } else {
             // We have both typeshed third party stubs and the actual package
-            return Some(ts_stub);
+            return Some(bundled);
         }
     }
 
@@ -479,7 +483,7 @@ where
             // If we couldn't find it in a `-stubs` module or we want to check for missing stubs, look normally.
             let normal_result = find_module_components(first, rest, include.clone(), style_filter);
 
-            // Check if typeshed third-party stub should take precedence
+            // Check if third-party stub should take precedence
             if let Some(result) = resolve_third_party_stub(
                 module,
                 stub_result.as_ref(),
