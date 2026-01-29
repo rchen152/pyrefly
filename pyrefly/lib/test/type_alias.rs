@@ -1075,3 +1075,51 @@ B_Alias_1 = ClassB[T_co, T_contra]
 class ClassB_1(B_Alias_1[T_contra, T_co]): ...  # should error: incompatible variance
 "#,
 );
+
+testcase!(
+    bug = "conformance: Should detect circular dependencies in TypeAliasType definitions",
+    test_typealiastype_circular_conformance,
+    r#"
+from typing import TypeAliasType, TypeVar
+
+T = TypeVar("T")
+
+# Direct self-reference
+BadAlias4 = TypeAliasType("BadAlias4", "BadAlias4")  # should error: circular dependency
+
+# Self-reference in union with type param
+BadAlias5 = TypeAliasType("BadAlias5", T | "BadAlias5[str]", type_params=(T,))  # should error: circular dependency
+
+# Mutual circular reference
+BadAlias6 = TypeAliasType("BadAlias6", "BadAlias7")  # should error: circular dependency
+BadAlias7 = TypeAliasType("BadAlias7", BadAlias6)
+
+# Self-reference via list
+BadAlias21 = TypeAliasType("BadAlias21", list[BadAlias21])  # should error: circular dependency
+"#,
+);
+
+testcase!(
+    bug = "conformance: Should detect circular definitions and redeclarations in type statements",
+    test_type_statement_circular_conformance,
+    r#"
+from typing import Callable
+
+# Direct self-reference (not through generic param)
+type RecursiveTypeAlias3 = RecursiveTypeAlias3  # should error: circular definition
+
+type RecursiveTypeAlias4[T] = T | RecursiveTypeAlias4[str]  # should error: circular definition
+
+type RecursiveTypeAlias6 = RecursiveTypeAlias7  # should error: circular definition
+type RecursiveTypeAlias7 = RecursiveTypeAlias6
+"#,
+);
+
+testcase!(
+    bug = "conformance: Should error on redeclared type aliases",
+    test_type_statement_redeclaration_conformance,
+    r#"
+type BadTypeAlias14 = int  # should error: redeclared
+type BadTypeAlias14 = int
+"#,
+);
