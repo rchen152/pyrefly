@@ -8,15 +8,22 @@
 use std::iter;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use pyrefly_python::COMPILED_FILE_SUFFIXES;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePath;
 use pyrefly_python::module_path::ModuleStyle;
+use pyrefly_util::locked_map::LockedMap;
 use pyrefly_util::suggest::best_suggestion;
 use ruff_python_ast::name::Name;
 use starlark_map::small_map::SmallMap;
 use vec1::Vec1;
+
+/// Global cache for stdlib import suggestions.
+/// Keyed by the missing module name, returns the suggested module name (if any).
+static STDLIB_SUGGESTION_CACHE: LazyLock<LockedMap<ModuleName, Option<ModuleName>>> =
+    LazyLock::new(LockedMap::new);
 
 use crate::config::config::ConfigFile;
 use crate::module::bundled::BundledStub;
@@ -641,7 +648,6 @@ pub fn find_import_filtered(
             config.structured_import_lookup_path(origin),
             module,
             &config.source,
-            suggest_stdlib_import(module),
         ))
     }
 }
@@ -698,7 +704,14 @@ fn recommended_stubs_package(module: ModuleName) -> Option<ModuleName> {
 
 /// Suggest a similar stdlib module name for a mistyped import.
 /// Uses Levenshtein distance to find the closest match from typeshed's stdlib modules.
-fn suggest_stdlib_import(missing: ModuleName) -> Option<ModuleName> {
+/// Results are cached globally since typeshed doesn't change during a session.
+pub fn suggest_stdlib_import(missing: ModuleName) -> Option<ModuleName> {
+    *STDLIB_SUGGESTION_CACHE
+        .ensure(&missing, || suggest_stdlib_import_uncached(missing))
+        .0
+}
+
+fn suggest_stdlib_import_uncached(missing: ModuleName) -> Option<ModuleName> {
     let ts = typeshed().ok()?;
     let missing_str = missing.as_str();
 
@@ -1054,7 +1067,6 @@ mod tests {
                 config.structured_import_lookup_path(None),
                 ModuleName::from_str("spp_priority.d"),
                 &config.source,
-                None,
             )),
         );
     }
