@@ -2295,9 +2295,6 @@ impl Server {
         let unknown = ModuleName::unknown();
 
         info!("Populating all files in the config ({:?}).", config.source);
-        let mut transaction = self
-            .state
-            .new_committable_transaction(Require::indexing(), None);
 
         let project_path_blobs = config.get_filtered_globs(None);
         let paths = project_path_blobs.files().unwrap_or_default();
@@ -2315,6 +2312,9 @@ impl Server {
         }
 
         info!("Prepare to check {} files.", handles.len());
+        let mut transaction = self
+            .state
+            .new_committable_transaction(Require::indexing(), None);
         transaction.as_mut().run(&handles, Require::indexing());
         self.state.commit_transaction(transaction, Some(telemetry));
         // After we finished a recheck asynchronously, we immediately send `RecheckFinished` to
@@ -2334,9 +2334,6 @@ impl Server {
                 "Populating up to {} files in the workspace ({workspace_root:?}).",
                 self.workspace_indexing_limit
             );
-            let mut transaction = self
-                .state
-                .new_committable_transaction(Require::indexing(), None);
 
             let includes =
                 ConfigFile::default_project_includes().from_root(workspace_root.as_path());
@@ -2353,6 +2350,9 @@ impl Server {
             }
 
             info!("Prepare to check {} files.", handles.len());
+            let mut transaction = self
+                .state
+                .new_committable_transaction(Require::indexing(), None);
             transaction.as_mut().run(&handles, Require::indexing());
             self.state.commit_transaction(transaction, Some(telemetry));
             // After we finished a recheck asynchronously, we immediately send `RecheckFinished` to
