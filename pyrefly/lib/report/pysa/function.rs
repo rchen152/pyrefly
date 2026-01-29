@@ -728,28 +728,24 @@ impl FunctionNode {
         }
     }
 
-    fn is_property_getter(&self) -> bool {
+    fn property_role(&self) -> Option<PropertyRole> {
         match self {
             FunctionNode::DecoratedFunction(function) => function
                 .metadata()
                 .flags
                 .property_metadata
                 .as_ref()
-                .is_some_and(|meta| matches!(meta.role, PropertyRole::Getter)),
-            FunctionNode::ClassField { .. } => false,
+                .map(|metadata| metadata.role.clone()),
+            FunctionNode::ClassField { .. } => None,
         }
     }
 
-    fn is_property_setter(&self) -> bool {
-        match self {
-            FunctionNode::DecoratedFunction(function) => function
-                .metadata()
-                .flags
-                .property_metadata
-                .as_ref()
-                .is_some_and(|meta| matches!(meta.role, PropertyRole::Setter)),
-            FunctionNode::ClassField { .. } => false,
-        }
+    pub fn is_property_getter(&self) -> bool {
+        self.property_role() == Some(PropertyRole::Getter)
+    }
+
+    pub fn is_property_setter(&self) -> bool {
+        self.property_role() == Some(PropertyRole::Setter)
     }
 
     fn is_stub(&self) -> bool {
