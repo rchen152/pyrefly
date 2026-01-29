@@ -9,6 +9,7 @@ use fuzzy_matcher::FuzzyMatcher;
 use fuzzy_matcher::skim::SkimMatcherV2;
 use lsp_types::CompletionItem;
 use lsp_types::CompletionItemKind;
+use lsp_types::CompletionItemTag;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::docstring::Docstring;
 use pyrefly_python::dunder;
@@ -17,9 +18,11 @@ use pyrefly_python::module_name::ModuleName;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
 use ruff_python_ast::Identifier;
+use ruff_text_size::Ranged;
 use ruff_text_size::TextSize;
 
 use crate::alt::attr::AttrInfo;
+use crate::binding::binding::Key;
 use crate::export::exports::Export;
 use crate::export::exports::ExportLocation;
 use crate::state::lsp::FindPreference;
@@ -212,5 +215,81 @@ impl Transaction<'_> {
                 });
             }
         }
+    }
+
+    /// Adds completions for local variables and returns true if any were added.
+    /// If an identifier is present, filters matches using fuzzy matching.
+    pub(crate) fn add_local_variable_completions(
+        &self,
+        handle: &Handle,
+        identifier: Option<&Identifier>,
+        position: TextSize,
+        completions: &mut Vec<CompletionItem>,
+    ) -> bool {
+        let mut has_added_any = false;
+        if let Some(bindings) = self.get_bindings(handle)
+            && let Some(module_info) = self.get_module_info(handle)
+        {
+            for idx in bindings.available_definitions(position) {
+                let key = bindings.idx_to_key(idx);
+                let label = match key {
+                    Key::Definition(id) => module_info.code_at(id.range()),
+                    Key::Anywhere(id, _) => id,
+                    _ => continue,
+                };
+                if let Some(identifier) = identifier
+                    && SkimMatcherV2::default()
+                        .fuzzy_match(label, identifier.as_str())
+                        .is_none()
+                {
+                    continue;
+                }
+                let binding = bindings.get(idx);
+                let ty = self.get_type(handle, key);
+                let export_info = self.key_to_export(handle, key, FindPreference::default());
+
+                let kind = if let Some((_, ref export)) = export_info {
+                    export
+                        .symbol_kind
+                        .map_or(CompletionItemKind::VARIABLE, |k| {
+                            k.to_lsp_completion_item_kind()
+                        })
+                } else {
+                    binding
+                        .symbol_kind()
+                        .map_or(CompletionItemKind::VARIABLE, |k| {
+                            k.to_lsp_completion_item_kind()
+                        })
+                };
+
+                let is_deprecated = ty.as_ref().is_some_and(|t| {
+                    if let Type::ClassDef(cls) = t {
+                        self.ad_hoc_solve(handle, |solver| {
+                            solver.get_metadata_for_class(cls).deprecation().is_some()
+                        })
+                        .unwrap_or(false)
+                    } else {
+                        t.function_deprecation().is_some()
+                    }
+                });
+                let detail = ty.map(|t| t.to_string());
+                let documentation = self.get_documentation_from_export(export_info);
+
+                has_added_any = true;
+                completions.push(CompletionItem {
+                    label: label.to_owned(),
+                    detail,
+                    kind: Some(kind),
+                    documentation,
+                    tags: if is_deprecated {
+                        Some(vec![CompletionItemTag::DEPRECATED])
+                    } else {
+                        None
+                    },
+                    ..Default::default()
+                })
+            }
+        }
+        has_added_any
     }
 }
