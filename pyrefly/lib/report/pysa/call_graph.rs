@@ -20,6 +20,7 @@ use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_types::callable::Param;
 use pyrefly_types::callable::Params;
 use pyrefly_types::class::Class;
+use pyrefly_types::class::ClassType;
 use pyrefly_types::typed_dict::TypedDict;
 use pyrefly_types::types::BoundMethod;
 use pyrefly_types::types::BoundMethodType;
@@ -1495,7 +1496,11 @@ impl DirectCall {
         Self::is_super_call(callee).or({
             match callee_type {
                 Some(Type::BoundMethod(box BoundMethod {
-                    obj: Type::ClassType(_) | Type::SelfType(_) | Type::Type(box Type::SelfType(_)),
+                    obj:
+                        Type::ClassType(_)
+                        | Type::SelfType(_)
+                        | Type::Type(box Type::SelfType(_))
+                        | Type::Type(box Type::ClassType(_)),
                     ..
                 })) => {
                     // Dynamic dispatch if calling a method via an attribute lookup
@@ -1597,13 +1602,18 @@ impl<'a> CallGraphVisitor<'a> {
                     is_class_def: true,
                 }
             }
-            Type::Type(box Type::SelfType(class_type)) if is_class_method => ReceiverClassResult {
-                class: Some(ClassRef::from_class(
-                    class_type.class_object(),
-                    self.module_context.module_ids,
-                )),
-                is_class_def: false,
-            },
+            Type::Type(box Type::SelfType(class_type))
+            | Type::Type(box Type::ClassType(class_type))
+                if is_class_method =>
+            {
+                ReceiverClassResult {
+                    class: Some(ClassRef::from_class(
+                        class_type.class_object(),
+                        self.module_context.module_ids,
+                    )),
+                    is_class_def: false,
+                }
+            }
             Type::TypedDict(TypedDict::Anonymous(_)) => ReceiverClassResult {
                 class: Some(ClassRef::from_class(
                     self.module_context.stdlib.dict_object(),

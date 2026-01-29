@@ -7044,3 +7044,57 @@ class B(A):
         )]
     }
 );
+
+call_graph_testcase!(
+    test_override_explicit_classtype,
+    TEST_MODULE_NAME,
+    r#"
+from typing import Type
+class A:
+    @classmethod
+    def classMethod(cls, arg):
+        pass
+class B(A):
+    @classmethod
+    def classMethod(cls, arg):
+        pass
+class C(B):
+    pass
+def foo(cls_a: Type[A], cls_b: Type[B]):
+    cls_a.classMethod(0)
+    cls_b.classMethod(0)
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.foo",
+            vec![
+                (
+                    "14:5-14:10|identifier|cls_a",
+                    class_identifier_without_constructors("test.A", context),
+                ),
+                (
+                    "14:5-14:25",
+                    regular_call_callees(vec![
+                        create_call_target("test.A.classMethod", TargetType::AllOverrides)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_receiver_class_for_test("test.A", context)
+                            .with_is_class_method(true),
+                    ]),
+                ),
+                (
+                    "15:5-15:10|identifier|cls_b",
+                    class_identifier_without_constructors("test.B", context),
+                ),
+                (
+                    "15:5-15:25",
+                    regular_call_callees(vec![
+                        create_call_target("test.B.classMethod", TargetType::Function)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_receiver_class_for_test("test.B", context)
+                            .with_is_class_method(true),
+                    ]),
+                ),
+            ],
+        )]
+    }
+);
