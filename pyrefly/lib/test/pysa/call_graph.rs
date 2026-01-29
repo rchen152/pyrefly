@@ -7004,3 +7004,43 @@ def foo(x: PropertyCallable, y: PropertyCallableReturn):
         )]
     }
 );
+
+// From the pysa integration test: constructors.py
+call_graph_testcase!(
+    test_stub_parent_class,
+    TEST_MODULE_NAME,
+    r#"
+class A:
+  ...
+
+class B(A):
+  def __init__(self, a, b) -> None:
+    super().__init__(a, b)
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.B.__init__",
+            vec![
+                (
+                    "7:5-7:12",
+                    constructor_call_callees(
+                        vec![
+                            create_call_target("builtins.super.__init__", TargetType::Function)
+                                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                                .with_receiver_class_for_test("builtins.super", context),
+                        ],
+                        vec![
+                            create_call_target("builtins.object.__new__", TargetType::Function)
+                                .with_is_static_method(true),
+                        ],
+                    ),
+                ),
+                (
+                    "7:5-7:27",
+                    // TODO(T253219415): Resolve `__init__` call.
+                    unresolved_expression_callees(UnresolvedReason::UnexpectedDefiningClass),
+                ),
+            ],
+        )]
+    }
+);
