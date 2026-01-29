@@ -18,33 +18,31 @@ use pyrefly_util::fs_anyhow;
 use regex::Regex;
 use ruff_python_ast::PySourceType;
 use serde::Deserialize;
+use serde::Serialize;
 use starlark_map::small_map::SmallMap;
 use starlark_map::small_set::SmallSet;
 use tracing::info;
 
 use crate::error::error::Error;
 
-/// A minimal representation of an error for suppression purposes.
-/// This struct holds only the fields needed to add or remove a suppression comment.
-#[derive(Deserialize)]
-pub struct SuppressableError {
+/// A serializable representation of an error for JSON input/output.
+/// This struct holds the fields needed to add or remove a suppression comment.
+#[derive(Deserialize, Serialize)]
+pub struct SerializedError {
     /// The file path where the error occurs.
     pub path: PathBuf,
     /// The 0-indexed line number where the error occurs.
     pub line: usize,
     /// The kebab-case name of the error kind (e.g., "bad-assignment").
     pub name: String,
+    /// The error message. Used for UnusedIgnore errors to determine what to remove.
+    pub message: String,
 }
 
-impl SuppressableError {
-    /// Creates a SuppressableError from an internal Error.
-    /// Returns None if the error is not from a filesystem path or if the error
-    /// is an UnusedIgnore (which cannot be suppressed).
+impl SerializedError {
+    /// Creates a SerializedError from an internal Error.
+    /// Returns None if the error is not from a filesystem path.
     pub fn from_error(error: &Error) -> Option<Self> {
-        // UnusedIgnore errors cannot be suppressed
-        if error.error_kind() == ErrorKind::UnusedIgnore {
-            return None;
-        }
         if let ModulePathDetails::FileSystem(path) = error.path().details() {
             Some(Self {
                 path: (**path).clone(),
@@ -54,10 +52,16 @@ impl SuppressableError {
                     .line_within_file()
                     .to_zero_indexed() as usize,
                 name: error.error_kind().to_name().to_owned(),
+                message: error.msg().to_owned(),
             })
         } else {
             None
         }
+    }
+
+    /// Returns true if this error is an UnusedIgnore error.
+    pub fn is_unused_ignore(&self) -> bool {
+        self.name == ErrorKind::UnusedIgnore.to_name()
     }
 }
 
@@ -73,7 +77,7 @@ fn detect_line_ending(content: &str) -> &'static str {
 
 /// Combines all errors that affect one line into a single entry.
 /// The current format is: `# pyrefly: ignore [error1, error2, ...]`
-fn dedup_errors(errors: &[SuppressableError]) -> SmallMap<usize, String> {
+fn dedup_errors(errors: &[SerializedError]) -> SmallMap<usize, String> {
     let mut deduped_errors: SmallMap<usize, HashSet<String>> = SmallMap::new();
     for error in errors {
         deduped_errors
@@ -199,7 +203,7 @@ fn replace_ignore_comment(line: &str, merged_comment: &str) -> String {
 /// Returns a list of files that failed to be patched, and a list of files that were patched.
 /// The list of failures includes the error that occurred, which may be a read or write error.
 fn add_suppressions(
-    path_errors: &SmallMap<PathBuf, Vec<SuppressableError>>,
+    path_errors: &SmallMap<PathBuf, Vec<SerializedError>>,
 ) -> (Vec<(&PathBuf, anyhow::Error)>, Vec<&PathBuf>) {
     let mut failures = vec![];
     let mut successes = vec![];
@@ -309,9 +313,9 @@ fn extract_error_codes(comment: &str) -> Vec<String> {
 }
 
 /// Suppresses errors by adding ignore comments to source files.
-/// Takes a list of SuppressableErrors
-pub fn suppress_errors(errors: Vec<SuppressableError>) {
-    let mut path_errors: SmallMap<PathBuf, Vec<SuppressableError>> = SmallMap::new();
+/// Takes a list of SerializedErrors
+pub fn suppress_errors(errors: Vec<SerializedError>) {
+    let mut path_errors: SmallMap<PathBuf, Vec<SerializedError>> = SmallMap::new();
     for e in errors {
         path_errors.entry(e.path.clone()).or_default().push(e);
     }
@@ -512,12 +516,12 @@ mod tests {
 
     fn assert_suppress_errors(before: &str, after: &str) {
         let (errors, tdir) = get_errors(before);
-        let suppressable_errors: Vec<SuppressableError> = errors
+        let suppressable_errors: Vec<SerializedError> = errors
             .collect_errors()
             .shown
             .iter()
             .filter(|e| e.severity() >= Severity::Warn)
-            .filter_map(SuppressableError::from_error)
+            .filter_map(SerializedError::from_error)
             .collect();
         suppress::suppress_errors(suppressable_errors);
         let got_file = fs_anyhow::read_to_string(&get_path(&tdir)).unwrap();
