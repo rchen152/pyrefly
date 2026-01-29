@@ -2695,29 +2695,6 @@ impl<'a> Transaction<'a> {
         }
     }
 
-    fn add_literal_completions(
-        &self,
-        handle: &Handle,
-        position: TextSize,
-        completions: &mut Vec<CompletionItem>,
-        in_string_literal: bool,
-    ) {
-        if let Some((callables, chosen_overload_index, active_argument, _)) =
-            self.get_callables_from_call(handle, position)
-            && let Some(callable) = callables.get(chosen_overload_index)
-            && let Some(params) =
-                Self::normalize_singleton_function_type_into_params(callable.clone())
-            && let Some(arg_index) = Self::active_parameter_index(&params, &active_argument)
-            && let Some(param) = params.get(arg_index)
-        {
-            Self::add_literal_completions_from_type(
-                param.as_type(),
-                completions,
-                in_string_literal,
-            );
-        }
-    }
-
     // Kept for backwards compatibility - used by external callers (lsp/server.rs, playground.rs)
     // who don't need the is_incomplete flag
     pub fn completion(
