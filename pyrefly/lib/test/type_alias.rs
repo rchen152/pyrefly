@@ -1027,3 +1027,24 @@ def type_alias_subscript() -> Iterator["TResult[Line]"]:
     yield Ok(Line())
     "#,
 );
+
+testcase!(
+    bug = "conformance: Should error when using non-type expressions as implicit type aliases",
+    test_bad_implicit_type_alias_conformance,
+    r#"
+BadTypeAlias1 = eval("".join(map(chr, [105, 110, 116])))
+BadTypeAlias6 = (lambda: int)()
+BadTypeAlias7 = [int][0]
+BadTypeAlias8 = int if 1 < 3 else str
+BadTypeAlias12 = list or set
+
+def bad_type_aliases(
+    p1: BadTypeAlias1,  # should error: eval result is not a valid type
+    p6: BadTypeAlias6,  # should error: lambda call is not a valid type
+    p7: BadTypeAlias7,  # should error: list subscript is not a valid type
+    p8: BadTypeAlias8,  # should error: conditional expr is not a valid type
+    p12: BadTypeAlias12,  # should error: 'or' expr is not a valid type
+):
+    pass
+"#,
+);
