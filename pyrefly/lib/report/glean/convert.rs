@@ -85,6 +85,8 @@ fn hash(x: &[u8]) -> String {
 fn join_names(base_name: &str, name: &str) -> String {
     if base_name.is_empty() {
         name.to_owned()
+    } else if name.is_empty() {
+        base_name.to_owned()
     } else {
         base_name.to_owned() + "." + name
     }
@@ -473,77 +475,78 @@ impl GleanState<'_> {
         &self,
         def_range: TextRange,
         module: &ModuleInfo,
-    ) -> Option<DefinitionLocation> {
-        let file = file_fact(module);
+    ) -> Vec<DefinitionLocation> {
+        let file = Some(file_fact(module));
         let local_name = module.code_at(def_range);
         let module_name = module.name();
 
-        let fqname = if module_name == ModuleName::builtins() {
-            Some(local_name.to_owned())
+        if module_name == ModuleName::builtins() {
+            vec![DefinitionLocation {
+                name: local_name.to_owned(),
+                file,
+            }]
         } else if module_name == self.module_name {
             self.locations_fqnames
                 .get(&def_range.start())
-                .map(|x| (**x).clone())
+                .map_or(vec![], |x| {
+                    vec![DefinitionLocation {
+                        name: (**x).clone(),
+                        file,
+                    }]
+                })
         } else {
-            let local_name = module.code_at(def_range);
-            let fq_name = if local_name.is_empty() {
-                module_name.to_string()
-            } else {
-                join_names(module_name.as_str(), local_name)
-            };
-            Some(fq_name)
-        };
-
-        fqname.map(|name| DefinitionLocation {
-            name,
-            file: Some(file),
-        })
+            let original_name = join_names(module_name.as_str(), local_name);
+            vec![DefinitionLocation {
+                name: original_name,
+                file,
+            }]
+        }
     }
 
     fn find_definition_for_expr(&self, expr: &Expr) -> Vec<DefinitionLocation> {
         match expr {
             Expr::Subscript(expr_subscript) => self.find_definition_for_expr(&expr_subscript.value),
             Expr::Attribute(attr) => self.find_definition_for_attribute(attr),
-            Expr::Name(name) => self
-                .find_definition_for_expr_name(name)
-                .map_or(vec![], |x| vec![x]),
+            Expr::Name(name) => self.find_definition_for_expr_name(name),
             _ => vec![],
         }
     }
 
-    fn find_definition_for_expr_name(&self, expr_name: &ExprName) -> Option<DefinitionLocation> {
+    fn find_definition_for_expr_name(&self, expr_name: &ExprName) -> Vec<DefinitionLocation> {
         let identifier = Ast::expr_name_identifier(expr_name.clone());
         self.find_definition_for_name_use(identifier)
     }
 
-    fn find_definition_for_name_use(&self, identifier: Identifier) -> Option<DefinitionLocation> {
+    fn find_definition_for_name_use(&self, identifier: Identifier) -> Vec<DefinitionLocation> {
         let definition = self.transaction.find_definition_for_name_use(
             self.handle,
             &identifier,
             FindPreference::default(),
         );
 
-        definition.and_then(|def| self.get_definition_location(def.definition_range, &def.module))
+        definition.map_or(vec![], |def| {
+            self.get_definition_location(def.definition_range, &def.module)
+        })
     }
 
-    fn find_definition_for_type(&self, ty: Type, range: TextRange) -> Option<DefinitionLocation> {
+    fn find_definition_for_type(&self, ty: Type, range: TextRange) -> Vec<DefinitionLocation> {
         match ty {
-            Type::Module(module) => Some(DefinitionLocation {
+            Type::Module(module) => vec![DefinitionLocation {
                 name: module.to_string(),
                 file: None, // TODO find file for module
-            }),
-            Type::None => Some(DefinitionLocation {
+            }],
+            Type::None => vec![DefinitionLocation {
                 name: "None".to_owned(),
                 file: None,
-            }),
+            }],
             Type::Type(inner_ty) => self.find_definition_for_type(*inner_ty, range),
             Type::SpecialForm(x) => {
                 let identifier = Identifier::new(x.to_string(), range);
                 self.find_definition_for_name_use(identifier)
             }
-            _ => ty
-                .qname()
-                .and_then(|qname| self.get_definition_location(qname.range(), qname.module())),
+            _ => ty.qname().map_or(vec![], |qname| {
+                self.get_definition_location(qname.range(), qname.module())
+            }),
         }
     }
 
@@ -570,11 +573,13 @@ impl GleanState<'_> {
             .get_answers(self.handle)
             .map_or(vec![], |answers| {
                 ranges
-                    .filter_map(|range| {
-                        answers
-                            .get_type_trace(range)
-                            .and_then(|ty| self.find_definition_for_type(ty, range))
-                            .map(|definition_location| (definition_location, range))
+                    .flat_map(|range| {
+                        answers.get_type_trace(range).map_or(vec![], |ty| {
+                            self.find_definition_for_type(ty, range)
+                                .into_iter()
+                                .map(|definition_location| (definition_location, range))
+                                .collect()
+                        })
                     })
                     .collect()
             })
@@ -611,7 +616,7 @@ impl GleanState<'_> {
         } else {
             base_types
                 .into_iter()
-                .filter_map(|ty| self.find_definition_for_type(ty, base_expr.range()))
+                .flat_map(|ty| self.find_definition_for_type(ty, base_expr.range()))
                 .collect()
         };
 
@@ -694,7 +699,9 @@ impl GleanState<'_> {
             Expr::Name(name) => {
                 if name.ctx.is_load() {
                     self.find_definition_for_expr_name(name)
-                        .map_or(vec![], |x| vec![(x, name.range())])
+                        .into_iter()
+                        .map(|x| (x, name.range()))
+                        .collect()
                 } else {
                     vec![]
                 }
@@ -1019,7 +1026,7 @@ impl GleanState<'_> {
 
         definitions
             .into_iter()
-            .filter_map(|def| self.get_definition_location(def.definition_range, &def.module))
+            .flat_map(|def| self.get_definition_location(def.definition_range, &def.module))
             .collect()
     }
 
