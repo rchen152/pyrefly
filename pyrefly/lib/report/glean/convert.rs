@@ -475,6 +475,7 @@ impl GleanState<'_> {
         &self,
         def_range: TextRange,
         module: &ModuleInfo,
+        alias: Option<&DefinitionLocation>,
     ) -> Vec<DefinitionLocation> {
         let file = Some(file_fact(module));
         let local_name = module.code_at(def_range);
@@ -496,10 +497,15 @@ impl GleanState<'_> {
                 })
         } else {
             let original_name = join_names(module_name.as_str(), local_name);
-            vec![DefinitionLocation {
+            let mut definitions = vec![DefinitionLocation {
                 name: original_name,
                 file,
-            }]
+            }];
+            if let Some(alias_def) = alias {
+                definitions.push(alias_def.clone());
+            }
+
+            definitions
         }
     }
 
@@ -524,17 +530,34 @@ impl GleanState<'_> {
             FindPreference::default(),
         );
 
-        definition.map_or(vec![], |def| {
-            self.get_definition_location(def.definition_range, &def.module)
+        let alias = DefinitionLocation {
+            name: join_names(self.module_name.as_str(), identifier.as_str()),
+            file: Some(self.file_fact()),
+        };
+
+        definition.map_or(vec![alias.clone()], |def| {
+            self.get_definition_location(def.definition_range, &def.module, Some(&alias))
         })
     }
 
     fn find_definition_for_type(&self, ty: Type, range: TextRange) -> Vec<DefinitionLocation> {
+        let as_name = join_names(self.module_name.as_str(), self.module.code_at(range));
+        let mut definitions = if self.import_names.contains_key(&as_name) {
+            vec![DefinitionLocation {
+                name: as_name,
+                file: Some(self.file_fact()),
+            }]
+        } else {
+            vec![]
+        };
         match ty {
-            Type::Module(module) => vec![DefinitionLocation {
-                name: module.to_string(),
-                file: None, // TODO find file for module
-            }],
+            Type::Module(module) => {
+                definitions.push(DefinitionLocation {
+                    name: module.to_string(),
+                    file: None, // TODO find file for module
+                });
+                definitions
+            }
             Type::None => vec![DefinitionLocation {
                 name: "None".to_owned(),
                 file: None,
@@ -545,7 +568,13 @@ impl GleanState<'_> {
                 self.find_definition_for_name_use(identifier)
             }
             _ => ty.qname().map_or(vec![], |qname| {
-                self.get_definition_location(qname.range(), qname.module())
+                definitions.extend(self.get_definition_location(
+                    qname.range(),
+                    qname.module(),
+                    None,
+                ));
+
+                definitions
             }),
         }
     }
@@ -963,16 +992,20 @@ impl GleanState<'_> {
         for (local_name, source) in exports {
             let name = join_names(self.module_name.as_str(), local_name);
             if self.names.contains(&name) {
-                let fqname = self
-                    .import_names
-                    .get(&name)
-                    .map(|n| (**n).clone())
-                    .unwrap_or(name);
+                if let Some(original_name) = self.import_names.get(&name).map(|n| (**n).clone()) {
+                    self.add_xref(
+                        DefinitionLocation {
+                            name: original_name,
+                            file: None,
+                        },
+                        source,
+                    );
+                }
 
                 self.add_xref(
                     DefinitionLocation {
-                        name: fqname,
-                        file: None,
+                        name,
+                        file: Some(self.file_fact()),
                     },
                     source,
                 );
@@ -1026,7 +1059,7 @@ impl GleanState<'_> {
 
         definitions
             .into_iter()
-            .flat_map(|def| self.get_definition_location(def.definition_range, &def.module))
+            .flat_map(|def| self.get_definition_location(def.definition_range, &def.module, None))
             .collect()
     }
 
