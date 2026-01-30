@@ -507,11 +507,6 @@ struct FlowInfo {
 struct FlowValue {
     idx: Idx<Key>,
     style: FlowStyle,
-    /// Termination keys that need to be checked at solve time to determine
-    /// if this value is actually always initialized. If non-empty and the value
-    /// appears uninitialized, we defer the check to solve time instead of
-    /// emitting an error at binding time.
-    deferred_termination_keys: Vec<Idx<Key>>,
 }
 
 /// The most recent narrow for a name.
@@ -523,11 +518,7 @@ struct FlowNarrow {
 impl FlowInfo {
     fn new_value(idx: Idx<Key>, style: FlowStyle) -> Self {
         Self {
-            value: Some(FlowValue {
-                idx,
-                style,
-                deferred_termination_keys: Vec::new(),
-            }),
+            value: Some(FlowValue { idx, style }),
             narrow: None,
             narrow_depth: 0,
             loop_prior: idx,
@@ -545,11 +536,7 @@ impl FlowInfo {
 
     fn updated_value(&self, idx: Idx<Key>, style: FlowStyle, in_loop: bool) -> Self {
         Self {
-            value: Some(FlowValue {
-                idx,
-                style,
-                deferred_termination_keys: Vec::new(),
-            }),
+            value: Some(FlowValue { idx, style }),
             // Note that any existing narrow is wiped when a new value is bound.
             narrow: None,
             narrow_depth: 0,
@@ -590,22 +577,18 @@ impl FlowInfo {
     }
 
     fn initialized(&self) -> InitializedInFlow {
-        self.value().map_or(InitializedInFlow::Yes, |v| {
-            // If we have deferred termination keys, we need to check at solve time
-            // whether the branches with termination keys actually terminate (have Never type).
-            // Return DeferredCheck regardless of style - the deferred check takes precedence.
-            if !v.deferred_termination_keys.is_empty() {
-                return InitializedInFlow::DeferredCheck(v.deferred_termination_keys.clone());
-            }
-            match v.style {
+        self.value()
+            .map_or(InitializedInFlow::Yes, |v| match &v.style {
+                FlowStyle::MaybeInitialized(termination_keys) => {
+                    InitializedInFlow::DeferredCheck(termination_keys.clone())
+                }
                 FlowStyle::Uninitialized
                 | FlowStyle::ClassField {
                     initial_value: None,
                 } => InitializedInFlow::No,
                 FlowStyle::PossiblyUninitialized => InitializedInFlow::Conditionally,
                 _ => InitializedInFlow::Yes,
-            }
-        })
+            })
     }
 }
 
@@ -643,6 +626,11 @@ pub enum FlowStyle {
     ClassDef,
     /// The name is possibly uninitialized (perhaps due to merging branches)
     PossiblyUninitialized,
+    /// The name may or may not be initialized depending on whether certain branches
+    /// terminate (have `Never` type). The termination keys are checked at solve time;
+    /// if all of them have `Never` type, the name is considered initialized.
+    /// This is used when some branches don't define a variable but end with a NoReturn call.
+    MaybeInitialized(Vec<Idx<Key>>),
     /// The name was in an annotated declaration like `x: int` but not initialized
     Uninitialized,
     /// I'm a speculative binding for a name that was narrowed but not assigned above
@@ -663,9 +651,20 @@ impl FlowStyle {
             match (&merged, x) {
                 // If they're identical, keep it
                 (l, r) if l == &r => {}
-                // Uninitialized and initialized branches merge into PossiblyUninitialized
-                (FlowStyle::Uninitialized | FlowStyle::PossiblyUninitialized, _)
-                | (_, FlowStyle::Uninitialized | FlowStyle::PossiblyUninitialized) => {
+                // Uninitialized-like branches merge into PossiblyUninitialized.
+                // MaybeInitialized is treated like PossiblyUninitialized for merge purposes.
+                (
+                    FlowStyle::Uninitialized
+                    | FlowStyle::PossiblyUninitialized
+                    | FlowStyle::MaybeInitialized(_),
+                    _,
+                )
+                | (
+                    _,
+                    FlowStyle::Uninitialized
+                    | FlowStyle::PossiblyUninitialized
+                    | FlowStyle::MaybeInitialized(_),
+                ) => {
                     return FlowStyle::PossiblyUninitialized;
                 }
                 // Unclear how to merge, default to None
@@ -2858,6 +2857,17 @@ impl<'a> BindingsBuilder<'a> {
             n_branches_with_termination_key,
             missing_branch_termination_keys,
         );
+
+        // Helper to compute the final FlowStyle. If we have termination keys that need
+        // deferred checking, use MaybeInitialized; otherwise merge the styles normally.
+        let compute_final_style = |styles: Vec<FlowStyle>| -> FlowStyle {
+            if !deferred_termination_keys.is_empty() {
+                FlowStyle::MaybeInitialized(deferred_termination_keys.clone())
+            } else {
+                FlowStyle::merged(this_name_always_defined, styles.into_iter(), merge_style)
+            }
+        };
+
         match value_idxs.len() {
             // If there are no values, then this name isn't assigned at all
             // and is only narrowed (it's most likely a capture, but could be
@@ -2891,12 +2901,7 @@ impl<'a> BindingsBuilder<'a> {
                 FlowInfo {
                     value: Some(FlowValue {
                         idx: *value_idxs.first().unwrap(),
-                        style: FlowStyle::merged(
-                            this_name_always_defined,
-                            styles.into_iter(),
-                            merge_style,
-                        ),
-                        deferred_termination_keys: deferred_termination_keys.clone(),
+                        style: compute_final_style(styles),
                     }),
                     narrow: Some(FlowNarrow { idx: merged_idx }),
                     narrow_depth: 1,
@@ -2917,12 +2922,7 @@ impl<'a> BindingsBuilder<'a> {
                 FlowInfo {
                     value: Some(FlowValue {
                         idx: merged_idx,
-                        style: FlowStyle::merged(
-                            this_name_always_defined,
-                            styles.into_iter(),
-                            merge_style,
-                        ),
-                        deferred_termination_keys,
+                        style: compute_final_style(styles),
                     }),
                     narrow: None,
                     narrow_depth: 0,
@@ -3079,7 +3079,6 @@ impl<'a> BindingsBuilder<'a> {
                     info.value = Some(FlowValue {
                         idx: phi_idx,
                         style: FlowStyle::LoopRecursion,
-                        deferred_termination_keys: Vec::new(),
                     });
                     info.narrow = None;
                 }
