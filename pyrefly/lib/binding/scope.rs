@@ -2622,9 +2622,10 @@ impl MergeStyle {
 }
 
 /// Information about a single branch being merged, including both the flow info
-/// for a specific name and the termination key from the flow this branch came from.
-struct MergeBranch {
-    flow_info: FlowInfo,
+/// for a specific name (if present) and the termination key from the flow this branch came from.
+struct MergeBranchEntry {
+    /// The flow info for this name in this branch, or None if the branch doesn't have this name.
+    flow_info: Option<FlowInfo>,
     /// The last StmtExpr in the flow this branch came from, if any.
     /// Used for type-based termination checking at solve time.
     termination_key: Option<Idx<Key>>,
@@ -2632,81 +2633,9 @@ struct MergeBranch {
 
 struct MergeItem {
     base: Option<FlowInfo>,
-    branches: Vec<MergeBranch>,
-    /// Termination keys from branches that don't have this name in their flow info.
-    /// These need to be checked at solve time to verify the branches actually terminate.
-    missing_branch_termination_keys: Vec<Idx<Key>>,
-    /// Tracks which branch indices have been added (for computing missing branches).
-    seen_branch_indices: Vec<usize>,
-}
-
-struct MergeItems(SmallMap<Name, MergeItem>);
-
-impl MergeItems {
-    pub fn new(presize_to: usize) -> Self {
-        Self(SmallMap::with_capacity(presize_to))
-    }
-
-    pub fn add_base_flow_info(&mut self, name: Hashed<Name>, base: FlowInfo, n_branches: usize) {
-        self.0.insert_hashed(
-            name,
-            MergeItem {
-                base: Some(base),
-                branches: Vec::with_capacity(n_branches),
-                missing_branch_termination_keys: Vec::new(),
-                seen_branch_indices: Vec::with_capacity(n_branches),
-            },
-        );
-    }
-
-    pub fn add_branch_flow_info(
-        &mut self,
-        name: Hashed<Name>,
-        flow_info: FlowInfo,
-        termination_key: Option<Idx<Key>>,
-        n_branches: usize,
-        branch_index: usize,
-    ) {
-        let branch = MergeBranch {
-            flow_info,
-            termination_key,
-        };
-        match self.0.entry_hashed(name) {
-            Entry::Vacant(e) => {
-                let mut branches = Vec::with_capacity(n_branches);
-                branches.push(branch);
-                let mut seen_branch_indices = Vec::with_capacity(n_branches);
-                seen_branch_indices.push(branch_index);
-                e.insert(MergeItem {
-                    base: None,
-                    branches,
-                    missing_branch_termination_keys: Vec::new(),
-                    seen_branch_indices,
-                });
-            }
-            Entry::Occupied(mut e) => {
-                let item = e.get_mut();
-                item.branches.push(branch);
-                item.seen_branch_indices.push(branch_index);
-            }
-        }
-    }
-
-    /// Compute missing_branch_termination_keys for each name by comparing
-    /// seen_branch_indices to all branch indices.
-    pub fn finalize_missing_branches(&mut self, all_termination_keys: &[Option<Idx<Key>>]) {
-        for (_, merge_item) in self.0.iter_mut() {
-            // Find branches that are missing for this name
-            for (branch_index, termination_key) in all_termination_keys.iter().enumerate() {
-                if !merge_item.seen_branch_indices.contains(&branch_index) {
-                    // This branch doesn't have this name - record its termination key if any
-                    if let Some(key) = termination_key {
-                        merge_item.missing_branch_termination_keys.push(*key);
-                    }
-                }
-            }
-        }
-    }
+    /// Dense representation: always has exactly n_branches entries, one per branch.
+    /// If a branch doesn't have this name, its entry has flow_info = None.
+    branches: Vec<MergeBranchEntry>,
 }
 
 impl<'a> BindingsBuilder<'a> {
@@ -2758,8 +2687,6 @@ impl<'a> BindingsBuilder<'a> {
     ) -> FlowInfo {
         let base_idx = merge_item.base.as_ref().map(|base| base.idx());
         let mut merge_branches = merge_item.branches;
-        // Termination keys from branches that don't have this name in their flow info at all
-        let completely_missing_termination_keys = merge_item.missing_branch_termination_keys;
         // Track if base has a value for this name (for LoopDefinitelyRuns init check)
         let base_has_value = merge_item.base.as_ref().is_some_and(|b| b.value.is_some());
         // If this is a loop, we want to use the current default in any phis we produce,
@@ -2769,8 +2696,8 @@ impl<'a> BindingsBuilder<'a> {
             && let Some(base) = merge_item.base
         {
             let loop_prior = base.loop_prior;
-            merge_branches.push(MergeBranch {
-                flow_info: base,
+            merge_branches.push(MergeBranchEntry {
+                flow_info: Some(base),
                 termination_key: None,
             });
             (Some(loop_prior), true)
@@ -2812,7 +2739,14 @@ impl<'a> BindingsBuilder<'a> {
         // These will be used for deferred uninitialized checks at solve time.
         let mut missing_branch_termination_keys = Vec::new();
         for merge_branch in merge_branches.into_iter() {
-            let flow_info = merge_branch.flow_info;
+            // Handle branches that don't have this name at all (flow_info is None)
+            let Some(flow_info) = merge_branch.flow_info else {
+                // This branch doesn't have this name - record its termination key if any
+                if let Some(termination_key) = merge_branch.termination_key {
+                    missing_branch_termination_keys.push(termination_key);
+                }
+                continue;
+            };
             let branch_idx = flow_info.idx();
 
             // The BranchInfo always sees the branch_idx, which will will be
@@ -2860,11 +2794,6 @@ impl<'a> BindingsBuilder<'a> {
             }
             branch_idxs.insert(branch_idx);
         }
-
-        // Combine termination keys from:
-        // 1. Branches in merge_branches that don't have a value (collected above)
-        // 2. Branches that don't have this name in their flow info at all (pre-computed)
-        missing_branch_termination_keys.extend(completely_missing_termination_keys);
 
         // For LoopDefinitelyRuns, a name is always defined if:
         // - It was defined before the loop (base_has_value), OR
@@ -3048,34 +2977,47 @@ impl<'a> BindingsBuilder<'a> {
         let n_branches_with_termination_key =
             flows.iter().filter(|f| f.last_stmt_expr.is_some()).count();
 
-        // Collect all termination keys from flows (for computing missing branches later)
+        // Collect all termination keys from flows (for building dense MergeItems)
         let all_termination_keys: Vec<Option<Idx<Key>>> =
             flows.iter().map(|f| f.last_stmt_expr).collect();
 
-        // Collect all the branches into a `MergeItem` per name we need to merge
-        let mut merge_items = MergeItems::new(flows.first().unwrap_or(&base).info.len());
-        for (name, info) in base.info.into_iter_hashed() {
-            merge_items.add_base_flow_info(name, info, n_branches)
+        // Collect all unique names from base + all flows. We need this before we construct merge items
+        // so that we can accurately represent a flow in which some name doesn't appear.
+        let mut all_names: SmallSet<Name> = SmallSet::new();
+        for name in base.info.keys() {
+            all_names.insert(name.clone());
         }
-        for (branch_index, flow) in flows.into_iter().enumerate() {
-            let termination_key = flow.last_stmt_expr;
-            for (name, info) in flow.info.into_iter_hashed() {
-                merge_items.add_branch_flow_info(
-                    name,
-                    info,
-                    termination_key,
-                    n_branches,
-                    branch_index,
-                )
+        for flow in flows.iter() {
+            for name in flow.info.keys() {
+                all_names.insert(name.clone());
             }
         }
 
-        // Compute missing_branch_termination_keys for each name
-        merge_items.finalize_missing_branches(&all_termination_keys);
+        // Create a MergeItem for each flow being merged and each name appearing in any flow.
+        let flow_infos: Vec<SmallMap<Name, FlowInfo>> = flows.into_iter().map(|f| f.info).collect();
+        let mut merge_items: SmallMap<Name, MergeItem> = SmallMap::with_capacity(all_names.len());
+        for name in all_names {
+            let base_info = base.info.get(&name).cloned();
+            let branches: Vec<MergeBranchEntry> = flow_infos
+                .iter()
+                .enumerate()
+                .map(|(i, flow_info_map)| MergeBranchEntry {
+                    flow_info: flow_info_map.get(&name).cloned(),
+                    termination_key: all_termination_keys[i],
+                })
+                .collect();
+            merge_items.insert(
+                name,
+                MergeItem {
+                    base: base_info,
+                    branches,
+                },
+            );
+        }
 
         // For each name and merge item, produce the merged FlowInfo for our new Flow
-        let mut merged_flow_infos = SmallMap::with_capacity(merge_items.0.len());
-        for (name, merge_item) in merge_items.0.into_iter_hashed() {
+        let mut merged_flow_infos = SmallMap::with_capacity(merge_items.len());
+        for (name, merge_item) in merge_items.into_iter_hashed() {
             let phi_idx = self.idx_for_promise(Key::Phi(name.key().clone(), range));
             merged_flow_infos.insert_hashed(
                 name,
