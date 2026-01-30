@@ -58,6 +58,8 @@ pub fn find_function_at_position_in_ast(
 ///
 /// Given a call site position, finds the enclosing function and returns
 /// information needed to represent it in the call hierarchy.
+/// For module-level code (e.g., `if __name__ == "__main__":`), returns
+/// the module name with `<module>` suffix.
 pub fn find_containing_function_for_call(
     handle: &Handle,
     ast: &ModModule,
@@ -84,7 +86,11 @@ pub fn find_containing_function_for_call(
             }
         }
     }
-    None
+
+    // No containing function found - this is module-level code.
+    // Use "<module>" as the caller name with the module's range.
+    let name = format!("{}.<module>", handle.module());
+    Some((name, ast.range()))
 }
 
 /// Converts raw incoming call data to LSP CallHierarchyIncomingCall items.

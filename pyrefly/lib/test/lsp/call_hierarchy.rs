@@ -225,9 +225,8 @@ def calling_from_print_statement():
     assert!(report.contains("main()"));
 }
 
-// todo(jvansch): Update this test once this logic has been implemented
 #[test]
-fn find_callers_in_dunder_main_does_not_work_at_definition_test() {
+fn find_callers_in_dunder_main_at_definition_test() {
     let code = r#"
 def main():
 #    ^
@@ -237,16 +236,9 @@ if __name__ == "__main__":
     main()
 "#;
     let report = get_batched_lsp_operations_report(&[("main", code)], get_callers_report);
-    assert_eq!(
-        r#"
-# main.py
-2 | def main():
-         ^
-Callers Result: None
-"#
-        .trim(),
-        report.trim(),
-    );
+    assert!(report.contains("# main.py"));
+    assert!(report.contains("Caller: main.<module>"));
+    assert!(report.contains("main()"));
 }
 
 #[test]
