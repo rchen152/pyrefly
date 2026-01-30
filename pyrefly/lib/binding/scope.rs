@@ -2621,6 +2621,52 @@ impl MergeStyle {
     }
 }
 
+/// Determines whether a variable is always defined after a merge, and collects
+/// any termination keys that need deferred checking at solve time.
+///
+/// Returns `(this_name_always_defined, deferred_termination_keys)`:
+/// - `this_name_always_defined`: true if the variable is definitely assigned in all
+///   non-terminating branches, or if we need to defer the check to solve time.
+/// - `deferred_termination_keys`: if non-empty, we need to verify at solve time
+///   that ALL of these have `Never` type; if any don't, the variable may be uninitialized.
+///
+/// The logic differs slightly for `LoopDefinitelyRuns` (where base having a value
+/// or all loop body branches having values is sufficient) vs other merge styles.
+fn determine_always_defined(
+    merge_style: MergeStyle,
+    base_has_value: bool,
+    n_values: usize,
+    n_branches: usize,
+    n_missing_branches: usize,
+    n_branches_with_termination_key: usize,
+    missing_branch_termination_keys: Vec<Idx<Key>>,
+) -> (bool, Vec<Idx<Key>>) {
+    match merge_style {
+        MergeStyle::LoopDefinitelyRuns if base_has_value => (true, Vec::new()),
+        MergeStyle::LoopDefinitelyRuns if n_values == n_branches => (true, Vec::new()),
+        MergeStyle::LoopDefinitelyRuns if n_missing_branches <= n_branches_with_termination_key => {
+            if !missing_branch_termination_keys.is_empty() {
+                // Defer the check to solve time
+                (true, missing_branch_termination_keys)
+            } else {
+                // Preserve original behavior: treat as always defined
+                (true, Vec::new())
+            }
+        }
+        _ if n_values == n_branches => (true, Vec::new()),
+        _ if n_missing_branches <= n_branches_with_termination_key => {
+            if !missing_branch_termination_keys.is_empty() {
+                // Defer the check to solve time
+                (true, missing_branch_termination_keys)
+            } else {
+                // Preserve original behavior: treat as always defined
+                (true, Vec::new())
+            }
+        }
+        _ => (false, Vec::new()),
+    }
+}
+
 /// Information about a single branch being merged, including both the flow info
 /// for a specific name (if present) and the termination key from the flow this branch came from.
 struct MergeBranchEntry {
@@ -2795,18 +2841,6 @@ impl<'a> BindingsBuilder<'a> {
             branch_idxs.insert(branch_idx);
         }
 
-        // For LoopDefinitelyRuns, a name is always defined if:
-        // - It was defined before the loop (base_has_value), OR
-        // - It's defined in all loop body branches (since the loop definitely runs at least once)
-        //
-        // For regular loops and other merges, a name is always defined if it's in all
-        // non-terminating branches.
-        //
-        // If some branches don't define the variable but have termination keys, we
-        // defer the uninitialized check to solve time. At solve time, we'll verify
-        // that ALL termination keys have `Never` type - if any don't, the variable
-        // may be uninitialized.
-        //
         // n_total_branches is the actual number of branches we iterated over, which includes
         // the base flow for loops (since base is added to merge_branches for type inference).
         let n_total_branches = if added_base_to_merge {
@@ -2815,34 +2849,15 @@ impl<'a> BindingsBuilder<'a> {
             n_branches
         };
         let n_missing_branches = n_total_branches - n_values;
-        // Determine if variable is truly always defined, or if we need to defer the check.
-        // deferred_termination_keys is non-empty when we need to check at solve time.
-        let (this_name_always_defined, deferred_termination_keys) = match merge_style {
-            MergeStyle::LoopDefinitelyRuns if base_has_value => (true, Vec::new()),
-            MergeStyle::LoopDefinitelyRuns if n_values == n_branches => (true, Vec::new()),
-            MergeStyle::LoopDefinitelyRuns
-                if n_missing_branches <= n_branches_with_termination_key =>
-            {
-                if !missing_branch_termination_keys.is_empty() {
-                    // Defer the check to solve time
-                    (true, missing_branch_termination_keys)
-                } else {
-                    // Preserve original behavior: treat as always defined
-                    (true, Vec::new())
-                }
-            }
-            _ if n_values == n_branches => (true, Vec::new()),
-            _ if n_missing_branches <= n_branches_with_termination_key => {
-                if !missing_branch_termination_keys.is_empty() {
-                    // Defer the check to solve time
-                    (true, missing_branch_termination_keys)
-                } else {
-                    // Preserve original behavior: treat as always defined
-                    (true, Vec::new())
-                }
-            }
-            _ => (false, Vec::new()),
-        };
+        let (this_name_always_defined, deferred_termination_keys) = determine_always_defined(
+            merge_style,
+            base_has_value,
+            n_values,
+            n_branches,
+            n_missing_branches,
+            n_branches_with_termination_key,
+            missing_branch_termination_keys,
+        );
         match value_idxs.len() {
             // If there are no values, then this name isn't assigned at all
             // and is only narrowed (it's most likely a capture, but could be
