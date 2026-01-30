@@ -93,13 +93,12 @@ pub struct ComputeStep<Lookup: LookupExport + LookupAnswer>(
 );
 
 macro_rules! compute_step {
-    (<$ty:ty> $output:ident = $($input:ident),* $(,)? $(#$old_input:ident),*) => {
+    (<$ty:ty> $output:ident = $($input:ident),* $(,)?) => {
         ComputeStep(Box::new(|steps: &Steps| {
             let _ = steps; // Not used if $input is empty.
             $(let $input = steps.$input.dupe().unwrap();)*
-            $(let $old_input = steps.$old_input.dupe();)*
             Box::new(move |ctx: &Context<$ty>| {
-                let res = paste! { Step::[<step_ $output>] }(ctx, $($input,)* $($old_input,)* );
+                let res = paste! { Step::[<step_ $output>] }(ctx, $($input,)*);
                 Box::new(move |steps: &mut Steps| {
                     steps.$output = Some(res);
                     steps.last_step = Some(paste! { Step::[<$output:camel>] });
