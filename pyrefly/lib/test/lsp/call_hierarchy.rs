@@ -209,9 +209,8 @@ def level1():
     assert!(report.contains("Caller: main.level1"));
 }
 
-// todo(jvansch): Update this test once this logic has been implemented
 #[test]
-fn find_callers_nested_in_print_statement_does_not_work_at_definition_test() {
+fn find_callers_nested_in_print_statement_works_at_definition_test() {
     let code = r#"
 def main():
 #    ^
@@ -221,16 +220,9 @@ def calling_from_print_statement():
     print(main())
 "#;
     let report = get_batched_lsp_operations_report(&[("main", code)], get_callers_report);
-    assert_eq!(
-        r#"
-# main.py
-2 | def main():
-         ^
-Callers Result: None
-"#
-        .trim(),
-        report.trim(),
-    );
+    assert!(report.contains("# main.py"));
+    assert!(report.contains("Caller: main.calling_from_print_statement"));
+    assert!(report.contains("main()"));
 }
 
 // todo(jvansch): Update this test once this logic has been implemented
