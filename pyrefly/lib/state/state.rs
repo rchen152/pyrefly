@@ -767,7 +767,7 @@ impl<'a> Transaction<'a> {
                         if let Some(old_notebook) = old_load.module_info.notebook() {
                             **notebook != *old_notebook
                         } else {
-                            false
+                            true
                         }
                     }
                 }
