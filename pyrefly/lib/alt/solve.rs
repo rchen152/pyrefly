@@ -2581,6 +2581,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             ReturnTypeKind::ShouldTrustAnnotation {
                 annotation,
                 is_generator,
+                ..
             } => {
                 // TODO: A return type annotation like `Final` is invalid in this context.
                 // It will result in an implicit Any type, which is reasonable, but we should
