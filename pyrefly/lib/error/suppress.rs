@@ -8,6 +8,7 @@
 use std::collections::HashSet;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
 use anyhow::anyhow;
 use pyrefly_config::error_kind::ErrorKind;
@@ -24,6 +25,15 @@ use starlark_map::small_set::SmallSet;
 use tracing::info;
 
 use crate::error::error::Error;
+
+/// Regex to match pyrefly/type ignore comments with optional error codes and trailing semicolon.
+/// Preserves any following comments (e.g., "# pyrefly: ignore [x]; # other" -> "# other").
+static IGNORE_COMMENT_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r"#\s*pyrefly:\s*ignore\s*(\[[^\]]*\])?\s*;?\s*|#\s*type:\s*ignore\s*(\[[^\]]*\])?\s*;?\s*",
+    )
+    .unwrap()
+});
 
 /// A serializable representation of an error for JSON input/output.
 /// This struct holds the fields needed to add or remove a suppression comment.
@@ -353,9 +363,8 @@ fn update_ignore_comment_with_used_codes(
 
     // If there are no used codes, remove the entire comment
     if used_codes.is_empty() {
-        let regex = Regex::new(r"(#\s*pyrefly:\s*ignore.*$|#\s*type:\s*ignore.*$)").unwrap();
-        if regex.is_match(line) {
-            let new_string = regex.replace_all(line, "");
+        if IGNORE_COMMENT_REGEX.is_match(line) {
+            let new_string = IGNORE_COMMENT_REGEX.replace_all(line, "");
             return Some(new_string.trim_end().to_owned());
         }
         return None;
@@ -404,8 +413,6 @@ pub fn remove_unused_ignores_from_serialized(unused_ignore_errors: Vec<Serialize
             .push(error);
     }
 
-    let regex = Regex::new(r"#\s*pyrefly:\s*ignore.*$").unwrap();
-
     let mut removed_ignores: SmallMap<PathBuf, usize> = SmallMap::new();
 
     for (path, path_errors) in &errors_by_path {
@@ -423,14 +430,14 @@ pub fn remove_unused_ignores_from_serialized(unused_ignore_errors: Vec<Serialize
 
             for (idx, line) in lines.iter().enumerate() {
                 if let Some(error) = line_errors.get(&idx)
-                    && regex.is_match(line)
+                    && IGNORE_COMMENT_REGEX.is_match(line)
                 {
                     let msg = &error.message;
 
                     // Determine action based on error message
                     if msg.starts_with("Unused `# pyrefly: ignore` comment") {
                         // Remove entire comment (blanket unused or all codes unused)
-                        let new_line = regex.replace_all(line, "");
+                        let new_line = IGNORE_COMMENT_REGEX.replace_all(line, "");
                         let new_line = new_line.trim_end();
                         unused_count += 1;
                         if !new_line.is_empty() {
@@ -913,6 +920,21 @@ def f(x: int) -> int:
         // Ensures files without suppressions are not rewritten (no newline added).
         // https://github.com/facebook/pyrefly/issues/2185
         assert_remove_ignores(input, input, 0);
+    }
+
+    #[test]
+    fn test_remove_unused_ignores_existing_comment() {
+        let input = r#"
+def f(x: int) -> int:
+    # noqa: E501,RUF100  # pyrefly: ignore[unsupported-operation]  # ty: ignore[not-subscriptable]
+    return x + 1"#;
+        let after = r#"
+def f(x: int) -> int:
+    # noqa: E501,RUF100  # ty: ignore[not-subscriptable]
+    return x + 1
+"#;
+
+        assert_remove_ignores(input, after, 1);
     }
 
     #[test]
