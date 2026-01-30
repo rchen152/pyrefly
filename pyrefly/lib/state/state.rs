@@ -956,7 +956,7 @@ impl<'a> Transaction<'a> {
                 Some(todo) if todo <= step => todo,
                 _ => break,
             };
-            let mut exclusive = match reader.exclusive(todo) {
+            let exclusive = match reader.exclusive(todo) {
                 Some(exclusive) => exclusive,
                 None => {
                     // The world changed, we should check again
@@ -969,21 +969,10 @@ impl<'a> Transaction<'a> {
             };
 
             computed = true;
-            let compute = todo.compute().0(&exclusive.steps);
             let require = exclusive.require;
-            if todo == Step::Answers && !require.keep_ast() {
-                // We have captured the Ast, and must have already built Exports (we do it serially),
-                // so won't need the Ast again.
-                let to_drop;
-                let mut writer = exclusive.write();
-                to_drop = writer.steps.ast.take();
-                exclusive = writer.exclusive();
-                drop(to_drop);
-            }
-
             let stdlib = self.get_stdlib(&module_data.handle);
             let config = module_data.config.read();
-            let set = compute(&Context {
+            let ctx = Context {
                 require,
                 module: module_data.handle.module(),
                 path: module_data.handle.path(),
@@ -997,9 +986,11 @@ impl<'a> Transaction<'a> {
                 infer_with_first_use: config
                     .infer_with_first_use(module_data.handle.path().as_path()),
                 recursion_limit_config: config.recursion_limit_config(),
-            });
+            };
+            let set = todo.compute(&exclusive.steps, &ctx);
             {
-                let mut to_drop = None;
+                let mut to_drop_ast = None;
+                let mut to_drop_answers = None;
                 let mut writer = exclusive.write();
                 let mut load_result = None;
                 let old_solutions = if todo == Step::Solutions {
@@ -1007,7 +998,7 @@ impl<'a> Transaction<'a> {
                 } else {
                     None
                 };
-                set(&mut writer.steps);
+                set.0(&mut writer.steps);
                 // After Exports step, populate syntactic_deps from Exports
                 if todo == Step::Exports
                     && let Some(ref exports) = writer.steps.exports
@@ -1041,16 +1032,21 @@ impl<'a> Transaction<'a> {
                 } else {
                     ChangedExports::NoChange // Not Solutions step = no export changes
                 };
-                if todo == Step::Solutions {
+                if todo == Step::Answers && !require.keep_ast() {
+                    // We have captured the Ast, and must have already built Exports (we do it serially),
+                    // so won't need the Ast again.
+                    to_drop_ast = writer.steps.ast.take();
+                } else if todo == Step::Solutions {
                     if !require.keep_bindings() && !require.keep_answers() {
                         // From now on we can use the answers directly, so evict the bindings/answers.
-                        to_drop = writer.steps.answers.take();
+                        to_drop_answers = writer.steps.answers.take();
                     }
                     load_result = writer.steps.load.dupe();
                 }
                 drop(writer);
                 // Release the lock before dropping
-                drop(to_drop);
+                drop(to_drop_ast);
+                drop(to_drop_answers);
                 if !matches!(changed_exports, ChangedExports::NoChange) {
                     self.data
                         .changed
@@ -2004,7 +2000,7 @@ impl<'a> Transaction<'a> {
             while let Some(s) = step.next() {
                 step = s;
                 let start = Instant::now();
-                step.compute().0(&alt)(&ctx)(&mut alt);
+                step.compute(&alt, &ctx).0(&mut alt);
                 write(&step, start)?;
                 if step == Step::Exports {
                     let start = Instant::now();
