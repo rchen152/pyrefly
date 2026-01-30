@@ -642,7 +642,7 @@ pub enum FlowStyle {
 
 impl FlowStyle {
     fn merged(
-        always_defined: bool,
+        defined_in_all_branches: bool,
         mut styles: impl Iterator<Item = FlowStyle>,
         merge_style: MergeStyle,
     ) -> FlowStyle {
@@ -673,7 +673,7 @@ impl FlowStyle {
                 }
             }
         }
-        if always_defined {
+        if defined_in_all_branches {
             merged
         } else {
             // If the name is missing in some flows, then it must be uninitialized in at
@@ -2620,18 +2620,28 @@ impl MergeStyle {
     }
 }
 
-/// Determines whether a variable is always defined after a merge, and collects
-/// any termination keys that need deferred checking at solve time.
-///
-/// Returns `(this_name_always_defined, deferred_termination_keys)`:
-/// - `this_name_always_defined`: true if the variable is definitely assigned in all
-///   non-terminating branches, or if we need to defer the check to solve time.
-/// - `deferred_termination_keys`: if non-empty, we need to verify at solve time
-///   that ALL of these have `Never` type; if any don't, the variable may be uninitialized.
+/// The result of analyzing whether a variable is defined after merging branches.
+/// This enum captures the three distinct states:
+/// - `Defined`: Variable is defined in all non-terminating branches
+/// - `DeferredCheck`: Some branches don't define the variable, but they may terminate
+///   (have `Never` type). The check is deferred to solve time.
+/// - `NotDefined`: Variable is not defined in some branches that may not terminate
+enum DefinitionStatus {
+    /// Variable is defined in all non-terminating branches.
+    Defined,
+    /// Variable may be defined if branches with these keys terminate (have `Never` type).
+    /// The keys are checked at solve time; if all have `Never` type, the variable is
+    /// considered initialized.
+    DeferredCheck(Vec<Idx<Key>>),
+    /// Variable is not defined in some branches that may not terminate.
+    NotDefined,
+}
+
+/// Determines the definition status of a variable after a merge.
 ///
 /// The logic differs slightly for `LoopDefinitelyRuns` (where base having a value
 /// or all loop body branches having values is sufficient) vs other merge styles.
-fn determine_always_defined(
+fn determine_definition_status(
     merge_style: MergeStyle,
     base_has_value: bool,
     n_values: usize,
@@ -2639,30 +2649,26 @@ fn determine_always_defined(
     n_missing_branches: usize,
     n_branches_with_termination_key: usize,
     missing_branch_termination_keys: Vec<Idx<Key>>,
-) -> (bool, Vec<Idx<Key>>) {
+) -> DefinitionStatus {
     match merge_style {
-        MergeStyle::LoopDefinitelyRuns if base_has_value => (true, Vec::new()),
-        MergeStyle::LoopDefinitelyRuns if n_values == n_branches => (true, Vec::new()),
+        MergeStyle::LoopDefinitelyRuns if base_has_value => DefinitionStatus::Defined,
+        MergeStyle::LoopDefinitelyRuns if n_values == n_branches => DefinitionStatus::Defined,
         MergeStyle::LoopDefinitelyRuns if n_missing_branches <= n_branches_with_termination_key => {
             if !missing_branch_termination_keys.is_empty() {
-                // Defer the check to solve time
-                (true, missing_branch_termination_keys)
+                DefinitionStatus::DeferredCheck(missing_branch_termination_keys)
             } else {
-                // Preserve original behavior: treat as always defined
-                (true, Vec::new())
+                DefinitionStatus::Defined
             }
         }
-        _ if n_values == n_branches => (true, Vec::new()),
+        _ if n_values == n_branches => DefinitionStatus::Defined,
         _ if n_missing_branches <= n_branches_with_termination_key => {
             if !missing_branch_termination_keys.is_empty() {
-                // Defer the check to solve time
-                (true, missing_branch_termination_keys)
+                DefinitionStatus::DeferredCheck(missing_branch_termination_keys)
             } else {
-                // Preserve original behavior: treat as always defined
-                (true, Vec::new())
+                DefinitionStatus::Defined
             }
         }
-        _ => (false, Vec::new()),
+        _ => DefinitionStatus::NotDefined,
     }
 }
 
@@ -2848,7 +2854,7 @@ impl<'a> BindingsBuilder<'a> {
             n_branches
         };
         let n_missing_branches = n_total_branches - n_values;
-        let (this_name_always_defined, deferred_termination_keys) = determine_always_defined(
+        let definition_status = determine_definition_status(
             merge_style,
             base_has_value,
             n_values,
@@ -2858,13 +2864,16 @@ impl<'a> BindingsBuilder<'a> {
             missing_branch_termination_keys,
         );
 
-        // Helper to compute the final FlowStyle. If we have termination keys that need
-        // deferred checking, use MaybeInitialized; otherwise merge the styles normally.
+        // Helper to compute the final FlowStyle based on definition status.
         let compute_final_style = |styles: Vec<FlowStyle>| -> FlowStyle {
-            if !deferred_termination_keys.is_empty() {
-                FlowStyle::MaybeInitialized(deferred_termination_keys.clone())
-            } else {
-                FlowStyle::merged(this_name_always_defined, styles.into_iter(), merge_style)
+            match &definition_status {
+                DefinitionStatus::DeferredCheck(keys) => FlowStyle::MaybeInitialized(keys.clone()),
+                DefinitionStatus::Defined => {
+                    FlowStyle::merged(true, styles.into_iter(), merge_style)
+                }
+                DefinitionStatus::NotDefined => {
+                    FlowStyle::merged(false, styles.into_iter(), merge_style)
+                }
             }
         };
 
