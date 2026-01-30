@@ -3763,9 +3763,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    pub fn resolve_named_tuple_element(&self, cls: ClassType, name: &Name) -> Option<Type> {
+    pub fn resolve_named_tuple_element(&self, cls: &ClassType, name: &Name) -> Option<Type> {
         let field = self.get_class_member(cls.class_object(), name)?;
-        match field.instantiate_for(&Instance::of_class(&cls)).0 {
+        match field.instantiate_for(&Instance::of_class(cls)).0 {
             ClassFieldInner::ClassAttribute {
                 ty,
                 read_only_reason: Some(_),
