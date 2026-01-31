@@ -2217,6 +2217,23 @@ impl<'a> LookupExport for TransactionHandle<'a> {
         })
     }
 
+    fn is_submodule_imported_implicitly(&self, module: ModuleName, name: &Name) -> bool {
+        self.with_exports(module, |exports, _lookup| {
+            exports.is_submodule_imported_implicitly(name)
+        })
+        .unwrap_or(false)
+    }
+
+    fn get_every_export(&self, module: ModuleName) -> Option<SmallSet<Name>> {
+        self.with_exports(module, |exports, lookup| {
+            exports
+                .exports(lookup)
+                .keys()
+                .cloned()
+                .collect::<SmallSet<Name>>()
+        })
+    }
+
     fn get_deprecated(&self, module: ModuleName, name: &Name) -> Option<Deprecation> {
         self.with_exports(module, |exports, lookup| {
             match exports.exports(lookup).get(name)? {
@@ -2227,6 +2244,16 @@ impl<'a> LookupExport for TransactionHandle<'a> {
                 _ => None,
             }
         })?
+    }
+
+    fn is_reexport(&self, module: ModuleName, name: &Name) -> bool {
+        self.with_exports(module, |exports, lookup| {
+            matches!(
+                exports.exports(lookup).get(name),
+                Some(ExportLocation::OtherModule(..))
+            )
+        })
+        .unwrap_or(false)
     }
 
     fn is_special_export(&self, mut module: ModuleName, name: &Name) -> Option<SpecialExport> {
@@ -2263,6 +2290,17 @@ impl<'a> LookupExport for TransactionHandle<'a> {
                 }
             }
         }
+    }
+
+    fn docstring_range(&self, module: ModuleName, name: &Name) -> Option<TextRange> {
+        self.with_exports(module, |exports, lookup| {
+            match exports.exports(lookup).get(name)? {
+                ExportLocation::ThisModule(Export {
+                    docstring_range, ..
+                }) => *docstring_range,
+                _ => None,
+            }
+        })?
     }
 }
 

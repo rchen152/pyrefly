@@ -48,11 +48,23 @@ pub trait LookupExport {
     /// Get the wildcard exports for a module. Records a dependency on `module` regardless of if it exists.
     fn get_wildcard(&self, module: ModuleName) -> Option<Arc<SmallSet<Name>>>;
 
+    /// Get all export names for a module. Records a dependency on all changes to `module`.
+    fn get_every_export(&self, module: ModuleName) -> Option<SmallSet<Name>>;
+
+    /// Check if a submodule is imported implicitly. Records a dependency on `name` from `module` regardless of if it exists.
+    fn is_submodule_imported_implicitly(&self, module: ModuleName, name: &Name) -> bool;
+
     /// Get deprecation info for an export. Records a dependency on `name` from `module` regardless of if it exists.
     fn get_deprecated(&self, module: ModuleName, name: &Name) -> Option<Deprecation>;
 
+    /// Check if an export is a re-export from another module. Records a dependency on `name` from `module` regardless of if it exists.
+    fn is_reexport(&self, module: ModuleName, name: &Name) -> bool;
+
     /// Check if an export is a special export. Records a dependency on `name` from `module` regardless of if it exists.
     fn is_special_export(&self, module: ModuleName, name: &Name) -> Option<SpecialExport>;
+
+    /// Get the docstring range for an export. Records a dependency on `name` from `module` regardless of if it exists.
+    fn docstring_range(&self, module: ModuleName, name: &Name) -> Option<TextRange>;
 }
 
 #[derive(Debug, Clone)]
@@ -341,6 +353,12 @@ mod tests {
         fn get_wildcard(&self, module: ModuleName) -> Option<Arc<SmallSet<Name>>> {
             self.get(&module).map(|x| x.wildcard(self))
         }
+
+        fn get_every_export(&self, module: ModuleName) -> Option<SmallSet<Name>> {
+            self.get(&module)
+                .map(|x| x.exports(self).keys().cloned().collect::<SmallSet<Name>>())
+        }
+
         fn module_exists(&self, module: ModuleName) -> FindingOrError<()> {
             match self.get(&module) {
                 Some(_) => FindingOrError::new_finding(()),
@@ -352,8 +370,20 @@ mod tests {
             None
         }
 
+        fn is_reexport(&self, _module: ModuleName, _name: &Name) -> bool {
+            false
+        }
+
+        fn docstring_range(&self, _module: ModuleName, _name: &Name) -> Option<TextRange> {
+            None
+        }
+
         fn is_special_export(&self, _module: ModuleName, _name: &Name) -> Option<SpecialExport> {
             None
+        }
+
+        fn is_submodule_imported_implicitly(&self, _module: ModuleName, _name: &Name) -> bool {
+            false
         }
     }
 
