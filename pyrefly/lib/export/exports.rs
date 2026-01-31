@@ -35,9 +35,6 @@ use crate::state::loader::FindingOrError;
 /// Find the exports of a given module. Beware: these APIs record dependencies between modules during lookups. Using the
 /// wrong API can lead to invalidation bugs.
 pub trait LookupExport {
-    /// Get the exports of a given module, or an error if the module is not available.
-    fn get(&self, module: ModuleName) -> FindingOrError<Exports>;
-
     /// Check if a specific export exists in a module. Records a dependency on `name` from `module` regardless of if it exists.
     fn export_exists(&self, module: ModuleName, name: &Name) -> bool;
 
@@ -161,8 +158,7 @@ impl Exports {
                     }
                     DunderAllEntry::Module(_, x) => {
                         // They did `__all__.extend(foo.__all__)`, but didn't import `foo`.
-                        if let Some(import) = lookup.get(*x).finding() {
-                            let wildcard = import.wildcard(lookup);
+                        if let Some(wildcard) = lookup.get_wildcard(*x) {
                             for y in wildcard.iter_hashed() {
                                 result.insert_hashed(y.cloned());
                             }
@@ -237,8 +233,8 @@ impl Exports {
                 // Check if name is available through a wildcard import
                 let mut found_in_import = false;
                 for (module, _) in self.0.definitions.import_all.iter() {
-                    if let Some(exports) = lookup.get(*module).finding()
-                        && exports.wildcard(lookup).contains(name)
+                    if let Some(wildcard) = lookup.get_wildcard(*module)
+                        && wildcard.contains(name)
                     {
                         found_in_import = true;
                         break;
@@ -250,7 +246,7 @@ impl Exports {
                 // In __init__.py, __all__ can list submodule names
                 if module_info.path().is_init() {
                     let submodule = module_info.name().append(name);
-                    if lookup.get(submodule).finding().is_some() {
+                    if lookup.module_exists(submodule).finding().is_some() {
                         continue;
                     }
                 }
@@ -309,8 +305,8 @@ impl Exports {
                 result.insert_hashed(name.cloned(), export);
             }
             for m in self.0.definitions.import_all.keys() {
-                if let Some(exports) = lookup.get(*m).finding() {
-                    for name in exports.wildcard(lookup).iter_hashed() {
+                if let Some(wildcard) = lookup.get_wildcard(*m) {
+                    for name in wildcard.iter_hashed() {
                         result.insert_hashed(name.cloned(), ExportLocation::OtherModule(*m, None));
                     }
                 }
@@ -337,13 +333,6 @@ mod tests {
     use crate::state::loader::FindError;
 
     impl LookupExport for SmallMap<ModuleName, Exports> {
-        fn get(&self, module: ModuleName) -> FindingOrError<Exports> {
-            match self.get(&module) {
-                Some(x) => FindingOrError::new_finding(x.dupe()),
-                None => FindingOrError::Error(FindError::not_found(anyhow!("Error"), module)),
-            }
-        }
-
         fn export_exists(&self, module: ModuleName, k: &Name) -> bool {
             self.get(&module)
                 .map(|x| x.exports(self).contains_key(k))
