@@ -2389,12 +2389,10 @@ impl Scopes {
         self.visit_scopes(|_, scope, flow_barrier| {
             let is_class = matches!(scope.kind, ScopeKind::Class(_));
 
-            if let Some(flow_info) = scope.flow.get_info_hashed(name)
-                && flow_barrier < FlowBarrier::BlockFlow
-            {
-                if skip_class_overload_function_definitions
-                    && is_class
-                    && flow_info.value().is_some_and(|value| {
+            let flow_info = scope.flow.get_info_hashed(name);
+            let is_class_overload = is_class
+                && flow_info.is_some_and(|info| {
+                    info.value().is_some_and(|value| {
                         matches!(
                             value.style,
                             FlowStyle::FunctionDef {
@@ -2403,9 +2401,11 @@ impl Scopes {
                             }
                         )
                     })
-                {
-                    return None;
-                }
+                });
+            if let Some(flow_info) = flow_info
+                && flow_barrier < FlowBarrier::BlockFlow
+                && !(skip_class_overload_function_definitions && is_class_overload)
+            {
                 let initialized = if flow_barrier == FlowBarrier::AllowFlowUnchecked {
                     // Just assume the name is initialized without checking.
                     InitializedInFlow::Yes
