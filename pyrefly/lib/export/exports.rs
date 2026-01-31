@@ -50,6 +50,9 @@ pub trait LookupExport {
 
     /// Get deprecation info for an export. Records a dependency on `name` from `module` regardless of if it exists.
     fn get_deprecated(&self, module: ModuleName, name: &Name) -> Option<Deprecation>;
+
+    /// Check if an export is a special export. Records a dependency on `name` from `module` regardless of if it exists.
+    fn is_special_export(&self, module: ModuleName, name: &Name) -> Option<SpecialExport>;
 }
 
 #[derive(Debug, Clone)]
@@ -346,6 +349,10 @@ mod tests {
         }
 
         fn get_deprecated(&self, _module: ModuleName, _name: &Name) -> Option<Deprecation> {
+            None
+        }
+
+        fn is_special_export(&self, _module: ModuleName, _name: &Name) -> Option<SpecialExport> {
             None
         }
     }

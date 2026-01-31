@@ -90,6 +90,7 @@ use crate::export::exports::Export;
 use crate::export::exports::ExportLocation;
 use crate::export::exports::Exports;
 use crate::export::exports::LookupExport;
+use crate::export::special::SpecialExport;
 use crate::module::bundled::BundledStub;
 use crate::module::finder::find_import_prefixes;
 use crate::module::typeshed::BundledTypeshedStdlib;
@@ -2226,6 +2227,42 @@ impl<'a> LookupExport for TransactionHandle<'a> {
                 _ => None,
             }
         })?
+    }
+
+    fn is_special_export(&self, mut module: ModuleName, name: &Name) -> Option<SpecialExport> {
+        let mut seen = HashSet::new();
+        let mut name = name.clone();
+
+        loop {
+            if let Some(special) = SpecialExport::new(&name)
+                && special.defined_in(module)
+            {
+                return Some(special);
+            }
+
+            if !seen.insert(module) {
+                return None; // Cycle detected
+            }
+
+            let next = self.with_exports(module, |exports, lookup| {
+                match exports.exports(lookup).get(&name)? {
+                    ExportLocation::ThisModule(export) => Some(Err(export.special_export)),
+                    ExportLocation::OtherModule(other_module, original_name) => {
+                        Some(Ok((*other_module, original_name.clone())))
+                    }
+                }
+            })??;
+
+            match next {
+                Err(special) => return special,
+                Ok((other_module, original_name)) => {
+                    if let Some(original_name) = original_name {
+                        name = original_name.clone();
+                    }
+                    module = other_module;
+                }
+            }
+        }
     }
 }
 
