@@ -32,10 +32,24 @@ use crate::export::special::SpecialExport;
 use crate::module::module_info::ModuleInfo;
 use crate::state::loader::FindingOrError;
 
-/// Find the exports of a given module.
+/// Find the exports of a given module. Beware: these APIs record dependencies between modules during lookups. Using the
+/// wrong API can lead to invalidation bugs.
 pub trait LookupExport {
     /// Get the exports of a given module, or an error if the module is not available.
     fn get(&self, module: ModuleName) -> FindingOrError<Exports>;
+
+    /// Check if a specific export exists in a module. Records a dependency on `name` from `module` regardless of if it exists.
+    fn export_exists(&self, module: ModuleName, name: &Name) -> bool;
+
+    /// Check if a module exists and do nothing with it. Note: if we rely on the exports of `module`, we need to call
+    /// `module_exists_and_record_export_dependency` instead.
+    fn module_exists(&self, module: ModuleName) -> FindingOrError<()>;
+
+    /// Get the wildcard exports for a module. Records a dependency on `module` regardless of if it exists.
+    fn get_wildcard(&self, module: ModuleName) -> Option<Arc<SmallSet<Name>>>;
+
+    /// Get deprecation info for an export. Records a dependency on `name` from `module` regardless of if it exists.
+    fn get_deprecated(&self, module: ModuleName, name: &Name) -> Option<Deprecation>;
 }
 
 #[derive(Debug, Clone)]
@@ -313,6 +327,26 @@ mod tests {
                 Some(x) => FindingOrError::new_finding(x.dupe()),
                 None => FindingOrError::Error(FindError::not_found(anyhow!("Error"), module)),
             }
+        }
+
+        fn export_exists(&self, module: ModuleName, k: &Name) -> bool {
+            self.get(&module)
+                .map(|x| x.exports(self).contains_key(k))
+                .unwrap_or(false)
+        }
+
+        fn get_wildcard(&self, module: ModuleName) -> Option<Arc<SmallSet<Name>>> {
+            self.get(&module).map(|x| x.wildcard(self))
+        }
+        fn module_exists(&self, module: ModuleName) -> FindingOrError<()> {
+            match self.get(&module) {
+                Some(_) => FindingOrError::new_finding(()),
+                None => FindingOrError::Error(FindError::not_found(anyhow!("Error"), module)),
+            }
+        }
+
+        fn get_deprecated(&self, _module: ModuleName, _name: &Name) -> Option<Deprecation> {
+            None
         }
     }
 

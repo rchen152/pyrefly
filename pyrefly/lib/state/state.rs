@@ -86,6 +86,7 @@ use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
 use crate::export::definitions::DependsOn;
 use crate::export::definitions::SyntacticDeps;
+use crate::export::exports::Export;
 use crate::export::exports::ExportLocation;
 use crate::export::exports::Exports;
 use crate::export::exports::LookupExport;
@@ -111,6 +112,7 @@ use crate::state::steps::Context;
 use crate::state::steps::Step;
 use crate::state::steps::Steps;
 use crate::state::subscriber::Subscriber;
+use crate::types::callable::Deprecation;
 use crate::types::class::Class;
 use crate::types::stdlib::Stdlib;
 use crate::types::types::TParams;
@@ -2153,6 +2155,21 @@ impl<'a> TransactionHandle<'a> {
             }
         }
     }
+
+    /// Helper to get exports for a module with the correct lookup context.
+    fn with_exports<T>(
+        &self,
+        module: ModuleName,
+        f: impl FnOnce(&Exports, &Self) -> T,
+    ) -> Option<T> {
+        let module_data = self.get_module(module, None).finding()?;
+        let exports = self.transaction.lookup_export(&module_data);
+        let lookup = TransactionHandle {
+            transaction: self.transaction,
+            module_data,
+        };
+        Some(f(&exports, &lookup))
+    }
 }
 
 impl<'a> LookupExport for TransactionHandle<'a> {
@@ -2180,6 +2197,35 @@ impl<'a> LookupExport for TransactionHandle<'a> {
             exports.exports(&transaction2);
             exports
         })
+    }
+
+    fn export_exists(&self, module: ModuleName, k: &Name) -> bool {
+        self.with_exports(module, |exports, lookup| {
+            exports.exports(lookup).contains_key(k)
+        })
+        .unwrap_or(false)
+    }
+
+    fn get_wildcard(&self, module: ModuleName) -> Option<Arc<SmallSet<Name>>> {
+        self.with_exports(module, |exports, lookup| exports.wildcard(lookup))
+    }
+
+    fn module_exists(&self, module: ModuleName) -> FindingOrError<()> {
+        self.get_module(module, None).map(|module_data| {
+            self.transaction.lookup_export(&module_data);
+        })
+    }
+
+    fn get_deprecated(&self, module: ModuleName, name: &Name) -> Option<Deprecation> {
+        self.with_exports(module, |exports, lookup| {
+            match exports.exports(lookup).get(name)? {
+                ExportLocation::ThisModule(Export {
+                    deprecation: Some(d),
+                    ..
+                }) => Some(d.clone()),
+                _ => None,
+            }
+        })?
     }
 }
 
