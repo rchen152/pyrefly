@@ -1436,12 +1436,7 @@ impl<'a> Transaction<'a> {
         })
     }
 
-    fn run_step(
-        &mut self,
-        handles: &[Handle],
-        transitive_deps_of_handles: &HashSet<Handle>,
-        require: Require,
-    ) -> Result<(), Cancelled> {
+    fn run_step(&mut self, handles: &[Handle], require: Require) -> Result<(), Cancelled> {
         let run_start = Instant::now();
 
         self.data.now.next();
@@ -1460,19 +1455,11 @@ impl<'a> Transaction<'a> {
                 state.dirty.require = dirty_require || state.dirty.require;
                 drop(state);
                 if (created || dirty_require) && !dirty.contains(&m) {
-                    if transitive_deps_of_handles.contains(&m.handle) {
-                        self.data.todo.push_lifo(Step::first(), m);
-                    } else {
-                        self.data.todo.push_fifo(Step::first(), m);
-                    }
+                    self.data.todo.push_fifo(Step::first(), m);
                 }
             }
             for m in dirty {
-                if transitive_deps_of_handles.contains(&m.handle) {
-                    self.data.todo.push_lifo(Step::first(), m);
-                } else {
-                    self.data.todo.push_fifo(Step::first(), m);
-                }
+                self.data.todo.push_fifo(Step::first(), m);
             }
         }
 
@@ -1588,54 +1575,8 @@ impl<'a> Transaction<'a> {
         }
     }
 
-    /// Compute the transitive dependencies of the given handles.
-    /// Returns a set of all handles that are direct or transitive dependencies.
-    #[expect(dead_code)]
-    fn compute_transitive_deps(&self, handles: &[Handle]) -> HashSet<Handle> {
-        let mut visited: HashSet<Handle> = HashSet::new();
-        let mut to_visit: Vec<Handle> = handles.iter().map(|h| h.dupe()).collect();
-        while let Some(handle) = to_visit.pop() {
-            if !visited.insert(handle.dupe()) {
-                continue;
-            }
-            let deps: Vec<Handle> =
-                if let Some(module_data) = self.data.updated_modules.get(&handle) {
-                    module_data
-                        .deps
-                        .read()
-                        .values()
-                        .flat_map(|resolution| match resolution {
-                            ImportResolution::Resolved(map) => map.iter_keys().cloned().collect(),
-                            ImportResolution::Failed(_) => Vec::new(),
-                        })
-                        .map(|h| h.dupe())
-                        .collect()
-                } else if let Some(module_data) = self.readable.modules.get(&handle) {
-                    module_data
-                        .deps
-                        .values()
-                        .flat_map(|resolution| match resolution {
-                            ImportResolution::Resolved(map) => map.iter_keys().cloned().collect(),
-                            ImportResolution::Failed(_) => Vec::new(),
-                        })
-                        .map(|h| h.dupe())
-                        .collect()
-                } else {
-                    Vec::new()
-                };
-            for dep in deps {
-                if !visited.contains(&dep) {
-                    to_visit.push(dep);
-                }
-            }
-        }
-        visited
-    }
-
     fn run_internal(&mut self, handles: &[Handle], require: Require) -> Result<(), Cancelled> {
         let run_number = self.data.state.run_count.fetch_add(1, Ordering::SeqCst);
-        // TODO(dannyyang): fix tdeps regression
-        let transitive_deps_of_handles = HashSet::new();
         // We first compute all the modules that are either new or have changed.
         // Then we repeatedly compute all the modules who depend on modules that changed.
         //
@@ -1663,7 +1604,7 @@ impl<'a> Transaction<'a> {
 
         for i in 1..=MAX_EPOCHS {
             debug!("Running epoch {i} of run {run_number}");
-            self.run_step(handles, &transitive_deps_of_handles, require)?;
+            self.run_step(handles, require)?;
             let changed = mem::take(&mut *self.data.changed.lock());
             if changed.is_empty() {
                 return Ok(());
@@ -1707,7 +1648,7 @@ impl<'a> Transaction<'a> {
                         .map(|(m, _)| (m.dupe(), ChangedExports::InvalidateAll))
                         .collect();
                     self.invalidate_rdeps(&coarse_grained_changed);
-                    return self.run_step(handles, &transitive_deps_of_handles, require);
+                    return self.run_step(handles, require);
                 }
 
                 // Merge the new exports into our tracking set
@@ -1753,7 +1694,7 @@ impl<'a> Transaction<'a> {
             .map(|(m, _)| (m.dupe(), ChangedExports::InvalidateAll))
             .collect();
         self.invalidate_rdeps(&coarse_grained_changed);
-        self.run_step(handles, &transitive_deps_of_handles, require)
+        self.run_step(handles, require)
     }
 
     pub fn run(&mut self, handles: &[Handle], require: Require) {
