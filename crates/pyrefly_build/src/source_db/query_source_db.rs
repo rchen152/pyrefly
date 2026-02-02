@@ -103,7 +103,7 @@ pub struct QuerySourceDatabase {
     includes: Mutex<SmallSet<Include>>,
     /// The directory that will be passed into the sourcedb query shell-out. Should
     /// be the same as the directory containing the config this sourcedb is a part of.
-    cwd: PathBuf,
+    repo_root: PathBuf,
     querier: Arc<dyn SourceDbQuerier>,
     cached_modules: ModulePathCache,
 }
@@ -111,7 +111,7 @@ pub struct QuerySourceDatabase {
 impl QuerySourceDatabase {
     pub fn new(cwd: PathBuf, querier: Arc<dyn SourceDbQuerier>) -> Self {
         QuerySourceDatabase {
-            cwd,
+            repo_root: cwd,
             inner: RwLock::new(Inner::new()),
             includes: Mutex::new(SmallSet::new()),
             querier,
@@ -357,7 +357,7 @@ impl SourceDatabase for QuerySourceDatabase {
                 build_duration,
                 parse_duration,
                 stdout_size,
-            } = self.querier.query_source_db(&includes, &self.cwd);
+            } = self.querier.query_source_db(&includes, &self.repo_root);
             stats.build_id = build_id;
             stats.build_time = build_duration;
             stats.parse_time = parse_duration;
@@ -388,7 +388,7 @@ impl SourceDatabase for QuerySourceDatabase {
             let Some(buildfile_pattern) = get_pattern(&manifest.buildfile_path) else {
                 continue;
             };
-            let buildfile_root = if manifest.buildfile_path.starts_with(&self.cwd) {
+            let buildfile_root = if manifest.buildfile_path.starts_with(&self.repo_root) {
                 None
             } else if let Some(path) = manifest.buildfile_path.parent() {
                 Some(path)
@@ -413,7 +413,7 @@ impl SourceDatabase for QuerySourceDatabase {
             .into_iter()
             .flat_map(|(r, ps)| ps.into_iter().map(move |p| (r, p)))
             .map(|(r, p)| match r {
-                None => WatchPattern::root(&self.cwd, p),
+                None => WatchPattern::root(&self.repo_root, p),
                 Some(buildfile_root) => WatchPattern::owned_root(buildfile_root.to_owned(), p),
             })
             .collect()
@@ -496,7 +496,7 @@ mod tests {
                         .map(|p| Include::path(ModulePathBuf::new(p.to_path_buf())))
                         .collect(),
                 ),
-                cwd: root,
+                repo_root: root,
                 querier: Arc::new(DummyQuerier {}),
                 cached_modules: ModulePathCache::new(),
             };
