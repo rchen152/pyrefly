@@ -38,6 +38,15 @@ use crate::state::state::Transaction;
 use crate::types::callable::Param;
 use crate::types::types::Type;
 
+#[expect(dead_code)]
+pub struct InlayHintData {
+    pub position: TextSize,
+    /// Label parts with optional location info for click-to-navigate
+    pub label_parts: Vec<(String, Option<TextRangeWithModule>)>,
+    /// Whether double-clicking should insert the type annotation.
+    pub insertable: bool,
+}
+
 #[derive(Debug)]
 pub struct ParameterAnnotation {
     pub text_size: TextSize,
