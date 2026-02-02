@@ -540,6 +540,10 @@ pub struct Server {
     /// Testing-only flag to prevent the next recheck from committing.
     /// When set, the recheck queue task will loop without committing the transaction.
     do_not_commit_recheck: AtomicBool,
+    /// Flag indicating we're waiting for the initial workspace/configuration response.
+    /// When true, background indexing (populate_project/workspace_files) is deferred
+    /// until we receive the config response, avoiding double-indexing at startup.
+    awaiting_initial_workspace_config: AtomicBool,
 }
 
 pub fn shutdown_finish(connection: &Connection, id: RequestId) {
@@ -1196,7 +1200,7 @@ impl Server {
                     if let Some((request, response)) =
                         as_request_response_pair::<WorkspaceConfiguration>(&request, &x)
                     {
-                        self.workspace_configuration_response(&request, &response);
+                        self.workspace_configuration_response(&request, &response, telemetry_event);
                     }
                 } else {
                     info!("Response for unknown request: {x:?}");
@@ -1737,6 +1741,12 @@ impl Server {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
+        let should_request_workspace_settings = initialize_params
+            .capabilities
+            .workspace
+            .as_ref()
+            .and_then(|workspace| workspace.configuration)
+            == Some(true);
         let s = Self {
             connection: ServerConnection(connection),
             lsp_queue,
@@ -1766,6 +1776,8 @@ impl Server {
             currently_streaming_diagnostics_for_handles: RwLock::new(None),
             stream_diagnostics,
             do_not_commit_recheck: AtomicBool::new(false),
+            // Will be set to true if we send a workspace/configuration request
+            awaiting_initial_workspace_config: AtomicBool::new(should_request_workspace_settings),
         };
 
         if let Some(init_options) = &s.initialize_params.initialization_options {
@@ -2472,8 +2484,15 @@ impl Server {
             );
             self.validate_in_memory_without_committing(ide_transaction_manager, telemetry_event);
         }
-        self.populate_project_files_if_necessary(config_to_populate_files, telemetry_event);
-        self.populate_workspace_files_if_necessary(telemetry_event);
+        // Skip background indexing if we're still waiting for the initial workspace config.
+        // The indexing will be triggered when we receive the config response.
+        if !self
+            .awaiting_initial_workspace_config
+            .load(Ordering::Relaxed)
+        {
+            self.populate_project_files_if_necessary(config_to_populate_files, telemetry_event);
+            self.populate_workspace_files_if_necessary(telemetry_event);
+        }
         // rewatch files in case we loaded or dropped any configs
         self.setup_file_watcher_if_necessary(Some(telemetry_event));
         Ok(())
@@ -2827,7 +2846,13 @@ impl Server {
         &'a self,
         request: &ConfigurationParams,
         response: &[Value],
+        telemetry_event: &mut TelemetryEvent,
     ) {
+        // Check if this is the initial workspace config response we've been waiting for
+        let was_awaiting_initial_config = self
+            .awaiting_initial_workspace_config
+            .swap(false, Ordering::Relaxed);
+
         let mut modified = false;
         for (i, id) in request.items.iter().enumerate() {
             if let Some(value) = response.get(i) {
@@ -2842,8 +2867,28 @@ impl Server {
                 );
             }
         }
+
         if modified {
             self.invalidate_config_and_validate_in_memory();
+        }
+        if was_awaiting_initial_config {
+            // This is the initial config response, so we can trigger background indexing.
+            // Find unique configs for all currently open files and populate them.
+            if self.indexing_mode != IndexingMode::None {
+                // ArcId<> does hashing and equality based on the pointer address
+                #[allow(clippy::mutable_key_type)]
+                let configs: HashSet<_> = self
+                    .open_files
+                    .read()
+                    .keys()
+                    .filter_map(|path| path.parent())
+                    .filter_map(|dir| self.state.config_finder().directory(dir))
+                    .collect();
+                for config in configs {
+                    self.populate_project_files_if_necessary(Some(config), telemetry_event);
+                }
+            }
+            self.populate_workspace_files_if_necessary(telemetry_event);
         }
     }
 
