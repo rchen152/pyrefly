@@ -239,6 +239,14 @@ impl ModuleDataInner {
             steps: Steps::default(),
         }
     }
+
+    fn update_require(&mut self, require: Require) -> bool {
+        let dirty = require > self.require;
+        if dirty {
+            self.require = require;
+        }
+        dirty
+    }
 }
 
 impl ModuleData {
@@ -1448,9 +1456,8 @@ impl<'a> Transaction<'a> {
             for h in handles {
                 let (m, created) = self.get_module_ex(h, require);
                 let mut state = m.state.write(Step::first()).unwrap();
-                let dirty_require = state.require < require;
+                let dirty_require = state.update_require(require);
                 state.dirty.require = dirty_require || state.dirty.require;
-                state.require = require;
                 drop(state);
                 if (created || dirty_require) && !dirty.contains(&m) {
                     if transitive_deps_of_handles.contains(&m.handle) {
