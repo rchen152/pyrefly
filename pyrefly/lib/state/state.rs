@@ -84,7 +84,7 @@ use crate::config::finder::ConfigError;
 use crate::config::finder::ConfigFinder;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
-use crate::export::definitions::DependsOn;
+use crate::export::definitions::DependsOnNames;
 use crate::export::definitions::SyntacticDeps;
 use crate::export::exports::Export;
 use crate::export::exports::ExportLocation;
@@ -130,7 +130,7 @@ enum ChangedExports {
     InvalidateAll,
 }
 
-impl DependsOn {
+impl DependsOnNames {
     /// Check if this dependency should be invalidated given a set of changed names.
     /// Returns true if any of the changed names overlap with what this dependency imports.
     fn should_invalidate(&self, changed_exports: &ChangedExports) -> bool {
@@ -138,8 +138,8 @@ impl DependsOn {
             ChangedExports::NoChange => false,
             ChangedExports::InvalidateAll => true,
             ChangedExports::Changed(changed) => match self {
-                DependsOn::All => true, // Depends on everything
-                DependsOn::Names(names) => {
+                DependsOnNames::All => true, // Depends on everything
+                DependsOnNames::Names(names) => {
                     // Only invalidate if any changed name is imported
                     changed.iter().any(|n| names.contains(n))
                 }
@@ -153,8 +153,8 @@ impl DependsOn {
             ChangedExports::NoChange => ChangedExports::NoChange,
             ChangedExports::InvalidateAll => ChangedExports::InvalidateAll,
             ChangedExports::Changed(changed) => match self {
-                DependsOn::All => ChangedExports::Changed(changed.clone()), // Propagate all changes
-                DependsOn::Names(imported) => {
+                DependsOnNames::All => ChangedExports::Changed(changed.clone()), // Propagate all changes
+                DependsOnNames::Names(imported) => {
                     // Only propagate names that are imported
                     let propagated: SmallSet<Name> = changed
                         .iter()
@@ -178,7 +178,7 @@ enum ImportResolution {
     /// Successfully resolved import - maps module name to handle(s) with optional dependency tracking.
     /// `None` means the import was resolved for caching only (used during Exports phase).
     /// `Some(DependsOn)` means the import is tracked for fine-grained invalidation (used during Solutions phase).
-    Resolved(SmallMap1<Handle, DependsOn>),
+    Resolved(SmallMap1<Handle, DependsOnNames>),
     /// Failed import - stores the error for incremental invalidation.
     Failed(FindError),
 }
@@ -306,7 +306,7 @@ impl ModuleDataMut {
         &self,
         source_module: ModuleName,
         source_handle: &Handle,
-    ) -> Option<DependsOn> {
+    ) -> Option<DependsOnNames> {
         let deps_guard = self.deps.read();
         deps_guard
             .get(&source_module)
@@ -2107,7 +2107,7 @@ impl<'a> TransactionHandle<'a> {
                             // - abc.pyi and all others auto injected from _type_checker_internals.pyi
                             // - django.db.models (not sure where this comes from)
                             // - ... and more
-                            None => DependsOn::All,
+                            None => DependsOnNames::All,
                         },
                         None => {
                             unreachable!("should have received syntactic_deps from exports");
