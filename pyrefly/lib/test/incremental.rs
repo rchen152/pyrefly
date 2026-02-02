@@ -1588,3 +1588,34 @@ fn test_dunder_all_star_import_error_clears() {
         errors_after.shown
     );
 }
+
+#[test]
+fn test_class_index_change_only_invalidates() {
+    let mut i = Incremental::new();
+
+    i.set("foo", "class A:\n    attr: int = 1");
+    i.set("bar", "from foo import A\nx = A.attr");
+    i.check(&["bar"], &["foo", "bar"]);
+
+    // Now add class B before A, shifting A to index 1
+    i.set(
+        "foo",
+        "class B:\n    other: str = 'hello'\nclass A:\n    attr: int = 1",
+    );
+    i.check(&["foo"], &["foo", "bar"]);
+}
+
+#[test]
+fn test_class_index_and_key_change_invalidates_dependents() {
+    let mut i = Incremental::new();
+
+    i.set("foo", "class A:\n    attr: int = 1");
+    i.set("bar", "from foo import A\nx = A.attr");
+    i.check(&["bar"], &["foo", "bar"]);
+
+    i.set(
+        "foo",
+        "class B:\n    other: str = 'hello'\nclass A:\n    attr: bool = True",
+    );
+    i.check(&["foo"], &["foo", "bar"]);
+}
