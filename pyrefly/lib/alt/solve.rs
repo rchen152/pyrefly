@@ -2466,7 +2466,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         is_in_function_scope: bool,
         errors: &ErrorCollector,
     ) -> Type {
-        let (has_type_alias_qualifier, ty) = match annot_key.as_ref() {
+        let (annot, ty) = match annot_key.as_ref() {
             // First infer the type as a normal value
             Some((style, k)) => {
                 let annot = self.get_idx(*k);
@@ -2476,9 +2476,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         AnnotationStyle::Forwarded => TypeCheckKind::AnnotatedName(name.clone()),
                     })
                 };
-                if style == &AnnotationStyle::Forwarded {
-                    self.check_final_reassignment(&annot, expr.range(), errors);
-                }
                 let annot_ty = annot.ty(self.stdlib);
                 let hint = annot_ty.as_ref().map(|t| (t, tcc));
                 let expr_ty = self.expr(expr, hint, errors);
@@ -2491,10 +2488,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     // as just an upper-bound hint.
                     expr_ty
                 };
-                (
-                    Some(annot.annotation.qualifiers.contains(&Qualifier::TypeAlias)),
-                    ty,
-                )
+                (Some(annot), ty)
             }
             None if matches!(expr, Expr::EllipsisLiteral(_))
                 && self.module().path().is_interface() =>
@@ -2504,6 +2498,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             None => (None, self.expr(expr, None, errors)),
         };
+        if let Some(annot) = &annot
+            && let Some((AnnotationStyle::Forwarded, _)) = annot_key
+        {
+            self.check_final_reassignment(annot, expr.range(), errors);
+        }
+        let has_type_alias_qualifier =
+            annot.map(|annot| annot.annotation.has_qualifier(&Qualifier::TypeAlias));
         let is_bare_annotated = has_type_alias_qualifier != Some(true)
             && matches!(expr, Expr::Name(_) | Expr::Attribute(_))
             && matches!(
@@ -2539,13 +2540,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         errors,
                     )
                 }
-                _ => {
-                    if annot_key.is_some() {
-                        self.wrap_callable_legacy_typevars(ty)
-                    } else {
-                        ty
-                    }
-                }
+                None => ty,
+                Some(false) => self.wrap_callable_legacy_typevars(ty),
             }
         }
     }
