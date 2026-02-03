@@ -1171,12 +1171,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// `legacy_tparams` refers to the type parameters collected in the bindings phase. It is only populated if we know for sure
     /// that this is actually a type alias, like when a variable assignment is annotated with `TypeAlias`
     ///
-    /// This functions assumes that at most one of typealiastype_tparams and legacy_tparams is non-`None`.
+    /// This functions assumes that at most one of typealiastype_tparams, legacy_tparams, and scoped_tparams is non-`None`.
     fn wrap_type_alias(
         &self,
+        name: &Name,
         mut ta: TypeAlias,
         typealiastype_tparams: Option<Vec<Expr>>,
         legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
+        scoped_tparams: Option<Vec<TParam>>,
         range: TextRange,
         errors: &ErrorCollector,
     ) -> Type {
@@ -1244,9 +1246,26 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .iter()
                 .filter_map(|key| self.get_idx(*key).deref().parameter().cloned())
                 .collect();
+        } else if let Some(scoped_tparams) = scoped_tparams {
+            // Scoped type alias: error on undeclared type params and collect declared ones.
+            let extra_tparams = tvars_to_tparams_for_type_alias(
+                ta.as_type_mut(),
+                &mut seen_type_vars,
+                &mut seen_type_var_tuples,
+                &mut seen_param_specs,
+            );
+            if !extra_tparams.is_empty() {
+                self.error(
+                    errors,
+                    range,
+                    ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
+                    format!("Type parameters used in `{name}` but not declared"),
+                );
+            }
+            tparams = scoped_tparams;
         } else {
-            // This is either a legacy type alias that we needed type information to detect or a
-            // scoped type alias.
+            // Collect type params that appear in a legacy type alias that we needed type
+            // information to detect.
             tparams = tvars_to_tparams_for_type_alias(
                 ta.as_type_mut(),
                 &mut seen_type_vars,
@@ -1271,13 +1290,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         expr: &Expr,
         typealiastype_tparams: Option<Vec<Expr>>,
         legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
+        scoped_tparams: Option<Vec<TParam>>,
         errors: &ErrorCollector,
     ) -> Type {
         let ta = self.as_type_alias(name, style, ty, expr, errors);
         self.wrap_type_alias(
+            name,
             ta,
             typealiastype_tparams,
             legacy_tparams,
+            scoped_tparams,
             expr.range(),
             errors,
         )
@@ -2585,6 +2607,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     expr,
                     None,
                     legacy_tparams,
+                    None,
                     errors,
                 ),
                 None if Self::may_be_implicit_type_alias(&ty)
@@ -2598,6 +2621,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         expr,
                         None,
                         legacy_tparams,
+                        None,
                         errors,
                     )
                 }
@@ -3224,25 +3248,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         errors: &ErrorCollector,
     ) -> Type {
         let ty = self.expr_infer(expr, errors);
-        let ta = self.type_alias_infer(name, TypeAliasStyle::Scoped, ty, expr, None, &None, errors);
-        match ta {
-            Type::Forall(..) => self.error(
-                errors,
-                expr.range(),
-                ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
-                format!("Type parameters used in `{name}` but not declared"),
-            ),
-            Type::TypeAlias(ta) => {
-                let params_range = params.as_ref().map_or(expr.range(), |x| x.range);
-                Forallable::TypeAlias(*ta).forall(self.validated_tparams(
-                    params_range,
-                    self.scoped_type_params(params.as_ref(), errors),
-                    TParamsSource::TypeAlias,
-                    errors,
-                ))
-            }
-            _ => ta,
-        }
+        self.type_alias_infer(
+            name,
+            TypeAliasStyle::Scoped,
+            ty,
+            expr,
+            None,
+            &None,
+            Some(self.scoped_type_params(params.as_ref(), errors)),
+            errors,
+        )
     }
 
     /// Handle `Binding::TypeAliasType` - process TypeAliasType constructor.
@@ -3266,6 +3281,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             expr,
             Some(type_param_exprs.clone()),
             &None,
+            None,
             errors,
         );
         if let Some(k) = ann
