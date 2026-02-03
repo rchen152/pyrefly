@@ -2338,6 +2338,7 @@ dependencies = [
  "serde_json",
  "starlark_map",
  "static_assertions",
+ "static_interner",
  "strsim 0.10.0",
  "tempfile",
  "tracing",

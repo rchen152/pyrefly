@@ -23,12 +23,12 @@ use pyrefly_build::source_db::SourceDatabase;
 use pyrefly_build::source_db::Target;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePath;
-use pyrefly_python::module_path::ModulePathBuf;
 use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::sys_info::PythonPlatform;
 use pyrefly_python::sys_info::PythonVersion;
 use pyrefly_python::sys_info::SysInfo;
 use pyrefly_util::arc_id::ArcId;
+use pyrefly_util::interned_path::InternedPath;
 use pyrefly_util::lined_buffer::DisplayPos;
 use pyrefly_util::lined_buffer::DisplayRange;
 use pyrefly_util::lined_buffer::LineNumber;
@@ -94,7 +94,7 @@ impl SourceDatabase for PlaygroundSourceDatabase {
 
     fn query_source_db(
         &self,
-        _: SmallSet<ModulePathBuf>,
+        _: SmallSet<InternedPath>,
         _: bool,
     ) -> (anyhow::Result<bool>, TelemetrySourceDbRebuildInstanceStats) {
         (Ok(false), TelemetrySourceDbRebuildInstanceStats::default())
@@ -111,7 +111,7 @@ impl SourceDatabase for PlaygroundSourceDatabase {
         None
     }
 
-    fn get_generated_files(&self) -> SmallSet<ModulePathBuf> {
+    fn get_generated_files(&self) -> SmallSet<InternedPath> {
         SmallSet::new()
     }
 }
