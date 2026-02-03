@@ -103,11 +103,12 @@ impl Display for TParamsSource {
     }
 }
 
+// TODO: Consider removing TParam since it would be no longer needed
+// now that variance is pushed in quantified.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Visit, VisitMut, TypeEq)]
 pub struct TParam {
     pub quantified: Quantified,
-    pub variance: PreInferenceVariance,
 }
 
 impl Display for TParam {
@@ -147,6 +148,10 @@ impl TParam {
 
     pub fn restriction(&self) -> &Restriction {
         self.quantified.restriction()
+    }
+
+    pub fn variance(&self) -> PreInferenceVariance {
+        self.quantified.variance()
     }
 }
 

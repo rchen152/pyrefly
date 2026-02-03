@@ -261,7 +261,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let q = Quantified::from_type_var(x, self.uniques);
                 Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
                     quantified: q,
-                    variance: x.variance(),
                 }))
             }
             Type::TypeVarTuple(x) => {
@@ -272,7 +271,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
                 Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
                     quantified: q,
-                    variance: PreInferenceVariance::Invariant,
                 }))
             }
             Type::ParamSpec(x) => {
@@ -283,7 +281,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
                 Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
                     quantified: q,
-                    variance: PreInferenceVariance::Invariant,
                 }))
             }
             ty => Arc::new(LegacyTypeParameterLookup::NotParameter(ty.clone())),
@@ -902,7 +899,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             e.insert(q.clone());
                             tparams.push(TParam {
                                 quantified: q.clone(),
-                                variance: ty_var.variance(),
                             });
                         }
                     };
@@ -926,7 +922,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             e.insert(q.clone());
                             tparams.push(TParam {
                                 quantified: q.clone(),
-                                variance: PreInferenceVariance::Invariant,
                             });
                         }
                     };
@@ -950,7 +945,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             e.insert(q.clone());
                             tparams.push(TParam {
                                 quantified: q.clone(),
-                                variance: PreInferenceVariance::Invariant,
                             });
                         }
                     };
@@ -1054,7 +1048,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             ty_var.qname().range(),
                             TParam {
                                 quantified: q.clone(),
-                                variance: ty_var.variance(),
                             },
                         ));
                         q
@@ -1076,7 +1069,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             ty_var_tuple.qname().range(),
                             TParam {
                                 quantified: q.clone(),
-                                variance: PreInferenceVariance::Invariant,
                             },
                         ));
                         q
@@ -1098,7 +1090,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             param_spec.qname().range(),
                             TParam {
                                 quantified: q.clone(),
-                                variance: PreInferenceVariance::Invariant,
                             },
                         ));
                         q
@@ -1508,7 +1499,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 errors,
             ));
         }
-        Quantified::new(tp.unique, tp.name.clone(), tp.kind, default_ty, restriction)
+        Quantified::new(
+            tp.unique,
+            tp.name.clone(),
+            tp.kind,
+            default_ty,
+            restriction,
+            PreInferenceVariance::Undefined,
+        )
     }
 
     pub fn scoped_type_params(
@@ -1535,10 +1533,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             binding
                         ),
                     };
-                    params.push(TParam {
-                        quantified,
-                        variance: PreInferenceVariance::Undefined,
-                    });
+                    params.push(TParam { quantified });
                 }
                 params
             }
@@ -3948,7 +3943,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             let q = Quantified::from_type_var(tv, self.uniques);
                             tparams.push(TParam {
                                 quantified: q.clone(),
-                                variance: tv.variance(),
                             });
                             q
                         })

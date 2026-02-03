@@ -12,6 +12,7 @@ use pyrefly_types::class::ClassType;
 use pyrefly_types::lit_int::LitInt;
 use pyrefly_types::quantified::Quantified;
 use pyrefly_types::simplify::unions;
+use pyrefly_types::type_var::PreInferenceVariance;
 use pyrefly_types::type_var::Restriction;
 use pyrefly_types::typed_dict::AnonymousTypedDictInner;
 use pyrefly_types::typed_dict::TypedDict;
@@ -380,6 +381,7 @@ class MyTypedDict(TypedDict):
                     get_class("test", "MyClass", &context),
                     Default::default(),
                 ))),
+                PreInferenceVariance::Invariant,
             ))),
             &context
         ),
@@ -413,6 +415,7 @@ class MyTypedDict(TypedDict):
                         Default::default(),
                     ))
                 ]),
+                PreInferenceVariance::Invariant,
             ))),
             &context
         ),

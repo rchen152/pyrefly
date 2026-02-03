@@ -1054,8 +1054,8 @@ pub mod tests {
                 kind,
                 None,
                 Restriction::Unrestricted,
+                PreInferenceVariance::Invariant,
             ),
-            variance: PreInferenceVariance::Invariant,
         }
     }
 
