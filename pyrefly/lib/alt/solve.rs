@@ -22,6 +22,7 @@ use pyrefly_types::typed_dict::TypedDict;
 use pyrefly_types::types::Union;
 use pyrefly_util::display::pluralize;
 use pyrefly_util::prelude::SliceExt;
+use pyrefly_util::prelude::VecExt;
 use pyrefly_util::visit::Visit;
 use pyrefly_util::visit::VisitMut;
 use ruff_python_ast::Expr;
@@ -1169,6 +1170,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ///
     /// `legacy_tparams` refers to the type parameters collected in the bindings phase. It is only populated if we know for sure
     /// that this is actually a type alias, like when a variable assignment is annotated with `TypeAlias`
+    ///
+    /// This functions assumes that at most one of typealiastype_tparams and legacy_tparams is non-`None`.
     fn wrap_type_alias(
         &self,
         mut ta: TypeAlias,
@@ -1180,12 +1183,31 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if ta.as_type().is_error() {
             return Type::any_error();
         }
+
         let mut seen_type_vars = SmallMap::new();
         let mut seen_type_var_tuples = SmallMap::new();
         let mut seen_param_specs = SmallMap::new();
         let mut tparams = Vec::new();
-        let mut tparams_for_type_alias_type = None;
+
+        let tvars_to_tparams_for_type_alias =
+            |ty, seen_type_vars, seen_type_var_tuples, seen_param_specs| {
+                let mut tparams_with_ranges = Vec::new();
+                self.tvars_to_tparams_for_type_alias(
+                    ty,
+                    seen_type_vars,
+                    seen_type_var_tuples,
+                    seen_param_specs,
+                    &mut tparams_with_ranges,
+                );
+                // Sort by source location to restore the user's intended type parameter order.
+                // This is needed because union members get sorted alphabetically during
+                // simplification, which can change the traversal order.
+                tparams_with_ranges.sort_by_key(|(range, _)| range.start());
+                tparams_with_ranges
+            };
+
         if let Some(type_params) = &typealiastype_tparams {
+            // Handle type params from `TypeAliasType(type_params=...)`.
             self.tvars_to_tparams_for_type_alias_type(
                 type_params,
                 &mut seen_type_vars,
@@ -1194,30 +1216,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 &mut tparams,
                 errors,
             );
-            tparams_for_type_alias_type = Some(tparams.len());
-        }
-        if let Some(legacy_tparams) = legacy_tparams {
-            tparams = legacy_tparams
-                .iter()
-                .filter_map(|key| self.get_idx(*key).deref().parameter().cloned())
-                .collect();
-        } else {
-            let mut tparams_with_ranges = Vec::new();
-            self.tvars_to_tparams_for_type_alias(
+            let extra_tparams = tvars_to_tparams_for_type_alias(
                 ta.as_type_mut(),
                 &mut seen_type_vars,
                 &mut seen_type_var_tuples,
                 &mut seen_param_specs,
-                &mut tparams_with_ranges,
             );
-            // Sort by source location to restore the user's intended type parameter order.
-            // This is needed because union members get sorted alphabetically during
-            // simplification, which can change the traversal order.
-            tparams_with_ranges.sort_by_key(|(range, _)| range.start());
-            tparams.extend(tparams_with_ranges.into_iter().map(|(_, tp)| tp));
-        }
-        if let Some(n) = tparams_for_type_alias_type {
-            for extra_tparam in tparams.iter().skip(n) {
+            for (_, extra_tparam) in extra_tparams {
                 errors.add(
                     range,
                     ErrorInfo::Kind(ErrorKind::InvalidTypeAlias),
@@ -1232,6 +1237,23 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ],
                 );
             }
+        } else if let Some(legacy_tparams) = legacy_tparams {
+            // Collect type params that appear in a legacy type alias that we were able to detect
+            // syntactically in the bindings phase.
+            tparams = legacy_tparams
+                .iter()
+                .filter_map(|key| self.get_idx(*key).deref().parameter().cloned())
+                .collect();
+        } else {
+            // This is either a legacy type alias that we needed type information to detect or a
+            // scoped type alias.
+            tparams = tvars_to_tparams_for_type_alias(
+                ta.as_type_mut(),
+                &mut seen_type_vars,
+                &mut seen_type_var_tuples,
+                &mut seen_param_specs,
+            )
+            .into_map(|(_, tp)| tp);
         }
         Forallable::TypeAlias(ta).forall(self.validated_tparams(
             range,
