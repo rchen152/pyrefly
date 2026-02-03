@@ -336,25 +336,49 @@ class Contra(Generic[T_contra]): ...
 class Inv(Generic[T]): ...
 class CoContra(Generic[T_co, T_contra]): ...
 
-class Class1(Inv[T_co]): ...  # should error: Inv requires invariant TypeVar
-class Class2(Inv[T_contra]): ...  # should error: Inv requires invariant TypeVar
+class Class1(
+    Inv[T_co] # should error: Inv requires invariant TypeVar
+): ...  
+class Class2(
+    Inv[T_contra] # should error: Inv requires invariant TypeVar
+): ...  
 
-class Co_Child3(Co[T_contra]): ...  # should error: Co requires covariant
-class Contra_Child3(Contra[T_co]): ...  # should error: Contra requires contravariant
-class Contra_Child5(Contra[Co[T_co]]): ...  # should error: Contra requires contravariant
+class Co_Child3(
+    Co[T_contra] # should error: Co requires covariant
+): ...  
+class Contra_Child3(
+    Contra[T_co] # should error: Contra requires contravariant
+): ...  
+class Contra_Child5(
+    Contra[Co[T_co]] # should error: Contra requires contravariant
+): ...  
 
-class CoContra_Child2(CoContra[T_co, T_co]): ...  # should error: second arg must be contravariant
-class CoContra_Child3(CoContra[T_contra, T_contra]): ...  # should error: first arg must be covariant
-class CoContra_Child5(CoContra[Co[T_co], Co[T_co]]): ...  # should error: second arg must be contravariant
+class CoContra_Child2(
+    CoContra[T_co, T_co] # should error: second arg must be contravariant
+): ...  
+class CoContra_Child3(
+    CoContra[T_contra, T_contra] # should error: first arg must be covariant
+): ...  
+class CoContra_Child5(
+    CoContra[Co[T_co], Co[T_co]]  # should error: second arg must be contravariant
+): ... 
 
-class CoToContraToContra(Contra[Co[Contra[T_contra]]]): ...  # should error
-class ContraToContraToContra(Contra[Contra[Contra[T_co]]]): ...  # should error
+class CoToContraToContra(
+    Contra[Co[Contra[T_contra]]]
+): ...  # should error
+class ContraToContraToContra(
+    Contra[Contra[Contra[T_co]]]
+): ...  # should error
 
 Co_TA = Co[T_co]
 Contra_TA = Contra[T_contra]
 
-class CoToContraToContra_WithTA(Contra_TA[Co_TA[Contra_TA[T_contra]]]): ...  # should error
-class ContraToContraToContra_WithTA(Contra_TA[Contra_TA[Contra_TA[T_co]]]): ...  # should error
+class CoToContraToContra_WithTA(
+    Contra_TA[Co_TA[Contra_TA[T_contra]]]
+): ...  # should error
+class ContraToContraToContra_WithTA(
+    Contra_TA[Contra_TA[Contra_TA[T_co]]]
+): ...  # should error
 "#,
 );
 
