@@ -14,6 +14,7 @@ use std::time::Duration;
 use std::time::Instant;
 
 use dupe::Dupe as _;
+use pyrefly_python::PYTHON_EXTENSIONS;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePath;
 use pyrefly_python::module_path::ModulePathBuf;
@@ -57,6 +58,21 @@ impl ManifestLookupResult {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Hash)]
+enum WatchPatternPart {
+    Extension(String),
+    FullFileName(String),
+}
+
+impl WatchPatternPart {
+    fn get_pattern(&self) -> String {
+        match self {
+            Self::Extension(ext) => format!("**/*.{}", ext),
+            Self::FullFileName(file) => format!("**/{}", file),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 struct Inner {
     /// The mapping from targets to their manifests, including sources, dependencies,
@@ -81,6 +97,8 @@ struct Inner {
     package_lookup: SmallMap<ModulePathBuf, SmallSet<Target>>,
     /// Is this module known by the build system?
     known_modules: SmallSet<ModuleName>,
+    /// Which file suffixes have we seen and should we watch?
+    watched_patterns: SmallSet<WatchPatternPart>,
 }
 
 impl Inner {
@@ -90,6 +108,7 @@ impl Inner {
             path_lookup: SmallMap::new(),
             package_lookup: SmallMap::new(),
             known_modules: SmallSet::new(),
+            watched_patterns: SmallSet::new(),
         }
     }
 }
@@ -131,6 +150,21 @@ impl QuerySourceDatabase {
         let mut path_lookup: SmallMap<ModulePathBuf, Target> = SmallMap::new();
         let mut package_lookup: SmallMap<ModulePathBuf, SmallSet<Target>> = SmallMap::new();
         let mut known_modules: SmallSet<ModuleName> = SmallSet::new();
+        let mut watched_patterns: SmallSet<WatchPatternPart> = SmallSet::new();
+        let mut known_extensions: SmallSet<String> =
+            PYTHON_EXTENSIONS.iter().map(|x| (*x).to_owned()).collect();
+        let mut known_files: SmallSet<String> = SmallSet::new();
+        let mut append_pattern = |path: &Path| {
+            if let Some(extension) = path.extension().map(|e| e.to_string_lossy()) {
+                if !known_extensions.contains(&*extension) {
+                    known_extensions.insert(extension.into_owned());
+                }
+            } else if let Some(file) = path.file_name().map(|f| f.to_string_lossy())
+                && !known_files.contains(&*file)
+            {
+                known_files.insert(file.into_owned());
+            }
+        };
         for (target, manifest) in new_db.iter() {
             known_modules.extend(
                 manifest
@@ -146,6 +180,7 @@ impl QuerySourceDatabase {
                 } else {
                     path_lookup.insert(source.dupe(), target.dupe());
                 }
+                append_pattern(source);
             }
             for paths in manifest.packages.values() {
                 for path in paths {
@@ -155,7 +190,14 @@ impl QuerySourceDatabase {
                         .insert(target.dupe());
                 }
             }
+            append_pattern(&manifest.buildfile_path)
         }
+        watched_patterns.extend(
+            known_extensions
+                .into_iter()
+                .map(WatchPatternPart::Extension)
+                .chain(known_files.into_iter().map(WatchPatternPart::FullFileName)),
+        );
         let mut write = self.inner.write();
         // force dropping write before exiting and dropping other large data structures
         // by binding the replaced data and explicitly dropping `write`
@@ -163,6 +205,7 @@ impl QuerySourceDatabase {
         let _old_path_lookup = mem::replace(&mut write.path_lookup, path_lookup);
         let _old_package_lookup = mem::replace(&mut write.package_lookup, package_lookup);
         let _old_known_modules = mem::replace(&mut write.known_modules, known_modules);
+        let _old_patterns = mem::replace(&mut write.watched_patterns, watched_patterns);
         drop(write);
         debug!("Finished updating source DB with Buck response");
         (true, start.elapsed())
@@ -374,49 +417,11 @@ impl SourceDatabase for QuerySourceDatabase {
 
     fn get_paths_to_watch<'a>(&'a self) -> SmallSet<WatchPattern<'a>> {
         let read = self.inner.read();
-        fn get_pattern(path: &Path) -> Option<String> {
-            if let Some(ext) = path.extension() {
-                Some(format!("**/*.{}", ext.to_str()?))
-            } else {
-                // this isn't a file with an extension, but we should probably
-                // still try to watch it.
-                Some(format!("**/{}", path.file_name()?.to_str()?))
-            }
-        }
-        let mut patterns: SmallMap<Option<&Path>, SmallSet<_>> = SmallMap::new();
-        for manifest in read.db.values() {
-            let Some(buildfile_pattern) = get_pattern(&manifest.buildfile_path) else {
-                continue;
-            };
-            let buildfile_root = if manifest.buildfile_path.starts_with(&self.repo_root) {
-                None
-            } else if let Some(path) = manifest.buildfile_path.parent() {
-                Some(path)
-            } else {
-                continue;
-            };
-            patterns
-                .entry(buildfile_root)
-                .or_default()
-                .insert(buildfile_pattern);
-            for path in manifest.srcs.values().flatten() {
-                let Some(file_pattern) = get_pattern(path) else {
-                    continue;
-                };
-                patterns
-                    .entry(buildfile_root)
-                    .or_default()
-                    .insert(file_pattern);
-            }
+        let mut patterns: SmallSet<WatchPattern<'a>> = SmallSet::new();
+        for pattern in &read.watched_patterns {
+            patterns.insert(WatchPattern::root(&self.repo_root, pattern.get_pattern()));
         }
         patterns
-            .into_iter()
-            .flat_map(|(r, ps)| ps.into_iter().map(move |p| (r, p)))
-            .map(|(r, p)| match r {
-                None => WatchPattern::root(&self.repo_root, p),
-                Some(buildfile_root) => WatchPattern::owned_root(buildfile_root.to_owned(), p),
-            })
-            .collect()
     }
 
     fn get_target(&self, origin: Option<&Path>) -> Option<Target> {
@@ -948,10 +953,9 @@ mod tests {
         let expected = smallset! {
             WatchPattern::root(&root, "**/*.py".to_owned()),
             WatchPattern::root(&root, "**/*.pyi".to_owned()),
+            WatchPattern::root(&root, "**/*.ipynb".to_owned()),
+            WatchPattern::root(&root, "**/*.thrift".to_owned()),
             WatchPattern::root(&root, "**/BUCK".to_owned()),
-            WatchPattern::owned_root(PathBuf::from("/path/to/another/repository/package"), "**/BUCK".to_owned()),
-            WatchPattern::owned_root(PathBuf::from("/path/to/another/repository/package"), "**/*.thrift".to_owned()),
-            WatchPattern::owned_root(PathBuf::from("/path/to/another/repository/package"), "**/*.py".to_owned()),
         };
         assert_eq!(db.get_paths_to_watch(), expected);
     }
