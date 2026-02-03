@@ -3944,18 +3944,16 @@ impl Server {
                         }]),
                     });
                 }
-                // TODO(connernilsen): we need to dedup filewatcher patterns
-                // preferably by figuring out if they're under another wildcard pattern with the same suffix
-                let mut glob_patterns = Vec::new();
+                let configs = self.workspaces.loaded_configs.clean_and_get_configs();
+                let mut glob_patterns = SmallSet::new();
                 for root in &roots {
                     PYTHON_EXTENSIONS.iter().for_each(|suffix| {
-                        glob_patterns.push(WatchPattern::root(root, format!("**/*.{suffix}")));
+                        glob_patterns.insert(WatchPattern::root(root, format!("**/*.{suffix}")));
                     });
                     ConfigFile::CONFIG_FILE_NAMES.iter().for_each(|config| {
-                        glob_patterns.push(WatchPattern::root(root, format!("**/{config}")));
+                        glob_patterns.insert(WatchPattern::root(root, format!("**/{config}")));
                     });
                 }
-                let configs = self.workspaces.loaded_configs.clean_and_get_configs();
                 for config in &configs {
                     glob_patterns.extend(config.get_paths_to_watch().into_iter());
                 }
