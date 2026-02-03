@@ -886,23 +886,31 @@ impl ConfigFile {
     /// Get glob patterns that should be watched by a file watcher.
     /// We return a tuple of root (non-pattern part of the path) and a pattern.
     /// If pattern is None, then the root should contain the whole path to watch.
-    pub fn get_paths_to_watch(&self) -> SmallSet<WatchPattern<'_>> {
+    pub fn get_paths_to_watch(configs: &SmallSet<ArcId<ConfigFile>>) -> SmallSet<WatchPattern<'_>> {
         let mut result = SmallSet::new();
-        if let Some(source_db) = &self.source_db {
-            result = source_db.get_paths_to_watch();
+        let mut source_dbs = SmallSet::new();
+        for config in configs {
+            if let Some(source_db) = &config.source_db {
+                source_dbs.insert(source_db);
+            }
+            let config_root = config.source.root();
+            if let Some(config_root) = config_root {
+                ConfigFile::CONFIG_FILE_NAMES.iter().for_each(|config| {
+                    result.insert(WatchPattern::root(config_root, format!("**/{config}")));
+                });
+            }
+            config
+                .search_path()
+                .chain(config.site_package_path())
+                .cartesian_product(PYTHON_EXTENSIONS.iter().chain(COMPILED_FILE_SUFFIXES))
+                .for_each(|(s, suffix)| {
+                    result.insert(WatchPattern::root(s, format!("**/*.{suffix}")));
+                });
         }
-        let config_root = self.source.root();
-        if let Some(config_root) = config_root {
-            Self::CONFIG_FILE_NAMES.iter().for_each(|config| {
-                result.insert(WatchPattern::root(config_root, format!("**/{config}")));
-            });
+
+        for source_db in source_dbs {
+            result.extend(source_db.get_paths_to_watch());
         }
-        self.search_path()
-            .chain(self.site_package_path())
-            .cartesian_product(PYTHON_EXTENSIONS.iter().chain(COMPILED_FILE_SUFFIXES))
-            .for_each(|(s, suffix)| {
-                result.insert(WatchPattern::root(s, format!("**/*.{suffix}")));
-            });
         result
     }
 

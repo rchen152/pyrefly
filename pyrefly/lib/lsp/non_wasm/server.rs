@@ -3954,9 +3954,7 @@ impl Server {
                         glob_patterns.insert(WatchPattern::root(root, format!("**/{config}")));
                     });
                 }
-                for config in &configs {
-                    glob_patterns.extend(config.get_paths_to_watch().into_iter());
-                }
+                glob_patterns.extend(ConfigFile::get_paths_to_watch(&configs));
                 let watchers = glob_patterns
                     .into_iter()
                     .map(|p| Self::get_pattern_to_watch(p, relative_pattern_support))
