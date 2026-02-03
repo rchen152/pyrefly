@@ -1879,3 +1879,39 @@ fn test_class_docstring_change_invalidates() {
     );
     i.check(&["foo", "main"], &["foo"]);
 }
+
+/// Test that when __all__ contains Module entries (like `__all__.extend(other.__all__)`),
+/// changing those entries triggers wildcard fallback and invalidates star importers.
+///
+/// This tests the `wildcard_fallback` behavior in `changed_name_existence`.
+/// When __all__ contains Module entries that change, we can't compute the exact
+/// set of names that changed without a lookup, so we emit a coarse Wildcard signal.
+#[test]
+fn test_dunder_all_module_entry_change_invalidates() {
+    let mut i = Incremental::new();
+
+    // bar exports x
+    i.set("bar", "x = 1\n__all__ = ['x']");
+    // baz exports y
+    i.set("baz", "y = 2\n__all__ = ['y']");
+    // foo imports bar and re-exports bar's __all__
+    i.set(
+        "foo",
+        "import bar\nfrom bar import *\n__all__ = []\n__all__.extend(bar.__all__)",
+    );
+    // main does star import from foo and uses x
+    i.set("main", "from foo import *\nz = x");
+    i.check(
+        &["main", "foo", "bar", "baz"],
+        &["main", "foo", "bar", "baz"],
+    );
+
+    // Now change foo to re-export baz's __all__ instead of bar's
+    // This changes a Module entry in __all__, triggering wildcard fallback
+    i.set(
+        "foo",
+        "import baz\nfrom baz import *\n__all__ = []\n__all__.extend(baz.__all__)",
+    );
+    // main should be recomputed because the wildcard set changed
+    i.check_ignoring_expectations(&["foo"], &["foo", "main"]);
+}
