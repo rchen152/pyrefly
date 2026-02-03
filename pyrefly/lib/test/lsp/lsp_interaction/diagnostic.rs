@@ -218,7 +218,6 @@ fn test_open_file_during_recheck() {
 /// Test editing a file (didChange without saving) while a recheck for another file is happening.
 /// Start with b and d open, then edit file d while a recheck for b is happening.
 #[test]
-#[ignore] // TODO: test is flaky
 fn test_edit_file_during_recheck() {
     let root = get_test_files_root();
     let root_path = root.path().join("streaming");
