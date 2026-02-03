@@ -1586,6 +1586,99 @@ fn test_dunder_all_star_import_error_clears() {
     );
 }
 
+/// Test that adding a new definition invalidates importers of that name.
+/// When a new name is added to a module, modules that try to import it
+/// (and previously got an error) should be recomputed.
+#[test]
+fn test_name_existence_change_invalidates_importer() {
+    let mut i = Incremental::new();
+
+    // foo only has x
+    i.set("foo", "x = 1");
+    // main tries to import y which doesn't exist - should error
+    i.set(
+        "main",
+        "from foo import y # E: Could not import `y` from `foo`",
+    );
+    i.check(&["main", "foo"], &["main", "foo"]);
+
+    let main_handle = i.handle("main");
+
+    // Verify there's an error
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected error when importing non-existent name"
+    );
+
+    // Add y to foo - error should disappear
+    i.set("foo", "x = 1\ny = 2");
+    // main should be recomputed because y now exists
+    i.check_ignoring_expectations(&["foo"], &["foo", "main"]);
+
+    let errors_after = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        errors_after.shown.is_empty(),
+        "Expected no errors after adding y to foo, but got: {:?}",
+        errors_after.shown
+    );
+}
+
+/// Test that adding a name NOT in __all__ still invalidates importers of that name.
+/// __all__ controls what `from M import *` gets, but explicit imports like
+/// `from M import name` can access any name in the module. When that name is
+/// added or removed, importers should be invalidated.
+#[test]
+fn test_name_not_in_dunder_all_invalidates_importer() {
+    let mut i = Incremental::new();
+
+    // foo has __all__ = ["x"] but only x exists
+    i.set("foo", "__all__ = ['x']\nx = 1");
+    // main tries to import y which doesn't exist - should error
+    i.set(
+        "main",
+        "from foo import y # E: Could not import `y` from `foo`",
+    );
+    i.check(&["main", "foo"], &["main", "foo"]);
+
+    let main_handle = i.handle("main");
+
+    // Verify there's an error
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected error when importing non-existent name"
+    );
+
+    // Add y to foo, but NOT to __all__. The import should still work.
+    i.set("foo", "__all__ = ['x']\nx = 1\ny = 2");
+    // main should be recomputed because y now exists
+    i.check_ignoring_expectations(&["foo"], &["foo", "main"]);
+
+    let errors_after = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        errors_after.shown.is_empty(),
+        "Expected no errors after adding y to foo (even though y is not in __all__), but got: {:?}",
+        errors_after.shown
+    );
+}
+
 #[test]
 fn test_class_index_change_only_invalidates() {
     let mut i = Incremental::new();
