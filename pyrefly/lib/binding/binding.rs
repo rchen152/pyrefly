@@ -222,12 +222,6 @@ pub trait Keyed: Hash + Eq + Clone + DisplayWith<ModuleInfo> + Debug + Ranged + 
     type Answer: Clone + Debug + Display + TypeEq + VisitMut<Type>;
     fn to_anyidx(idx: Idx<Self>) -> AnyIdx;
 
-    /// If this key represents an exported name (like KeyExport), return the name.
-    /// This is used for fine-grained incremental invalidation.
-    fn as_export_name(&self) -> Option<&Name> {
-        None
-    }
-
     /// Convert this key to an AnyExportedKey if it is an exported key.
     /// Returns None for non-exported keys.
     fn try_to_anykey(&self) -> Option<AnyExportedKey> {
@@ -355,9 +349,6 @@ impl Keyed for KeyExport {
     type Answer = Type;
     fn to_anyidx(idx: Idx<Self>) -> AnyIdx {
         AnyIdx::KeyExport(idx)
-    }
-    fn as_export_name(&self) -> Option<&Name> {
-        Some(&self.0)
     }
     fn try_to_anykey(&self) -> Option<AnyExportedKey> {
         Some(AnyExportedKey::KeyExport(self.clone()))

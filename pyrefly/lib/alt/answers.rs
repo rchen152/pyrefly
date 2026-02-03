@@ -191,25 +191,10 @@ impl Display for Solutions {
     }
 }
 
-/// Object-safe trait for extracting export names from keys.
-/// This allows SolutionsDifference to query export names without knowing the concrete key type.
-pub trait AsExportName {
-    fn as_export_name(&self) -> Option<&Name>;
-}
-
-/// Blanket implementation for all Keyed types.
-impl<K: Keyed> AsExportName for K {
-    fn as_export_name(&self) -> Option<&Name> {
-        Keyed::as_export_name(self)
-    }
-}
-
 pub struct SolutionsDifference<'a> {
     key: (&'a dyn DisplayWith<ModuleInfo>, &'a dyn Debug),
     lhs: Option<(&'a dyn Display, &'a dyn Debug)>,
     rhs: Option<(&'a dyn Display, &'a dyn Debug)>,
-    /// The key as an AsExportName trait object, for fine-grained change tracking.
-    export_name: &'a dyn AsExportName,
 }
 
 impl Debug for SolutionsDifference<'_> {
@@ -246,14 +231,6 @@ impl Display for SolutionsDifference<'_> {
         write!(f, " now ")?;
         missing(f, self.rhs)?;
         Ok(())
-    }
-}
-
-impl<'a> SolutionsDifference<'a> {
-    /// Get the export name if this difference is for a named export.
-    /// Returns None if the key is not a named export.
-    pub fn export_name(&self) -> Option<&'a Name> {
-        self.export_name.as_export_name()
     }
 }
 
@@ -294,7 +271,6 @@ impl Solutions {
             key: (k, k),
             lhs: None,
             rhs: Some((v, v)),
-            export_name: k,
         }
     }
 
@@ -305,7 +281,6 @@ impl Solutions {
             key: (k, k),
             lhs: Some((v, v)),
             rhs: None,
-            export_name: k,
         }
     }
 
@@ -320,7 +295,6 @@ impl Solutions {
             key: (k, k),
             lhs: Some((v1, v1)),
             rhs: Some((v2, v2)),
-            export_name: k,
         }
     }
 
