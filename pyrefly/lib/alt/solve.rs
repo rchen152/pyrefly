@@ -1123,34 +1123,24 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    /// `typealiastype_tparams` refers specifically to the elements of the tuple literal passed to the `TypeAliasType` constructor
-    /// For all other kinds of type aliases, it should be `None`.
-    ///
-    /// When present, we visit those types first to determine the `TParams` for this alias, and any
-    /// type variables when we subsequently visit the aliased type are considered out of scope.
-    ///
-    /// `legacy_tparams` refers to the type parameters collected in the bindings phase. It is only populated if we know for sure
-    /// that this is actually a type alias, like when a variable assignment is annotated with `TypeAlias`
     fn as_type_alias(
         &self,
         name: &Name,
         style: TypeAliasStyle,
         ty: Type,
         expr: &Expr,
-        typealiastype_tparams: Option<Vec<Expr>>,
-        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
         errors: &ErrorCollector,
-    ) -> Type {
+    ) -> TypeAlias {
         let range = expr.range();
         if !self.has_valid_annotation_syntax(expr, errors) {
-            return Type::any_error();
+            return TypeAlias::error(name.clone(), style);
         }
         let untyped = self.untype_opt(ty.clone(), range, errors);
-        let mut ty = if let Some(untyped) = untyped {
+        let ty = if let Some(untyped) = untyped {
             let validated =
                 self.validate_type_form(untyped, range, TypeFormContext::TypeAlias, errors);
             if validated.is_error() {
-                return validated;
+                return TypeAlias::error(name.clone(), style);
             }
             validated
         } else {
@@ -1160,8 +1150,36 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ErrorInfo::Kind(ErrorKind::InvalidTypeAlias),
                 format!("Expected `{name}` to be a type alias, got `{ty}`"),
             );
-            return Type::any_error();
+            return TypeAlias::error(name.clone(), style);
         };
+        // Extract Annotated metadata; skip the first element since that's the type and collect the rest of the vector
+        let annotated_metadata = self
+            .get_annotated_metadata(expr, TypeFormContext::TypeAlias, errors)
+            .iter()
+            .map(|e| self.expr_infer(e, &self.error_swallower()))
+            .collect();
+        TypeAlias::new(name.clone(), Type::type_form(ty), style, annotated_metadata)
+    }
+
+    /// `typealiastype_tparams` refers specifically to the elements of the tuple literal passed to the `TypeAliasType` constructor
+    /// For all other kinds of type aliases, it should be `None`.
+    ///
+    /// When present, we visit those types first to determine the `TParams` for this alias, and any
+    /// type variables when we subsequently visit the aliased type are considered out of scope.
+    ///
+    /// `legacy_tparams` refers to the type parameters collected in the bindings phase. It is only populated if we know for sure
+    /// that this is actually a type alias, like when a variable assignment is annotated with `TypeAlias`
+    fn wrap_type_alias(
+        &self,
+        mut ta: TypeAlias,
+        typealiastype_tparams: Option<Vec<Expr>>,
+        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Type {
+        if ta.as_type().is_error() {
+            return Type::any_error();
+        }
         let mut seen_type_vars = SmallMap::new();
         let mut seen_type_var_tuples = SmallMap::new();
         let mut seen_param_specs = SmallMap::new();
@@ -1186,7 +1204,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             let mut tparams_with_ranges = Vec::new();
             self.tvars_to_tparams_for_type_alias(
-                &mut ty,
+                ta.as_type_mut(),
                 &mut seen_type_vars,
                 &mut seen_type_var_tuples,
                 &mut seen_param_specs,
@@ -1201,7 +1219,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if let Some(n) = tparams_for_type_alias_type {
             for extra_tparam in tparams.iter().skip(n) {
                 errors.add(
-                    expr.range(),
+                    range,
                     ErrorInfo::Kind(ErrorKind::InvalidTypeAlias),
                     vec1![
                         format!(
@@ -1215,21 +1233,32 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
             }
         }
-        // Extract Annotated metadata; skip the first element since that's the type and collect the rest of the vector
-        let annotated_metadata = self
-            .get_annotated_metadata(expr, TypeFormContext::TypeAlias, errors)
-            .iter()
-            .map(|e| self.expr_infer(e, &self.error_swallower()))
-            .collect();
-
-        let ta = TypeAlias::new(name.clone(), Type::type_form(ty), style, annotated_metadata);
-
         Forallable::TypeAlias(ta).forall(self.validated_tparams(
             range,
             tparams,
             TParamsSource::TypeAlias,
             errors,
         ))
+    }
+
+    fn type_alias_infer(
+        &self,
+        name: &Name,
+        style: TypeAliasStyle,
+        ty: Type,
+        expr: &Expr,
+        typealiastype_tparams: Option<Vec<Expr>>,
+        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let ta = self.as_type_alias(name, style, ty, expr, errors);
+        self.wrap_type_alias(
+            ta,
+            typealiastype_tparams,
+            legacy_tparams,
+            expr.range(),
+            errors,
+        )
     }
 
     fn context_value_enter(
@@ -2527,7 +2556,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             // Then, handle the possibility that we need to treat the type as a type alias
             match has_type_alias_qualifier {
-                Some(true) => self.as_type_alias(
+                Some(true) => self.type_alias_infer(
                     name,
                     TypeAliasStyle::LegacyExplicit,
                     ty,
@@ -2540,7 +2569,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     && !is_in_function_scope
                     && self.has_valid_annotation_syntax(expr, &self.error_swallower()) =>
                 {
-                    self.as_type_alias(
+                    self.type_alias_infer(
                         name,
                         TypeAliasStyle::LegacyImplicit,
                         ty,
@@ -3173,7 +3202,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         errors: &ErrorCollector,
     ) -> Type {
         let ty = self.expr_infer(expr, errors);
-        let ta = self.as_type_alias(name, TypeAliasStyle::Scoped, ty, expr, None, &None, errors);
+        let ta = self.type_alias_infer(name, TypeAliasStyle::Scoped, ty, expr, None, &None, errors);
         match ta {
             Type::Forall(..) => self.error(
                 errors,
@@ -3208,7 +3237,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             return Type::any_error();
         };
         let ty = self.expr_infer(expr, errors);
-        let ta = self.as_type_alias(
+        let ta = self.type_alias_infer(
             name,
             TypeAliasStyle::Scoped,
             ty,

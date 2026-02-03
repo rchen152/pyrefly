@@ -73,6 +73,10 @@ impl TypeAlias {
         *self.ty.clone()
     }
 
+    pub fn as_type_mut(&mut self) -> &mut Type {
+        &mut self.ty
+    }
+
     pub fn fmt_with_type<O: TypeOutput>(
         &self,
         output: &mut O,
@@ -98,5 +102,9 @@ impl TypeAlias {
                 output.write_str("]")
             }
         }
+    }
+
+    pub fn error(name: Name, style: TypeAliasStyle) -> Self {
+        Self::new(name, Type::any_error(), style, Vec::new())
     }
 }
