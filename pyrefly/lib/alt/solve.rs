@@ -3201,19 +3201,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         &self,
         ann: Option<Idx<KeyAnnotation>>,
         name: &Name,
-        x: &ExprCall,
+        x: &(Option<Expr>, Vec<Expr>),
         errors: &ErrorCollector,
     ) -> Type {
-        let Some((expr, type_param_exprs)) = self.typealiastype_from_call(name, x, errors) else {
+        let (Some(expr), type_param_exprs) = x else {
             return Type::any_error();
         };
-        let ty = self.expr_infer(&expr, errors);
+        let ty = self.expr_infer(expr, errors);
         let ta = self.as_type_alias(
             name,
             TypeAliasStyle::Scoped,
             ty,
-            &expr,
-            Some(type_param_exprs),
+            expr,
+            Some(type_param_exprs.clone()),
             &None,
             errors,
         );
@@ -3227,7 +3227,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     },
             } = &*self.get_idx(k)
         {
-            self.check_and_return_type(ta.clone(), want, x.range, errors, &|| {
+            self.check_and_return_type(ta.clone(), want, expr.range(), errors, &|| {
                 TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(target))
             })
         } else {
