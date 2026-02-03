@@ -2258,7 +2258,7 @@ impl Server {
                 let subscriber = PublishDiagnosticsSubscriber { publish_callback };
                 let mut transaction = server
                     .state
-                    .new_committable_transaction(Require::indexing(), Some(Box::new(subscriber)));
+                    .new_committable_transaction(Require::Exports, Some(Box::new(subscriber)));
                 let invalidate_start = Instant::now();
                 // Mark files as dirty
                 f(transaction.as_mut());
@@ -2326,8 +2326,8 @@ impl Server {
         info!("Prepare to check {} files.", handles.len());
         let mut transaction = self
             .state
-            .new_committable_transaction(Require::indexing(), None);
-        transaction.as_mut().run(&handles, Require::indexing());
+            .new_committable_transaction(Require::Exports, None);
+        transaction.as_mut().run(&handles, Require::Indexing);
         self.state.commit_transaction(transaction, Some(telemetry));
         // After we finished a recheck asynchronously, we immediately send `RecheckFinished` to
         // the main event loop of the server. As a result, the server can do a revalidation of
@@ -2364,8 +2364,8 @@ impl Server {
             info!("Prepare to check {} files.", handles.len());
             let mut transaction = self
                 .state
-                .new_committable_transaction(Require::indexing(), None);
-            transaction.as_mut().run(&handles, Require::indexing());
+                .new_committable_transaction(Require::Exports, None);
+            transaction.as_mut().run(&handles, Require::Indexing);
             self.state.commit_transaction(transaction, Some(telemetry));
             // After we finished a recheck asynchronously, we immediately send `RecheckFinished` to
             // the main event loop of the server. As a result, the server can do a revalidation of
@@ -2802,7 +2802,7 @@ impl Server {
                 // Having the extra file hanging around doesn't harm anything, but does use extra memory.
                 let mut transaction = server
                     .state
-                    .new_committable_transaction(Require::indexing(), None);
+                    .new_committable_transaction(Require::Exports, None);
                 transaction.as_mut().set_memory(vec![(path, None)]);
                 let _ = server
                     .validate_in_memory_for_transaction(transaction.as_mut(), telemetry_event);
@@ -4055,7 +4055,7 @@ impl Server {
                 let subscriber = PublishDiagnosticsSubscriber { publish_callback };
                 let mut transaction = server
                     .state
-                    .new_committable_transaction(Require::indexing(), Some(Box::new(subscriber)));
+                    .new_committable_transaction(Require::Exports, Some(Box::new(subscriber)));
                 let invalidate_start = Instant::now();
                 transaction.as_mut().invalidate_config();
                 telemetry_event.set_invalidate_duration(invalidate_start.elapsed());

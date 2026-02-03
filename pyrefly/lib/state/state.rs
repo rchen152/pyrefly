@@ -1186,23 +1186,8 @@ impl<'a> Transaction<'a> {
     }
 
     /// Get a module discovered via an import.
-    fn get_imported_module(&self, handle: &Handle, require: Require) -> ArcId<ModuleDataMut> {
-        let require = match require {
-            Require::Indexing(i) => {
-                // If we're building an index to power IDE features, limit the number of times
-                // we'll follow imports for performance reasons. When we hit our limit, we switch
-                // to requiring only exports, which tells Transaction::demand() to stop eagerly
-                // computing results.
-                if i == 0 {
-                    Require::Exports
-                } else {
-                    Require::Indexing(i - 1)
-                }
-            }
-            Require::Exports => Require::Exports,
-            _ => self.data.default_require,
-        };
-        self.get_module_ex(handle, require).0
+    fn get_imported_module(&self, handle: &Handle) -> ArcId<ModuleDataMut> {
+        self.get_module_ex(handle, self.data.default_require).0
     }
 
     /// Return the module, plus true if the module was newly created.
@@ -2012,13 +1997,11 @@ impl<'a> TransactionHandle<'a> {
         module: ModuleName,
         path: Option<&ModulePath>,
     ) -> FindingOrError<ArcId<ModuleDataMut>> {
-        let require = self.module_data.state.read().require;
         if let Some(ImportResolution::Resolved(handles)) = self.module_data.deps.read().get(&module)
             && path.is_none_or(|path| path == handles.first().0.path())
         {
             return FindingOrError::new_finding(
-                self.transaction
-                    .get_imported_module(handles.first().0, require),
+                self.transaction.get_imported_module(handles.first().0),
             );
         }
 
@@ -2030,7 +2013,7 @@ impl<'a> TransactionHandle<'a> {
             FindingOrError::Finding(finding) => {
                 let handle = finding.finding;
                 let error = finding.error;
-                let res = self.transaction.get_imported_module(&handle, require);
+                let res = self.transaction.get_imported_module(&handle);
 
                 let depends_on = {
                     let deps = self.module_data.syntactic_deps.read();

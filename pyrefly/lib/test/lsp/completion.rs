@@ -214,7 +214,7 @@ def nested():
     config["user"][""]
 #                  ^
 "#;
-    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::indexing(), true);
+    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::Exports, true);
     let handle = handles.get("main").unwrap();
     let position = extract_cursors_for_test(code)[0];
     let txn = state.transaction();
@@ -230,7 +230,7 @@ def nested():
     config["user"][""]
 #           ^
 "#;
-    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::indexing(), true);
+    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::Exports, true);
     let handle = handles.get("main").unwrap();
     let position = extract_cursors_for_test(code)[0];
     let txn = state.transaction();
@@ -1236,17 +1236,9 @@ Completion Results:
 - (Function) isinstance
 - (Class) DivisionImpossible: from decimal import DivisionImpossible
 
-- (Class) FirstHeaderLineIsContinuationDefect: from email.errors import FirstHeaderLineIsContinuationDefect
-
-- (Class) MissingHeaderBodySeparatorDefect: from email.errors import MissingHeaderBodySeparatorDefect
-
 - (Function) disjoint_base: from typing_extensions import disjoint_base
 
-- (Function) distributions: from importlib.metadata import distributions
-
 - (Function) fix_missing_locations: from ast import fix_missing_locations
-
-- (Function) packages_distributions: from importlib.metadata import packages_distributions
 
 - (Function) timerfd_settime_ns: from os import timerfd_settime_ns
 
@@ -1841,7 +1833,7 @@ T = foooooo
 #       ^
 "#;
     let files = [("main", code), ("bar", "foooooo = 1")];
-    let (handles, state) = mk_multi_file_state(&files, Require::indexing(), false);
+    let (handles, state) = mk_multi_file_state(&files, Require::Exports, false);
     let handle = handles.get("main").unwrap();
     let position = extract_cursors_for_test(code)[0];
 
@@ -2533,7 +2525,7 @@ import sys
 x = sys.version
 #       ^
 "#;
-    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::indexing(), true);
+    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::Exports, true);
     let handle = handles.get("main").unwrap();
     let positions = extract_cursors_for_test(code);
     let txn = state.transaction();
@@ -2586,7 +2578,7 @@ class Constraint:
         self.pointwise_read_writes.
 #                                  ^
 "#;
-    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::indexing(), false);
+    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::Exports, false);
     let handle = handles.get("main").unwrap();
     let position = extract_cursors_for_test(code)[0];
     let txn = state.transaction();
