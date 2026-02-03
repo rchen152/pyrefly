@@ -398,13 +398,13 @@ class AnotherBox(Protocol[T1]):  # should warn: T should be covariant
 class Protocol4(Protocol[T1]):  # should warn: T1 should be contravariant
     def m1(self, p0: T1) -> None: ...
 
-class Protocol5(Protocol[T1_co]):  # should warn: T1_co should be contravariant
+class Protocol5(Protocol[T1_co]):
     def m1(self, p0: T1_co) -> None: ... # should error on the parameter type
 
 class Protocol6(Protocol[T1]):  # should warn: T1 should be covariant
     def m1(self) -> T1: ...
 
-class Protocol7(Protocol[T1_contra]):  # should warn: T1_contra should be covariant
+class Protocol7(Protocol[T1_contra]):
     def m1(self) -> T1_contra: ... # should error on the return type
 
 class Protocol12(Protocol[T1]):  # should warn: T1 should be covariant
