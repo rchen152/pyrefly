@@ -2089,7 +2089,7 @@ impl<'a> LookupExport for TransactionHandle<'a> {
         .unwrap_or(false)
     }
 
-    fn get_every_export(&self, module: ModuleName) -> Option<SmallSet<Name>> {
+    fn get_every_export_untracked(&self, module: ModuleName) -> Option<SmallSet<Name>> {
         self.with_exports(
             module,
             |exports, lookup| {
@@ -2099,7 +2099,7 @@ impl<'a> LookupExport for TransactionHandle<'a> {
                     .cloned()
                     .collect::<SmallSet<Name>>()
             },
-            DependsOn::All,
+            DependsOn::None,
         )
     }
 
