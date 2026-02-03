@@ -435,3 +435,68 @@ class Foo(Generic[T_contra]):
     def f(self) -> T_contra: ...  # should raise an error on this line
 "#,
 );
+
+// Deep check: we should NOT raise an error here
+testcase!(
+    test_deep_covariant_in_contra_return,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Contra(Generic[T_contra]): ...
+
+class Foo(Generic[T_co]):  
+    def f(self) -> Contra[T_co]: ...
+"#,
+);
+
+// Deep check: we should NOT raise an error here
+testcase!(
+    test_deep_covariant_in_co_param,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+
+class Co(Generic[T_co]): ...
+
+class Foo(Generic[T_co]):  
+    def f(self, x: Co[T_co]) -> None: ...
+"#,
+);
+
+// Deep check: we should NOT raise an error here
+testcase!(
+    test_deep_callable_param_in_return,
+    r#"
+from typing import TypeVar, Generic, Callable
+T_co = TypeVar("T_co", covariant=True)
+
+class Foo(Generic[T_co]):  
+    def f(self) -> Callable[[T_co], None]: ...
+"#,
+);
+
+// Deep check: we should NOT raise an error here
+testcase!(
+    test_deep_callable_return_in_param,
+    r#"
+from typing import TypeVar, Generic, Callable
+T_co = TypeVar("T_co", covariant=True)
+
+class Foo(Generic[T_co]):  
+    def f(self, x: Callable[[], T_co]) -> None: ...
+"#,
+);
+
+// Deep check: we should NOT raise an error here
+testcase!(
+    test_deep_double_callable,
+    r#"
+from typing import TypeVar, Generic, Callable
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Foo(Generic[T_contra]):
+    def f(self) -> Callable[[Callable[[T_contra], None]], None]: ...
+"#,
+);
