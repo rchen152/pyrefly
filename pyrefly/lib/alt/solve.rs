@@ -2454,19 +2454,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    /// Handle `Binding::NameAssign` - process name assignment with optional annotation.
-    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
-    #[inline(never)]
-    fn binding_to_type_name_assign(
+    fn name_assign_infer(
         &self,
         name: &Name,
-        annot_key: Option<(AnnotationStyle, Idx<KeyAnnotation>)>,
+        annot_key: Option<&(AnnotationStyle, Idx<KeyAnnotation>)>,
         expr: &Expr,
-        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
-        is_in_function_scope: bool,
         errors: &ErrorCollector,
-    ) -> Type {
-        let (annot, ty) = match annot_key.as_ref() {
+    ) -> (Option<Arc<AnnotationWithTarget>>, Type) {
+        match annot_key {
             // First infer the type as a normal value
             Some((style, k)) => {
                 let annot = self.get_idx(*k);
@@ -2497,7 +2492,22 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 (None, Type::any_implicit())
             }
             None => (None, self.expr(expr, None, errors)),
-        };
+        }
+    }
+
+    /// Handle `Binding::NameAssign` - process name assignment with optional annotation.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_name_assign(
+        &self,
+        name: &Name,
+        annot_key: Option<(AnnotationStyle, Idx<KeyAnnotation>)>,
+        expr: &Expr,
+        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
+        is_in_function_scope: bool,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let (annot, ty) = self.name_assign_infer(name, annot_key.as_ref(), expr, errors);
         if let Some(annot) = &annot
             && let Some((AnnotationStyle::Forwarded, _)) = annot_key
         {
