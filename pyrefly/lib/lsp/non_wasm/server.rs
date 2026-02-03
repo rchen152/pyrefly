@@ -514,6 +514,8 @@ pub struct Server {
     filewatcher_registered: AtomicBool,
     version_info: Mutex<HashMap<PathBuf, i32>>,
     id: Uuid,
+    /// The surface/entrypoint for the language server (`--from` CLI arg)
+    surface: Option<String>,
     /// Whether to include comment section folding ranges (FoldingRangeKind::Region).
     /// Defaults to false.
     comment_folding_ranges: bool,
@@ -921,6 +923,7 @@ pub fn lsp_loop(
 ) -> anyhow::Result<()> {
     info!("Reading messages");
     let lsp_queue = LspQueue::new();
+    let from = telemetry.surface();
     let server = Server::new(
         connection,
         lsp_queue,
@@ -928,6 +931,7 @@ pub fn lsp_loop(
         indexing_mode,
         workspace_indexing_limit,
         build_system_blocking,
+        from,
     );
     std::thread::scope(|scope| {
         scope.spawn(|| {
@@ -1708,6 +1712,7 @@ impl Server {
         indexing_mode: IndexingMode,
         workspace_indexing_limit: usize,
         build_system_blocking: bool,
+        surface: Option<String>,
     ) -> Self {
         let folders = if let Some(capability) = &initialize_params.capabilities.workspace
             && let Some(true) = capability.workspace_folders
@@ -1773,6 +1778,7 @@ impl Server {
             filewatcher_registered: AtomicBool::new(false),
             version_info: Mutex::new(HashMap::new()),
             id: Uuid::new_v4(),
+            surface,
             comment_folding_ranges,
             currently_streaming_diagnostics_for_handles: RwLock::new(None),
             stream_diagnostics,
@@ -1805,6 +1811,7 @@ impl Server {
         TelemetryServerState {
             has_sourcedb: self.workspaces.sourcedb_available(),
             id: self.id,
+            surface: self.surface.clone(),
         }
     }
 
