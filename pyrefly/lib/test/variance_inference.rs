@@ -500,3 +500,27 @@ class Foo(Generic[T_contra]):
     def f(self) -> Callable[[Callable[[T_contra], None]], None]: ...
 "#,
 );
+
+// We skip checking fields
+testcase!(
+    test_field_covariant_in_mutable,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+
+class Foo(Generic[T_co]):
+    x: T_co 
+"#,
+);
+
+// We skip checking fields
+testcase!(
+    test_field_contravariant_in_mutable,
+    r#"
+from typing import TypeVar, Generic
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Foo(Generic[T_contra]):
+    x: T_contra  
+"#,
+);
