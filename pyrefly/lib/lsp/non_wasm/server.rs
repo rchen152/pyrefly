@@ -301,17 +301,17 @@ pub enum TypeErrorDisplayStatus {
     EnabledInIdeConfig,
     DisabledInConfigFile,
     EnabledInConfigFile,
-    DisabledDueToMissingConfigFile,
+    NoConfigFile,
 }
 
 impl TypeErrorDisplayStatus {
     fn is_enabled(self) -> bool {
         match self {
             TypeErrorDisplayStatus::DisabledInIdeConfig
-            | TypeErrorDisplayStatus::DisabledInConfigFile
-            | TypeErrorDisplayStatus::DisabledDueToMissingConfigFile => false,
+            | TypeErrorDisplayStatus::DisabledInConfigFile => false,
             TypeErrorDisplayStatus::EnabledInIdeConfig
-            | TypeErrorDisplayStatus::EnabledInConfigFile => true,
+            | TypeErrorDisplayStatus::EnabledInConfigFile
+            | TypeErrorDisplayStatus::NoConfigFile => true,
         }
     }
 }
@@ -1676,7 +1676,7 @@ impl Server {
                         // TODO(yangdanny): handle notebooks
                         self.send_response(new_response(
                             x.id,
-                            Ok(TypeErrorDisplayStatus::DisabledDueToMissingConfigFile),
+                            Ok(TypeErrorDisplayStatus::NoConfigFile),
                         ));
                     }
                 } else if &x.method == "testing/doNotCommitNextRecheck" {
@@ -1899,9 +1899,10 @@ impl Server {
             // Check if we should filter based on error kind for ErrorMissingImports mode
             let display_type_errors_mode = self
                 .workspaces
-                .get_with(path.to_path_buf(), |(_, w)| w.display_type_errors);
+                .get_with(path.to_path_buf(), |(_, w)| w.display_type_errors)
+                .unwrap_or_default();
 
-            if !should_show_error_for_display_mode(e, display_type_errors_mode) {
+            if !should_show_error_for_display_mode(e, display_type_errors_mode, type_error_status) {
                 return None;
             }
 
@@ -1960,11 +1961,11 @@ impl Server {
             Some(DisplayTypeErrors::ForceOff) => TypeErrorDisplayStatus::DisabledInIdeConfig,
             Some(DisplayTypeErrors::Default) | None => match &config.source {
                 // In this case, we don't have a config file.
-                ConfigSource::Synthetic => TypeErrorDisplayStatus::DisabledDueToMissingConfigFile,
+                ConfigSource::Synthetic => TypeErrorDisplayStatus::NoConfigFile,
                 // In this case, we have a config file like mypy.ini, but we don't parse it.
                 // We only use it as a sensible project root, and create a default config anyways.
                 // Therefore, we should treat it as if we don't have any config.
-                ConfigSource::Marker(_) => TypeErrorDisplayStatus::DisabledDueToMissingConfigFile,
+                ConfigSource::Marker(_) => TypeErrorDisplayStatus::NoConfigFile,
                 // We actually have a pyrefly.toml, so we can decide based on the config.
                 ConfigSource::File(_) => {
                     if config.disable_type_errors_in_ide(path) {
