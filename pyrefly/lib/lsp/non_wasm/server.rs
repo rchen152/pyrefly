@@ -3949,28 +3949,19 @@ impl Server {
                 let mut glob_patterns = Vec::new();
                 for root in &roots {
                     PYTHON_EXTENSIONS.iter().for_each(|suffix| {
-                        glob_patterns.push(Self::get_pattern_to_watch(
-                            WatchPattern::root(root, format!("**/*.{suffix}")),
-                            relative_pattern_support,
-                        ));
+                        glob_patterns.push(WatchPattern::root(root, format!("**/*.{suffix}")));
                     });
                     ConfigFile::CONFIG_FILE_NAMES.iter().for_each(|config| {
-                        glob_patterns.push(Self::get_pattern_to_watch(
-                            WatchPattern::root(root, format!("**/{config}")),
-                            relative_pattern_support,
-                        ))
+                        glob_patterns.push(WatchPattern::root(root, format!("**/{config}")));
                     });
                 }
-                for config in self.workspaces.loaded_configs.clean_and_get_configs() {
-                    config.get_paths_to_watch().into_iter().for_each(|pattern| {
-                        glob_patterns.push(Self::get_pattern_to_watch(
-                            pattern,
-                            relative_pattern_support,
-                        ));
-                    });
+                let configs = self.workspaces.loaded_configs.clean_and_get_configs();
+                for config in &configs {
+                    glob_patterns.extend(config.get_paths_to_watch().into_iter());
                 }
                 let watchers = glob_patterns
                     .into_iter()
+                    .map(|p| Self::get_pattern_to_watch(p, relative_pattern_support))
                     .map(|glob_pattern| FileSystemWatcher {
                         glob_pattern,
                         kind: Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
