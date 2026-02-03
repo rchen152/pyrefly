@@ -70,6 +70,7 @@ use crate::alt::answers::SolutionsTable;
 use crate::alt::answers_solver::AnswersSolver;
 use crate::alt::answers_solver::ThreadState;
 use crate::alt::traits::Solve;
+use crate::binding::binding::AnyExportedKey;
 use crate::binding::binding::Exported;
 use crate::binding::binding::KeyExport;
 use crate::binding::binding::KeyTParams;
@@ -128,6 +129,18 @@ enum ChangedExports {
     Changed(SmallSet<Name>),
     /// Invalidate all dependents (non-export change or too complex to track)
     InvalidateAll,
+}
+
+/// What names from a module this module depends on.
+#[derive(Debug, Clone)]
+pub enum DependsOn {
+    /// Depends on all exports (star import or `import x`).
+    All,
+    /// Depends on specific keys (`from x import a, b`).
+    #[allow(dead_code)]
+    Keys(SmallSet<AnyExportedKey>),
+    /// Depends on nothing
+    None,
 }
 
 impl DependsOnNames {
@@ -1996,6 +2009,7 @@ impl<'a> TransactionHandle<'a> {
         &self,
         module: ModuleName,
         path: Option<&ModulePath>,
+        _depends_on: DependsOn,
     ) -> FindingOrError<ArcId<ModuleDataMut>> {
         if let Some(ImportResolution::Resolved(handles)) = self.module_data.deps.read().get(&module)
             && path.is_none_or(|path| path == handles.first().0.path())
@@ -2093,8 +2107,9 @@ impl<'a> TransactionHandle<'a> {
         &self,
         module: ModuleName,
         f: impl FnOnce(&Exports, &Self) -> T,
+        depends_on: DependsOn,
     ) -> Option<T> {
-        let module_data = self.get_module(module, None).finding()?;
+        let module_data = self.get_module(module, None, depends_on).finding()?;
         let exports = self.transaction.lookup_export(&module_data);
         let lookup = TransactionHandle {
             transaction: self.transaction,
@@ -2105,59 +2120,86 @@ impl<'a> TransactionHandle<'a> {
 }
 
 impl<'a> LookupExport for TransactionHandle<'a> {
-    fn export_exists(&self, module: ModuleName, k: &Name) -> bool {
-        self.with_exports(module, |exports, lookup| {
-            exports.exports(lookup).contains_key(k)
-        })
+    fn export_exists(&self, module: ModuleName, name: &Name) -> bool {
+        self.with_exports(
+            module,
+            |exports, lookup| exports.exports(lookup).contains_key(name),
+            DependsOn::Keys(SmallSet::from_iter([AnyExportedKey::KeyExport(KeyExport(
+                name.clone(),
+            ))])),
+        )
         .unwrap_or(false)
     }
 
     fn get_wildcard(&self, module: ModuleName) -> Option<Arc<SmallSet<Name>>> {
-        self.with_exports(module, |exports, lookup| exports.wildcard(lookup))
+        self.with_exports(
+            module,
+            |exports, lookup| exports.wildcard(lookup),
+            DependsOn::All,
+        )
     }
 
     fn module_exists(&self, module: ModuleName) -> FindingOrError<()> {
-        self.get_module(module, None).map(|module_data| {
-            self.transaction.lookup_export(&module_data);
-        })
+        self.get_module(module, None, DependsOn::None)
+            .map(|module_data| {
+                self.transaction.lookup_export(&module_data);
+            })
     }
 
     fn is_submodule_imported_implicitly(&self, module: ModuleName, name: &Name) -> bool {
-        self.with_exports(module, |exports, _lookup| {
-            exports.is_submodule_imported_implicitly(name)
-        })
+        self.with_exports(
+            module,
+            |exports, _lookup| exports.is_submodule_imported_implicitly(name),
+            DependsOn::Keys(SmallSet::from_iter([AnyExportedKey::KeyExport(KeyExport(
+                name.clone(),
+            ))])),
+        )
         .unwrap_or(false)
     }
 
     fn get_every_export(&self, module: ModuleName) -> Option<SmallSet<Name>> {
-        self.with_exports(module, |exports, lookup| {
-            exports
-                .exports(lookup)
-                .keys()
-                .cloned()
-                .collect::<SmallSet<Name>>()
-        })
+        self.with_exports(
+            module,
+            |exports, lookup| {
+                exports
+                    .exports(lookup)
+                    .keys()
+                    .cloned()
+                    .collect::<SmallSet<Name>>()
+            },
+            DependsOn::All,
+        )
     }
 
     fn get_deprecated(&self, module: ModuleName, name: &Name) -> Option<Deprecation> {
-        self.with_exports(module, |exports, lookup| {
-            match exports.exports(lookup).get(name)? {
+        self.with_exports(
+            module,
+            |exports, lookup| match exports.exports(lookup).get(name)? {
                 ExportLocation::ThisModule(Export {
                     deprecation: Some(d),
                     ..
                 }) => Some(d.clone()),
                 _ => None,
-            }
-        })?
+            },
+            DependsOn::Keys(SmallSet::from_iter([AnyExportedKey::KeyExport(KeyExport(
+                name.clone(),
+            ))])),
+        )?
     }
 
     fn is_reexport(&self, module: ModuleName, name: &Name) -> bool {
-        self.with_exports(module, |exports, lookup| {
-            matches!(
-                exports.exports(lookup).get(name),
-                Some(ExportLocation::OtherModule(..))
-            )
-        })
+        self.with_exports(
+            module,
+            |exports, lookup| {
+                matches!(
+                    exports.exports(lookup).get(name),
+                    Some(ExportLocation::OtherModule(..))
+                )
+            },
+            DependsOn::Keys(SmallSet::from_iter([AnyExportedKey::KeyExport(KeyExport(
+                name.clone(),
+            ))])),
+        )
         .unwrap_or(false)
     }
 
@@ -2176,14 +2218,18 @@ impl<'a> LookupExport for TransactionHandle<'a> {
                 return None; // Cycle detected
             }
 
-            let next = self.with_exports(module, |exports, lookup| {
-                match exports.exports(lookup).get(&name)? {
+            let next = self.with_exports(
+                module,
+                |exports, lookup| match exports.exports(lookup).get(&name)? {
                     ExportLocation::ThisModule(export) => Some(Err(export.special_export)),
                     ExportLocation::OtherModule(other_module, original_name) => {
                         Some(Ok((*other_module, original_name.clone())))
                     }
-                }
-            })??;
+                },
+                DependsOn::Keys(SmallSet::from_iter([AnyExportedKey::KeyExport(KeyExport(
+                    name.clone(),
+                ))])),
+            )??;
 
             match next {
                 Err(special) => return special,
@@ -2198,14 +2244,18 @@ impl<'a> LookupExport for TransactionHandle<'a> {
     }
 
     fn docstring_range(&self, module: ModuleName, name: &Name) -> Option<TextRange> {
-        self.with_exports(module, |exports, lookup| {
-            match exports.exports(lookup).get(name)? {
+        self.with_exports(
+            module,
+            |exports, lookup| match exports.exports(lookup).get(name)? {
                 ExportLocation::ThisModule(Export {
                     docstring_range, ..
                 }) => *docstring_range,
                 _ => None,
-            }
-        })?
+            },
+            DependsOn::Keys(SmallSet::from_iter([AnyExportedKey::KeyExport(KeyExport(
+                name.clone(),
+            ))])),
+        )?
     }
 }
 
@@ -2224,7 +2274,14 @@ impl<'a> LookupAnswer for TransactionHandle<'a> {
     {
         // The unwrap is safe because we must have said there were no exports,
         // so no one can be trying to get at them
-        let module_data = self.get_module(module, path).finding().unwrap();
+        let module_data = self
+            .get_module(
+                module,
+                path,
+                DependsOn::Keys(SmallSet::from_iter([k.to_anykey()])),
+            )
+            .finding()
+            .unwrap();
         let res = self.transaction.lookup_answer(module_data, k, thread_state);
         if res.is_none() {
             let msg = format!(
