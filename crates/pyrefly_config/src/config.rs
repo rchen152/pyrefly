@@ -886,15 +886,15 @@ impl ConfigFile {
     /// Get glob patterns that should be watched by a file watcher.
     /// We return a tuple of root (non-pattern part of the path) and a pattern.
     /// If pattern is None, then the root should contain the whole path to watch.
-    pub fn get_paths_to_watch(configs: &SmallSet<ArcId<ConfigFile>>) -> SmallSet<WatchPattern<'_>> {
+    pub fn get_paths_to_watch(configs: &SmallSet<ArcId<ConfigFile>>) -> SmallSet<WatchPattern> {
         let mut result = SmallSet::new();
         let mut source_dbs = SmallSet::new();
         for config in configs {
             if let Some(source_db) = &config.source_db {
                 source_dbs.insert(source_db);
             }
-            let config_root = config.source.root();
-            if let Some(config_root) = config_root {
+            if let Some(config_root) = config.source.root() {
+                let config_root = InternedPath::from_path(config_root);
                 ConfigFile::CONFIG_FILE_NAMES.iter().for_each(|config| {
                     result.insert(WatchPattern::root(config_root, format!("**/{config}")));
                 });
@@ -904,7 +904,10 @@ impl ConfigFile {
                 .chain(config.site_package_path())
                 .cartesian_product(PYTHON_EXTENSIONS.iter().chain(COMPILED_FILE_SUFFIXES))
                 .for_each(|(s, suffix)| {
-                    result.insert(WatchPattern::root(s, format!("**/*.{suffix}")));
+                    result.insert(WatchPattern::root(
+                        InternedPath::from_path(s),
+                        format!("**/*.{suffix}"),
+                    ));
                 });
         }
 

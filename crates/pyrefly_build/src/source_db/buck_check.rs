@@ -182,7 +182,7 @@ impl SourceDatabase for BuckCheckSourceDatabase {
         (Ok(false), TelemetrySourceDbRebuildInstanceStats::default())
     }
 
-    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern<'_>> {
+    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern> {
         SmallSet::new()
     }
 

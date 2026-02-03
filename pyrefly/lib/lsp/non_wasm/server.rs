@@ -187,6 +187,7 @@ use pyrefly_util::arc_id::ArcId;
 use pyrefly_util::events::CategorizedEvents;
 use pyrefly_util::globs::FilteredGlobs;
 use pyrefly_util::includes::Includes as _;
+use pyrefly_util::interned_path::InternedPath;
 use pyrefly_util::lock::Mutex;
 use pyrefly_util::lock::RwLock;
 use pyrefly_util::prelude::VecExt;
@@ -3890,22 +3891,11 @@ impl Server {
 
     /// Converts a [`WatchPattern`] into a [`GlobPattern`] that can be used and watched
     /// by VSCode, provided its `relative_pattern_support`.
-    fn get_pattern_to_watch(
-        pattern: WatchPattern<'_>,
-        relative_pattern_support: bool,
-    ) -> GlobPattern {
+    fn get_pattern_to_watch(pattern: WatchPattern, relative_pattern_support: bool) -> GlobPattern {
         match pattern {
             WatchPattern::File(root) => GlobPattern::String(root.to_string_lossy().into_owned()),
             WatchPattern::Root(root, pattern)
-                if relative_pattern_support && let Ok(url) = Url::from_directory_path(root) =>
-            {
-                GlobPattern::Relative(RelativePattern {
-                    base_uri: OneOf::Right(url),
-                    pattern,
-                })
-            }
-            WatchPattern::OwnedRoot(root, pattern)
-                if relative_pattern_support && let Ok(url) = Url::from_directory_path(&root) =>
+                if relative_pattern_support && let Ok(url) = Url::from_directory_path(&**root) =>
             {
                 GlobPattern::Relative(RelativePattern {
                     base_uri: OneOf::Right(url),
@@ -3913,9 +3903,6 @@ impl Server {
                 })
             }
             WatchPattern::Root(root, pattern) => {
-                GlobPattern::String(root.join(pattern).to_string_lossy().into_owned())
-            }
-            WatchPattern::OwnedRoot(root, pattern) => {
                 GlobPattern::String(root.join(pattern).to_string_lossy().into_owned())
             }
         }
@@ -3947,8 +3934,10 @@ impl Server {
                 let configs = self.workspaces.loaded_configs.clean_and_get_configs();
                 let mut glob_patterns = SmallSet::new();
                 for root in &roots {
+                    let root = InternedPath::from_path(root);
                     PYTHON_EXTENSIONS.iter().for_each(|suffix| {
-                        glob_patterns.insert(WatchPattern::root(root, format!("**/*.{suffix}")));
+                        glob_patterns
+                            .insert(WatchPattern::root(root.dupe(), format!("**/*.{suffix}")));
                     });
                     ConfigFile::CONFIG_FILE_NAMES.iter().for_each(|config| {
                         glob_patterns.insert(WatchPattern::root(root, format!("**/{config}")));

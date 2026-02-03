@@ -100,7 +100,7 @@ impl SourceDatabase for PlaygroundSourceDatabase {
         (Ok(false), TelemetrySourceDbRebuildInstanceStats::default())
     }
 
-    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern<'_>> {
+    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern> {
         self.module_mappings
             .values()
             .map(|p| WatchPattern::file(p.as_path().to_path_buf()))

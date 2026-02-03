@@ -97,7 +97,7 @@ impl SourceDatabase for MapDatabase {
         (Ok(false), TelemetrySourceDbRebuildInstanceStats::default())
     }
 
-    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern<'_>> {
+    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern> {
         self.0
             .values()
             .flatten()

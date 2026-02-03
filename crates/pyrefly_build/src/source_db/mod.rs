@@ -134,7 +134,7 @@ pub trait SourceDatabase: Send + Sync + fmt::Debug {
     /// The source database-related configuration files a watcher should wait for
     /// changes on. Changes to one of these returned watchfiles should force
     /// a sourcedb rebuild.
-    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern<'_>>;
+    fn get_paths_to_watch(&self) -> SmallSet<WatchPattern>;
     /// Get the target for the given [`ModulePath`], if one exists.
     fn get_target(&self, origin: Option<&Path>) -> Option<Target>;
     /// Get any generated files for which we might have to override the config finder.

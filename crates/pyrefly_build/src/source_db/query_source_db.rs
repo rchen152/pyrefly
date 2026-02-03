@@ -122,7 +122,7 @@ pub struct QuerySourceDatabase {
     includes: Mutex<SmallSet<Include>>,
     /// The directory that will be passed into the sourcedb query shell-out. Should
     /// be the same as the directory containing the config this sourcedb is a part of.
-    repo_root: PathBuf,
+    repo_root: InternedPath,
     querier: Arc<dyn SourceDbQuerier>,
     cached_modules: ModulePathCache,
 }
@@ -130,7 +130,7 @@ pub struct QuerySourceDatabase {
 impl QuerySourceDatabase {
     pub fn new(cwd: PathBuf, querier: Arc<dyn SourceDbQuerier>) -> Self {
         QuerySourceDatabase {
-            repo_root: cwd,
+            repo_root: InternedPath::new(cwd),
             inner: RwLock::new(Inner::new()),
             includes: Mutex::new(SmallSet::new()),
             querier,
@@ -415,11 +415,14 @@ impl SourceDatabase for QuerySourceDatabase {
         (run(), stats)
     }
 
-    fn get_paths_to_watch<'a>(&'a self) -> SmallSet<WatchPattern<'a>> {
+    fn get_paths_to_watch<'a>(&'a self) -> SmallSet<WatchPattern> {
         let read = self.inner.read();
-        let mut patterns: SmallSet<WatchPattern<'a>> = SmallSet::new();
+        let mut patterns: SmallSet<WatchPattern> = SmallSet::new();
         for pattern in &read.watched_patterns {
-            patterns.insert(WatchPattern::root(&self.repo_root, pattern.get_pattern()));
+            patterns.insert(WatchPattern::root(
+                self.repo_root.dupe(),
+                pattern.get_pattern(),
+            ));
         }
         patterns
     }
@@ -490,7 +493,7 @@ mod tests {
     impl QuerySourceDatabase {
         fn from_target_manifest_db(
             raw_db: TargetManifestDatabase,
-            root: PathBuf,
+            root: &Path,
             files: &SmallSet<PathBuf>,
         ) -> Self {
             let new = Self {
@@ -501,7 +504,7 @@ mod tests {
                         .map(|p| Include::path(InternedPath::new(p.to_path_buf())))
                         .collect(),
                 ),
-                repo_root: root,
+                repo_root: InternedPath::from_path(root),
                 querier: Arc::new(DummyQuerier {}),
                 cached_modules: ModulePathCache::new(),
             };
@@ -519,7 +522,7 @@ mod tests {
         };
 
         (
-            QuerySourceDatabase::from_target_manifest_db(raw_db, root.clone(), &files),
+            QuerySourceDatabase::from_target_manifest_db(raw_db, &root, &files),
             root,
         )
     }
@@ -951,11 +954,11 @@ mod tests {
         let (db, root) = get_db();
 
         let expected = smallset! {
-            WatchPattern::root(&root, "**/*.py".to_owned()),
-            WatchPattern::root(&root, "**/*.pyi".to_owned()),
-            WatchPattern::root(&root, "**/*.ipynb".to_owned()),
-            WatchPattern::root(&root, "**/*.thrift".to_owned()),
-            WatchPattern::root(&root, "**/BUCK".to_owned()),
+            WatchPattern::root(InternedPath::from_path(&root), "**/*.py".to_owned()),
+            WatchPattern::root(InternedPath::from_path(&root), "**/*.pyi".to_owned()),
+            WatchPattern::root(InternedPath::from_path(&root), "**/*.ipynb".to_owned()),
+            WatchPattern::root(InternedPath::from_path(&root), "**/*.thrift".to_owned()),
+            WatchPattern::root(InternedPath::from_path(&root), "**/BUCK".to_owned()),
         };
         assert_eq!(db.get_paths_to_watch(), expected);
     }
@@ -993,7 +996,7 @@ mod tests {
             root.join("dir/b.py"),
         };
 
-        let db = QuerySourceDatabase::from_target_manifest_db(raw_db, root.clone(), &files);
+        let db = QuerySourceDatabase::from_target_manifest_db(raw_db, &root, &files);
 
         // When looking up 'dir' from a.py (which is in target2), we should find
         // the __init__.py from target1 because target2 depends on target1
@@ -1050,7 +1053,7 @@ mod tests {
             root.join("dir/b.py"),
         };
 
-        let db = QuerySourceDatabase::from_target_manifest_db(raw_db, root.clone(), &files);
+        let db = QuerySourceDatabase::from_target_manifest_db(raw_db, &root, &files);
 
         // When looking up 'dir' from a.py (which is in target2), we should NOT find
         // the __init__.py because target2 doesn't depend on target1.
