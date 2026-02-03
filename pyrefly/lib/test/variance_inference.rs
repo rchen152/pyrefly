@@ -524,3 +524,117 @@ class Foo(Generic[T_contra]):
     x: T_contra  
 "#,
 );
+
+testcase!(
+    bug = "covariant in invariant base",
+    test_base_covariant_in_invariant,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+T = TypeVar("T")
+
+class Inv(Generic[T]): ...
+
+class Foo(
+    Inv[T_co] # should error: covariant T_co in invariant position
+): ...  
+"#,
+);
+
+testcase!(
+    bug = "contravariant in invariant base",
+    test_base_contravariant_in_invariant,
+    r#"
+from typing import TypeVar, Generic
+T_contra = TypeVar("T_contra", contravariant=True)
+T = TypeVar("T")
+
+class Inv(Generic[T]): ...
+
+class Foo(
+    Inv[T_contra] # should error: contravariant T_contra in invariant position
+): ...  
+"#,
+);
+
+testcase!(
+    bug = "covariant in contravariant base",
+    test_base_covariant_in_contravariant,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Contra(Generic[T_contra]): ...
+
+class Foo(
+    Contra[T_co] # should error: covariant T_co in contravariant position
+): ...  
+"#,
+);
+
+testcase!(
+    bug = "contravariant in covariant base",
+    test_base_contravariant_in_covariant,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Co(Generic[T_co]): ...
+
+class Foo(
+    Co[T_contra] # should error: contravariant T_contra in covariant position
+): ...  
+"#,
+);
+
+testcase!(
+    bug = "error on nested base class",
+    test_base_nested_double,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Co(Generic[T_co]): ...
+class Contra(Generic[T_contra]): ...
+
+# pyright errors and mypy does not
+class Foo(
+    Contra[Co[T_co]]
+): ...
+"#,
+);
+
+testcase!(
+    bug = "error on nested base class",
+    test_base_nested_triple_error,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Contra(Generic[T_contra]): ...
+
+# pyright errors and mypy does not
+class Foo(
+    Contra[Contra[Contra[T_co]]]
+): ...
+"#,
+);
+
+testcase!(
+    test_base_nested_triple_ok,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Co(Generic[T_co]): ...
+class Contra(Generic[T_contra]): ...
+
+# contra * co * contra = co, so T_co in covariant position - OK
+class Foo(Contra[Co[Contra[T_co]]]): ...
+"#,
+);
