@@ -278,11 +278,7 @@ impl<'a> BindingsBuilder<'a> {
     fn assign_type_alias_type(&mut self, name: &ExprName, call: &mut ExprCall) {
         self.ensure_type_alias_type_args(call);
         self.bind_legacy_type_var_or_typing_alias(name, |ann| {
-            Binding::TypeAliasType(
-                ann,
-                Ast::expr_name_identifier(name.clone()),
-                Box::new(call.clone()),
-            )
+            Binding::TypeAliasType(ann, name.id.clone(), Box::new(call.clone()))
         })
     }
 

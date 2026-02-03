@@ -3200,17 +3200,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn binding_to_type_type_alias_type(
         &self,
         ann: Option<Idx<KeyAnnotation>>,
-        name: &Identifier,
+        name: &Name,
         x: &ExprCall,
         errors: &ErrorCollector,
     ) -> Type {
-        let Some((expr, type_param_exprs)) = self.typealiastype_from_call(name.clone(), x, errors)
-        else {
+        let Some((expr, type_param_exprs)) = self.typealiastype_from_call(name, x, errors) else {
             return Type::any_error();
         };
         let ty = self.expr_infer(&expr, errors);
         let ta = self.as_type_alias(
-            &name.id,
+            name,
             TypeAliasStyle::Scoped,
             ty,
             &expr,

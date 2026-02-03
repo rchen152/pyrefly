@@ -1710,7 +1710,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn typealiastype_from_call(
         &self,
-        name: Identifier,
+        name: &Name,
         x: &ExprCall,
         errors: &ErrorCollector,
     ) -> Option<(Expr, Vec<Expr>)> {
@@ -1719,7 +1719,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut type_params = None;
         let check_name_arg = |arg: &Expr| {
             if let Expr::StringLiteral(lit) = arg {
-                if lit.value.to_str() != name.id.as_str() {
+                if lit.value.to_str() != name.as_str() {
                     self.error(
                         errors,
                         x.range,
