@@ -138,6 +138,8 @@ use crate::types::quantified::Quantified;
 use crate::types::quantified::QuantifiedKind;
 use crate::types::special_form::SpecialForm;
 use crate::types::tuple::Tuple;
+use crate::types::type_alias::TypeAlias;
+use crate::types::type_alias::TypeAliasStyle;
 use crate::types::type_info::TypeInfo;
 use crate::types::type_var::PreInferenceVariance;
 use crate::types::type_var::Restriction;
@@ -151,8 +153,6 @@ use crate::types::types::TParam;
 use crate::types::types::TParams;
 use crate::types::types::TParamsSource;
 use crate::types::types::Type;
-use crate::types::types::TypeAlias;
-use crate::types::types::TypeAliasStyle;
 use crate::types::types::Var;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
