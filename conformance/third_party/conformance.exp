@@ -9425,8 +9425,8 @@
     {
       "code": -2,
       "column": 8,
-      "concise_description": "`RATE` is marked final",
-      "description": "`RATE` is marked final",
+      "concise_description": "Cannot assign to variable `RATE` because it is marked final",
+      "description": "Cannot assign to variable `RATE` because it is marked final",
       "line": 71,
       "name": "bad-assignment",
       "severity": "error",
@@ -9579,8 +9579,8 @@
     {
       "code": -2,
       "column": 11,
-      "concise_description": "`ID1` is marked final",
-      "description": "`ID1` is marked final",
+      "concise_description": "Cannot assign to variable `ID1` because it is marked final",
+      "description": "Cannot assign to variable `ID1` because it is marked final",
       "line": 141,
       "name": "bad-assignment",
       "severity": "error",

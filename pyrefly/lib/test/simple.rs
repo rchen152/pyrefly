@@ -354,10 +354,10 @@ testcase!(
 from typing import Final
 
 x: Final[int] = 0
-x = 1  # E: `x` is marked final
+x = 1  # E: Cannot assign to variable `x` because it is marked final
 
 y: Final = "foo"
-y = "bar"  # E: `y` is marked final
+y = "bar"  # E: Cannot assign to variable `y` because it is marked final
 "#,
 );
 
@@ -379,7 +379,7 @@ testcase!(
     r#"
 from typing import Final, TextIO
 x: Final[int] = 0
-x = 1  # E: `x` is marked final
+x = 1  # E: Cannot assign to variable `x` because it is marked final
 x += 1  # E: Cannot assign to variable `x` because it is marked final
 y = x = 3 # E: Cannot assign to variable `x` because it is marked final
 y = (x := 3) # E: Cannot assign to variable `x` because it is marked final

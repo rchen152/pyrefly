@@ -2309,6 +2309,25 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
+    pub fn check_final_reassignment(
+        &self,
+        annot: &AnnotationWithTarget,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) {
+        if annot.annotation.is_final() {
+            self.error(
+                errors,
+                range,
+                ErrorInfo::Kind(ErrorKind::BadAssignment),
+                format!(
+                    "Cannot assign to {} because it is marked final",
+                    annot.target
+                ),
+            );
+        }
+    }
+
     // =========================================================================
     // Helper functions for binding_to_type - extracted to reduce stack frame size
     // =========================================================================
@@ -2457,13 +2476,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         AnnotationStyle::Forwarded => TypeCheckKind::AnnotatedName(name.clone()),
                     })
                 };
-                if annot.annotation.is_final() && style == &AnnotationStyle::Forwarded {
-                    self.error(
-                        errors,
-                        expr.range(),
-                        ErrorInfo::Kind(ErrorKind::BadAssignment),
-                        format!("`{name}` is marked final"),
-                    );
+                if style == &AnnotationStyle::Forwarded {
+                    self.check_final_reassignment(&annot, expr.range(), errors);
                 }
                 let annot_ty = annot.ty(self.stdlib);
                 let hint = annot_ty.as_ref().map(|t| (t, tcc));
@@ -2854,15 +2868,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         errors: &ErrorCollector,
     ) -> Type {
         let ann = ann.map(|k| self.get_idx(k));
-        if let Some(ann) = &ann
-            && ann.annotation.is_final()
-        {
-            self.error(
-                errors,
-                e.range(),
-                ErrorInfo::Kind(ErrorKind::BadAssignment),
-                format!("Cannot assign to {} because it is marked final", ann.target),
-            );
+        if let Some(ann) = &ann {
+            self.check_final_reassignment(ann, e.range(), errors);
         }
         let tcc: &dyn Fn() -> TypeCheckContext = &|| {
             let (name, annot_type) = {
@@ -2975,14 +2982,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
         let got = self.unions(values);
         if let Some(ann) = ann.map(|idx| self.get_idx(idx)) {
-            if ann.annotation.is_final() {
-                self.error(
-                    errors,
-                    range,
-                    ErrorInfo::Kind(ErrorKind::BadAssignment),
-                    format!("Cannot assign to {} because it is marked final", ann.target),
-                );
-            }
+            self.check_final_reassignment(&ann, range, errors);
             if let Some(want) = ann.ty(self.stdlib) {
                 self.check_type(&got, &want, range, errors, &|| {
                     TypeCheckContext::of_kind(TypeCheckKind::UnpackedAssign)
@@ -3011,17 +3011,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let tcc: &dyn Fn() -> TypeCheckContext = &|| {
                     TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(&annot.target))
                 };
-                if annot.annotation.is_final() {
-                    self.error(
-                        errors,
-                        e.range(),
-                        ErrorInfo::Kind(ErrorKind::BadAssignment),
-                        format!(
-                            "Cannot assign to {} because it is marked final",
-                            annot.target
-                        ),
-                    );
-                }
+                self.check_final_reassignment(&annot, e.range(), errors);
                 self.expr(e, annot.ty(self.stdlib).as_ref().map(|t| (t, tcc)), errors)
             }
             None => {
@@ -3045,17 +3035,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let ty = type_info.ty();
         if let Some(ann_idx) = ann {
             let annot = self.get_idx(ann_idx);
-            if annot.annotation.is_final() {
-                self.error(
-                    errors,
-                    range,
-                    ErrorInfo::Kind(ErrorKind::BadAssignment),
-                    format!(
-                        "Cannot assign to {} because it is marked final",
-                        annot.target
-                    ),
-                );
-            }
+            self.check_final_reassignment(&annot, range, errors);
             if let Some(annot_ty) = annot.ty(self.stdlib)
                 && !self.is_subset_eq(ty, &annot_ty)
             {
@@ -3163,14 +3143,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let context_value = self.context_value(context_manager.ty(), kind, range, errors);
         let ann = ann.map(|k| self.get_idx(k));
         if let Some(ann) = ann {
-            if ann.annotation.is_final() {
-                self.error(
-                    errors,
-                    range,
-                    ErrorInfo::Kind(ErrorKind::BadAssignment),
-                    format!("Cannot assign to {} because it is marked final", ann.target),
-                );
-            }
+            self.check_final_reassignment(&ann, range, errors);
             if let Some(ty) = ann.ty(self.stdlib) {
                 self.check_and_return_type(context_value, &ty, range, errors, &|| {
                     TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(&ann.target))
