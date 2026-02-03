@@ -411,3 +411,27 @@ class Protocol12(Protocol[T1]):  # should warn: T1 should be covariant
     def __init__(self, x: T1) -> None: ...
 "#,
 );
+
+testcase!(
+    bug = "We should raise an error here on the x: T_co usage in f",
+    test_shallow_covariant_in_param,
+    r#"
+from typing import TypeVar, Generic
+T_co = TypeVar("T_co", covariant=True)
+
+class Foo(Generic[T_co]):
+    def f(self, x: T_co) -> None: ...  # should raise an error on this line
+"#,
+);
+
+testcase!(
+    bug = "We should raise an error on T_contra",
+    test_shallow_contravariant_in_return,
+    r#"
+from typing import TypeVar, Generic
+T_contra = TypeVar("T_contra", contravariant=True)
+
+class Foo(Generic[T_contra]):  
+    def f(self) -> T_contra: ...  # should raise an error on this line
+"#,
+);
