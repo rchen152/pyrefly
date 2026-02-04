@@ -45,6 +45,7 @@ use crate::binding::binding::BindingLegacyTypeParam;
 use crate::binding::binding::BindingTParams;
 use crate::binding::binding::BindingUndecoratedFunction;
 use crate::binding::binding::BindingVariance;
+use crate::binding::binding::BindingVarianceCheck;
 use crate::binding::binding::BindingYield;
 use crate::binding::binding::BindingYieldFrom;
 use crate::binding::binding::EmptyAnswer;
@@ -66,6 +67,7 @@ use crate::binding::binding::KeyLegacyTypeParam;
 use crate::binding::binding::KeyTParams;
 use crate::binding::binding::KeyUndecoratedFunction;
 use crate::binding::binding::KeyVariance;
+use crate::binding::binding::KeyVarianceCheck;
 use crate::binding::binding::KeyYield;
 use crate::binding::binding::KeyYieldFrom;
 use crate::binding::binding::Keyed;
@@ -347,6 +349,22 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyVariance {
 
     fn promote_recursive(_: Var) -> Self::Answer {
         VarianceMap::default()
+    }
+}
+
+impl<Ans: LookupAnswer> Solve<Ans> for KeyVarianceCheck {
+    fn solve(
+        _answers: &AnswersSolver<Ans>,
+        _binding: &BindingVarianceCheck,
+        _range: TextRange,
+        _errors: &ErrorCollector,
+    ) -> Arc<EmptyAnswer> {
+        // Variance checking will be implemented in a future diff
+        Arc::new(EmptyAnswer)
+    }
+
+    fn promote_recursive(_: Var) -> Self::Answer {
+        EmptyAnswer
     }
 }
 

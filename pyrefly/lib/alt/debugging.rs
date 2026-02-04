@@ -108,6 +108,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 AnyIdx::KeyClassBaseType(idx) => self.show_binding_for_with(&bindings, idx),
                 AnyIdx::KeyClassField(idx) => self.show_binding_for_with(&bindings, idx),
                 AnyIdx::KeyVariance(idx) => self.show_binding_for_with(&bindings, idx),
+                AnyIdx::KeyVarianceCheck(idx) => self.show_binding_for_with(&bindings, idx),
                 AnyIdx::KeyClassSynthesizedFields(idx) => {
                     self.show_binding_for_with(&bindings, idx)
                 }

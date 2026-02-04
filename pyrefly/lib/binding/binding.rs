@@ -129,6 +129,7 @@ pub enum AnyIdx {
     KeyClassBaseType(Idx<KeyClassBaseType>),
     KeyClassField(Idx<KeyClassField>),
     KeyVariance(Idx<KeyVariance>),
+    KeyVarianceCheck(Idx<KeyVarianceCheck>),
     KeyClassSynthesizedFields(Idx<KeyClassSynthesizedFields>),
     KeyExport(Idx<KeyExport>),
     KeyDecorator(Idx<KeyDecorator>),
@@ -154,6 +155,7 @@ impl DisplayWith<Bindings> for AnyIdx {
             Self::KeyClassBaseType(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyClassField(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyVariance(idx) => write!(f, "{}", ctx.display(*idx)),
+            Self::KeyVarianceCheck(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyClassSynthesizedFields(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyExport(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyDecorator(idx) => write!(f, "{}", ctx.display(*idx)),
@@ -350,6 +352,17 @@ impl Keyed for KeyVariance {
 impl Exported for KeyVariance {
     fn to_anykey(&self) -> AnyExportedKey {
         AnyExportedKey::KeyVariance(self.clone())
+    }
+}
+impl Keyed for KeyVarianceCheck {
+    const EXPORTED: bool = false;
+    type Value = BindingVarianceCheck;
+    type Answer = EmptyAnswer;
+    fn to_anyidx(idx: Idx<Self>) -> AnyIdx {
+        AnyIdx::KeyVarianceCheck(idx)
+    }
+    fn try_to_anykey(&self) -> Option<AnyExportedKey> {
+        None
     }
 }
 impl Keyed for KeyExport {
@@ -1074,6 +1087,22 @@ impl Ranged for KeyVariance {
 impl DisplayWith<ModuleInfo> for KeyVariance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, _ctx: &ModuleInfo) -> fmt::Result {
         write!(f, "KeyVariance(class{})", self.0)
+    }
+}
+
+/// A key for checking variance violations (separate from KeyVariance to avoid cycles)
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct KeyVarianceCheck(pub ClassDefIndex);
+
+impl Ranged for KeyVarianceCheck {
+    fn range(&self) -> TextRange {
+        TextRange::default()
+    }
+}
+
+impl DisplayWith<ModuleInfo> for KeyVarianceCheck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, _ctx: &ModuleInfo) -> fmt::Result {
+        write!(f, "KeyVarianceCheck(class{})", self.0)
     }
 }
 
@@ -2484,6 +2513,19 @@ pub struct BindingVariance {
 impl DisplayWith<Bindings> for BindingVariance {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, ctx: &Bindings) -> fmt::Result {
         write!(f, "BindingVariance({})", ctx.display(self.class_key))
+    }
+}
+
+/// Binding for checking variance violations.
+/// This is separate from BindingVariance to avoid cycles when checking violations.
+#[derive(Clone, Debug)]
+pub struct BindingVarianceCheck {
+    pub class_idx: Idx<KeyClass>,
+}
+
+impl DisplayWith<Bindings> for BindingVarianceCheck {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, ctx: &Bindings) -> fmt::Result {
+        write!(f, "BindingVarianceCheck({})", ctx.display(self.class_idx))
     }
 }
 
