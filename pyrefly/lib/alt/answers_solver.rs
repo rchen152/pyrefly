@@ -119,6 +119,26 @@ impl Hash for CalcId {
     }
 }
 
+impl CalcId {
+    /// Create a CalcId for testing purposes.
+    ///
+    /// The `module_name` creates a distinguishable module, and `idx` creates
+    /// a distinguishable index within that module. CalcIds with different
+    /// (module_name, idx) pairs will compare as not equal.
+    #[cfg(test)]
+    pub fn for_test(module_name: &str, idx: usize) -> Self {
+        use pyrefly_graph::index::Idx;
+
+        use crate::binding::binding::Key;
+
+        let bindings = Bindings::for_test(module_name);
+        // Create a fake Key index - the actual key doesn't matter for test purposes,
+        // only that different idx values produce different CalcIds
+        let key_idx: Idx<Key> = Idx::new(idx);
+        CalcId(bindings, AnyIdx::Key(key_idx))
+    }
+}
+
 /// Represent a stack of in-progress calculations in an `AnswersSolver`.
 ///
 /// This is useful for debugging, particularly for debugging scc handling.
@@ -321,6 +341,45 @@ impl Scc {
         participants.dedup();
         participants
     }
+
+    /// Merge multiple SCCs into one, preserving all break points and taking the
+    /// most advanced state for each participant.
+    ///
+    /// This is extracted for testability - the merge logic can be tested
+    /// independently of cycle detection.
+    #[cfg_attr(test, allow(dead_code))]
+    #[allow(clippy::mutable_key_type)]
+    fn merge_many(sccs: Vec<Scc>, detected_at: CalcId) -> Self {
+        let mut merged_break_at: BTreeSet<CalcId> = BTreeSet::new();
+        let mut merged_node_state: HashMap<CalcId, NodeState> = HashMap::new();
+        let mut merged_detected_at = detected_at;
+
+        for scc in sccs {
+            // Union break_at sets
+            for b in scc.break_at {
+                merged_break_at.insert(b);
+            }
+            // Union node_state maps (keep the more advanced state)
+            for (k, v) in scc.node_state {
+                merged_node_state
+                    .entry(k)
+                    .and_modify(|existing| *existing = (*existing).max(v))
+                    .or_insert(v);
+            }
+            // Keep the smallest detected_at for consistency/determinism.
+            // The detected_at is used for debugging and for determining when
+            // an SCC is complete, so we use a canonical choice.
+            if scc.detected_at < merged_detected_at {
+                merged_detected_at = scc.detected_at;
+            }
+        }
+
+        Scc {
+            break_at: merged_break_at,
+            node_state: merged_node_state,
+            detected_at: merged_detected_at,
+        }
+    }
 }
 
 /// Represents the current SCC state prior to attempting a particular calculation.
@@ -430,36 +489,8 @@ impl Sccs {
             }
             sccs_to_merge.push(new_scc);
 
-            // Merge all SCCs into one
-            let mut merged_break_at: BTreeSet<CalcId> = BTreeSet::new();
-            let mut merged_node_state: HashMap<CalcId, NodeState> = HashMap::new();
-            let mut merged_detected_at = detected_at.dupe();
-
-            for scc in sccs_to_merge {
-                // Union break_at sets
-                for b in scc.break_at {
-                    merged_break_at.insert(b);
-                }
-                // Union node_state maps (keep the more advanced state)
-                for (k, v) in scc.node_state {
-                    merged_node_state
-                        .entry(k)
-                        .and_modify(|existing| *existing = (*existing).max(v))
-                        .or_insert(v);
-                }
-                // Keep the smallest detected_at for consistency/determinism.
-                // The detected_at is used for debugging and for determining when
-                // an SCC is complete, so we use a canonical choice.
-                if scc.detected_at < merged_detected_at {
-                    merged_detected_at = scc.detected_at;
-                }
-            }
-
-            let merged_scc = Scc {
-                break_at: merged_break_at,
-                node_state: merged_node_state,
-                detected_at: merged_detected_at,
-            };
+            // Use the helper method to merge SCCs
+            let merged_scc = Scc::merge_many(sccs_to_merge, detected_at.dupe());
 
             let result = if merged_scc.break_at.contains(&detected_at) {
                 SccDetectedResult::BreakHere
@@ -1183,5 +1214,401 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 "Either specify the type argument explicitly, or specify a default for the type variable.".to_owned(),
             ],
         );
+    }
+}
+
+#[cfg(test)]
+mod scc_tests {
+    use super::*;
+
+    /// Helper to create a test Scc with given parameters.
+    ///
+    /// This bypasses the normal Scc::new constructor to allow direct construction
+    /// for testing merge logic.
+    #[allow(clippy::mutable_key_type)]
+    fn make_test_scc(
+        break_at: Vec<CalcId>,
+        node_state: HashMap<CalcId, NodeState>,
+        detected_at: CalcId,
+    ) -> Scc {
+        Scc {
+            break_at: break_at.into_iter().collect(),
+            node_state,
+            detected_at,
+        }
+    }
+
+    /// Helper to create node_state map with all nodes Fresh.
+    #[allow(clippy::mutable_key_type)]
+    fn fresh_nodes(ids: &[CalcId]) -> HashMap<CalcId, NodeState> {
+        ids.iter().map(|id| (id.dupe(), NodeState::Fresh)).collect()
+    }
+
+    #[test]
+    fn test_initial_cycle_detection() {
+        // Setup: CalcStack = [M0, M1, M2], detect a cycle [M2, M1, M0]
+        // Expected: New SCC with participants {M0, M1, M2}, break_at = M0 (minimal)
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+
+        let sccs = Sccs::new();
+
+        // Simulate detecting cycle - raw cycle order is from detection point to back-edge target
+        let raw_cycle = vec1![c.dupe(), b.dupe(), a.dupe()];
+        let result = sccs.on_scc_detected(raw_cycle);
+
+        // Should not break immediately since break_at is A (minimal) but detected_at is C
+        assert!(matches!(result, SccDetectedResult::Continue));
+
+        // Verify SCC was created
+        let stack = sccs.0.borrow();
+        assert_eq!(stack.len(), 1);
+
+        let scc = &stack[0];
+        assert!(scc.break_at.contains(&a));
+        assert_eq!(scc.node_state.len(), 3);
+        assert!(scc.node_state.contains_key(&a));
+        assert!(scc.node_state.contains_key(&b));
+        assert!(scc.node_state.contains_key(&c));
+    }
+
+    #[test]
+    fn test_subcycle_within_active_cycle() {
+        // Setup: CalcStack = [M0, M1, M2, M3], existing SCC with {M0, M1, M2, M3}
+        // New cycle detected: [M3, M2, M1] (sub-cycle within the existing SCC)
+        // Expected: Merged into same SCC
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+        let d = CalcId::for_test("m", 3);
+
+        // Create initial SCC with A, B, C, D
+        let sccs = Sccs::new();
+        let initial_cycle = vec1![d.dupe(), c.dupe(), b.dupe(), a.dupe()];
+        sccs.on_scc_detected(initial_cycle);
+
+        // Now detect sub-cycle D -> B
+        let sub_cycle = vec1![d.dupe(), c.dupe(), b.dupe()];
+        sccs.on_scc_detected(sub_cycle);
+
+        // The sub-cycle overlaps with existing SCC, so they merge
+        let stack = sccs.0.borrow();
+        assert_eq!(
+            stack.len(),
+            1,
+            "Should still have exactly one SCC after merging"
+        );
+
+        // All nodes should be in the merged SCC
+        let scc = &stack[0];
+        assert!(scc.node_state.contains_key(&a));
+        assert!(scc.node_state.contains_key(&b));
+        assert!(scc.node_state.contains_key(&c));
+        assert!(scc.node_state.contains_key(&d));
+    }
+
+    #[test]
+    fn test_back_edge_into_existing_cycle() {
+        // CalcStack: [M0, M1, M2, M3, M4, M5]
+        // Existing SCC: {M1, M2, M3}
+        // New cycle: [M5, M4, M3, M2] (back-edge from M5 to M2)
+        // Expected: Merge creates SCC with {M1, M2, M3, M4, M5}
+        let _a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+        let d = CalcId::for_test("m", 3);
+        let e = CalcId::for_test("m", 4);
+        let f = CalcId::for_test("m", 5);
+
+        // Create initial SCC with B, C, D (detected from D going back to B)
+        let sccs = Sccs::new();
+        let initial_cycle = vec1![d.dupe(), c.dupe(), b.dupe()];
+        sccs.on_scc_detected(initial_cycle);
+
+        // Verify initial state
+        {
+            let stack = sccs.0.borrow();
+            assert_eq!(stack.len(), 1);
+            assert_eq!(stack[0].node_state.len(), 3);
+        }
+
+        // Now detect cycle [F, E, D, C] - overlaps with existing at C and D
+        let new_cycle = vec1![f.dupe(), e.dupe(), d.dupe(), c.dupe()];
+        sccs.on_scc_detected(new_cycle);
+
+        // Should merge because new cycle overlaps with existing SCC
+        let stack = sccs.0.borrow();
+        assert_eq!(stack.len(), 1, "Should have merged into one SCC");
+
+        let scc = &stack[0];
+        // B, C, D, E, F should all be in the merged SCC
+        assert!(scc.node_state.contains_key(&b));
+        assert!(scc.node_state.contains_key(&c));
+        assert!(scc.node_state.contains_key(&d));
+        assert!(scc.node_state.contains_key(&e));
+        assert!(scc.node_state.contains_key(&f));
+    }
+
+    #[test]
+    fn test_back_edge_before_existing_cycle() {
+        // CalcStack: [M0, M1, M2, M3, M4, M5]
+        // Existing SCC: {M1, M2, M3}
+        // New cycle: [M5, M4, M3, M2, M1, M0] (back-edge from M5 to M0)
+        // Expected: Merge creates SCC with {M0, M1, M2, M3, M4, M5}
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+        let d = CalcId::for_test("m", 3);
+        let e = CalcId::for_test("m", 4);
+        let f = CalcId::for_test("m", 5);
+
+        // Create initial SCC with B, C, D
+        let sccs = Sccs::new();
+        let initial_cycle = vec1![d.dupe(), c.dupe(), b.dupe()];
+        sccs.on_scc_detected(initial_cycle);
+
+        // Now detect cycle [F, E, D, C, B, A] - includes everything from A to F
+        let new_cycle = vec1![f.dupe(), e.dupe(), d.dupe(), c.dupe(), b.dupe(), a.dupe()];
+        sccs.on_scc_detected(new_cycle);
+
+        // Should merge because new cycle contains the existing SCC
+        let stack = sccs.0.borrow();
+        assert_eq!(stack.len(), 1, "Should have merged into one SCC");
+
+        let scc = &stack[0];
+        // All nodes should be in the merged SCC
+        assert!(scc.node_state.contains_key(&a));
+        assert!(scc.node_state.contains_key(&b));
+        assert!(scc.node_state.contains_key(&c));
+        assert!(scc.node_state.contains_key(&d));
+        assert!(scc.node_state.contains_key(&e));
+        assert!(scc.node_state.contains_key(&f));
+    }
+
+    #[test]
+    fn test_merge_two_components_with_gap() {
+        // CalcStack: [M0, M1, M2, M3, M4, M5, M6, M7]
+        // SCC1: {M0, M1, M2}
+        // SCC2: {M5, M6}
+        // Gap: M3, M4, M7 are not in any SCC
+        //
+        // New cycle: [M7, M6, M5, M4, M3, M2, M1] (M7 back to M1)
+        // Overlaps with SCC1 at {M1, M2} and SCC2 at {M5, M6}
+        //
+        // Expected: All merge into {M0, M1, M2, M3, M4, M5, M6, M7}
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+        let d = CalcId::for_test("m", 3);
+        let e = CalcId::for_test("m", 4);
+        let f = CalcId::for_test("m", 5);
+        let g = CalcId::for_test("m", 6);
+        let h = CalcId::for_test("m", 7);
+
+        let sccs = Sccs::new();
+
+        // Create SCC1: {A, B, C}
+        sccs.on_scc_detected(vec1![c.dupe(), b.dupe(), a.dupe()]);
+
+        // Create SCC2: {F, G}
+        sccs.on_scc_detected(vec1![g.dupe(), f.dupe()]);
+
+        // Verify initial state: two separate SCCs
+        {
+            let stack = sccs.0.borrow();
+            assert_eq!(stack.len(), 2, "Should have two SCCs before merge");
+        }
+
+        // New cycle: [H, G, F, E, D, C, B] - spans both SCCs and the gap
+        let merge_cycle = vec1![
+            h.dupe(),
+            g.dupe(),
+            f.dupe(),
+            e.dupe(),
+            d.dupe(),
+            c.dupe(),
+            b.dupe(),
+        ];
+        sccs.on_scc_detected(merge_cycle);
+
+        // Should merge into one SCC
+        let stack = sccs.0.borrow();
+        assert_eq!(stack.len(), 1, "Should have merged into one SCC");
+
+        let scc = &stack[0];
+        // All nodes should be in the merged SCC
+        // A is included because it was in SCC1 which got merged
+        assert!(
+            scc.node_state.contains_key(&a),
+            "A should be in merged SCC (from SCC1)"
+        );
+        assert!(scc.node_state.contains_key(&b));
+        assert!(scc.node_state.contains_key(&c));
+        assert!(scc.node_state.contains_key(&d));
+        assert!(scc.node_state.contains_key(&e));
+        assert!(scc.node_state.contains_key(&f));
+        assert!(scc.node_state.contains_key(&g));
+        assert!(scc.node_state.contains_key(&h));
+    }
+
+    // Make sure that we only merge overlapping components
+    //
+    // This is critical for the optimization: we must not incorrectly merge
+    // SCC1 just because there's a cycle that spans a large range.
+    #[test]
+    fn test_selective_merge_three_components() {
+        // CalcStack: [M0, M1, M2, M3, M4, M5, M6, M7, M8, M9]
+        //
+        // Three separate SCCs, each with 2 members:
+        //   SCC1: {M0, M1} - does NOT overlap with new cycle
+        //   SCC2: {M3, M4} - overlaps with new cycle
+        //   SCC3: {M7, M8} - overlaps with new cycle
+        //
+        // New cycle: [M9, M8, M7, M6, M5, M4, M3]
+        //   Overlaps with SCC2 at {M3, M4} and SCC3 at {M7, M8}
+        //   Does NOT overlap with SCC1 (M0, M1 not in cycle)
+        //
+        // Expected: SCC2 and SCC3 merge with cycle, but SCC1 stays separate
+        // Result: Two SCCs - {M0, M1} and {M3, M4, M5, M6, M7, M8, M9}
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let d = CalcId::for_test("m", 3);
+        let e = CalcId::for_test("m", 4);
+        let f = CalcId::for_test("m", 5);
+        let g = CalcId::for_test("m", 6);
+        let h = CalcId::for_test("m", 7);
+        let i = CalcId::for_test("m", 8);
+        let j = CalcId::for_test("m", 9);
+
+        let sccs = Sccs::new();
+
+        // Create SCC1: {A, B}
+        sccs.on_scc_detected(vec1![b.dupe(), a.dupe()]);
+
+        // Create SCC2: {D, E}
+        sccs.on_scc_detected(vec1![e.dupe(), d.dupe()]);
+
+        // Create SCC3: {H, I}
+        sccs.on_scc_detected(vec1![i.dupe(), h.dupe()]);
+
+        // Verify: three separate SCCs
+        {
+            let stack = sccs.0.borrow();
+            assert_eq!(stack.len(), 3, "Should have three SCCs initially");
+        }
+
+        // New cycle: [J, I, H, G, F, E, D]
+        // Should merge SCC2 and SCC3 but NOT SCC1
+        let merge_cycle = vec1![
+            j.dupe(),
+            i.dupe(),
+            h.dupe(),
+            g.dupe(),
+            f.dupe(),
+            e.dupe(),
+            d.dupe(),
+        ];
+        sccs.on_scc_detected(merge_cycle);
+
+        // Should now have exactly 2 SCCs
+        let stack = sccs.0.borrow();
+        assert_eq!(stack.len(), 2, "Should have two SCCs after selective merge");
+
+        // Find the SCC containing A (should be separate)
+        let scc_with_a = stack.iter().find(|scc| scc.node_state.contains_key(&a));
+        assert!(scc_with_a.is_some(), "SCC1 should still exist");
+        let scc1 = scc_with_a.unwrap();
+
+        // SCC1 should only contain A and B
+        assert_eq!(scc1.node_state.len(), 2, "SCC1 should only have A and B");
+        assert!(scc1.node_state.contains_key(&a));
+        assert!(scc1.node_state.contains_key(&b));
+
+        // Find the merged SCC (contains D)
+        let scc_with_d = stack.iter().find(|scc| scc.node_state.contains_key(&d));
+        assert!(scc_with_d.is_some(), "Merged SCC should exist");
+        let merged = scc_with_d.unwrap();
+
+        // Merged SCC should contain D, E, F, G, H, I, J (7 nodes)
+        assert_eq!(merged.node_state.len(), 7, "Merged SCC should have 7 nodes");
+        assert!(
+            !merged.node_state.contains_key(&a),
+            "A should not be in merged SCC"
+        );
+        assert!(
+            !merged.node_state.contains_key(&b),
+            "B should not be in merged SCC"
+        );
+        assert!(merged.node_state.contains_key(&d));
+        assert!(merged.node_state.contains_key(&e));
+        assert!(merged.node_state.contains_key(&f));
+        assert!(merged.node_state.contains_key(&g));
+        assert!(merged.node_state.contains_key(&h));
+        assert!(merged.node_state.contains_key(&i));
+        assert!(merged.node_state.contains_key(&j));
+    }
+
+    #[test]
+    fn test_merge_many_preserves_break_points() {
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+        let d = CalcId::for_test("m", 3);
+
+        // Create two SCCs with different break points
+        let scc1 = make_test_scc(vec![a.dupe()], fresh_nodes(&[a.dupe(), b.dupe()]), a.dupe());
+        let scc2 = make_test_scc(vec![c.dupe()], fresh_nodes(&[c.dupe(), d.dupe()]), c.dupe());
+
+        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+
+        // Both break points should be preserved
+        assert!(merged.break_at.contains(&a));
+        assert!(merged.break_at.contains(&c));
+        assert_eq!(merged.break_at.len(), 2);
+
+        // All nodes should be present
+        assert_eq!(merged.node_state.len(), 4);
+    }
+
+    #[test]
+    #[allow(clippy::mutable_key_type)]
+    fn test_merge_many_takes_most_advanced_state() {
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+
+        // SCC1 has M0 as Done, M1 as Fresh
+        let mut scc1_state = HashMap::new();
+        scc1_state.insert(a.dupe(), NodeState::Done);
+        scc1_state.insert(b.dupe(), NodeState::Fresh);
+        let scc1 = make_test_scc(vec![a.dupe()], scc1_state, a.dupe());
+
+        // SCC2 has M0 as Fresh, M1 as InProgress
+        let mut scc2_state = HashMap::new();
+        scc2_state.insert(a.dupe(), NodeState::Fresh);
+        scc2_state.insert(b.dupe(), NodeState::InProgress);
+        let scc2 = make_test_scc(vec![a.dupe()], scc2_state, a.dupe());
+
+        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+
+        // Should take the most advanced state for each node
+        assert_eq!(merged.node_state.get(&a), Some(&NodeState::Done));
+        assert_eq!(merged.node_state.get(&b), Some(&NodeState::InProgress));
+    }
+
+    #[test]
+    fn test_merge_many_keeps_smallest_detected_at() {
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+
+        // SCC1 detected at M1
+        let scc1 = make_test_scc(vec![a.dupe()], fresh_nodes(&[a.dupe(), b.dupe()]), b.dupe());
+        // SCC2 detected at M2
+        let scc2 = make_test_scc(vec![a.dupe()], fresh_nodes(&[a.dupe(), c.dupe()]), c.dupe());
+
+        // When merging with M0 as the new detected_at, should keep M0 (smallest)
+        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+        assert_eq!(merged.detected_at, a);
     }
 }

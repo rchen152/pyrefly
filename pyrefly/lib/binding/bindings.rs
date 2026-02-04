@@ -259,6 +259,31 @@ impl Bindings {
         res
     }
 
+    /// Create a minimal Bindings for testing purposes.
+    ///
+    /// This creates a fake module with the given name and no actual bindings,
+    /// which is useful for creating distinguishable CalcIds in tests.
+    #[cfg(test)]
+    pub fn for_test(name: &str) -> Self {
+        use std::path::PathBuf;
+
+        use pyrefly_python::module::Module;
+        use pyrefly_python::module_path::ModulePath;
+
+        let module_name = ModuleName::from_str(name);
+        let module_path = ModulePath::filesystem(PathBuf::from(format!("/test/{}.py", name)));
+        let contents = Arc::new(String::new());
+        let module_info = Module::new(module_name, module_path, contents);
+        Self(Arc::new(BindingsInner {
+            module_info,
+            table: Default::default(),
+            scope_trace: None,
+            unused_parameters: Vec::new(),
+            unused_imports: Vec::new(),
+            unused_variables: Vec::new(),
+        }))
+    }
+
     pub fn display<K: Keyed>(&self, idx: Idx<K>) -> impl Display + '_
     where
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
