@@ -3291,69 +3291,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    /// Handle `Binding::ScopedTypeAlias` - process PEP 695 type alias.
-    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
-    #[expect(dead_code)]
-    #[inline(never)]
-    fn binding_to_type_scoped_type_alias(
-        &self,
-        name: &Name,
-        params: &Option<TypeParams>,
-        expr: &Expr,
-        errors: &ErrorCollector,
-    ) -> Type {
-        let ty = self.expr_infer(expr, errors);
-        self.type_alias_infer(
-            name,
-            TypeAliasStyle::Scoped,
-            ty,
-            expr,
-            &TypeAliasParams::Scoped(params.clone()),
-            errors,
-        )
-    }
-
-    /// Handle `Binding::TypeAliasType` - process TypeAliasType constructor.
-    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
-    #[expect(dead_code)]
-    #[inline(never)]
-    fn binding_to_type_type_alias_type(
-        &self,
-        ann: Option<Idx<KeyAnnotation>>,
-        name: &Name,
-        x: &(Option<Expr>, Vec<Expr>),
-        errors: &ErrorCollector,
-    ) -> Type {
-        let (Some(expr), type_param_exprs) = x else {
-            return Type::any_error();
-        };
-        let ty = self.expr_infer(expr, errors);
-        let ta = self.type_alias_infer(
-            name,
-            TypeAliasStyle::Scoped,
-            ty,
-            expr,
-            &TypeAliasParams::TypeAliasType(type_param_exprs.clone()),
-            errors,
-        );
-        if let Some(k) = ann
-            && let AnnotationWithTarget {
-                target,
-                annotation:
-                    Annotation {
-                        ty: Some(want),
-                        qualifiers: _,
-                    },
-            } = &*self.get_idx(k)
-        {
-            self.check_and_return_type(ta.clone(), want, expr.range(), errors, &|| {
-                TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(target))
-            })
-        } else {
-            ta
-        }
-    }
-
     /// Handle `Binding::FunctionParameter` - compute function parameter type.
     /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
     #[inline(never)]
