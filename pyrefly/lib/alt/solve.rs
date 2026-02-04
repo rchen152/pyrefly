@@ -4521,17 +4521,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::None => Some(Type::None), // Both a value and a type
             Type::Ellipsis => Some(Type::Ellipsis), // A bit weird because of tuples, so just promote it
             Type::Any(style) => Some(style.propagate()),
-            Type::TypeAlias(ta) => {
-                let mut aliased_type =
-                    self.untype_opt(self.get_type_alias(&ta).as_type(), range, errors)?;
+            Type::TypeAlias(box TypeAliasData::Value(ta)) => {
+                let mut aliased_type = self.untype_opt(ta.as_type(), range, errors)?;
                 if let Type::Union(box Union { display_name, .. }) = &mut aliased_type {
-                    *display_name = Some(ta.name().as_str().into());
+                    *display_name = Some(ta.name.as_str().into());
                 }
                 Some(aliased_type)
             }
-            t @ Type::Unpack(
+            t @ (Type::Unpack(
                 box Type::Tuple(_) | box Type::TypeVarTuple(_) | box Type::Quantified(_),
-            ) => Some(t),
+            )
+            // `as_type_alias` untypes a type alias in order to validate that it is a legal type.
+            // If we hit a recursive reference to the alias while untyping it, return the ref
+            // unchanged to avoid a cycle.
+            | Type::TypeAlias(box TypeAliasData::Ref(_))) => Some(t),
             Type::Unpack(box Type::Var(v)) if let Some(_guard) = self.recurse(v) => self
                 .untype_opt(
                     Type::Unpack(Box::new(self.solver().force_var(v))),

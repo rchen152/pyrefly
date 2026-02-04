@@ -16,6 +16,7 @@ use std::mem;
 use pyrefly_types::quantified::Quantified;
 use pyrefly_types::simplify::intersect;
 use pyrefly_types::special_form::SpecialForm;
+use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::type_alias::TypeAliasRef;
 use pyrefly_types::types::TArgs;
 use pyrefly_types::types::Union;
@@ -381,8 +382,8 @@ impl Solver {
                 *variable = Variable::Answer(Type::any_implicit());
                 None
             }
-            Variable::AliasRecursive(_r) => {
-                *variable = Variable::Answer(Type::any_implicit()); // TODO(rechen): convert to TypeAlias
+            Variable::AliasRecursive(r) => {
+                *variable = Variable::Answer(Self::finish_alias_recursive(r));
                 None
             }
             Variable::Parameter => {
@@ -461,7 +462,7 @@ impl Solver {
                 let ty = match &mut *e {
                     Variable::Quantified(q) => q.as_gradual_type(),
                     Variable::PartialQuantified(q) => q.as_gradual_type(),
-                    Variable::AliasRecursive(_r) => Type::any_implicit(), // TODO(rechen): convert to TypeAlias
+                    Variable::AliasRecursive(r) => Self::finish_alias_recursive(r),
                     _ => Type::any_implicit(),
                 };
                 *e = Variable::Answer(ty.clone());
@@ -908,6 +909,10 @@ impl Solver {
                     *targ = new_targ;
                 }
             })
+    }
+
+    fn finish_alias_recursive(r: &TypeAliasRef) -> Type {
+        Type::TypeAlias(Box::new(TypeAliasData::Ref(r.clone())))
     }
 
     /// Generate a fresh variable used to tie recursive bindings.
