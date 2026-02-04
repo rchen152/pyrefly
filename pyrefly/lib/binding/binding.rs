@@ -185,34 +185,6 @@ pub enum AnyExportedKey {
     KeyAbstractClassCheck(KeyAbstractClassCheck),
 }
 
-/// Represents a changed export for fine-grained incremental invalidation.
-/// This is either a name (for `KeyExport`) or a class index (for class-related keys).
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum ChangedExport {
-    /// A changed export name (from `KeyExport`).
-    Name(Name),
-    /// A changed class (from class-related keys like `KeyClassField`, `KeyClassMetadata`, etc.).
-    ClassDefIndex(ClassDefIndex),
-}
-
-impl AnyExportedKey {
-    /// Convert this key to the corresponding `ChangedExport`.
-    /// `KeyExport` maps to `ChangedExport::Name`, all other keys map to `ChangedExport::ClassDefIndex`.
-    pub fn to_changed_export(&self) -> ChangedExport {
-        match self {
-            AnyExportedKey::KeyExport(k) => ChangedExport::Name(k.0.clone()),
-            AnyExportedKey::KeyTParams(k) => ChangedExport::ClassDefIndex(k.0),
-            AnyExportedKey::KeyClassBaseType(k) => ChangedExport::ClassDefIndex(k.0),
-            AnyExportedKey::KeyClassField(k) => ChangedExport::ClassDefIndex(k.0),
-            AnyExportedKey::KeyClassSynthesizedFields(k) => ChangedExport::ClassDefIndex(k.0),
-            AnyExportedKey::KeyVariance(k) => ChangedExport::ClassDefIndex(k.0),
-            AnyExportedKey::KeyClassMetadata(k) => ChangedExport::ClassDefIndex(k.0),
-            AnyExportedKey::KeyClassMro(k) => ChangedExport::ClassDefIndex(k.0),
-            AnyExportedKey::KeyAbstractClassCheck(k) => ChangedExport::ClassDefIndex(k.0),
-        }
-    }
-}
-
 /// Any key that sets `EXPORTED` to `true` should not include positions
 /// Incremental updates depend on knowing when a file's exports changed, which uses equality between exported keys
 /// Moving code around should not cause all dependencies to be re-checked

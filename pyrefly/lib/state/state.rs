@@ -71,7 +71,6 @@ use crate::alt::answers_solver::AnswersSolver;
 use crate::alt::answers_solver::ThreadState;
 use crate::alt::traits::Solve;
 use crate::binding::binding::AnyExportedKey;
-use crate::binding::binding::ChangedExport;
 use crate::binding::binding::Exported;
 use crate::binding::binding::KeyExport;
 use crate::binding::binding::KeyTParams;
@@ -86,6 +85,7 @@ use crate::config::finder::ConfigError;
 use crate::config::finder::ConfigFinder;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
+use crate::export::definitions::DependsOnNames;
 use crate::export::definitions::SyntacticDeps;
 use crate::export::exports::Export;
 use crate::export::exports::ExportLocation;
@@ -125,9 +125,9 @@ use crate::types::types::Type;
 enum ChangedExports {
     /// No exports changed
     NoChange,
-    /// Specific exports changed (either names or class indices)
-    Changed(SmallSet<ChangedExport>),
-    /// Invalidate all dependents (too complex to track)
+    /// Specific export names changed
+    Changed(SmallSet<Name>),
+    /// Invalidate all dependents (non-export change or too complex to track)
     InvalidateAll,
 }
 
@@ -137,58 +137,41 @@ pub enum DependsOn {
     /// Depends on all exports (star import or `import x`).
     All,
     /// Depends on specific keys (`from x import a, b`).
+    #[allow(dead_code)]
     Keys(SmallSet<AnyExportedKey>),
     /// Depends on nothing
     None,
 }
 
-impl DependsOn {
-    /// Merge another `DependsOn` into this one, returning the combined dependency.
-    fn merge(&self, other: &DependsOn) -> DependsOn {
-        match (self, other) {
-            (DependsOn::All, _) | (_, DependsOn::All) => DependsOn::All,
-            (DependsOn::None, other) => other.clone(),
-            (this, DependsOn::None) => this.clone(),
-            (DependsOn::Keys(a), DependsOn::Keys(b)) => {
-                let mut merged = a.clone();
-                merged.extend(b.iter().cloned());
-                DependsOn::Keys(merged)
-            }
-        }
-    }
-
-    /// Check if this dependency should be invalidated given a set of changed exports.
-    /// Returns true if any of the changed exports overlap with what this dependency imports.
+impl DependsOnNames {
+    /// Check if this dependency should be invalidated given a set of changed names.
+    /// Returns true if any of the changed names overlap with what this dependency imports.
     fn should_invalidate(&self, changed_exports: &ChangedExports) -> bool {
         match changed_exports {
             ChangedExports::NoChange => false,
             ChangedExports::InvalidateAll => true,
             ChangedExports::Changed(changed) => match self {
-                DependsOn::None => false,
-                DependsOn::All => true, // Depends on everything
-                DependsOn::Keys(keys) => keys
-                    .iter()
-                    .any(|key| changed.contains(&key.to_changed_export())),
+                DependsOnNames::All => true, // Depends on everything
+                DependsOnNames::Names(names) => {
+                    // Only invalidate if any changed name is imported
+                    changed.iter().any(|n| names.contains(n))
+                }
             },
         }
     }
 
-    /// Compute which exports to propagate to this dependent based on what changed.
-    fn propagate_exports(&self, changed_exports: &ChangedExports) -> ChangedExports {
+    /// Compute which names to propagate to this dependent based on what changed.
+    fn propagate_names(&self, changed_exports: &ChangedExports) -> ChangedExports {
         match changed_exports {
             ChangedExports::NoChange => ChangedExports::NoChange,
             ChangedExports::InvalidateAll => ChangedExports::InvalidateAll,
             ChangedExports::Changed(changed) => match self {
-                DependsOn::None => ChangedExports::NoChange, // Nothing to propagate
-                DependsOn::All => ChangedExports::Changed(changed.clone()), // Propagate all changes
-                DependsOn::Keys(keys) => {
-                    // Collect all changed exports from the dependency keys
-                    let imported_exports: SmallSet<ChangedExport> =
-                        keys.iter().map(|key| key.to_changed_export()).collect();
-                    // Only propagate exports that are imported
-                    let propagated: SmallSet<ChangedExport> = changed
+                DependsOnNames::All => ChangedExports::Changed(changed.clone()), // Propagate all changes
+                DependsOnNames::Names(imported) => {
+                    // Only propagate names that are imported
+                    let propagated: SmallSet<Name> = changed
                         .iter()
-                        .filter(|e| imported_exports.contains(*e))
+                        .filter(|n| imported.contains(n))
                         .cloned()
                         .collect();
                     if propagated.is_empty() {
@@ -208,7 +191,7 @@ enum ImportResolution {
     /// Successfully resolved import - maps module name to handle(s) with optional dependency tracking.
     /// `None` means the import was resolved for caching only (used during Exports phase).
     /// `Some(DependsOn)` means the import is tracked for fine-grained invalidation (used during Solutions phase).
-    Resolved(SmallMap1<Handle, DependsOn>),
+    Resolved(SmallMap1<Handle, DependsOnNames>),
     /// Failed import - stores the error for incremental invalidation.
     Failed(FindError),
 }
@@ -336,7 +319,7 @@ impl ModuleDataMut {
         &self,
         source_module: ModuleName,
         source_handle: &Handle,
-    ) -> Option<DependsOn> {
+    ) -> Option<DependsOnNames> {
         let deps_guard = self.deps.read();
         deps_guard
             .get(&source_module)
@@ -933,6 +916,46 @@ impl<'a> Transaction<'a> {
         }
     }
 
+    /// Invalidate modules that had failed imports from a module whose exports changed.
+    /// Scans both updated_modules and readable.modules for failed imports.
+    fn invalidate_failed_imports_from(
+        &self,
+        changed_module: &Handle,
+        dirtied: &mut Vec<ArcId<ModuleDataMut>>,
+    ) {
+        let module_name = changed_module.module();
+
+        // Helper closure to invalidate a module with failed imports.
+        // Failed imports use coarse-grained tracking, so we always invalidate.
+        let mut invalidate = |handle: &Handle| {
+            debug!(
+                "Invalidating `{}` due to failed import resolution from `{}`",
+                handle.module(),
+                module_name
+            );
+            self.try_mark_module_dirty(&self.get_module(handle), dirtied);
+        };
+
+        // Scan updated_modules
+        for (handle, module) in self.data.updated_modules.iter_unordered() {
+            let deps = module.deps.read();
+            if let Some(ImportResolution::Failed(_)) = deps.get(&module_name) {
+                drop(deps);
+                invalidate(handle);
+            }
+        }
+
+        // Scan readable.modules for modules not yet in updated_modules
+        for (handle, module_ro) in self.readable.modules.iter() {
+            if self.data.updated_modules.get(handle).is_some() {
+                continue; // Already checked above
+            }
+            if let Some(ImportResolution::Failed(_)) = module_ro.deps.get(&module_name) {
+                invalidate(handle);
+            }
+        }
+    }
+
     /// Compute a module up to the given step, performing single-level fine-grained
     /// invalidation of direct dependents when exports change.
     ///
@@ -1006,22 +1029,27 @@ impl<'a> Transaction<'a> {
                 {
                     *module_data.syntactic_deps.write() = Some(exports.syntactic_deps().clone());
                 }
-                // Compute which exports changed for fine-grained invalidation.
+                // Compute which export names changed for fine-grained invalidation.
                 let changed_exports: ChangedExports = if todo == Step::Solutions {
                     match (old_solutions.as_ref(), writer.steps.solutions.as_ref()) {
-                        (Some(old), Some(new)) => {
-                            let changed = old.changed_exports(new);
-                            if changed.is_empty() {
-                                ChangedExports::NoChange
-                            } else {
+                        (Some(old), Some(new)) => match old.changed_export_names(new) {
+                            None => {
+                                debug!(
+                                    "Exports changed for `{}` (invalidate all)",
+                                    module_data.handle.module()
+                                );
+                                ChangedExports::InvalidateAll
+                            }
+                            Some(names) if names.is_empty() => ChangedExports::NoChange,
+                            Some(names) => {
                                 debug!(
                                     "Exports changed for `{}`: {:?}",
                                     module_data.handle.module(),
-                                    changed
+                                    names
                                 );
-                                ChangedExports::Changed(changed)
+                                ChangedExports::Changed(names)
                             }
-                        }
+                        },
                         (Some(_old), None) => ChangedExports::InvalidateAll, // Had solutions, now don't
                         (None, _) => ChangedExports::NoChange, // No old solutions = no change to propagate
                     }
@@ -1061,6 +1089,14 @@ impl<'a> Transaction<'a> {
                             continue;
                         }
                         self.try_mark_module_dirty(&rdep_module, &mut dirtied);
+                    }
+
+                    // Also check for modules that had failed imports from this module
+                    // If any of the names they tried to import are now available, invalidate them
+                    if let ChangedExports::Changed(names) = &changed_exports
+                        && !names.is_empty()
+                    {
+                        self.invalidate_failed_imports_from(&module_data.handle, &mut dirtied);
                     }
 
                     self.stats.lock().dirty_rdeps += dirtied.len();
@@ -1481,7 +1517,7 @@ impl<'a> Transaction<'a> {
                 let propagated = rdep_module
                     .get_depends_on(module_name, &handle)
                     .map_or(ChangedExports::InvalidateAll, |d| {
-                        d.propagate_exports(&item_changed_exports)
+                        d.propagate_names(&item_changed_exports)
                     });
                 if matches!(&propagated, ChangedExports::NoChange) {
                     continue; // Nothing to propagate
@@ -1516,6 +1552,18 @@ impl<'a> Transaction<'a> {
             }
         }
         self.stats.lock().cycle_rdeps += dirty.len();
+
+        // Also invalidate modules that had failed imports from any of the changed modules
+        let mut failed_import_dirtied = Vec::new();
+        for (m, _) in changed {
+            self.invalidate_failed_imports_from(&m.handle, &mut failed_import_dirtied);
+        }
+        for m in failed_import_dirtied {
+            let hashed = Hashed::new(&m.handle);
+            if !dirty.contains_key_hashed(hashed) {
+                dirty.insert_hashed(hashed.cloned(), m);
+            }
+        }
 
         let mut dirty_set: std::sync::MutexGuard<'_, SmallSet<ArcId<ModuleDataMut>>> =
             self.data.dirty.lock();
@@ -1961,29 +2009,14 @@ impl<'a> TransactionHandle<'a> {
         &self,
         module: ModuleName,
         path: Option<&ModulePath>,
-        depends_on: DependsOn,
+        _depends_on: DependsOn,
     ) -> FindingOrError<ArcId<ModuleDataMut>> {
-        let cached = {
-            let deps_read = self.module_data.deps.read();
-            if let Some(ImportResolution::Resolved(handles)) = deps_read.get(&module)
-                && path.is_none_or(|path| path == handles.first().0.path())
-            {
-                Some(handles.first().0.dupe())
-            } else {
-                None
-            }
-        };
-
-        if let Some(handle) = cached {
-            {
-                let mut write = self.module_data.deps.write();
-                if let Some(ImportResolution::Resolved(handles)) = write.get_mut(&module)
-                    && let Some(existing) = handles.get_mut(&handle)
-                {
-                    *existing = existing.merge(&depends_on);
-                }
-            }
-            return FindingOrError::new_finding(self.transaction.get_imported_module(&handle));
+        if let Some(ImportResolution::Resolved(handles)) = self.module_data.deps.read().get(&module)
+            && path.is_none_or(|path| path == handles.first().0.path())
+        {
+            return FindingOrError::new_finding(
+                self.transaction.get_imported_module(handles.first().0),
+            );
         }
 
         let handle = self
@@ -1996,6 +2029,29 @@ impl<'a> TransactionHandle<'a> {
                 let error = finding.error;
                 let res = self.transaction.get_imported_module(&handle);
 
+                let depends_on = {
+                    let deps = self.module_data.syntactic_deps.read();
+                    match &*deps {
+                        Some(deps) => match deps.deps().get(&module) {
+                            Some(depends_on) => depends_on.clone(),
+                            // There are many examples where we get to this point without having
+                            // seen an import statement for a dependency. I started enumerating them
+                            // here D90647698 but that did not scale. Instead, just assume that any
+                            // module that depends on something without a syntactic dep (import statement)
+                            // is injected by pyrefly and therefore unlikely to be changed often. Intuitively
+                            // these likely do not affect incremental performance much. Examples:
+                            // - Special exports like typing.pyi constructs
+                            // - builtins.pyi which is auto injected
+                            // - abc.pyi and all others auto injected from _type_checker_internals.pyi
+                            // - django.db.models (not sure where this comes from)
+                            // - ... and more
+                            None => DependsOnNames::All,
+                        },
+                        None => {
+                            unreachable!("should have received syntactic_deps from exports");
+                        }
+                    }
+                };
                 let mut write = self.module_data.deps.write();
                 let did_insert = match write.entry(module) {
                     Entry::Vacant(e) => {
@@ -2008,13 +2064,7 @@ impl<'a> TransactionHandle<'a> {
                     Entry::Occupied(mut e) => {
                         match e.get_mut() {
                             ImportResolution::Resolved(handles) => {
-                                if let Some(existing) = handles.get_mut(&handle) {
-                                    *existing = existing.merge(&depends_on);
-                                    false
-                                } else {
-                                    handles.insert(handle, depends_on.clone());
-                                    true
-                                }
+                                handles.insert(handle, depends_on.clone()).is_none()
                             }
                             ImportResolution::Failed(_) => {
                                 // A prior lookup (without explicit path) failed, but this lookup
