@@ -76,6 +76,7 @@ use crate::binding::binding::BindingDecorator;
 use crate::binding::binding::BindingExpect;
 use crate::binding::binding::BindingLegacyTypeParam;
 use crate::binding::binding::BindingTParams;
+use crate::binding::binding::BindingTypeAlias;
 use crate::binding::binding::BindingUndecoratedFunction;
 use crate::binding::binding::BindingVariance;
 use crate::binding::binding::BindingYield;
@@ -1886,6 +1887,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
             }
         }
+        Arc::new(EmptyAnswer)
+    }
+
+    pub fn solve_type_alias(
+        &self,
+        _binding: &BindingTypeAlias,
+        _errors: &ErrorCollector,
+    ) -> Arc<EmptyAnswer> {
         Arc::new(EmptyAnswer)
     }
 

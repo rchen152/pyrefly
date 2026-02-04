@@ -26,6 +26,7 @@ macro_rules! table {
         pub struct $name {
             $($vis)* types: $t<$crate::binding::binding::Key>,
             $($vis)* expectations: $t<$crate::binding::binding::KeyExpect>,
+            $($vis)* type_aliases: $t<$crate::binding::binding::KeyTypeAlias>,
             $($vis)* consistent_override_checks: $t<$crate::binding::binding::KeyConsistentOverrideCheck>,
             $($vis)* exports: $t<$crate::binding::binding::KeyExport>,
             $($vis)* decorators: $t<$crate::binding::binding::KeyDecorator>,
@@ -57,6 +58,12 @@ macro_rules! table {
             type Value = $t<$crate::binding::binding::KeyExpect>;
             fn get(&self) -> &Self::Value { &self.expectations }
             fn get_mut(&mut self) -> &mut Self::Value { &mut self.expectations }
+        }
+
+        impl $crate::binding::table::TableKeyed<$crate::binding::binding::KeyTypeAlias> for $name {
+            type Value = $t<$crate::binding::binding::KeyTypeAlias>;
+            fn get(&self) -> &Self::Value { &self.type_aliases }
+            fn get_mut(&mut self) -> &mut Self::Value { &mut self.type_aliases }
         }
 
         impl $crate::binding::table::TableKeyed<$crate::binding::binding::KeyConsistentOverrideCheck> for $name {
@@ -198,6 +205,7 @@ macro_rules! table_for_each(
     ($e:expr, $f:expr) => {
         $f(&($e).types);
         $f(&($e).expectations);
+        $f(&($e).type_aliases);
         $f(&($e).consistent_override_checks);
         $f(&($e).exports);
         $f(&($e).decorators);
@@ -225,6 +233,7 @@ macro_rules! table_mut_for_each(
     ($e:expr, $f:expr) => {
         $f(&mut ($e).types);
         $f(&mut ($e).expectations);
+        $f(&mut ($e).type_aliases);
         $f(&mut ($e).consistent_override_checks);
         $f(&mut ($e).exports);
         $f(&mut ($e).decorators);
@@ -252,6 +261,7 @@ macro_rules! table_try_for_each(
     ($e:expr, $f:expr) => {
         $f(&($e).types)?;
         $f(&($e).expectations)?;
+        $f(&($e).type_aliases)?;
         $f(&($e).consistent_override_checks)?;
         $f(&($e).exports)?;
         $f(&($e).decorators)?;

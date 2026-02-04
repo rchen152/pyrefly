@@ -20,6 +20,7 @@ use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::nesting_context::NestingContext;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
+use pyrefly_types::type_alias::TypeAliasIndex;
 use pyrefly_util::assert_bytes;
 use pyrefly_util::assert_words;
 use pyrefly_util::display::DisplayWith;
@@ -84,6 +85,7 @@ use crate::types::types::Var;
 
 assert_words!(Key, 6);
 assert_bytes!(KeyExpect, 12);
+assert_bytes!(KeyTypeAlias, 4);
 assert_words!(KeyExport, 3);
 assert_words!(KeyClass, 1);
 assert_bytes!(KeyTParams, 4);
@@ -103,6 +105,7 @@ assert_words!(KeyUndecoratedFunction, 1);
 
 assert_words!(Binding, 11);
 assert_words!(BindingExpect, 16);
+assert_words!(BindingTypeAlias, 0);
 assert_words!(BindingAnnotation, 15);
 assert_words!(BindingClass, 15);
 assert_words!(BindingTParams, 10);
@@ -123,6 +126,7 @@ assert_words!(BindingUndecoratedFunction, 14);
 pub enum AnyIdx {
     Key(Idx<Key>),
     KeyExpect(Idx<KeyExpect>),
+    KeyTypeAlias(Idx<KeyTypeAlias>),
     KeyConsistentOverrideCheck(Idx<KeyConsistentOverrideCheck>),
     KeyClass(Idx<KeyClass>),
     KeyTParams(Idx<KeyTParams>),
@@ -149,6 +153,7 @@ impl DisplayWith<Bindings> for AnyIdx {
         match self {
             Self::Key(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyExpect(idx) => write!(f, "{}", ctx.display(*idx)),
+            Self::KeyTypeAlias(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyConsistentOverrideCheck(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyClass(idx) => write!(f, "{}", ctx.display(*idx)),
             Self::KeyTParams(idx) => write!(f, "{}", ctx.display(*idx)),
@@ -258,6 +263,13 @@ impl Keyed for KeyExpect {
     type Answer = EmptyAnswer;
     fn to_anyidx(idx: Idx<Self>) -> AnyIdx {
         AnyIdx::KeyExpect(idx)
+    }
+}
+impl Keyed for KeyTypeAlias {
+    type Value = BindingTypeAlias;
+    type Answer = EmptyAnswer;
+    fn to_anyidx(idx: Idx<Self>) -> AnyIdx {
+        AnyIdx::KeyTypeAlias(idx)
     }
 }
 impl Keyed for KeyConsistentOverrideCheck {
@@ -734,6 +746,21 @@ impl DisplayWith<ModuleInfo> for KeyExpect {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct KeyTypeAlias(pub TypeAliasIndex);
+
+impl Ranged for KeyTypeAlias {
+    fn range(&self) -> TextRange {
+        TextRange::default()
+    }
+}
+
+impl DisplayWith<ModuleInfo> for KeyTypeAlias {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, _ctx: &ModuleInfo) -> fmt::Result {
+        write!(f, "KeyTypeAlias({})", self.0)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ExprOrBinding {
     Expr(Expr),
@@ -888,6 +915,15 @@ impl DisplayWith<Bindings> for BindingExpect {
                 )
             }
         }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct BindingTypeAlias;
+
+impl DisplayWith<Bindings> for BindingTypeAlias {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>, _ctx: &Bindings) -> fmt::Result {
+        write!(f, "BindingTypeAlias")
     }
 }
 

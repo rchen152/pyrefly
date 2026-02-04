@@ -43,6 +43,7 @@ use crate::binding::binding::BindingExpect;
 use crate::binding::binding::BindingExport;
 use crate::binding::binding::BindingLegacyTypeParam;
 use crate::binding::binding::BindingTParams;
+use crate::binding::binding::BindingTypeAlias;
 use crate::binding::binding::BindingUndecoratedFunction;
 use crate::binding::binding::BindingVariance;
 use crate::binding::binding::BindingVarianceCheck;
@@ -65,6 +66,7 @@ use crate::binding::binding::KeyExpect;
 use crate::binding::binding::KeyExport;
 use crate::binding::binding::KeyLegacyTypeParam;
 use crate::binding::binding::KeyTParams;
+use crate::binding::binding::KeyTypeAlias;
 use crate::binding::binding::KeyUndecoratedFunction;
 use crate::binding::binding::KeyVariance;
 use crate::binding::binding::KeyVarianceCheck;
@@ -154,6 +156,21 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyExpect {
         errors: &ErrorCollector,
     ) -> Arc<EmptyAnswer> {
         answers.solve_expectation(binding, errors)
+    }
+
+    fn promote_recursive(_: Var) -> Self::Answer {
+        EmptyAnswer
+    }
+}
+
+impl<Ans: LookupAnswer> Solve<Ans> for KeyTypeAlias {
+    fn solve(
+        answers: &AnswersSolver<Ans>,
+        binding: &BindingTypeAlias,
+        _range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Arc<EmptyAnswer> {
+        answers.solve_type_alias(binding, errors)
     }
 
     fn promote_recursive(_: Var) -> Self::Answer {

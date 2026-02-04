@@ -7,6 +7,8 @@
 
 use std::fmt;
 
+use dupe::Dupe;
+use parse_display::Display;
 use pyrefly_derive::TypeEq;
 use pyrefly_derive::Visit;
 use pyrefly_derive::VisitMut;
@@ -108,3 +110,8 @@ impl TypeAlias {
         Self::new(name, Type::any_error(), style, Vec::new())
     }
 }
+
+/// The index of a type alias within a file, used to resolve references to recursive type aliases.
+#[derive(Debug, Clone, Dupe, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
+#[derive(Display)]
+pub struct TypeAliasIndex(pub u32);
