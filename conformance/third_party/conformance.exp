@@ -9920,10 +9920,10 @@
     {
       "code": -2,
       "column": 1,
-      "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Any]]] (trying to access unknown)",
-      "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA1, type[type[Any]]] (trying to access unknown)\n  Sorry, Pyrefly encountered an internal error, this is always a bug in Pyrefly itself\n  Please report the bug at https://fb.workplace.com/groups/pyreqa",
+      "concise_description": "Class `type` has no class attribute `unknown`",
+      "description": "Class `type` has no class attribute `unknown`",
       "line": 143,
-      "name": "internal-error",
+      "name": "missing-attribute",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 143
@@ -9931,10 +9931,10 @@
     {
       "code": -2,
       "column": 1,
-      "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA2, type[type[Any]]] (trying to access unknown)",
-      "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA2, type[type[Any]]] (trying to access unknown)\n  Sorry, Pyrefly encountered an internal error, this is always a bug in Pyrefly itself\n  Please report the bug at https://fb.workplace.com/groups/pyreqa",
+      "concise_description": "Class `type` has no class attribute `unknown`",
+      "description": "Class `type` has no class attribute `unknown`",
       "line": 144,
-      "name": "internal-error",
+      "name": "missing-attribute",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 144
@@ -9942,10 +9942,10 @@
     {
       "code": -2,
       "column": 1,
-      "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA3, type[type[Any]]] (trying to access unknown)",
-      "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA3, type[type[Any]]] (trying to access unknown)\n  Sorry, Pyrefly encountered an internal error, this is always a bug in Pyrefly itself\n  Please report the bug at https://fb.workplace.com/groups/pyreqa",
+      "concise_description": "Class `type` has no class attribute `unknown`",
+      "description": "Class `type` has no class attribute `unknown`",
       "line": 145,
-      "name": "internal-error",
+      "name": "missing-attribute",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 145
@@ -9953,10 +9953,10 @@
     {
       "code": -2,
       "column": 1,
-      "concise_description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA4, type[type[Any]]] (trying to access unknown)",
-      "description": "TODO: Expr::attr_infer_for_type attribute base undefined for type: TypeAlias[TA4, type[type[Any]]] (trying to access unknown)\n  Sorry, Pyrefly encountered an internal error, this is always a bug in Pyrefly itself\n  Please report the bug at https://fb.workplace.com/groups/pyreqa",
+      "concise_description": "Class `type` has no class attribute `unknown`",
+      "description": "Class `type` has no class attribute `unknown`",
       "line": 146,
-      "name": "internal-error",
+      "name": "missing-attribute",
       "severity": "error",
       "stop_column": 12,
       "stop_line": 146

@@ -1895,7 +1895,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 | SpecialForm::Protocol
                 | SpecialForm::Tuple,
             )) => acc.push(AttributeBase1::TypeAny(AnyStyle::Implicit)),
-            Type::Type(box Type::SpecialForm(SpecialForm::Type)) => {
+            Type::Type(box Type::SpecialForm(SpecialForm::Type))
+            | Type::Type(box Type::Type(box Type::Any(_))) => {
                 acc.push(AttributeBase1::ClassObject(ClassBase::ClassDef(
                     self.stdlib.builtins_type().clone(),
                 )))
