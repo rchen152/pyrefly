@@ -103,3 +103,70 @@ class C:
     type X = int | list[X]  # E: Could not find name `X`
     "#,
 );
+
+testcase!(
+    bug = "Fails to catch type error in x2, bad reveal_type",
+    test_generic_scoped,
+    r#"
+from typing import reveal_type
+
+type X[T] = T | list[X[T]]
+
+x1: X[int] = [[1]]
+x2: X[str] = [[1]]
+
+def f[T](x: X[T]):
+    reveal_type(x)  # E: list[Unknown] | T
+    "#,
+);
+
+testcase!(
+    bug = "Fails to catch type error in x2, bad reveal_type",
+    test_generic_legacy,
+    r#"
+from typing import reveal_type, TypeVar, Union
+
+T = TypeVar("T")
+
+X = Union[T, list[X[T]]]
+
+x1: X[int] = [[1]]
+x2: X[str] = [[1]]
+
+def f[T](x: X[T]):
+    reveal_type(x)  # E: list[Unknown] | T
+    "#,
+);
+
+testcase!(
+    bug = "Fails to catch illegal subscription",
+    test_illegal_subscript,
+    r#"
+from typing import Union
+type X = int | list[X[int]]
+Y = Union[int, list[Y[int]]]
+    "#,
+);
+
+testcase!(
+    bug = "Fails to catch errors, bad reveal_type",
+    test_generic_multiple_tparams,
+    r#"
+from typing import reveal_type
+
+type X[K, V] = dict[K, V] | list[X[str, V]]
+
+x1: X = {0: 1}
+x2: X[int, int] = {0: 1}
+x3: X[str, int] = {0: 1}  # E: `dict[int, int]` is not assignable to `dict[str, int] | list[Unknown]`
+
+x4: X = [{'ok': 1}]
+x5: X[int, int] = [{'ok': 1}]
+x6: X = [{0: 1}]  # should error!
+x7: X[int, int] = [{'no': 3.14}]  # should error!
+
+def f[K, V](x1: X[K, V], x2: X[int, int]):
+    reveal_type(x1)  # E: dict[K, V] | list[Unknown]
+    reveal_type(x2)  # E: dict[int, int] | list[Unknown]
+    "#,
+);
