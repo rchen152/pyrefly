@@ -13,6 +13,7 @@ use parse_display::Display;
 use pyrefly_derive::TypeEq;
 use pyrefly_derive::Visit;
 use pyrefly_derive::VisitMut;
+use pyrefly_python::module_name::ModuleName;
 use pyrefly_util::display::commas_iter;
 use ruff_python_ast::name::Name;
 
@@ -133,5 +134,35 @@ impl Display for TypeAlias {
 
 /// The index of a type alias within a file, used to resolve references to recursive type aliases.
 #[derive(Debug, Clone, Dupe, Copy, Eq, PartialEq, Hash, PartialOrd, Ord)]
-#[derive(Display)]
+#[derive(Display, Visit, VisitMut, TypeEq)]
 pub struct TypeAliasIndex(pub u32);
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Visit, VisitMut, TypeEq)]
+pub enum TypeAliasData {
+    /// A recursive reference to a type alias. E.g., when resolving `type X = int | list[X]`,
+    /// the `X` in `list[X]` is represented as a `Ref`. This does not store the actual value of the
+    /// alias (i.e., the type of the `int | list[X]` expression). The value has to be looked up
+    /// using the module and type alias index.
+    Ref(TypeAliasRef),
+    /// The value of a type alias - e.g., for `type X = int | list[X]`, this stores
+    /// `type[int | list[X]]`.
+    Value(TypeAlias),
+}
+
+impl TypeAliasData {
+    pub fn name(&self) -> &Name {
+        match self {
+            Self::Ref(r) => &r.name,
+            Self::Value(ta) => &ta.name,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Visit, VisitMut, TypeEq)]
+pub struct TypeAliasRef {
+    pub name: Name,
+    pub module: ModuleName,
+    pub index: TypeAliasIndex,
+}
