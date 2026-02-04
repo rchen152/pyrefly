@@ -3571,14 +3571,20 @@ impl Server {
                             .collect(),
                     );
 
+                    let text_edits = if hint_data.insertable {
+                        Some(vec![TextEdit {
+                            range: Range::new(position, position),
+                            new_text: label_parts.iter().map(|(text, _)| text.as_str()).collect(),
+                        }])
+                    } else {
+                        None
+                    };
+
                     Some(InlayHint {
                         position,
                         label,
                         kind: None,
-                        text_edits: Some(vec![TextEdit {
-                            range: Range::new(position, position),
-                            new_text: label_parts.iter().map(|(text, _)| text.as_str()).collect(),
-                        }]),
+                        text_edits,
                         tooltip: None,
                         padding_left: None,
                         padding_right: None,
