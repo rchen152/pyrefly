@@ -9,7 +9,6 @@ use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
-use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -173,6 +172,7 @@ impl CalcStack {
         self.0.borrow().is_empty()
     }
 
+    /// Return the current stack depth (number of entries on the stack).
     pub fn len(&self) -> usize {
         self.0.borrow().len()
     }
@@ -251,6 +251,13 @@ pub struct Scc {
     node_state: HashMap<CalcId, NodeState>,
     /// Where we detected the SCC (for debugging only)
     detected_at: CalcId,
+    /// The minimum CalcStack depth of any participant - specifically, the
+    /// position of the anchor (minimal CalcId) on the CalcStack when the SCC
+    /// was created. This is well-defined because the anchor is the last
+    /// participant to finish during unwinding.
+    /// Used as a fast filter to skip SCCs that can't possibly overlap with
+    /// a newly detected cycle.
+    min_stack_depth: usize,
 }
 
 impl Display for Scc {
@@ -269,7 +276,7 @@ impl Display for Scc {
 
 impl Scc {
     #[allow(clippy::mutable_key_type)] // CalcId's Hash impl doesn't depend on mutable parts
-    fn new(raw: Vec1<CalcId>) -> Self {
+    fn new(raw: Vec1<CalcId>, calc_stack_vec: &[CalcId]) -> Self {
         let detected_at = raw.first().dupe();
         let (_, break_at) = raw.iter().enumerate().min_by_key(|(_, c)| *c).unwrap();
 
@@ -280,10 +287,18 @@ impl Scc {
         let mut break_at_set = BTreeSet::new();
         break_at_set.insert(break_at.dupe());
 
+        // Find the anchor's position on the CalcStack.
+        // The anchor (minimal CalcId) is where the cycle will complete during unwinding.
+        let min_stack_depth = calc_stack_vec
+            .iter()
+            .position(|c| c == break_at)
+            .unwrap_or(0);
+
         Scc {
             break_at: break_at_set,
             node_state,
             detected_at,
+            min_stack_depth,
         }
     }
 
@@ -353,6 +368,7 @@ impl Scc {
         let mut merged_break_at: BTreeSet<CalcId> = BTreeSet::new();
         let mut merged_node_state: HashMap<CalcId, NodeState> = HashMap::new();
         let mut merged_detected_at = detected_at;
+        let mut merged_min_stack_depth = usize::MAX;
 
         for scc in sccs {
             // Union break_at sets
@@ -372,12 +388,17 @@ impl Scc {
             if scc.detected_at < merged_detected_at {
                 merged_detected_at = scc.detected_at;
             }
+            // Keep the minimum stack depth (the earliest anchor position)
+            if scc.min_stack_depth < merged_min_stack_depth {
+                merged_min_stack_depth = scc.min_stack_depth;
+            }
         }
 
         Scc {
             break_at: merged_break_at,
             node_state: merged_node_state,
             detected_at: merged_detected_at,
+            min_stack_depth: merged_min_stack_depth,
         }
     }
 }
@@ -425,6 +446,37 @@ impl Sccs {
         self.0.borrow().is_empty()
     }
 
+    /// Check if an existing SCC overlaps with a newly detected cycle.
+    ///
+    /// Uses a fast filter based on min_stack_depth + cardinality, then verifies
+    /// by checking if any CalcStack entry in the cycle range is a participant
+    /// in the existing SCC.
+    ///
+    /// This is extracted for testability - overlap detection can be tested
+    /// independently of the full merge logic.
+    #[cfg_attr(test, allow(dead_code))]
+    fn check_overlap(
+        existing: &Scc,
+        cycle_start_pos: usize,
+        stack_depth: usize,
+        calc_stack_vec: &[CalcId],
+    ) -> bool {
+        // Fast filter: if existing SCC's upper bound < new cycle's min, definitely no overlap
+        // Upper bound = min_stack_depth + cardinality (number of participants)
+        let existing_max_bound = existing.min_stack_depth + existing.node_state.len();
+        if existing_max_bound <= cycle_start_pos {
+            return false;
+        }
+
+        // Check if any CalcStack entry in the cycle range is in this SCC
+        (cycle_start_pos..stack_depth).any(|pos| {
+            calc_stack_vec
+                .get(pos)
+                .map(|calc_id| existing.node_state.contains_key(calc_id))
+                .unwrap_or(false)
+        })
+    }
+
     /// Handle an SCC we just detected.
     ///
     /// Return whether to break immediately (which is relatively common, since
@@ -434,8 +486,14 @@ impl Sccs {
     /// When a new SCC overlaps with existing SCCs (shares participants),
     /// we merge them to form a larger SCC. This preserves behavioral equivalence
     /// because all break points are retained in the merged break_at set.
+    ///
+    /// Optimization: We use stack depth to efficiently find overlapping SCCs.
+    /// The cycle spans CalcStack positions [N, M] where M = stack_depth - 1 and
+    /// N = M - cycle_length + 1. Any SCC with max_stack_depth < N cannot overlap.
+    /// Once we find the first overlapping SCC, all subsequent SCCs must also
+    /// overlap (due to LIFO ordering of the SCC stack).
     #[allow(clippy::mutable_key_type)] // CalcId's Hash impl doesn't depend on mutable parts
-    fn on_scc_detected(&self, raw: Vec1<CalcId>) -> SccDetectedResult {
+    fn on_scc_detected(&self, raw: Vec1<CalcId>, calc_stack: &CalcStack) -> SccDetectedResult {
         if self.0.borrow().len() > MAXIMUM_SCC_DEPTH {
             // Check if this is a duplicate of an existing SCC (indicating infinite recursion)
             let normalized_raw = normalize_raw_cycle(&raw);
@@ -451,42 +509,34 @@ impl Sccs {
             // High depth but no duplicate - treat as normal SCC
         }
 
-        // Create the new SCC
-        let new_scc = Scc::new(raw);
+        let stack_depth = calc_stack.len();
+        let calc_stack_vec = calc_stack.into_vec();
+
+        // Create the new SCC - this computes min_stack_depth as the anchor's position
+        let new_scc = Scc::new(raw, &calc_stack_vec);
         let detected_at = new_scc.detected_at.dupe();
+        let cycle_start_pos = new_scc.min_stack_depth;
 
         // Check for overlapping SCCs and merge if needed
-        let mut stack = self.0.borrow_mut();
-        let new_participants: HashSet<&CalcId> = new_scc.node_state.keys().collect();
+        let mut scc_stack = self.0.borrow_mut();
 
-        // Find overlapping SCCs (from bottom of stack to top)
-        let mut merge_indices: Vec<usize> = Vec::new();
-        for (i, existing) in stack.iter().enumerate() {
-            let overlaps = existing
-                .node_state
-                .keys()
-                .any(|k| new_participants.contains(k));
-            if overlaps {
-                merge_indices.push(i);
+        // Find the first (oldest) SCC that overlaps with the new cycle.
+        // Use min_stack_depth + cardinality as a bound for the SCC's max position.
+        // If this bound < cycle_start_pos, the SCC is entirely below the new cycle.
+        // Due to LIFO ordering, once we find one overlapping SCC, all subsequent ones
+        // on the stack must also overlap.
+        let mut first_merge_idx: Option<usize> = None;
+
+        for (i, existing) in scc_stack.iter().enumerate() {
+            if Self::check_overlap(existing, cycle_start_pos, stack_depth, &calc_stack_vec) {
+                first_merge_idx = Some(i);
+                break; // All subsequent SCCs will also overlap
             }
         }
 
-        if merge_indices.is_empty() {
-            // No overlap - just push the new SCC
-            let result = if new_scc.break_at.contains(&detected_at) {
-                SccDetectedResult::BreakHere
-            } else {
-                SccDetectedResult::Continue
-            };
-            stack.push(new_scc);
-            result
-        } else {
-            // Merge all overlapping SCCs into one
-            // Remove overlapping SCCs from stack (in reverse order to preserve indices)
-            let mut sccs_to_merge: Vec<Scc> = Vec::with_capacity(merge_indices.len() + 1);
-            for &i in merge_indices.iter().rev() {
-                sccs_to_merge.push(stack.remove(i));
-            }
+        if let Some(first_idx) = first_merge_idx {
+            // Merge all SCCs from first_idx to end, plus the new SCC
+            let mut sccs_to_merge: Vec<Scc> = scc_stack.drain(first_idx..).collect();
             sccs_to_merge.push(new_scc);
 
             // Use the helper method to merge SCCs
@@ -497,7 +547,16 @@ impl Sccs {
             } else {
                 SccDetectedResult::Continue
             };
-            stack.push(merged_scc);
+            scc_stack.push(merged_scc);
+            result
+        } else {
+            // No overlap - just push the new SCC
+            let result = if new_scc.break_at.contains(&detected_at) {
+                SccDetectedResult::BreakHere
+            } else {
+                SccDetectedResult::Continue
+            };
+            scc_stack.push(new_scc);
             result
         }
     }
@@ -699,7 +758,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(r)),
                 ProposalResult::CycleDetected => {
                     let current_cycle = self.stack().current_cycle().unwrap();
-                    match self.sccs().on_scc_detected(current_cycle) {
+                    match self.sccs().on_scc_detected(current_cycle, self.stack()) {
                         SccDetectedResult::BreakHere => self
                             .attempt_to_unwind_cycle_from_here(idx, calculation)
                             .unwrap_or_else(|r| Arc::new(K::promote_recursive(r))),
@@ -1230,12 +1289,23 @@ mod scc_tests {
         break_at: Vec<CalcId>,
         node_state: HashMap<CalcId, NodeState>,
         detected_at: CalcId,
+        min_stack_depth: usize,
     ) -> Scc {
         Scc {
             break_at: break_at.into_iter().collect(),
             node_state,
             detected_at,
+            min_stack_depth,
         }
+    }
+
+    /// Helper to create a CalcStack for testing.
+    fn make_calc_stack(entries: &[CalcId]) -> CalcStack {
+        let stack = CalcStack::new();
+        for entry in entries {
+            stack.push(entry.dupe());
+        }
+        stack
     }
 
     /// Helper to create node_state map with all nodes Fresh.
@@ -1252,11 +1322,12 @@ mod scc_tests {
         let b = CalcId::for_test("m", 1);
         let c = CalcId::for_test("m", 2);
 
+        let calc_stack = make_calc_stack(&[a.dupe(), b.dupe(), c.dupe()]);
         let sccs = Sccs::new();
 
         // Simulate detecting cycle - raw cycle order is from detection point to back-edge target
         let raw_cycle = vec1![c.dupe(), b.dupe(), a.dupe()];
-        let result = sccs.on_scc_detected(raw_cycle);
+        let result = sccs.on_scc_detected(raw_cycle, &calc_stack);
 
         // Should not break immediately since break_at is A (minimal) but detected_at is C
         assert!(matches!(result, SccDetectedResult::Continue));
@@ -1283,14 +1354,16 @@ mod scc_tests {
         let c = CalcId::for_test("m", 2);
         let d = CalcId::for_test("m", 3);
 
-        // Create initial SCC with A, B, C, D
+        let calc_stack = make_calc_stack(&[a.dupe(), b.dupe(), c.dupe(), d.dupe()]);
         let sccs = Sccs::new();
+
+        // Create initial SCC with A, B, C, D
         let initial_cycle = vec1![d.dupe(), c.dupe(), b.dupe(), a.dupe()];
-        sccs.on_scc_detected(initial_cycle);
+        sccs.on_scc_detected(initial_cycle, &calc_stack);
 
         // Now detect sub-cycle D -> B
         let sub_cycle = vec1![d.dupe(), c.dupe(), b.dupe()];
-        sccs.on_scc_detected(sub_cycle);
+        sccs.on_scc_detected(sub_cycle, &calc_stack);
 
         // The sub-cycle overlaps with existing SCC, so they merge
         let stack = sccs.0.borrow();
@@ -1314,17 +1387,20 @@ mod scc_tests {
         // Existing SCC: {M1, M2, M3}
         // New cycle: [M5, M4, M3, M2] (back-edge from M5 to M2)
         // Expected: Merge creates SCC with {M1, M2, M3, M4, M5}
-        let _a = CalcId::for_test("m", 0);
+        let a = CalcId::for_test("m", 0);
         let b = CalcId::for_test("m", 1);
         let c = CalcId::for_test("m", 2);
         let d = CalcId::for_test("m", 3);
         let e = CalcId::for_test("m", 4);
         let f = CalcId::for_test("m", 5);
 
-        // Create initial SCC with B, C, D (detected from D going back to B)
+        let calc_stack =
+            make_calc_stack(&[a.dupe(), b.dupe(), c.dupe(), d.dupe(), e.dupe(), f.dupe()]);
         let sccs = Sccs::new();
+
+        // Create initial SCC with B, C, D (detected from D going back to B)
         let initial_cycle = vec1![d.dupe(), c.dupe(), b.dupe()];
-        sccs.on_scc_detected(initial_cycle);
+        sccs.on_scc_detected(initial_cycle, &calc_stack);
 
         // Verify initial state
         {
@@ -1335,7 +1411,7 @@ mod scc_tests {
 
         // Now detect cycle [F, E, D, C] - overlaps with existing at C and D
         let new_cycle = vec1![f.dupe(), e.dupe(), d.dupe(), c.dupe()];
-        sccs.on_scc_detected(new_cycle);
+        sccs.on_scc_detected(new_cycle, &calc_stack);
 
         // Should merge because new cycle overlaps with existing SCC
         let stack = sccs.0.borrow();
@@ -1363,14 +1439,17 @@ mod scc_tests {
         let e = CalcId::for_test("m", 4);
         let f = CalcId::for_test("m", 5);
 
-        // Create initial SCC with B, C, D
+        let calc_stack =
+            make_calc_stack(&[a.dupe(), b.dupe(), c.dupe(), d.dupe(), e.dupe(), f.dupe()]);
         let sccs = Sccs::new();
+
+        // Create initial SCC with B, C, D
         let initial_cycle = vec1![d.dupe(), c.dupe(), b.dupe()];
-        sccs.on_scc_detected(initial_cycle);
+        sccs.on_scc_detected(initial_cycle, &calc_stack);
 
         // Now detect cycle [F, E, D, C, B, A] - includes everything from A to F
         let new_cycle = vec1![f.dupe(), e.dupe(), d.dupe(), c.dupe(), b.dupe(), a.dupe()];
-        sccs.on_scc_detected(new_cycle);
+        sccs.on_scc_detected(new_cycle, &calc_stack);
 
         // Should merge because new cycle contains the existing SCC
         let stack = sccs.0.borrow();
@@ -1406,13 +1485,23 @@ mod scc_tests {
         let g = CalcId::for_test("m", 6);
         let h = CalcId::for_test("m", 7);
 
+        let calc_stack = make_calc_stack(&[
+            a.dupe(),
+            b.dupe(),
+            c.dupe(),
+            d.dupe(),
+            e.dupe(),
+            f.dupe(),
+            g.dupe(),
+            h.dupe(),
+        ]);
         let sccs = Sccs::new();
 
         // Create SCC1: {A, B, C}
-        sccs.on_scc_detected(vec1![c.dupe(), b.dupe(), a.dupe()]);
+        sccs.on_scc_detected(vec1![c.dupe(), b.dupe(), a.dupe()], &calc_stack);
 
         // Create SCC2: {F, G}
-        sccs.on_scc_detected(vec1![g.dupe(), f.dupe()]);
+        sccs.on_scc_detected(vec1![g.dupe(), f.dupe()], &calc_stack);
 
         // Verify initial state: two separate SCCs
         {
@@ -1430,7 +1519,7 @@ mod scc_tests {
             c.dupe(),
             b.dupe(),
         ];
-        sccs.on_scc_detected(merge_cycle);
+        sccs.on_scc_detected(merge_cycle, &calc_stack);
 
         // Should merge into one SCC
         let stack = sccs.0.borrow();
@@ -1473,6 +1562,7 @@ mod scc_tests {
         // Result: Two SCCs - {M0, M1} and {M3, M4, M5, M6, M7, M8, M9}
         let a = CalcId::for_test("m", 0);
         let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
         let d = CalcId::for_test("m", 3);
         let e = CalcId::for_test("m", 4);
         let f = CalcId::for_test("m", 5);
@@ -1481,16 +1571,28 @@ mod scc_tests {
         let i = CalcId::for_test("m", 8);
         let j = CalcId::for_test("m", 9);
 
+        let calc_stack = make_calc_stack(&[
+            a.dupe(),
+            b.dupe(),
+            c.dupe(),
+            d.dupe(),
+            e.dupe(),
+            f.dupe(),
+            g.dupe(),
+            h.dupe(),
+            i.dupe(),
+            j.dupe(),
+        ]);
         let sccs = Sccs::new();
 
         // Create SCC1: {A, B}
-        sccs.on_scc_detected(vec1![b.dupe(), a.dupe()]);
+        sccs.on_scc_detected(vec1![b.dupe(), a.dupe()], &calc_stack);
 
         // Create SCC2: {D, E}
-        sccs.on_scc_detected(vec1![e.dupe(), d.dupe()]);
+        sccs.on_scc_detected(vec1![e.dupe(), d.dupe()], &calc_stack);
 
         // Create SCC3: {H, I}
-        sccs.on_scc_detected(vec1![i.dupe(), h.dupe()]);
+        sccs.on_scc_detected(vec1![i.dupe(), h.dupe()], &calc_stack);
 
         // Verify: three separate SCCs
         {
@@ -1509,7 +1611,7 @@ mod scc_tests {
             e.dupe(),
             d.dupe(),
         ];
-        sccs.on_scc_detected(merge_cycle);
+        sccs.on_scc_detected(merge_cycle, &calc_stack);
 
         // Should now have exactly 2 SCCs
         let stack = sccs.0.borrow();
@@ -1557,8 +1659,18 @@ mod scc_tests {
         let d = CalcId::for_test("m", 3);
 
         // Create two SCCs with different break points
-        let scc1 = make_test_scc(vec![a.dupe()], fresh_nodes(&[a.dupe(), b.dupe()]), a.dupe());
-        let scc2 = make_test_scc(vec![c.dupe()], fresh_nodes(&[c.dupe(), d.dupe()]), c.dupe());
+        let scc1 = make_test_scc(
+            vec![a.dupe()],
+            fresh_nodes(&[a.dupe(), b.dupe()]),
+            a.dupe(),
+            0, // min_stack_depth
+        );
+        let scc2 = make_test_scc(
+            vec![c.dupe()],
+            fresh_nodes(&[c.dupe(), d.dupe()]),
+            c.dupe(),
+            2, // min_stack_depth
+        );
 
         let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
 
@@ -1569,6 +1681,9 @@ mod scc_tests {
 
         // All nodes should be present
         assert_eq!(merged.node_state.len(), 4);
+
+        // min_stack_depth should be the minimum (0)
+        assert_eq!(merged.min_stack_depth, 0);
     }
 
     #[test]
@@ -1581,13 +1696,13 @@ mod scc_tests {
         let mut scc1_state = HashMap::new();
         scc1_state.insert(a.dupe(), NodeState::Done);
         scc1_state.insert(b.dupe(), NodeState::Fresh);
-        let scc1 = make_test_scc(vec![a.dupe()], scc1_state, a.dupe());
+        let scc1 = make_test_scc(vec![a.dupe()], scc1_state, a.dupe(), 0);
 
         // SCC2 has M0 as Fresh, M1 as InProgress
         let mut scc2_state = HashMap::new();
         scc2_state.insert(a.dupe(), NodeState::Fresh);
         scc2_state.insert(b.dupe(), NodeState::InProgress);
-        let scc2 = make_test_scc(vec![a.dupe()], scc2_state, a.dupe());
+        let scc2 = make_test_scc(vec![a.dupe()], scc2_state, a.dupe(), 0);
 
         let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
 
@@ -1601,14 +1716,44 @@ mod scc_tests {
         let a = CalcId::for_test("m", 0);
         let b = CalcId::for_test("m", 1);
         let c = CalcId::for_test("m", 2);
-
         // SCC1 detected at M1
-        let scc1 = make_test_scc(vec![a.dupe()], fresh_nodes(&[a.dupe(), b.dupe()]), b.dupe());
+        let scc1 = make_test_scc(
+            vec![a.dupe()],
+            fresh_nodes(&[a.dupe(), b.dupe()]),
+            b.dupe(),
+            0,
+        );
         // SCC2 detected at M2
-        let scc2 = make_test_scc(vec![a.dupe()], fresh_nodes(&[a.dupe(), c.dupe()]), c.dupe());
-
+        let scc2 = make_test_scc(
+            vec![a.dupe()],
+            fresh_nodes(&[a.dupe(), c.dupe()]),
+            c.dupe(),
+            0,
+        );
         // When merging with M0 as the new detected_at, should keep M0 (smallest)
         let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
         assert_eq!(merged.detected_at, a);
+    }
+
+    #[test]
+    fn test_merge_many_keeps_minimum_stack_depth() {
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+
+        // SCC1 with min_stack_depth = 5
+        let scc1 = make_test_scc(
+            vec![a.dupe()],
+            fresh_nodes(&[a.dupe(), b.dupe()]),
+            a.dupe(),
+            5,
+        );
+        // SCC2 with min_stack_depth = 2
+        let scc2 = make_test_scc(vec![c.dupe()], fresh_nodes(&[c.dupe()]), c.dupe(), 2);
+
+        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+
+        // Should keep the minimum stack depth
+        assert_eq!(merged.min_stack_depth, 2);
     }
 }
