@@ -86,6 +86,7 @@ use crate::config::finder::ConfigError;
 use crate::config::finder::ConfigFinder;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
+use crate::export::definitions::SyntacticDeps;
 use crate::export::exports::Export;
 use crate::export::exports::ExportLocation;
 use crate::export::exports::Exports;
@@ -224,6 +225,9 @@ struct ModuleData {
     /// Most modules exist in exactly one place, but it can be possible to load the same module multiple times with different paths.
     deps: HashMap<ModuleName, ImportResolution, BuildNoHash>,
     rdeps: HashSet<Handle>,
+    /// Syntactic dependencies for fine-grained incremental invalidation.
+    /// Populated from Exports after the Exports step completes.
+    syntactic_deps: Option<SyntacticDeps>,
 }
 
 #[derive(Debug)]
@@ -242,6 +246,9 @@ struct ModuleDataMut {
     /// Note that if we are only running once, e.g. on the command line, this isn't valuable.
     /// But we create it anyway for simplicity, since it doesn't seem to add much overhead.
     rdeps: Mutex<HashSet<Handle>>,
+    /// Syntactic dependencies for fine-grained incremental invalidation.
+    /// Populated from Exports after the Exports step completes.
+    syntactic_deps: RwLock<Option<SyntacticDeps>>,
 }
 
 /// The fields of `ModuleDataMut` that are stored together as they might be mutated.
@@ -281,6 +288,7 @@ impl ModuleData {
             state: UpgradeLock::new(self.state.clone()),
             deps: RwLock::new(self.deps.clone()),
             rdeps: Mutex::new(self.rdeps.clone()),
+            syntactic_deps: RwLock::new(self.syntactic_deps.clone()),
         }
     }
 }
@@ -293,6 +301,7 @@ impl ModuleDataMut {
             state: UpgradeLock::new(ModuleDataInner::new(require, now)),
             deps: Default::default(),
             rdeps: Default::default(),
+            syntactic_deps: RwLock::new(None),
         }
     }
 
@@ -305,9 +314,11 @@ impl ModuleDataMut {
             state,
             deps,
             rdeps,
+            syntactic_deps,
         } = self;
         let deps = mem::take(&mut *deps.write());
         let rdeps = mem::take(&mut *rdeps.lock());
+        let syntactic_deps = mem::take(&mut *syntactic_deps.write());
         let state = state.read().clone();
         ModuleData {
             handle: handle.dupe(),
@@ -315,6 +326,7 @@ impl ModuleDataMut {
             state,
             deps,
             rdeps,
+            syntactic_deps,
         }
     }
 
@@ -988,6 +1000,12 @@ impl<'a> Transaction<'a> {
                     None
                 };
                 set.0(&mut writer.steps);
+                // After Exports step, populate syntactic_deps from Exports
+                if todo == Step::Exports
+                    && let Some(ref exports) = writer.steps.exports
+                {
+                    *module_data.syntactic_deps.write() = Some(exports.syntactic_deps().clone());
+                }
                 // Compute which exports changed for fine-grained invalidation.
                 let changed_exports: ChangedExports = if todo == Step::Solutions {
                     match (old_solutions.as_ref(), writer.steps.solutions.as_ref()) {
