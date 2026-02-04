@@ -570,12 +570,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     _ => self.stdlib.str().clone().to_type(),
                 }
             }
-            Expr::TString(x) => self.error(
-                errors,
-                x.range,
-                ErrorInfo::Kind(ErrorKind::Unsupported),
-                "t-strings are not yet supported".to_owned(),
-            ),
+            Expr::TString(x) => {
+                x.visit(&mut |x| {
+                    self.expr_infer(x, errors);
+                });
+                if let Some(template) = self.stdlib.template() {
+                    template.clone().to_type()
+                } else {
+                    self.error(
+                        errors,
+                        x.range,
+                        ErrorInfo::Kind(ErrorKind::InvalidSyntax),
+                        "t-strings are only available in Python 3.14+".to_owned(),
+                    )
+                }
+            }
             Expr::StringLiteral(x) => Lit::from_string_literal(x).to_implicit_type(),
             Expr::BytesLiteral(x) => Lit::from_bytes_literal(x).to_implicit_type(),
             Expr::NumberLiteral(x) => match &x.value {
