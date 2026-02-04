@@ -18,6 +18,7 @@ use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_types::callable::FunctionKind;
 use pyrefly_types::literal::LitStyle;
+use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::typed_dict::AnonymousTypedDictInner;
 use pyrefly_types::typed_dict::ExtraItems;
 use pyrefly_types::typed_dict::TypedDict;
@@ -2149,6 +2150,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         }
                     })
                 }
+                // TODO(rechen): handle generic recursive aliases
+                Type::TypeAlias(box TypeAliasData::Ref(_)) => Type::any_implicit(),
                 t => self.error(
                     errors,
                     range,

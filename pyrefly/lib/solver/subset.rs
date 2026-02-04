@@ -948,6 +948,13 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             (_, Type::ClassType(want)) if want.is_builtin("object") => {
                 Ok(()) // everything is an instance of `object`
             }
+            // TODO(rechen): these are references to recursive type aliases, which used to resolve to `Any`.
+            // We keep the `Any` behavior to avoid spurious errors while real support is in-progress.
+            (Type::TypeAlias(box TypeAliasData::Ref(_)), _)
+            | (_, Type::TypeAlias(box TypeAliasData::Ref(_))) => Ok(()),
+            (Type::TypeAlias(box TypeAliasData::Value(ta)), _) => {
+                self.is_subset_eq(&ta.as_value(self.type_order.stdlib()), want)
+            }
             (Type::Quantified(q), Type::Ellipsis) | (Type::Ellipsis, Type::Quantified(q))
                 if q.kind() == QuantifiedKind::ParamSpec =>
             {
@@ -1444,9 +1451,6 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 )
             }
             (_, Type::Forall(forall)) => self.is_subset_eq(got, &forall.body.clone().as_type()),
-            (Type::TypeAlias(box TypeAliasData::Value(ta)), _) => {
-                self.is_subset_eq(&ta.as_value(self.type_order.stdlib()), want)
-            }
             _ => Err(SubsetError::Other),
         }
     }
