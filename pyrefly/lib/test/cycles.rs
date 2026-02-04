@@ -488,3 +488,100 @@ testcase!(
 from forward_refs import Container
 "#,
 );
+
+// A small reproduction from parso/python/tokenize.py of a stack overflow
+// that we hit when making changes to SCC resolution; useful to have in the
+// unit tests to ensure we don't repeat the same bug. We spent several hours
+// minimizing the repro to ~85 lines, it may be possible to further minimize
+// but this seems good, the goal is just to have the unit test suite ensure
+// we don't crash.
+//
+// The actual errors are not of any particular interest, we care about the
+// binding graph traversal here.
+testcase!(
+    tokenize_minimal_scc_stack_overflow,
+    r#"
+from typing import NamedTuple, Tuple, Iterator, Iterable, List, Dict, Pattern, Set
+
+class Token(NamedTuple):
+    type: int
+    string: str
+    start_pos: Tuple[int, int]
+    prefix: str
+
+class PythonToken(Token):
+    pass
+
+class FStringNode:
+    quote: str
+    def is_in_expr(self) -> bool: ...
+
+def tokenize_lines(
+    lines: Iterable[str],
+    *,
+    pseudo_token: Pattern,
+    triple_quoted: Set[str],
+    endpats: Dict[str, Pattern],
+) -> Iterator[PythonToken]:
+    contstr = ''
+    contstr_start: Tuple[int, int]
+    endprog: Pattern
+    prefix = ''
+    additional_prefix = ''
+    lnum = 0
+    fstring_stack: List[FStringNode] = []
+
+    for line in lines:
+        lnum += 1
+        pos = 0
+        max_ = len(line)
+
+        if contstr:
+            endmatch = endprog.match(line)  # E:
+            if endmatch:
+                pos = endmatch.end(0)
+                yield PythonToken(0, contstr + line[:pos], contstr_start, prefix)  # E:
+                contstr = ''
+            else:
+                contstr = contstr + line
+                continue
+
+        while pos < max_:
+            if fstring_stack:
+                tos = fstring_stack[-1]
+                if not tos.is_in_expr():
+                    if pos == max_:
+                        break
+
+            if fstring_stack:
+                string_line = line
+                for fstring_stack_node in fstring_stack:
+                    quote = fstring_stack_node.quote
+                    end_match = endpats[quote].match(line, pos)
+                    if end_match is not None:
+                        end_match_string = end_match.group(0)
+                        string_line = line[:pos] + end_match_string
+                pseudomatch = pseudo_token.match(string_line, pos)
+            else:
+                pseudomatch = pseudo_token.match(line, pos)
+
+            if pseudomatch:
+                prefix = additional_prefix + pseudomatch.group(1)
+                additional_prefix = ''
+                start, pos = pseudomatch.span(2)
+                spos = (lnum, start)
+                token = pseudomatch.group(2)
+            else:
+                break
+
+            if token in triple_quoted:
+                endprog = endpats[token]
+                endmatch = endprog.match(line, pos)
+                if endmatch:
+                    pos = endmatch.end(0)
+                    yield PythonToken(0, token, spos, prefix)
+                else:
+                    contstr_start = spos
+                    contstr = line[start:]
+"#,
+);
