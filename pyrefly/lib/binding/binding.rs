@@ -186,13 +186,19 @@ pub enum AnyExportedKey {
 }
 
 /// Represents a changed export for fine-grained incremental invalidation.
-/// This is either a name (for `KeyExport`) or a class index (for class-related keys).
+/// This is either a name (for `KeyExport`), a class index (for class-related keys),
+/// a wildcard set change (for `from M import *`), or a name existence change.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ChangedExport {
-    /// A changed export name (from `KeyExport`).
+    /// A changed export name (from `KeyExport`). The type of this export changed.
     Name(Name),
     /// A changed class (from class-related keys like `KeyClassField`, `KeyClassMetadata`, etc.).
     ClassDefIndex(ClassDefIndex),
+    /// The wildcard set changed (names exported via `from M import *`).
+    Wildcard,
+    /// A name was added or removed from the module's definitions.
+    /// This is detected at the Exports step, before types are computed.
+    NameExistence(Name),
 }
 
 impl AnyExportedKey {
