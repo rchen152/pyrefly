@@ -84,3 +84,22 @@ def f(x: X) -> Y:
     return x
     "#,
 );
+
+testcase!(
+    test_class_attr,
+    r#"
+class C:
+    type X = int | list[C.X]
+x1: C.X = [[1]]
+x2: C.X = [["oops"]]  # E: not assignable
+    "#,
+);
+
+testcase!(
+    bug = "Fails to resolve forward ref",
+    test_unqualified_class_attr_ref,
+    r#"
+class C:
+    type X = int | list[X]  # E: Could not find name `X`
+    "#,
+);
