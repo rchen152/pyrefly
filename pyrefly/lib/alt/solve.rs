@@ -754,10 +754,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             Type::Tuple(Tuple::Concrete(elts)) => vec![Iterable::FixedLen(elts.clone())],
             Type::Tuple(Tuple::Unbounded(box elt)) => vec![Iterable::OfType(elt.clone())],
-            Type::Tuple(Tuple::Unpacked(box (prefix, Type::Quantified(box q), suffix)))
-                if prefix.is_empty() && suffix.is_empty() && q.is_type_var_tuple() =>
+            Type::Tuple(Tuple::Unpacked(box (prefix, middle, suffix)))
+                if prefix.is_empty() && suffix.is_empty() =>
             {
-                vec![Iterable::OfTypeVarTuple(q.clone())]
+                if let Type::Quantified(q) = middle
+                    && q.is_type_var_tuple()
+                {
+                    vec![Iterable::OfTypeVarTuple((**q).clone())]
+                } else {
+                    self.iterate(middle, range, errors, orig_context)
+                }
             }
             Type::Var(v) if let Some(_guard) = self.recurse(*v) => {
                 self.iterate(&self.solver().force_var(*v), range, errors, orig_context)
