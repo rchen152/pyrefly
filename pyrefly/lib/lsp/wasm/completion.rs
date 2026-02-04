@@ -46,6 +46,13 @@ use crate::state::state::Transaction;
 use crate::types::callable::Param;
 use crate::types::types::Type;
 
+/// Sort text prefix for autoimport completions from public modules.
+const SORT_AUTOIMPORT_PUBLIC: &str = "4a";
+/// Sort text prefix for autoimport completions from private modules (deprioritized).
+const SORT_AUTOIMPORT_PRIVATE: &str = "4b";
+/// Default sort text for autoimport completions (used when no explicit sort text is set).
+const SORT_AUTOIMPORT_DEFAULT: &str = "4";
+
 /// Options that influence completion item formatting and behavior.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CompletionOptions {
@@ -394,6 +401,13 @@ impl Transaction<'_> {
             && let Some(ast) = self.get_ast(handle)
             && let Some(module_info) = self.get_module_info(handle)
         {
+            let autoimport_sort_text = |module_name: &str| {
+                if module_name.split('.').any(|part| part.starts_with('_')) {
+                    SORT_AUTOIMPORT_PRIVATE
+                } else {
+                    SORT_AUTOIMPORT_PUBLIC
+                }
+            };
             for (handle_to_import_from, name, export) in
                 self.search_exports_fuzzy(identifier.as_str())
             {
@@ -403,7 +417,6 @@ impl Transaction<'_> {
                 {
                     continue;
                 }
-                let depth = handle_to_import_from.module().components().len();
                 let module_description = handle_to_import_from.module().as_str().to_owned();
                 let (insert_text, additional_text_edits, imported_module) = {
                     let (position, insert_text, module_name) = insert_import_edit(
@@ -442,7 +455,7 @@ impl Transaction<'_> {
                     } else {
                         None
                     },
-                    sort_text: Some(format!("4{}", depth)),
+                    sort_text: Some(autoimport_sort_text(&imported_module).to_owned()),
                     ..Default::default()
                 });
             }
@@ -452,6 +465,7 @@ impl Transaction<'_> {
                     continue;
                 }
                 let module_name_str = module_name.as_str().to_owned();
+                let module_sort_text = autoimport_sort_text(&module_name_str).to_owned();
                 if let Some(module_handle) = self.import_handle(handle, module_name, None).finding()
                 {
                     let (insert_text, additional_text_edits) = {
@@ -474,9 +488,10 @@ impl Transaction<'_> {
                         label_details: supports_completion_item_details.then_some(
                             CompletionItemLabelDetails {
                                 detail: Some(auto_import_label_detail),
-                                description: Some(module_name_str),
+                                description: Some(module_name_str.clone()),
                             },
                         ),
+                        sort_text: Some(module_sort_text),
                         ..Default::default()
                     });
                 }
@@ -691,15 +706,15 @@ impl Transaction<'_> {
                 .is_some_and(|tags| tags.contains(&CompletionItemTag::DEPRECATED))
             {
                 "9"
+            } else if let Some(sort_text) = &item.sort_text {
+                // 1 is reserved for re-exports
+                sort_text.as_str()
             } else if item.additional_text_edits.is_some() {
-                "4"
+                SORT_AUTOIMPORT_DEFAULT
             } else if item.label.starts_with("__") {
                 "3"
             } else if item.label.as_str().starts_with("_") {
                 "2"
-            } else if let Some(sort_text) = &item.sort_text {
-                // 1 is reserved for re-exports
-                sort_text.as_str()
             } else {
                 "0"
             }
