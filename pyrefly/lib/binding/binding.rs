@@ -105,7 +105,7 @@ assert_words!(KeyUndecoratedFunction, 1);
 
 assert_words!(Binding, 11);
 assert_words!(BindingExpect, 16);
-assert_words!(BindingTypeAlias, 0);
+assert_words!(BindingTypeAlias, 6);
 assert_words!(BindingAnnotation, 15);
 assert_words!(BindingClass, 15);
 assert_words!(BindingTParams, 10);
@@ -919,11 +919,38 @@ impl DisplayWith<Bindings> for BindingExpect {
 }
 
 #[derive(Clone, Debug)]
-pub struct BindingTypeAlias;
+pub enum BindingTypeAlias {
+    /// Legacy type aliases, like `X = list[int]` or `X: TypeAlias = list[int]`.
+    /// Note that type alias bindings are created only for aliases that are detectable in the
+    /// bindings phase. Ambiguous assignments like `X = Foo` are treated as regular assignments
+    /// until we resolve their RHS in the answers phase.
+    Legacy {
+        name: Name,
+        annotation: Option<(AnnotationStyle, Idx<KeyAnnotation>)>,
+        expr: Box<Expr>,
+        is_explicit: bool,
+    },
+    /// Scoped type aliases, like `type X = list[int]`.
+    Scoped { name: Name, expr: Box<Expr> },
+    /// Calls to TypeAliasType, like `X = TypeAliasType('X', list[int])`.
+    TypeAliasType {
+        name: Name,
+        annotation: Option<Idx<KeyAnnotation>>,
+        expr: Option<Box<Expr>>,
+    },
+}
 
 impl DisplayWith<Bindings> for BindingTypeAlias {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, _ctx: &Bindings) -> fmt::Result {
-        write!(f, "BindingTypeAlias")
+        match self {
+            Self::Legacy { name, .. } => {
+                write!(f, "BindingTypeAlias::Legacy({name})")
+            }
+            Self::Scoped { name, .. } => write!(f, "BindingTypeAlias::Scoped({name})"),
+            Self::TypeAliasType { name, .. } => {
+                write!(f, "BindingTypeAlias::TypeAliasType({name})")
+            }
+        }
     }
 }
 
