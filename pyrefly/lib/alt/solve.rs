@@ -105,6 +105,7 @@ use crate::binding::binding::ReturnType;
 use crate::binding::binding::ReturnTypeKind;
 use crate::binding::binding::SizeExpectation;
 use crate::binding::binding::SuperStyle;
+use crate::binding::binding::TypeAliasParams;
 use crate::binding::binding::TypeParameter;
 use crate::binding::binding::UnpackedPosition;
 use crate::binding::narrow::NarrowOp;
@@ -1168,15 +1169,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ///
     /// `legacy_tparams` refers to the type parameters collected in the bindings phase. It is only populated if we know for sure
     /// that this is actually a type alias, like when a variable assignment is annotated with `TypeAlias`
-    ///
-    /// This functions assumes that at most one of typealiastype_tparams, legacy_tparams, and scoped_tparams is non-`None`.
     fn wrap_type_alias(
         &self,
         name: &Name,
         mut ta: TypeAlias,
-        typealiastype_tparams: Option<Vec<Expr>>,
-        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
-        scoped_tparams: Option<Vec<TParam>>,
+        params: &TypeAliasParams,
         range: TextRange,
         errors: &ErrorCollector,
     ) -> Type {
@@ -1206,24 +1203,25 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 tparams_with_ranges
             };
 
-        if let Some(type_params) = &typealiastype_tparams {
-            // Handle type params from `TypeAliasType(type_params=...)`.
-            self.tvars_to_tparams_for_type_alias_type(
-                type_params,
-                &mut seen_type_vars,
-                &mut seen_type_var_tuples,
-                &mut seen_param_specs,
-                &mut tparams,
-                errors,
-            );
-            let extra_tparams = tvars_to_tparams_for_type_alias(
-                ta.as_type_mut(),
-                &mut seen_type_vars,
-                &mut seen_type_var_tuples,
-                &mut seen_param_specs,
-            );
-            for (_, extra_tparam) in extra_tparams {
-                errors.add(
+        match params {
+            TypeAliasParams::TypeAliasType(type_params) => {
+                // Handle type params from `TypeAliasType(type_params=...)`.
+                self.tvars_to_tparams_for_type_alias_type(
+                    type_params,
+                    &mut seen_type_vars,
+                    &mut seen_type_var_tuples,
+                    &mut seen_param_specs,
+                    &mut tparams,
+                    errors,
+                );
+                let extra_tparams = tvars_to_tparams_for_type_alias(
+                    ta.as_type_mut(),
+                    &mut seen_type_vars,
+                    &mut seen_type_var_tuples,
+                    &mut seen_param_specs,
+                );
+                for (_, extra_tparam) in extra_tparams {
+                    errors.add(
                     range,
                     ErrorInfo::Kind(ErrorKind::InvalidTypeAlias),
                     vec1![
@@ -1236,41 +1234,45 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         )
                     ],
                 );
+                }
             }
-        } else if let Some(legacy_tparams) = legacy_tparams {
-            // Collect type params that appear in a legacy type alias that we were able to detect
-            // syntactically in the bindings phase.
-            tparams = legacy_tparams
-                .iter()
-                .filter_map(|key| self.get_idx(*key).deref().parameter().cloned())
-                .collect();
-        } else if let Some(scoped_tparams) = scoped_tparams {
-            // Scoped type alias: error on undeclared type params and collect declared ones.
-            let extra_tparams = tvars_to_tparams_for_type_alias(
-                ta.as_type_mut(),
-                &mut seen_type_vars,
-                &mut seen_type_var_tuples,
-                &mut seen_param_specs,
-            );
-            if !extra_tparams.is_empty() {
-                self.error(
-                    errors,
-                    range,
-                    ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
-                    format!("Type parameters used in `{name}` but not declared"),
+            TypeAliasParams::Legacy(Some(legacy_tparams)) => {
+                // Collect type params that appear in a legacy type alias that we were able to detect
+                // syntactically in the bindings phase.
+                tparams = legacy_tparams
+                    .iter()
+                    .filter_map(|key| self.get_idx(*key).deref().parameter().cloned())
+                    .collect();
+            }
+            TypeAliasParams::Legacy(None) => {
+                // Collect type params that appear in a legacy type alias that we needed type
+                // information to detect.
+                tparams = tvars_to_tparams_for_type_alias(
+                    ta.as_type_mut(),
+                    &mut seen_type_vars,
+                    &mut seen_type_var_tuples,
+                    &mut seen_param_specs,
+                )
+                .into_map(|(_, tp)| tp);
+            }
+            TypeAliasParams::Scoped(scoped_tparams) => {
+                // Scoped type alias: error on undeclared type params and collect declared ones.
+                let extra_tparams = tvars_to_tparams_for_type_alias(
+                    ta.as_type_mut(),
+                    &mut seen_type_vars,
+                    &mut seen_type_var_tuples,
+                    &mut seen_param_specs,
                 );
+                if !extra_tparams.is_empty() {
+                    self.error(
+                        errors,
+                        range,
+                        ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
+                        format!("Type parameters used in `{name}` but not declared"),
+                    );
+                }
+                tparams = self.scoped_type_params(scoped_tparams.as_ref(), errors);
             }
-            tparams = scoped_tparams;
-        } else {
-            // Collect type params that appear in a legacy type alias that we needed type
-            // information to detect.
-            tparams = tvars_to_tparams_for_type_alias(
-                ta.as_type_mut(),
-                &mut seen_type_vars,
-                &mut seen_type_var_tuples,
-                &mut seen_param_specs,
-            )
-            .into_map(|(_, tp)| tp);
         }
         Forallable::TypeAlias(ta).forall(self.validated_tparams(
             range,
@@ -1286,21 +1288,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         style: TypeAliasStyle,
         ty: Type,
         expr: &Expr,
-        typealiastype_tparams: Option<Vec<Expr>>,
-        legacy_tparams: &Option<Box<[Idx<KeyLegacyTypeParam>]>>,
-        scoped_tparams: Option<Vec<TParam>>,
+        params: &TypeAliasParams,
         errors: &ErrorCollector,
     ) -> Type {
         let ta = self.as_type_alias(name, style, ty, expr, errors);
-        self.wrap_type_alias(
-            name,
-            ta,
-            typealiastype_tparams,
-            legacy_tparams,
-            scoped_tparams,
-            expr.range(),
-            errors,
-        )
+        self.wrap_type_alias(name, ta, params, expr.range(), errors)
     }
 
     fn context_value_enter(
@@ -2671,9 +2663,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     TypeAliasStyle::LegacyExplicit,
                     ty,
                     expr,
-                    None,
-                    legacy_tparams,
-                    None,
+                    &TypeAliasParams::Legacy(legacy_tparams.clone()),
                     errors,
                 ),
                 None if Self::may_be_implicit_type_alias(&ty)
@@ -2685,9 +2675,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         TypeAliasStyle::LegacyImplicit,
                         ty,
                         expr,
-                        None,
-                        legacy_tparams,
-                        None,
+                        &TypeAliasParams::Legacy(legacy_tparams.clone()),
                         errors,
                     )
                 }
@@ -3319,9 +3307,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             TypeAliasStyle::Scoped,
             ty,
             expr,
-            None,
-            &None,
-            Some(self.scoped_type_params(params.as_ref(), errors)),
+            &TypeAliasParams::Scoped(params.clone()),
             errors,
         )
     }
@@ -3345,9 +3331,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             TypeAliasStyle::Scoped,
             ty,
             expr,
-            Some(type_param_exprs.clone()),
-            &None,
-            None,
+            &TypeAliasParams::TypeAliasType(type_param_exprs.clone()),
             errors,
         );
         if let Some(k) = ann

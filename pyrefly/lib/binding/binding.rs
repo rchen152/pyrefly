@@ -1662,6 +1662,13 @@ pub struct BranchInfo {
 }
 
 #[derive(Clone, Debug)]
+pub enum TypeAliasParams {
+    Legacy(Option<Box<[Idx<KeyLegacyTypeParam>]>>),
+    Scoped(Option<TypeParams>),
+    TypeAliasType(Vec<Expr>),
+}
+
+#[derive(Clone, Debug)]
 pub enum Binding {
     /// An expression, optionally with a Key saying what the type must be.
     /// The Key must be a type of types, e.g. `Type::Type`.
