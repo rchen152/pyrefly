@@ -392,14 +392,11 @@ impl<'a> BindingsBuilder<'a> {
 
     fn assign_type_alias_type(&mut self, name: &ExprName, call: &mut ExprCall) {
         self.ensure_type_alias_type_args(call);
+        let assigned = self.declare_current_idx(Key::Definition(ShortIdentifier::expr_name(name)));
+        let ann = self.bind_current(&name.id, &assigned, FlowStyle::Other);
         let (value, type_params) = self.typealiastype_from_call(&name.id, call);
-        self.bind_legacy_type_var_or_typing_alias(name, |ann| {
-            Binding::TypeAliasType(
-                ann,
-                name.id.clone(),
-                Box::new((value.clone(), type_params.clone())),
-            )
-        })
+        let binding = Binding::TypeAliasType(ann, name.id.clone(), Box::new((value, type_params)));
+        self.insert_binding_current(assigned, binding);
     }
 
     /// Bind the annotation in an `AnnAssign`
