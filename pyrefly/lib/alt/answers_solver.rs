@@ -26,6 +26,7 @@ use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePath;
 use pyrefly_types::type_alias::TypeAlias;
 use pyrefly_types::type_alias::TypeAliasData;
+use pyrefly_types::type_alias::TypeAliasRef;
 use pyrefly_types::types::Union;
 use pyrefly_util::display::DisplayWithCtx;
 use pyrefly_util::recurser::Guard;
@@ -1094,6 +1095,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.get_idx(*prior_idx)
                     .arc_clone_ty()
                     .promote_implicit_literals(self.stdlib),
+            ),
+            Binding::TypeAlias {
+                name,
+                tparams: _,
+                key_type_alias,
+                range: _,
+            } => self.solver().fresh_alias_recursive(
+                self.uniques,
+                TypeAliasRef {
+                    name: name.clone(),
+                    module: self.module().name(),
+                    index: self.bindings().idx_to_key(*key_type_alias).0,
+                },
             ),
             _ => self.solver().fresh_recursive(self.uniques),
         }
