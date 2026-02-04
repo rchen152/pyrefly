@@ -7197,3 +7197,50 @@ class B(A):
         )]
     }
 );
+
+call_graph_testcase!(
+    iter_iter_next_dict_literal,
+    TEST_MODULE_NAME,
+    r#"
+def foo():
+    d = {"a": 0}
+    return next(iter(d))
+"#,
+    &|context: &ModuleContext| {
+        vec![(
+            "test.foo",
+            vec![
+                (
+                    "4:17-4:24",
+                    regular_call_callees(vec![create_call_target(
+                        "builtins.iter",
+                        TargetType::Function,
+                    )]),
+                ),
+                (
+                    "4:12-4:25",
+                    regular_call_callees(vec![create_call_target(
+                        "builtins.next",
+                        TargetType::Function,
+                    )]),
+                ),
+                (
+                    "4:17-4:24|artificial-call|iter-call",
+                    regular_call_callees(vec![
+                        create_call_target("builtins.dict.__iter__", TargetType::Function)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_receiver_class_for_test("builtins.dict", context),
+                    ]),
+                ),
+                (
+                    "4:12-4:25|artificial-call|next-call",
+                    regular_call_callees(vec![
+                        create_call_target("typing.Iterator.__next__", TargetType::AllOverrides)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_receiver_class_for_test("typing.Iterator", context),
+                    ]),
+                ),
+            ],
+        )]
+    }
+);

@@ -2004,9 +2004,9 @@ impl<'a> CallGraphVisitor<'a> {
                     TypedDict::TypedDict(inner) => {
                         call_targets_from_method_name_with_class(inner.class_object())
                     }
-                    TypedDict::Anonymous(..) => {
-                        MaybeResolved::Unresolved(UnresolvedReason::UnexpectedDefiningClass)
-                    }
+                    TypedDict::Anonymous(..) => call_targets_from_method_name_with_class(
+                        self.module_context.stdlib.dict_object(),
+                    ),
                 }
             }
             _ => MaybeResolved::Unresolved(UnresolvedReason::UnexpectedDefiningClass),
