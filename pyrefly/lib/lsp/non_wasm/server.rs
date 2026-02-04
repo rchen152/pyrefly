@@ -251,6 +251,8 @@ use crate::lsp::non_wasm::will_rename_files::will_rename_files;
 use crate::lsp::non_wasm::workspace::LspAnalysisConfig;
 use crate::lsp::non_wasm::workspace::Workspace;
 use crate::lsp::non_wasm::workspace::Workspaces;
+use crate::lsp::wasm::completion::CompletionOptions as CompletionRequestOptions;
+use crate::lsp::wasm::completion::supports_snippet_completions;
 use crate::lsp::wasm::hover::get_hover;
 use crate::lsp::wasm::notebook::DidChangeNotebookDocument;
 use crate::lsp::wasm::notebook::DidChangeNotebookDocumentParams;
@@ -3121,7 +3123,7 @@ impl Server {
         params: CompletionParams,
     ) -> anyhow::Result<CompletionResponse> {
         let uri = &params.text_document_position.text_document.uri;
-        let (handle, import_format) = match self
+        let (handle, lsp_config) = match self
             .make_handle_with_lsp_analysis_config_if_enabled(uri, Some(Completion::METHOD))
         {
             None => {
@@ -3130,7 +3132,18 @@ impl Server {
                     items: Vec::new(),
                 }));
             }
-            Some((x, config)) => (x, config.and_then(|c| c.import_format).unwrap_or_default()),
+            Some((x, config)) => (x, config),
+        };
+        let import_format = lsp_config.and_then(|c| c.import_format).unwrap_or_default();
+        let complete_function_parens = lsp_config
+            .and_then(|c| c.complete_function_parens)
+            .unwrap_or(false);
+        let completion_options = CompletionRequestOptions {
+            supports_completion_item_details: self.supports_completion_item_details(),
+            complete_function_parens,
+            supports_snippet_completions: supports_snippet_completions(
+                &self.initialize_params.capabilities,
+            ),
         };
         let (items, is_incomplete) = transaction
             .get_module_info(&handle)
@@ -3139,7 +3152,7 @@ impl Server {
                     &handle,
                     self.from_lsp_position(uri, &info, params.text_document_position.position),
                     import_format,
-                    self.supports_completion_item_details(),
+                    completion_options,
                 )
             })
             .unwrap_or_default();

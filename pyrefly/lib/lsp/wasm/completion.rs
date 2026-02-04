@@ -12,6 +12,7 @@ use lsp_types::CompletionItem;
 use lsp_types::CompletionItemKind;
 use lsp_types::CompletionItemLabelDetails;
 use lsp_types::CompletionItemTag;
+use lsp_types::InsertTextFormat;
 use lsp_types::TextEdit;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::ast::Ast;
@@ -23,6 +24,7 @@ use pyrefly_types::display::LspDisplayMode;
 use pyrefly_types::literal::Lit;
 use pyrefly_types::types::Union;
 use ruff_python_ast::AnyNodeRef;
+use ruff_python_ast::ExprContext;
 use ruff_python_ast::Identifier;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
@@ -43,6 +45,25 @@ use crate::state::lsp::MIN_CHARACTERS_TYPED_AUTOIMPORT;
 use crate::state::state::Transaction;
 use crate::types::callable::Param;
 use crate::types::types::Type;
+
+/// Options that influence completion item formatting and behavior.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CompletionOptions {
+    pub supports_completion_item_details: bool,
+    pub complete_function_parens: bool,
+    pub supports_snippet_completions: bool,
+}
+
+/// Returns true if the client supports snippet completions in completion items.
+pub(crate) fn supports_snippet_completions(capabilities: &lsp_types::ClientCapabilities) -> bool {
+    capabilities
+        .text_document
+        .as_ref()
+        .and_then(|t| t.completion.as_ref())
+        .and_then(|c| c.completion_item.as_ref())
+        .and_then(|ci| ci.snippet_support)
+        .unwrap_or(false)
+}
 
 impl Transaction<'_> {
     /// Adds completion items for literal types (e.g., `Literal["foo", "bar"]`).
@@ -112,6 +133,31 @@ impl Transaction<'_> {
                     ..Default::default()
                 })
             });
+    }
+
+    /// Adds function/method completion inserts with parentheses, using snippets when supported.
+    pub(crate) fn add_function_call_parens(
+        completions: &mut [CompletionItem],
+        supports_snippets: bool,
+    ) {
+        for item in completions {
+            if item.insert_text.is_some() || item.text_edit.is_some() {
+                continue;
+            }
+            if !matches!(
+                item.kind,
+                Some(CompletionItemKind::FUNCTION | CompletionItemKind::METHOD)
+            ) {
+                continue;
+            }
+
+            if supports_snippets {
+                item.insert_text = Some(format!("{}($0)", item.label));
+                item.insert_text_format = Some(InsertTextFormat::SNIPPET);
+            } else {
+                item.insert_text = Some(format!("{}()", item.label));
+            }
+        }
     }
 
     /// Retrieves documentation for an export to display in completion items.
@@ -444,10 +490,16 @@ impl Transaction<'_> {
         handle: &Handle,
         position: TextSize,
         import_format: ImportFormat,
-        supports_completion_item_details: bool,
+        options: CompletionOptions,
     ) -> (Vec<CompletionItem>, bool) {
+        let CompletionOptions {
+            supports_completion_item_details,
+            complete_function_parens,
+            supports_snippet_completions,
+        } = options;
         let mut result = Vec::new();
         let mut is_incomplete = false;
+        let mut allow_function_call_parens = false;
         // Because of parser error recovery, `from x impo...` looks like `from x import impo...`
         // If the user might be typing the `import` keyword, add that as an autocomplete option.
         match self.identifier_at(handle, position) {
@@ -506,6 +558,7 @@ impl Transaction<'_> {
                 identifier: _,
                 context: IdentifierContext::Attribute { base_range, .. },
             }) => {
+                allow_function_call_parens = true;
                 if let Some(answers) = self.get_answers(handle)
                     && let Some(base_type) = answers.get_type_trace(base_range)
                 {
@@ -552,6 +605,12 @@ impl Transaction<'_> {
                 identifier,
                 context,
             }) => {
+                if matches!(
+                    context,
+                    IdentifierContext::Expr(ExprContext::Load | ExprContext::Invalid)
+                ) {
+                    allow_function_call_parens = true;
+                }
                 if matches!(context, IdentifierContext::MethodDef { .. }) {
                     Self::add_magic_method_completions(&identifier, &mut result);
                 }
@@ -621,6 +680,9 @@ impl Transaction<'_> {
                     }
                 }
             }
+        }
+        if complete_function_parens && allow_function_call_parens {
+            Self::add_function_call_parens(&mut result, supports_snippet_completions);
         }
         for item in &mut result {
             let sort_text = if item
