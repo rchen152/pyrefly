@@ -1282,19 +1282,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         ))
     }
 
-    fn type_alias_infer(
-        &self,
-        name: &Name,
-        style: TypeAliasStyle,
-        ty: Type,
-        expr: &Expr,
-        params: &TypeAliasParams,
-        errors: &ErrorCollector,
-    ) -> Type {
-        let ta = self.as_type_alias(name, style, ty, expr, errors);
-        self.wrap_type_alias(name, ta, params, expr.range(), errors)
-    }
-
     fn context_value_enter(
         &self,
         context_manager_type: &Type,
@@ -2644,44 +2631,31 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         {
             self.check_final_reassignment(annot, expr.range(), errors);
         }
-        let has_type_alias_qualifier =
-            annot.map(|annot| annot.annotation.has_qualifier(&Qualifier::TypeAlias));
-        let is_bare_annotated = has_type_alias_qualifier != Some(true)
-            && matches!(expr, Expr::Name(_) | Expr::Attribute(_))
+        let is_bare_annotated = matches!(expr, Expr::Name(_) | Expr::Attribute(_))
             && matches!(
                 &ty,
                 Type::Type(inner)
                     if matches!(inner.as_ref(), Type::SpecialForm(SpecialForm::Annotated))
             );
-        if is_bare_annotated {
-            ty
+        if !is_bare_annotated
+            && annot.is_none()
+            && Self::may_be_implicit_type_alias(&ty)
+            && !is_in_function_scope
+            && self.has_valid_annotation_syntax(expr, &self.error_swallower())
+        {
+            // Handle the possibility that we need to treat the type as a type alias
+            let ta = self.as_type_alias(name, TypeAliasStyle::LegacyImplicit, ty, expr, errors);
+            self.wrap_type_alias(
+                name,
+                ta,
+                &TypeAliasParams::Legacy(legacy_tparams.clone()),
+                expr.range(),
+                errors,
+            )
+        } else if annot.is_some() {
+            self.wrap_callable_legacy_typevars(ty)
         } else {
-            // Then, handle the possibility that we need to treat the type as a type alias
-            match has_type_alias_qualifier {
-                Some(true) => self.type_alias_infer(
-                    name,
-                    TypeAliasStyle::LegacyExplicit,
-                    ty,
-                    expr,
-                    &TypeAliasParams::Legacy(legacy_tparams.clone()),
-                    errors,
-                ),
-                None if Self::may_be_implicit_type_alias(&ty)
-                    && !is_in_function_scope
-                    && self.has_valid_annotation_syntax(expr, &self.error_swallower()) =>
-                {
-                    self.type_alias_infer(
-                        name,
-                        TypeAliasStyle::LegacyImplicit,
-                        ty,
-                        expr,
-                        &TypeAliasParams::Legacy(legacy_tparams.clone()),
-                        errors,
-                    )
-                }
-                None => ty,
-                Some(false) => self.wrap_callable_legacy_typevars(ty),
-            }
+            ty
         }
     }
 
