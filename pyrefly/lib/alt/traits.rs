@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use pyrefly_types::type_alias::TypeAlias;
 use ruff_python_ast::name::Name;
 use ruff_text_size::TextRange;
 
@@ -169,12 +170,12 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyTypeAlias {
         binding: &BindingTypeAlias,
         _range: TextRange,
         errors: &ErrorCollector,
-    ) -> Arc<EmptyAnswer> {
+    ) -> Arc<TypeAlias> {
         answers.solve_type_alias(binding, errors)
     }
 
     fn promote_recursive(_: Var) -> Self::Answer {
-        EmptyAnswer
+        TypeAlias::unknown(Name::new("recursive"))
     }
 }
 

@@ -1892,10 +1892,66 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn solve_type_alias(
         &self,
-        _binding: &BindingTypeAlias,
-        _errors: &ErrorCollector,
-    ) -> Arc<EmptyAnswer> {
-        Arc::new(EmptyAnswer)
+        binding: &BindingTypeAlias,
+        errors: &ErrorCollector,
+    ) -> Arc<TypeAlias> {
+        match binding {
+            BindingTypeAlias::Legacy {
+                name,
+                annotation: annot_key,
+                expr,
+                is_explicit,
+            } => {
+                let (annot, ty) = self.name_assign_infer(name, annot_key.as_ref(), expr, errors);
+                if let Some(annot) = &annot
+                    && let Some((AnnotationStyle::Forwarded, _)) = annot_key
+                {
+                    self.check_final_reassignment(annot, expr.range(), errors);
+                }
+                Arc::new(self.as_type_alias(
+                    name,
+                    if *is_explicit {
+                        TypeAliasStyle::LegacyExplicit
+                    } else {
+                        TypeAliasStyle::LegacyImplicit
+                    },
+                    ty,
+                    expr,
+                    errors,
+                ))
+            }
+            BindingTypeAlias::Scoped { name, expr } => {
+                let ty = self.expr_infer(expr, errors);
+                Arc::new(self.as_type_alias(name, TypeAliasStyle::Scoped, ty, expr, errors))
+            }
+            BindingTypeAlias::TypeAliasType {
+                name,
+                annotation,
+                expr,
+            } => {
+                let ta = if let Some(expr) = expr {
+                    let mut ty = self.expr_infer(expr, errors);
+                    if let Some(k) = annotation
+                        && let AnnotationWithTarget {
+                            target,
+                            annotation:
+                                Annotation {
+                                    ty: Some(want),
+                                    qualifiers: _,
+                                },
+                        } = &*self.get_idx(*k)
+                    {
+                        ty = self.check_and_return_type(ty, want, expr.range(), errors, &|| {
+                            TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(target))
+                        });
+                    }
+                    self.as_type_alias(name, TypeAliasStyle::Scoped, ty, expr, errors)
+                } else {
+                    TypeAlias::error(name.clone(), TypeAliasStyle::Scoped)
+                };
+                Arc::new(ta)
+            }
+        }
     }
 
     fn check_private_attribute_access(

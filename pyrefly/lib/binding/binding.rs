@@ -20,6 +20,7 @@ use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::nesting_context::NestingContext;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
+use pyrefly_types::type_alias::TypeAlias;
 use pyrefly_types::type_alias::TypeAliasIndex;
 use pyrefly_util::assert_bytes;
 use pyrefly_util::assert_words;
@@ -267,7 +268,7 @@ impl Keyed for KeyExpect {
 }
 impl Keyed for KeyTypeAlias {
     type Value = BindingTypeAlias;
-    type Answer = EmptyAnswer;
+    type Answer = TypeAlias;
     fn to_anyidx(idx: Idx<Self>) -> AnyIdx {
         AnyIdx::KeyTypeAlias(idx)
     }
