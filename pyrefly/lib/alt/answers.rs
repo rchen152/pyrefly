@@ -34,6 +34,7 @@ use crate::alt::answers_solver::ThreadState;
 use crate::alt::attr::AttrDefinition;
 use crate::alt::attr::AttrInfo;
 use crate::alt::traits::Solve;
+use crate::binding::binding::ChangedExport;
 use crate::binding::binding::Exported;
 use crate::binding::binding::Key;
 use crate::binding::binding::Keyed;
@@ -376,37 +377,35 @@ impl Solutions {
         difference
     }
 
-    /// Compute the set of export names that have changed between two solutions.
-    /// Returns None if we should invalidate everything (non-export changes or changes to non-name exports).
-    pub fn changed_export_names(
+    /// Compute the set of exports that have changed between two solutions.
+    /// Returns a set of `ChangedExport` values: either `Name` (for `KeyExport`) or
+    /// `ClassDefIndex` (for class-related keys).
+    pub fn changed_exports(
         &self,
         other: &Self,
-    ) -> Option<starlark_map::small_set::SmallSet<Name>> {
+    ) -> starlark_map::small_set::SmallSet<ChangedExport> {
         use starlark_map::small_set::SmallSet;
 
         fn check_table<K: Keyed>(
             x: &SolutionsEntry<K>,
             y: &Solutions,
             ctx: &mut TypeEqCtx,
-            changed: &mut SmallSet<Name>,
-        ) -> Option<()>
-        where
+            changed: &mut SmallSet<ChangedExport>,
+        ) where
             SolutionsTable: TableKeyed<K, Value = SolutionsEntry<K>>,
         {
             if !K::EXPORTED {
-                return Some(());
+                return;
             }
 
             let y_table = y.table.get::<K>();
 
-            // Check for items only in y
+            // Check for items only in y (added keys)
             for (k, _v) in y_table {
-                if !x.contains_key(k) {
-                    if let Some(name) = k.as_export_name() {
-                        changed.insert(name.clone());
-                    } else {
-                        return None; // Non-name export changed
-                    }
+                if !x.contains_key(k)
+                    && let Some(anykey) = k.try_to_anykey()
+                {
+                    changed.insert(anykey.to_changed_export());
                 }
             }
 
@@ -414,23 +413,20 @@ impl Solutions {
             for (k, v) in x {
                 match y_table.get(k) {
                     Some(v2) if !v.type_eq(v2, ctx) => {
-                        if let Some(name) = k.as_export_name() {
-                            changed.insert(name.clone());
-                        } else {
-                            return None; // Non-name export changed
+                        // Value changed
+                        if let Some(anykey) = k.try_to_anykey() {
+                            changed.insert(anykey.to_changed_export());
                         }
                     }
                     None => {
-                        if let Some(name) = k.as_export_name() {
-                            changed.insert(name.clone());
-                        } else {
-                            return None; // Non-name export changed
+                        // Key removed
+                        if let Some(anykey) = k.try_to_anykey() {
+                            changed.insert(anykey.to_changed_export());
                         }
                     }
                     _ => {}
                 }
             }
-            Some(())
         }
 
         let mut changed = SmallSet::new();
@@ -439,15 +435,11 @@ impl Solutions {
         let mut ctx = TypeEqCtx::default();
 
         // Check all tables
-        let mut result = Some(());
         table_for_each!(self.table, |x| {
-            if result.is_some() {
-                result = check_table(x, other, &mut ctx, &mut changed);
-            }
+            check_table(x, other, &mut ctx, &mut changed);
         });
-        result?;
 
-        Some(changed)
+        changed
     }
 
     pub fn get_index(&self) -> Option<Arc<Mutex<Index>>> {
