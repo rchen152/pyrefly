@@ -29,6 +29,7 @@ use ruff_python_ast::StmtReturn;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
+use starlark_map::Hashed;
 use starlark_map::small_set::SmallSet;
 
 use crate::binding::binding::AnnAssignHasValue;
@@ -49,6 +50,7 @@ use crate::binding::expr::Usage;
 use crate::binding::narrow::NarrowOps;
 use crate::binding::scope::FlowStyle;
 use crate::binding::scope::LoopExit;
+use crate::binding::scope::NameReadInfo;
 use crate::binding::scope::Scope;
 use crate::config::error_kind::ErrorKind;
 use crate::error::context::ErrorInfo;
@@ -798,6 +800,19 @@ impl<'a> BindingsBuilder<'a> {
                     );
                 }
                 if let Expr::Name(name) = *x.name {
+                    if let NameReadInfo::Flow { .. } = self
+                        .scopes
+                        .look_up_name_for_read(Hashed::new(&name.id), &Usage::StaticTypeInformation)
+                    {
+                        self.error(
+                            name.range(),
+                            ErrorInfo::Kind(ErrorKind::Redefinition),
+                            format!(
+                                "Cannot redefine existing name `{}` as a type alias",
+                                name.id
+                            ),
+                        );
+                    }
                     // Create a new scope for the type alias type parameters
                     self.scopes.push(Scope::type_alias(x.range));
                     if let Some(params) = &mut x.type_params {
