@@ -42,7 +42,6 @@ fn test_show_syntax_errors_without_config() {
 fn test_stream_diagnostics_after_save() {
     let root = get_test_files_root();
     let root_path = root.path().join("streaming");
-    let scope_uri = Url::from_file_path(root_path.clone()).unwrap();
     let mut interaction = LspInteraction::new_with_indexing_mode(IndexingMode::LazyBlocking);
     interaction.set_root(root_path.clone());
     interaction
@@ -58,11 +57,6 @@ fn test_stream_diagnostics_after_save() {
             ..Default::default()
         })
         .unwrap();
-    interaction
-        .client
-        .expect_configuration_request(Some(vec![&scope_uri]))
-        .unwrap()
-        .send_configuration_response(json!([{"pyrefly": {"displayTypeErrors": "force-on"}}]));
     let d_path = root_path.join("d.py");
     let b_path = root_path.join("b.py");
     let b_contents = std::fs::read_to_string(&b_path).unwrap();
@@ -103,7 +97,6 @@ fn test_stream_diagnostics_after_save() {
 fn test_stream_diagnostics_no_flicker_after_undo_edit() {
     let root = get_test_files_root();
     let root_path = root.path().join("streaming");
-    let scope_uri = Url::from_file_path(root_path.clone()).unwrap();
     let mut interaction = LspInteraction::new_with_indexing_mode(IndexingMode::LazyBlocking);
     interaction.set_root(root_path.clone());
     interaction
@@ -119,11 +112,6 @@ fn test_stream_diagnostics_no_flicker_after_undo_edit() {
             ..Default::default()
         })
         .unwrap();
-    interaction
-        .client
-        .expect_configuration_request(Some(vec![&scope_uri]))
-        .unwrap()
-        .send_configuration_response(json!([{"pyrefly": {"displayTypeErrors": "force-on"}}]));
     let d_path = root_path.join("d.py");
     let b_path = root_path.join("b.py");
     interaction.client.did_open("d.py");
@@ -176,7 +164,6 @@ fn test_stream_diagnostics_no_flicker_after_undo_edit() {
 fn test_open_file_during_recheck() {
     let root = get_test_files_root();
     let root_path = root.path().join("streaming");
-    let scope_uri = Url::from_file_path(root_path.clone()).unwrap();
     let mut interaction = LspInteraction::new_with_indexing_mode(IndexingMode::LazyBlocking);
     interaction.set_root(root_path.clone());
     interaction
@@ -192,11 +179,6 @@ fn test_open_file_during_recheck() {
             ..Default::default()
         })
         .unwrap();
-    interaction
-        .client
-        .expect_configuration_request(Some(vec![&scope_uri]))
-        .unwrap()
-        .send_configuration_response(json!([{"pyrefly": {"displayTypeErrors": "force-on"}}]));
     let d_path = root_path.join("d.py");
     let b_path = root_path.join("b.py");
     let b_contents = std::fs::read_to_string(&b_path).unwrap();
@@ -242,7 +224,6 @@ fn test_open_file_during_recheck() {
 fn test_edit_file_during_recheck() {
     let root = get_test_files_root();
     let root_path = root.path().join("streaming");
-    let scope_uri = Url::from_file_path(root_path.clone()).unwrap();
     let mut interaction = LspInteraction::new_with_indexing_mode(IndexingMode::LazyBlocking);
     interaction.set_root(root_path.clone());
     interaction
@@ -258,11 +239,6 @@ fn test_edit_file_during_recheck() {
             ..Default::default()
         })
         .unwrap();
-    interaction
-        .client
-        .expect_configuration_request(Some(vec![&scope_uri]))
-        .unwrap()
-        .send_configuration_response(json!([{"pyrefly": {"displayTypeErrors": "force-on"}}]));
     let d_path = root_path.join("d.py");
     let b_path = root_path.join("b.py");
     let b_contents = std::fs::read_to_string(&b_path).unwrap();

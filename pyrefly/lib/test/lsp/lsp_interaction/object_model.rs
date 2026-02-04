@@ -1127,19 +1127,29 @@ impl TestClient {
 
     /// Expect a file watcher registration request.
     /// Validates that the request is specifically registering the file watcher (ID: "FILEWATCHER").
-    pub fn expect_file_watcher_register(&self) -> Result<(), LspMessageError> {
-        let params: RegistrationParams =
+    /// Returns a handle to send the response.
+    pub fn expect_file_watcher_register(
+        &self,
+    ) -> Result<ServerRequestHandle<'_, RegisterCapability>, LspMessageError> {
+        let (id, params): (RequestId, RegistrationParams) =
             self.expect_message(&format!("Request {}", RegisterCapability::METHOD), |msg| {
                 if let Message::Request(x) = msg
                     && x.method == RegisterCapability::METHOD
                 {
-                    Some(Ok(serde_json::from_value(x.params).unwrap()))
+                    Some(Ok((
+                        x.id.clone(),
+                        serde_json::from_value(x.params).unwrap(),
+                    )))
                 } else {
                     None
                 }
             })?;
         assert!(params.registrations.iter().any(|x| x.id == "FILEWATCHER"));
-        Ok(())
+        Ok(ServerRequestHandle {
+            id,
+            client: self,
+            _type: PhantomData,
+        })
     }
 
     /// Expect a file watcher unregistration request.
@@ -1249,16 +1259,32 @@ impl LspInteraction {
     }
 
     pub fn initialize(&self, settings: InitializeSettings) -> Result<(), LspMessageError> {
+        let scope_uris: Vec<Url> = settings
+            .workspace_folders
+            .as_ref()
+            .map(|folders| folders.iter().map(|(_, uri)| uri.clone()).collect())
+            .unwrap_or_default();
+        let file_watch = settings.file_watch;
+
         self.client
             .send_initialize(self.client.get_initialize_params(&settings));
         self.client.expect_any_message()?;
         self.client.send_initialized();
-        if let Some(settings) = settings.configuration {
-            self.client.expect_any_message()?;
-            self.client.send_response::<WorkspaceConfiguration>(
-                RequestId::from(1),
-                settings.unwrap_or(json!([])),
-            );
+
+        // Handle file watcher registration if enabled.
+        // This must come before configuration request handling because the server
+        // sends client/registerCapability before workspace/configuration.
+        if file_watch {
+            self.client
+                .expect_file_watcher_register()?
+                .send_response(json!(null));
+        }
+
+        if let Some(config) = settings.configuration {
+            let scope_uri_refs: Vec<&Url> = scope_uris.iter().collect();
+            self.client
+                .expect_configuration_request(Some(scope_uri_refs))?
+                .send_configuration_response(config.unwrap_or(json!([])));
         }
         Ok(())
     }
