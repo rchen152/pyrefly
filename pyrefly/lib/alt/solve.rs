@@ -3966,32 +3966,31 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn may_be_implicit_type_alias(ty: &Type) -> bool {
-        fn check_type_form(ty: &Type, allow_none: bool) -> bool {
-            // TODO(stroxler, rechen): Do we want to include Type::ClassDef(_)
-            // when there is no annotation, so that `mylist = list` is treated
-            // like a value assignment rather than a type alias?
-            match ty {
-                Type::Type(_) | Type::TypeVar(_) | Type::ParamSpec(_) | Type::TypeVarTuple(_) => {
-                    true
-                }
-                Type::TypeAlias(ta) => check_type_form(&ta.as_type(), allow_none),
-                Type::None if allow_none => true,
-                Type::Union(box Union { members, .. }) => {
-                    for member in members {
-                        // `None` can be part of an implicit type alias if it's
-                        // part of a union. In other words, we treat
-                        // `x = T | None` as a type alias, but not `x = None`
-                        if !check_type_form(member, true) {
-                            return false;
-                        }
+    fn check_type_form(ty: &Type, allow_none: bool) -> bool {
+        // TODO(stroxler, rechen): Do we want to include Type::ClassDef(_)
+        // when there is no annotation, so that `mylist = list` is treated
+        // like a value assignment rather than a type alias?
+        match ty {
+            Type::Type(_) | Type::TypeVar(_) | Type::ParamSpec(_) | Type::TypeVarTuple(_) => true,
+            Type::TypeAlias(ta) => Self::check_type_form(&ta.as_type(), allow_none),
+            Type::None if allow_none => true,
+            Type::Union(box Union { members, .. }) => {
+                for member in members {
+                    // `None` can be part of an implicit type alias if it's
+                    // part of a union. In other words, we treat
+                    // `x = T | None` as a type alias, but not `x = None`
+                    if !Self::check_type_form(member, true) {
+                        return false;
                     }
-                    true
                 }
-                _ => false,
+                true
             }
+            _ => false,
         }
-        check_type_form(ty, false)
+    }
+
+    fn may_be_implicit_type_alias(ty: &Type) -> bool {
+        Self::check_type_form(ty, false)
     }
 
     // Given a type, force all `Vars` that indicate placeholder types
