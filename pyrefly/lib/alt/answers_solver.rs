@@ -7,7 +7,9 @@
 
 use std::cell::RefCell;
 use std::cmp::Ordering;
+use std::collections::BTreeSet;
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -193,7 +195,10 @@ fn normalize_raw_cycle(raw: &Vec1<CalcId>) -> Vec<CalcId> {
 /// with explicit state tracking. The state transitions are:
 /// - Fresh → InProgress (when we first encounter the node as a Participant)
 /// - InProgress → Done (when the node's calculation completes)
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The variants are ordered by "advancement" (Fresh < InProgress < Done) so that
+/// when merging cycles we can use `max()` to keep the more advanced state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum NodeState {
     /// Node hasn't been processed yet as part of cycle handling.
     Fresh,
@@ -212,8 +217,11 @@ enum NodeState {
 /// - The state of each participant (Fresh/InProgress/Done)
 #[derive(Debug, Clone)]
 pub struct Cycle {
-    /// Where do we want to break the cycle (the minimal CalcId in the cycle)
-    break_at: CalcId,
+    /// Where do we want to break the cycle.
+    /// This is a set because when cycles overlap and are merged, we preserve
+    /// all the original break points to maintain behavioral equivalence with
+    /// solving each cycle independently.
+    break_at: BTreeSet<CalcId>,
     /// State of each participant in this cycle.
     /// Keys are all participants; values track their computation state.
     node_state: HashMap<CalcId, NodeState>,
@@ -224,10 +232,13 @@ pub struct Cycle {
 impl Display for Cycle {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let states: Vec<_> = self.node_state.iter().collect();
+        let break_at_strs: Vec<_> = self.break_at.iter().map(|c| c.to_string()).collect();
         write!(
             f,
-            "Cycle{{break_at: {}, node_state: {:?}, detected_at: {}}}",
-            self.break_at, states, self.detected_at,
+            "Cycle{{break_at: [{}], node_state: {:?}, detected_at: {}}}",
+            break_at_strs.join(", "),
+            states,
+            self.detected_at,
         )
     }
 }
@@ -242,8 +253,11 @@ impl Cycle {
         let node_state: HashMap<CalcId, NodeState> =
             raw.iter().duped().map(|c| (c, NodeState::Fresh)).collect();
 
+        let mut break_at_set = BTreeSet::new();
+        break_at_set.insert(break_at.dupe());
+
         Cycle {
-            break_at: break_at.dupe(),
+            break_at: break_at_set,
             node_state,
             detected_at,
         }
@@ -260,7 +274,7 @@ impl Cycle {
     /// If an InProgress node is hit again (via a different path like A→X→C),
     /// we return NoDetectedCycle which triggers proper new cycle detection.
     fn pre_calculate_state(&mut self, current: &CalcId) -> CycleState {
-        if *current == self.break_at {
+        if self.break_at.contains(current) {
             CycleState::BreakAt
         } else if let Some(state) = self.node_state.get_mut(current) {
             match state {
@@ -353,6 +367,11 @@ impl Cycles {
     /// Return whether to break immediately (which is relatively common, since
     /// we break on the minimal idx which is often where we detect the problem)
     /// or continue recursing.
+    ///
+    /// When a new cycle overlaps with existing cycles (shares participants),
+    /// we merge them to form a larger SCC. This preserves behavioral equivalence
+    /// because all break points are retained in the merged break_at set.
+    #[allow(clippy::mutable_key_type)] // CalcId's Hash impl doesn't depend on mutable parts
     fn on_cycle_detected(&self, raw: Vec1<CalcId>) -> CycleDetectedResult {
         if self.0.borrow().len() > MAXIMUM_CYCLE_DEPTH {
             // Check if this is a duplicate of an existing cycle (indicating infinite recursion)
@@ -368,23 +387,105 @@ impl Cycles {
             // High depth but no duplicate - treat as normal cycle
         }
 
-        // Normal cycle detection logic
-        let cycle = Cycle::new(raw);
-        let result = if cycle.break_at == cycle.detected_at {
-            CycleDetectedResult::BreakHere
+        // Create the new cycle
+        let new_cycle = Cycle::new(raw);
+        let detected_at = new_cycle.detected_at.dupe();
+
+        // Check for overlapping cycles and merge if needed
+        let mut stack = self.0.borrow_mut();
+        let new_participants: HashSet<&CalcId> = new_cycle.node_state.keys().collect();
+
+        // Find overlapping cycles (from bottom of stack to top)
+        let mut merge_indices: Vec<usize> = Vec::new();
+        for (i, existing) in stack.iter().enumerate() {
+            let overlaps = existing
+                .node_state
+                .keys()
+                .any(|k| new_participants.contains(k));
+            if overlaps {
+                merge_indices.push(i);
+            }
+        }
+
+        if merge_indices.is_empty() {
+            // No overlap - just push the new cycle
+            let result = if new_cycle.break_at.contains(&detected_at) {
+                CycleDetectedResult::BreakHere
+            } else {
+                CycleDetectedResult::Continue
+            };
+            stack.push(new_cycle);
+            result
         } else {
-            CycleDetectedResult::Continue
-        };
-        self.0.borrow_mut().push(cycle);
-        result
+            // Merge all overlapping cycles into one
+            // Remove overlapping cycles from stack (in reverse order to preserve indices)
+            let mut cycles_to_merge: Vec<Cycle> = Vec::with_capacity(merge_indices.len() + 1);
+            for &i in merge_indices.iter().rev() {
+                cycles_to_merge.push(stack.remove(i));
+            }
+            cycles_to_merge.push(new_cycle);
+
+            // Merge all cycles into one
+            let mut merged_break_at: BTreeSet<CalcId> = BTreeSet::new();
+            let mut merged_node_state: HashMap<CalcId, NodeState> = HashMap::new();
+            let mut merged_detected_at = detected_at.dupe();
+
+            for cycle in cycles_to_merge {
+                // Union break_at sets
+                for b in cycle.break_at {
+                    merged_break_at.insert(b);
+                }
+                // Union node_state maps (keep the more advanced state)
+                for (k, v) in cycle.node_state {
+                    merged_node_state
+                        .entry(k)
+                        .and_modify(|existing| *existing = (*existing).max(v))
+                        .or_insert(v);
+                }
+                // Keep the smallest detected_at for consistency/determinism.
+                // The detected_at is used for debugging and for determining when
+                // a cycle is complete, so we use a canonical choice.
+                if cycle.detected_at < merged_detected_at {
+                    merged_detected_at = cycle.detected_at;
+                }
+            }
+
+            let merged_cycle = Cycle {
+                break_at: merged_break_at,
+                node_state: merged_node_state,
+                detected_at: merged_detected_at,
+            };
+
+            let result = if merged_cycle.break_at.contains(&detected_at) {
+                CycleDetectedResult::BreakHere
+            } else {
+                CycleDetectedResult::Continue
+            };
+            stack.push(merged_cycle);
+            result
+        }
     }
 
+    /// Check the cycle state for a node before calculating it.
+    ///
+    /// We check ALL cycles on the stack, not just the top one, because a node
+    /// might be a participant in a cycle that's not at the top of the stack.
+    /// This is especially important after merging, where nodes from previously
+    /// separate cycles are now in the same merged cycle.
+    ///
+    /// Invariant: After merging, each node appears in at most one cycle on the
+    /// stack. We return the first non-NoDetectedCycle result when scanning
+    /// top-to-bottom, which will be the unique cycle containing this node (if any).
     fn pre_calculate_state(&self, current: &CalcId) -> CycleState {
-        if let Some(active_cycle) = self.0.borrow_mut().last_mut() {
-            active_cycle.pre_calculate_state(current)
-        } else {
-            CycleState::NoDetectedCycle
+        let mut stack = self.0.borrow_mut();
+        // Check from top to bottom - return the first meaningful state
+        for cycle in stack.iter_mut().rev() {
+            let state = cycle.pre_calculate_state(current);
+            if !matches!(state, CycleState::NoDetectedCycle) {
+                return state;
+            }
         }
+        CycleState::NoDetectedCycle
     }
 
     /// Handle the completion of a calculation. This might involve progress on
