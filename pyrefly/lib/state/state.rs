@@ -32,6 +32,7 @@ use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePath;
 use pyrefly_python::module_path::ModulePathDetails;
 use pyrefly_python::sys_info::SysInfo;
+use pyrefly_types::type_alias::TypeAliasIndex;
 use pyrefly_util::arc_id::ArcId;
 use pyrefly_util::events::CategorizedEvents;
 use pyrefly_util::fs_anyhow;
@@ -153,6 +154,8 @@ pub struct ModuleDep {
     pub wildcard: bool,
     /// Which classes do we depend on?
     pub classes: SmallSet<ClassDefIndex>,
+    /// Which type aliases do we depend on?
+    pub type_aliases: SmallSet<TypeAliasIndex>,
 }
 
 impl ModuleDep {
@@ -170,6 +173,7 @@ impl ModuleDep {
             names,
             wildcard: false,
             classes: SmallSet::new(),
+            type_aliases: SmallSet::new(),
         }
     }
 
@@ -187,6 +191,7 @@ impl ModuleDep {
             names,
             wildcard: false,
             classes: SmallSet::new(),
+            type_aliases: SmallSet::new(),
         }
     }
 
@@ -196,6 +201,7 @@ impl ModuleDep {
             names: SmallMap::new(),
             wildcard: true,
             classes: SmallSet::new(),
+            type_aliases: SmallSet::new(),
         }
     }
 
@@ -207,6 +213,19 @@ impl ModuleDep {
             names: SmallMap::new(),
             wildcard: false,
             classes,
+            type_aliases: SmallSet::new(),
+        }
+    }
+
+    /// Create a dependency on a specific type alias
+    pub fn type_alias_dep(type_alias: TypeAliasIndex) -> Self {
+        let mut type_aliases = SmallSet::new();
+        type_aliases.insert(type_alias);
+        Self {
+            names: SmallMap::new(),
+            wildcard: false,
+            classes: SmallSet::new(),
+            type_aliases,
         }
     }
 
@@ -231,6 +250,7 @@ impl ModuleDep {
         }
 
         self.classes.extend(other.classes);
+        self.type_aliases.extend(other.type_aliases);
 
         self.wildcard |= other.wildcard;
     }
@@ -289,6 +309,7 @@ impl ModuleDep {
             ChangedExport::Name(name) => self.names.get(name).is_some_and(|d| d.type_),
             ChangedExport::NameExistence(name) => self.names.contains_key(name),
             ChangedExport::ClassDefIndex(idx) => self.classes.contains(idx),
+            ChangedExport::TypeAliasIndex(idx) => self.type_aliases.contains(idx),
             ChangedExport::Metadata(name) => self.names.get(name).is_some_and(|d| d.metadata),
             // We don't depend on wildcard (checked separately before calling this)
             ChangedExport::Wildcard => false,
@@ -310,6 +331,7 @@ impl AnyExportedKey {
             AnyExportedKey::KeyClassMetadata(k) => ModuleDep::class_dep(k.0),
             AnyExportedKey::KeyClassMro(k) => ModuleDep::class_dep(k.0),
             AnyExportedKey::KeyAbstractClassCheck(k) => ModuleDep::class_dep(k.0),
+            AnyExportedKey::KeyTypeAlias(k) => ModuleDep::type_alias_dep(k.0),
         }
     }
 }
@@ -2129,7 +2151,10 @@ impl<'a> TransactionHandle<'a> {
                     && let Some(_existing) = handles.get(&handle)
                 {
                     // Check if dep has any dependencies that aren't already tracked
-                    !dep.names.is_empty() || dep.wildcard || !dep.classes.is_empty()
+                    !dep.names.is_empty()
+                        || dep.wildcard
+                        || !dep.classes.is_empty()
+                        || !dep.type_aliases.is_empty()
                 } else {
                     true
                 }

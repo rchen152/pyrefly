@@ -48,6 +48,7 @@ use crate::binding::binding::AnyIdx;
 use crate::binding::binding::Binding;
 use crate::binding::binding::Exported;
 use crate::binding::binding::KeyExport;
+use crate::binding::binding::KeyTypeAlias;
 use crate::binding::bindings::BindingEntry;
 use crate::binding::bindings::BindingTable;
 use crate::binding::bindings::Bindings;
@@ -1057,10 +1058,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.get_from_module(cls.module_name(), Some(cls.module_path()), k)
     }
 
-    pub fn get_type_alias<'b>(&self, data: &'b TypeAliasData) -> &'b TypeAlias {
+    pub fn get_type_alias(&self, data: &TypeAliasData) -> Arc<TypeAlias> {
         match data {
-            TypeAliasData::Ref(_) => panic!("Not yet implemented"),
-            TypeAliasData::Value(ta) => ta,
+            TypeAliasData::Ref(r) => self
+                .get_from_module(r.module, None, &KeyTypeAlias(r.index))
+                .unwrap_or_else(|| Arc::new(TypeAlias::unknown(r.name.clone()))),
+            TypeAliasData::Value(ta) => Arc::new(ta.clone()),
         }
     }
 

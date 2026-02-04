@@ -191,6 +191,7 @@ pub enum AnyExportedKey {
     KeyClassMetadata(KeyClassMetadata),
     KeyClassMro(KeyClassMro),
     KeyAbstractClassCheck(KeyAbstractClassCheck),
+    KeyTypeAlias(KeyTypeAlias),
 }
 
 /// Represents a changed export for fine-grained incremental invalidation.
@@ -210,6 +211,8 @@ pub enum ChangedExport {
     /// The metadata of an export changed (is_reexport, implicitly_imported_submodule, deprecation, special_export).
     /// This is detected at the Exports step by comparing Definition metadata.
     Metadata(Name),
+    /// A changed type alias
+    TypeAliasIndex(TypeAliasIndex),
 }
 
 impl AnyExportedKey {
@@ -226,6 +229,7 @@ impl AnyExportedKey {
             AnyExportedKey::KeyClassMetadata(k) => ChangedExport::ClassDefIndex(k.0),
             AnyExportedKey::KeyClassMro(k) => ChangedExport::ClassDefIndex(k.0),
             AnyExportedKey::KeyAbstractClassCheck(k) => ChangedExport::ClassDefIndex(k.0),
+            AnyExportedKey::KeyTypeAlias(k) => ChangedExport::TypeAliasIndex(k.0),
         }
     }
 }
@@ -267,10 +271,16 @@ impl Keyed for KeyExpect {
     }
 }
 impl Keyed for KeyTypeAlias {
+    const EXPORTED: bool = true;
     type Value = BindingTypeAlias;
     type Answer = TypeAlias;
     fn to_anyidx(idx: Idx<Self>) -> AnyIdx {
         AnyIdx::KeyTypeAlias(idx)
+    }
+}
+impl Exported for KeyTypeAlias {
+    fn to_anykey(&self) -> AnyExportedKey {
+        AnyExportedKey::KeyTypeAlias(self.clone())
     }
 }
 impl Keyed for KeyConsistentOverrideCheck {
