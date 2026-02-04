@@ -6,6 +6,7 @@
  */
 
 use std::fmt;
+use std::fmt::Display;
 
 use dupe::Dupe;
 use parse_display::Display;
@@ -15,7 +16,9 @@ use pyrefly_derive::VisitMut;
 use pyrefly_util::display::commas_iter;
 use ruff_python_ast::name::Name;
 
+use crate::display::TypeDisplayContext;
 use crate::stdlib::Stdlib;
+use crate::type_output::DisplayOutput;
 use crate::type_output::TypeOutput;
 use crate::types::TParams;
 use crate::types::Type;
@@ -117,6 +120,14 @@ impl TypeAlias {
             TypeAliasStyle::LegacyImplicit,
             Vec::new(),
         )
+    }
+}
+
+impl Display for TypeAlias {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let ctx = TypeDisplayContext::new(&[&self.ty]);
+        let mut output = DisplayOutput::new(&ctx, f);
+        self.fmt_with_type(&mut output, &|ty, output| output.write_type(ty), None)
     }
 }
 
