@@ -410,13 +410,6 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
     }
 
     fn is_subset_protocol(&mut self, got: Type, protocol: ClassType) -> Result<(), SubsetError> {
-        // First check exact (Type, Type) recursive assumptions
-        let recursive_check = (got.clone(), Type::ClassType(protocol.clone()));
-        if !self.recursive_assumptions.insert(recursive_check.clone()) {
-            // Assume recursive checks are true
-            return Ok(());
-        }
-
         // For class-level coinductive reasoning: if the `got` type's type arguments
         // contain Vars, we're likely in a recursive pattern (e.g., checking method return
         // types that reference the same classes). Use (Class, Class) matching to detect
@@ -430,22 +423,17 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             );
             if !self.class_protocol_assumptions.insert(key.clone()) {
                 // Coinductive: assume this recursive class-level check succeeds
-                self.recursive_assumptions.shift_remove(&recursive_check);
                 return Ok(());
             }
             Some(key)
         } else {
             None
         };
-
         let res = self.is_subset_protocol_inner(got, protocol);
-
         // Clean up assumptions
-        self.recursive_assumptions.shift_remove(&recursive_check);
         if let Some(key) = class_check {
             self.class_protocol_assumptions.shift_remove(&key);
         }
-
         res
     }
 
@@ -930,8 +918,38 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
         }
     }
 
+    fn can_be_recursive(&self, ty: &Type) -> bool {
+        match ty {
+            Type::ClassType(cls) => self.type_order.is_protocol(cls.class_object()),
+            _ => false,
+        }
+    }
+
     /// Implementation of subset equality for Type, other than Var.
     pub fn is_subset_eq_impl(&mut self, got: &Type, want: &Type) -> Result<(), SubsetError> {
+        let recursive_check = if self.can_be_recursive(got) || self.can_be_recursive(want) {
+            Some((got.clone(), want.clone()))
+        } else {
+            None
+        };
+        if let Some(check) = &recursive_check
+            && !self.recursive_assumptions.insert(check.clone())
+        {
+            // Assume recursive checks are true
+            return Ok(());
+        }
+        let res = self.is_subset_eq_no_recursive_check(got, want);
+        if let Some(check) = &recursive_check {
+            self.recursive_assumptions.shift_remove(check);
+        }
+        res
+    }
+
+    fn is_subset_eq_no_recursive_check(
+        &mut self,
+        got: &Type,
+        want: &Type,
+    ) -> Result<(), SubsetError> {
         if matches!(got, Type::Materialization) {
             return self.is_subset_eq(&self.type_order.stdlib().object().clone().to_type(), want);
         } else if matches!(want, Type::Materialization) {
