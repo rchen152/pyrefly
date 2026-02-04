@@ -3655,13 +3655,30 @@ impl<'a> CallGraphVisitor<'a> {
             && let Some((return_inner_class, argument_mapping)) =
                 extract_inner_class_and_argument_mapping(return_expression_type)
         {
+            debug_println!(
+                self.debug,
+                "Found function with graphql decorator `{:#?}` and a return expression with (inner) class `{}`",
+                graphql_decorator,
+                return_inner_class
+            );
             let class_context = get_context_from_class(&return_inner_class, self.module_context);
             let has_graphql_decorator = |function_node: &FunctionNode| match function_node {
                 FunctionNode::DecoratedFunction(decorated_function) => decorated_function
                     .undecorated
                     .decorators
                     .iter()
-                    .any(|(ty, _)| graphql_decorator.matches_function_type(ty)),
+                    .any(|(ty, _)| {
+                        let result = graphql_decorator.matches_function_type(ty);
+                        if result {
+                            debug_println!(
+                                self.debug,
+                                "Inner class has method `{:?}` with matching decorator `{:#?}`",
+                                decorated_function.undecorated,
+                                ty
+                            );
+                        }
+                        result
+                    }),
                 _ => false,
             };
             let callees: Vec<CallTarget<FunctionRef>> = return_inner_class
@@ -3688,7 +3705,9 @@ impl<'a> CallGraphVisitor<'a> {
                             /* return_type */
                             ScalarTypeProperties::none(),
                             /* callee_expr_suffix */ None,
-                            /* override_implicit_receiver */ None,
+                            // override_implicit_receiver. Since we rely on `argument_mapping` to match
+                            // argument positions, this should not interfere.
+                            Some(ImplicitReceiver::False),
                             /* override_is_direct_call */ None,
                             /* unknown_callee_as_direct_call */ true,
                         ))
@@ -4148,6 +4167,12 @@ impl<'a> AstScopedVisitor for CallGraphVisitor<'a> {
                         .iter()
                         .find_map(|(callable_decorator, method_decorator)| {
                             if callable_decorator.matches_definition(&go_to_definition) {
+                                debug_println!(
+                                    self.debug,
+                                    "Function has graphql decorator `{:#?}`. We will look for decorator `{:#?}` on the return class",
+                                    callable_decorator,
+                                    method_decorator
+                                );
                                 Some(*method_decorator)
                             } else {
                                 None

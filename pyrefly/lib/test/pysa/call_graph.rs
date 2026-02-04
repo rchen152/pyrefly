@@ -6468,10 +6468,8 @@ def caller(foo: Foo) -> Foo:  # Test return callees
                 "23:3-23:13",
                 return_shim_callees(
                     vec![
-                        create_call_target("test.Foo.callee_1", TargetType::Function)
-                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
-                        create_call_target("test.Foo.callee_2", TargetType::Function)
-                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
+                        create_call_target("test.Foo.callee_1", TargetType::Function),
+                        create_call_target("test.Foo.callee_2", TargetType::Function),
                     ],
                     /* arguments */ vec![ReturnShimArgumentMapping::ReturnExpression],
                 ),
@@ -6503,10 +6501,7 @@ def caller(foo: Foo) -> List[Foo]:  # Test stripping
             vec![(
                 "13:3-13:15",
                 return_shim_callees(
-                    vec![
-                        create_call_target("test.Foo.callee", TargetType::Function)
-                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
-                    ],
+                    vec![create_call_target("test.Foo.callee", TargetType::Function)],
                     vec![ReturnShimArgumentMapping::ReturnExpressionElement],
                 ),
             )],
@@ -6537,10 +6532,7 @@ def caller(foo: Foo) -> Sequence[Foo]:  # Test stripping
             vec![(
                 "13:3-13:15",
                 return_shim_callees(
-                    vec![
-                        create_call_target("test.Foo.callee", TargetType::Function)
-                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
-                    ],
+                    vec![create_call_target("test.Foo.callee", TargetType::Function)],
                     vec![ReturnShimArgumentMapping::ReturnExpressionElement],
                 ),
             )],
@@ -6571,10 +6563,7 @@ def caller(foo: Foo) -> Set[Foo]:  # Test stripping
             vec![(
                 "13:3-13:15",
                 return_shim_callees(
-                    vec![
-                        create_call_target("test.Foo.callee", TargetType::Function)
-                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
-                    ],
+                    vec![create_call_target("test.Foo.callee", TargetType::Function)],
                     vec![ReturnShimArgumentMapping::ReturnExpressionElement],
                 ),
             )],
@@ -6605,10 +6594,7 @@ def caller(foo: Optional[Foo]) -> Optional[Foo]:  # Test stripping
             vec![(
                 "13:3-13:13",
                 return_shim_callees(
-                    vec![
-                        create_call_target("test.Foo.callee", TargetType::Function)
-                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
-                    ],
+                    vec![create_call_target("test.Foo.callee", TargetType::Function)],
                     vec![ReturnShimArgumentMapping::ReturnExpression],
                 ),
             )],
@@ -6654,10 +6640,7 @@ def caller() -> Foo:
                 (
                     "13:3-13:15",
                     return_shim_callees(
-                        vec![
-                            create_call_target("test.Foo.callee", TargetType::Function)
-                                .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver),
-                        ],
+                        vec![create_call_target("test.Foo.callee", TargetType::Function)],
                         vec![ReturnShimArgumentMapping::ReturnExpression],
                     ),
                 ),
