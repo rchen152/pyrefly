@@ -22,11 +22,13 @@ use starlark_map::Hashed;
 use crate::binding::binding::AnnotationStyle;
 use crate::binding::binding::Binding;
 use crate::binding::binding::BindingExpect;
+use crate::binding::binding::BindingTypeAlias;
 use crate::binding::binding::ExprOrBinding;
 use crate::binding::binding::FirstUse;
 use crate::binding::binding::Key;
 use crate::binding::binding::KeyAnnotation;
 use crate::binding::binding::KeyExpect;
+use crate::binding::binding::KeyTypeAlias;
 use crate::binding::binding::MethodSelfKind;
 use crate::binding::binding::SizeExpectation;
 use crate::binding::binding::UnpackedPosition;
@@ -502,6 +504,16 @@ impl<'a> BindingsBuilder<'a> {
             Some((_, idx)) => Some((AnnotationStyle::Direct, idx)),
             None => canonical_ann.map(|idx| (AnnotationStyle::Forwarded, idx)),
         };
+        if is_definitely_type_alias {
+            let key_type_alias = KeyTypeAlias(self.type_alias_index());
+            let binding_type_alias = BindingTypeAlias::Legacy {
+                name: name.id.clone(),
+                annotation: ann,
+                expr: value.clone(),
+                is_explicit: has_type_alias_qualifier,
+            };
+            self.insert_binding(key_type_alias, binding_type_alias);
+        }
         let binding = Binding::NameAssign {
             name: name.id.clone(),
             annotation: ann,

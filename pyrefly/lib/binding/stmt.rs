@@ -37,11 +37,13 @@ use crate::binding::binding::AnnotationTarget;
 use crate::binding::binding::Binding;
 use crate::binding::binding::BindingAnnotation;
 use crate::binding::binding::BindingExpect;
+use crate::binding::binding::BindingTypeAlias;
 use crate::binding::binding::ExprOrBinding;
 use crate::binding::binding::IsAsync;
 use crate::binding::binding::Key;
 use crate::binding::binding::KeyAnnotation;
 use crate::binding::binding::KeyExpect;
+use crate::binding::binding::KeyTypeAlias;
 use crate::binding::binding::LinkedKey;
 use crate::binding::binding::NarrowUseLocation;
 use crate::binding::binding::RaisedException;
@@ -395,6 +397,13 @@ impl<'a> BindingsBuilder<'a> {
         let assigned = self.declare_current_idx(Key::Definition(ShortIdentifier::expr_name(name)));
         let ann = self.bind_current(&name.id, &assigned, FlowStyle::Other);
         let (value, type_params) = self.typealiastype_from_call(&name.id, call);
+        let key_type_alias = KeyTypeAlias(self.type_alias_index());
+        let binding_type_alias = BindingTypeAlias::TypeAliasType {
+            name: name.id.clone(),
+            annotation: ann,
+            expr: value.as_ref().map(|v| Box::new(v.clone())),
+        };
+        self.insert_binding(key_type_alias, binding_type_alias);
         let binding = Binding::TypeAliasType(ann, name.id.clone(), Box::new((value, type_params)));
         self.insert_binding_current(assigned, binding);
     }
@@ -818,6 +827,12 @@ impl<'a> BindingsBuilder<'a> {
                     self.ensure_type(&mut x.value, &mut None);
                     // Pop the type alias scope before binding the definition
                     self.scopes.pop();
+                    let key_type_alias = KeyTypeAlias(self.type_alias_index());
+                    let binding_type_alias = BindingTypeAlias::Scoped {
+                        name: name.id.clone(),
+                        expr: x.value.clone(),
+                    };
+                    self.insert_binding(key_type_alias, binding_type_alias);
                     let binding = Binding::ScopedTypeAlias(
                         name.id.clone(),
                         x.type_params.map(|x| *x),
