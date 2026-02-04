@@ -1532,11 +1532,9 @@ fn test_dunder_all_missing_name_error_clears() {
 /// A file using `y` after `from foo import *` will error until `__all__` is updated.
 /// This tests export information affecting errors in another file.
 ///
-/// BUG: Currently, when only `__all__` changes (without adding/removing definitions),
-/// star importers are not invalidated. This causes the error to persist even after
-/// `y` is added to `__all__`.
+/// Test that errors are properly cleared when __all__ changes.
+/// When a name is added to __all__, star importers should see the change.
 #[test]
-#[ignore] // TODO: fix incremental invalidation when __all__ changes
 fn test_dunder_all_star_import_error_clears() {
     let mut i = Incremental::new();
 

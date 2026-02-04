@@ -851,9 +851,8 @@ impl<'a> Transaction<'a> {
             if clear_ast {
                 w.steps.ast = None;
             }
-            w.steps.exports = None;
+            // Do not clear solutions or exports, since we use them for equality.
             w.steps.answers = None;
-            // Do not clear solutions, since we can use that for equality
             w.epochs.computed = self.data.now;
             if let Some(subscriber) = &self.data.subscriber {
                 subscriber.start_work(&module_data.handle);
@@ -1099,8 +1098,15 @@ impl<'a> Transaction<'a> {
                 } else {
                     None
                 };
+                let old_exports = if todo == Step::Exports {
+                    writer.steps.exports.take()
+                } else {
+                    None
+                };
                 set.0(&mut writer.steps);
                 // Compute which exports changed for fine-grained invalidation.
+                // Check at both the Exports step (for wildcard set changes) and
+                // the Solutions step (for type changes).
                 let changed_exports: ChangedExports = if todo == Step::Solutions {
                     match (old_solutions.as_ref(), writer.steps.solutions.as_ref()) {
                         (Some(old), Some(new)) => {
@@ -1119,8 +1125,40 @@ impl<'a> Transaction<'a> {
                         (Some(_old), None) => ChangedExports::InvalidateAll, // Had solutions, now don't
                         (None, _) => ChangedExports::NoChange, // No old solutions = no change to propagate
                     }
+                } else if todo == Step::Exports {
+                    // Check if exports changed at the Exports step.
+                    // This detects both wildcard set changes and definition name changes.
+                    // Wildcard changes affect `from M import *`.
+                    // Name existence changes affect `from M import name`.
+                    match (old_exports.as_ref(), writer.steps.exports.as_ref()) {
+                        (Some(old), Some(new)) => {
+                            let mut changed_set: SmallSet<ChangedExport> = SmallSet::new();
+                            // Module entries changed, fall back to Wildcard
+                            if old.wildcard_entries_changed(new) {
+                                changed_set.insert(ChangedExport::Wildcard);
+                            }
+
+                            // Check for definition name changes (added/removed names)
+                            for name in old.changed_definition_names(new) {
+                                changed_set.insert(ChangedExport::NameExistence(name));
+                            }
+
+                            if changed_set.is_empty() {
+                                ChangedExports::NoChange
+                            } else {
+                                debug!(
+                                    "Exports changed for `{}`: {:?}",
+                                    module_data.handle.module(),
+                                    changed_set
+                                );
+                                ChangedExports::Changed(changed_set)
+                            }
+                        }
+                        (Some(_), None) => ChangedExports::InvalidateAll,
+                        (None, _) => ChangedExports::NoChange,
+                    }
                 } else {
-                    ChangedExports::NoChange // Not Solutions step = no export changes
+                    ChangedExports::NoChange
                 };
                 if todo == Step::Answers && !require.keep_ast() {
                     // We have captured the Ast, and must have already built Exports (we do it serially),
