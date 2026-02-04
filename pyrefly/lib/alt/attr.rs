@@ -1803,7 +1803,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 acc.push(AttributeBase1::ClassInstance(self.stdlib.bool().clone()))
             }
             Type::Any(style) => acc.push(AttributeBase1::Any(style)),
-            Type::TypeAlias(ta) => self.as_attribute_base1(ta.as_value(self.stdlib), acc),
+            Type::TypeAlias(ta) => {
+                self.as_attribute_base1(self.get_type_alias(&ta).as_value(self.stdlib), acc)
+            }
             Type::Type(box Type::Tuple(tuple)) => self
                 .as_attribute_base1(Type::type_form(self.erase_tuple_type(tuple).to_type()), acc),
             Type::Type(box Type::ClassType(class)) => {

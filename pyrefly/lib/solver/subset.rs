@@ -17,6 +17,7 @@ use pyrefly_types::literal::Lit;
 use pyrefly_types::literal::Literal;
 use pyrefly_types::read_only::ReadOnlyReason;
 use pyrefly_types::special_form::SpecialForm;
+use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::typed_dict::ExtraItem;
 use pyrefly_types::typed_dict::ExtraItems;
 use pyrefly_types::typed_dict::TypedDict;
@@ -1443,7 +1444,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 )
             }
             (_, Type::Forall(forall)) => self.is_subset_eq(got, &forall.body.clone().as_type()),
-            (Type::TypeAlias(ta), _) => {
+            (Type::TypeAlias(box TypeAliasData::Value(ta)), _) => {
                 self.is_subset_eq(&ta.as_value(self.type_order.stdlib()), want)
             }
             _ => Err(SubsetError::Other),

@@ -291,9 +291,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.as_call_target_impl(fallback, quantified, dunder_call)
             }
             Type::Any(style) => CallTargetLookup::Ok(Box::new(CallTarget::Any(style))),
-            Type::TypeAlias(ta) => {
-                self.as_call_target_impl(ta.as_value(self.stdlib), quantified, dunder_call)
-            }
+            Type::TypeAlias(ta) => self.as_call_target_impl(
+                self.get_type_alias(&ta).as_value(self.stdlib),
+                quantified,
+                dunder_call,
+            ),
             Type::ClassType(cls) => {
                 if let Some(quantified) = quantified {
                     self.quantified_instance_as_dunder_call(quantified.clone(), &cls)

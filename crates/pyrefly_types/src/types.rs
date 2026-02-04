@@ -56,7 +56,7 @@ use crate::simplify::unions;
 use crate::special_form::SpecialForm;
 use crate::stdlib::Stdlib;
 use crate::tuple::Tuple;
-use crate::type_alias::TypeAlias;
+use crate::type_alias::TypeAliasData;
 use crate::type_var::PreInferenceVariance;
 use crate::type_var::Restriction;
 use crate::type_var::TypeVar;
@@ -497,7 +497,7 @@ impl Forall<Forallable> {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Visit, VisitMut, TypeEq)]
 pub enum Forallable {
-    TypeAlias(TypeAlias),
+    TypeAlias(TypeAliasData),
     Function(Function),
     Callable(Callable),
 }
@@ -518,7 +518,7 @@ impl Forallable {
         match self {
             Self::Function(func) => func.metadata.kind.function_name(),
             Self::Callable(_) => Cow::Owned(Name::new_static("<callable>")),
-            Self::TypeAlias(ta) => Cow::Borrowed(&ta.name),
+            Self::TypeAlias(ta) => Cow::Borrowed(ta.name()),
         }
     }
 
@@ -672,7 +672,7 @@ pub enum Type {
     Ellipsis,
     Any(AnyStyle),
     Never(NeverStyle),
-    TypeAlias(Box<TypeAlias>),
+    TypeAlias(Box<TypeAliasData>),
     /// Represents the result of a super() call. The first ClassType is the point in the MRO that attribute lookup
     /// on the super instance should start at (*not* the class passed to the super() call), and the second
     /// ClassType is the second argument (implicit or explicit) to the super() call. For example, in:

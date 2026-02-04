@@ -16,6 +16,7 @@ use pyrefly_python::dunder;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_types::facet::FacetKind;
+use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::type_info::JoinStyle;
 use pyrefly_types::typed_dict::ExtraItems;
 use pyrefly_types::typed_dict::TypedDict;
@@ -1274,7 +1275,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 tparams = self.scoped_type_params(scoped_tparams.as_ref(), errors);
             }
         }
-        Forallable::TypeAlias(ta).forall(self.validated_tparams(
+        Forallable::TypeAlias(TypeAliasData::Value(ta)).forall(self.validated_tparams(
             range,
             tparams,
             TParamsSource::TypeAlias,
@@ -2639,7 +2640,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             );
         if !is_bare_annotated
             && annot.is_none()
-            && Self::may_be_implicit_type_alias(&ty)
+            && self.may_be_implicit_type_alias(&ty)
             && !is_in_function_scope
             && self.has_valid_annotation_syntax(expr, &self.error_swallower())
         {
@@ -3966,20 +3967,22 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn check_type_form(ty: &Type, allow_none: bool) -> bool {
+    fn check_type_form(&self, ty: &Type, allow_none: bool) -> bool {
         // TODO(stroxler, rechen): Do we want to include Type::ClassDef(_)
         // when there is no annotation, so that `mylist = list` is treated
         // like a value assignment rather than a type alias?
         match ty {
             Type::Type(_) | Type::TypeVar(_) | Type::ParamSpec(_) | Type::TypeVarTuple(_) => true,
-            Type::TypeAlias(ta) => Self::check_type_form(&ta.as_type(), allow_none),
+            Type::TypeAlias(ta) => {
+                self.check_type_form(&self.get_type_alias(ta).as_type(), allow_none)
+            }
             Type::None if allow_none => true,
             Type::Union(box Union { members, .. }) => {
                 for member in members {
                     // `None` can be part of an implicit type alias if it's
                     // part of a union. In other words, we treat
                     // `x = T | None` as a type alias, but not `x = None`
-                    if !Self::check_type_form(member, true) {
+                    if !self.check_type_form(member, true) {
                         return false;
                     }
                 }
@@ -3989,8 +3992,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn may_be_implicit_type_alias(ty: &Type) -> bool {
-        Self::check_type_form(ty, false)
+    fn may_be_implicit_type_alias(&self, ty: &Type) -> bool {
+        self.check_type_form(ty, false)
     }
 
     // Given a type, force all `Vars` that indicate placeholder types
@@ -4519,9 +4522,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::Ellipsis => Some(Type::Ellipsis), // A bit weird because of tuples, so just promote it
             Type::Any(style) => Some(style.propagate()),
             Type::TypeAlias(ta) => {
-                let mut aliased_type = self.untype_opt(ta.as_type(), range, errors)?;
+                let mut aliased_type =
+                    self.untype_opt(self.get_type_alias(&ta).as_type(), range, errors)?;
                 if let Type::Union(box Union { display_name, .. }) = &mut aliased_type {
-                    *display_name = Some(ta.name.as_str().into());
+                    *display_name = Some(ta.name().as_str().into());
                 }
                 Some(aliased_type)
             }
@@ -4569,7 +4573,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 self.unions(ts)
             }
-            Type::TypeAlias(ta) => self.type_of(ta.as_type()),
+            Type::TypeAlias(ta) => self.type_of(self.get_type_alias(&ta).as_type()),
             Type::Any(style) => Type::type_form(style.propagate()),
             Type::ClassDef(cls) => Type::type_form(Type::ClassType(
                 self.get_metadata_for_class(&cls)
@@ -4879,6 +4883,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // substitutes type aliases with the aliased type
                 if type_form_context == TypeFormContext::BaseClassList
                     && let Type::TypeAlias(ta) = &inferred_ty
+                    && let ta = self.get_type_alias(ta)
                     && ta.style == TypeAliasStyle::Scoped
                 {
                     return self.error(

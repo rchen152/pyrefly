@@ -24,6 +24,8 @@ use pyrefly_graph::calculation::ProposalResult;
 use pyrefly_graph::index::Idx;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePath;
+use pyrefly_types::type_alias::TypeAlias;
+use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::types::Union;
 use pyrefly_util::display::DisplayWithCtx;
 use pyrefly_util::recurser::Guard;
@@ -1052,6 +1054,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         SolutionsTable: TableKeyed<K, Value = SolutionsEntry<K>>,
     {
         self.get_from_module(cls.module_name(), Some(cls.module_path()), k)
+    }
+
+    pub fn get_type_alias<'b>(&self, data: &'b TypeAliasData) -> &'b TypeAlias {
+        match data {
+            TypeAliasData::Ref(_) => panic!("Not yet implemented"),
+            TypeAliasData::Value(ta) => ta,
+        }
     }
 
     pub fn get<K: Solve<Ans>>(&self, k: &K) -> Arc<K::Answer>

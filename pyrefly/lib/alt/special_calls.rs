@@ -583,7 +583,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         f(me, Type::type_form(t), res)
                     }
                 }
-                Type::TypeAlias(ta) => f(me, ta.as_value(me.stdlib), res),
+                Type::TypeAlias(ta) => f(me, me.get_type_alias(&ta).as_value(me.stdlib), res),
                 _ => res.push(t),
             }
         }

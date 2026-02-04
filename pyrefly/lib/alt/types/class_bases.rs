@@ -203,7 +203,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     fn is_type_alias_with_pydantic_strict_metadata(&self, ty: &Type) -> bool {
-        matches!(ty, Type::TypeAlias(ta) if ta.annotated_metadata()
+        matches!(ty, Type::TypeAlias(ta) if self.get_type_alias(ta).annotated_metadata()
             .iter()
             .any(|metadata| self.is_pydantic_strict_metadata(metadata)))
     }

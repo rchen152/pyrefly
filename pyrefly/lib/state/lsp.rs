@@ -28,6 +28,7 @@ use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
 use pyrefly_python::sys_info::SysInfo;
+use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::types::Union;
 use pyrefly_util::gas::Gas;
 use pyrefly_util::lock::Mutex;
@@ -930,7 +931,9 @@ impl<'a> Transaction<'a> {
             Type::ClassType(class_type) => solver.type_order().instance_as_dunder_call(&class_type),
             Type::SelfType(class_type) => solver.type_order().instance_as_dunder_call(&class_type),
             Type::Union(box Union { members, .. }) => Self::callable_from_types(solver, members),
-            Type::TypeAlias(alias) => Self::callable_from_type(solver, alias.as_type()),
+            Type::TypeAlias(box TypeAliasData::Value(alias)) => {
+                Self::callable_from_type(solver, alias.as_type())
+            }
             Type::Type(box inner) => Self::callable_from_type(solver, inner),
             Type::Quantified(box quantified) => match quantified.restriction {
                 Restriction::Bound(bound) => Self::callable_from_type(solver, bound),
