@@ -3543,7 +3543,9 @@ impl Server {
         )?;
         let res = t
             .into_iter()
-            .filter_map(|(text_size, label_parts)| {
+            .filter_map(|hint_data| {
+                let text_size = hint_data.position;
+                let label_parts = hint_data.label_parts;
                 // If the url is a notebook cell, filter out inlay hints for other cells
                 if info.to_cell_for_lsp(text_size) != maybe_cell_idx {
                     return None;
