@@ -143,16 +143,29 @@ pub enum DependsOn {
 }
 
 impl DependsOn {
-    /// Merge another `DependsOn` into this one, returning the combined dependency.
-    fn merge(&self, other: &DependsOn) -> DependsOn {
+    /// Merge another `DependsOn` into this one, mutating in place.
+    /// This avoids O(n²) cloning when called repeatedly.
+    fn merge_in_place(&mut self, other: DependsOn) {
+        match (&mut *self, other) {
+            (DependsOn::All, _) => {} // Already depends on all
+            (this, DependsOn::All) => *this = DependsOn::All,
+            (_, DependsOn::None) => {} // Nothing to add
+            (DependsOn::None, new_value) => *self = new_value,
+            (DependsOn::Keys(existing), DependsOn::Keys(new_keys)) => {
+                existing.extend(new_keys);
+            }
+        }
+    }
+
+    /// Returns true if merging `other` would be a no-op.
+    fn contains(&self, other: &DependsOn) -> bool {
         match (self, other) {
-            (DependsOn::All, _) | (_, DependsOn::All) => DependsOn::All,
-            (DependsOn::None, other) => other.clone(),
-            (this, DependsOn::None) => this.clone(),
-            (DependsOn::Keys(a), DependsOn::Keys(b)) => {
-                let mut merged = a.clone();
-                merged.extend(b.iter().cloned());
-                DependsOn::Keys(merged)
+            (DependsOn::All, _) => true,  // All contains everything
+            (_, DependsOn::None) => true, // Everything contains None
+            (_, DependsOn::All) => false, // Only All contains All
+            (DependsOn::None, DependsOn::Keys(_)) => false,
+            (DependsOn::Keys(existing), DependsOn::Keys(new_keys)) => {
+                new_keys.iter().all(|k| existing.contains(k))
             }
         }
     }
@@ -1975,12 +1988,28 @@ impl<'a> TransactionHandle<'a> {
         };
 
         if let Some(handle) = cached {
-            {
-                let mut write = self.module_data.deps.write();
-                if let Some(ImportResolution::Resolved(handles)) = write.get_mut(&module)
-                    && let Some(existing) = handles.get_mut(&handle)
-                {
-                    *existing = existing.merge(&depends_on);
+            // Only acquire write lock if we actually have new dependencies to add.
+            // This avoids lock contention on the hot path when the same import is
+            // looked up repeatedly with no new dependency information.
+            if !matches!(&depends_on, DependsOn::None) {
+                // First check with read lock if merge is needed
+                let needs_merge = {
+                    let deps_read = self.module_data.deps.read();
+                    if let Some(ImportResolution::Resolved(handles)) = deps_read.get(&module)
+                        && let Some(existing) = handles.get(&handle)
+                    {
+                        !existing.contains(&depends_on)
+                    } else {
+                        true
+                    }
+                };
+                if needs_merge {
+                    let mut write = self.module_data.deps.write();
+                    if let Some(ImportResolution::Resolved(handles)) = write.get_mut(&module)
+                        && let Some(existing) = handles.get_mut(&handle)
+                    {
+                        existing.merge_in_place(depends_on);
+                    }
                 }
             }
             return FindingOrError::new_finding(self.transaction.get_imported_module(&handle));
@@ -2000,8 +2029,7 @@ impl<'a> TransactionHandle<'a> {
                 let did_insert = match write.entry(module) {
                     Entry::Vacant(e) => {
                         e.insert(ImportResolution::Resolved(SmallMap1::new(
-                            handle,
-                            depends_on.clone(),
+                            handle, depends_on,
                         )));
                         true
                     }
@@ -2009,10 +2037,10 @@ impl<'a> TransactionHandle<'a> {
                         match e.get_mut() {
                             ImportResolution::Resolved(handles) => {
                                 if let Some(existing) = handles.get_mut(&handle) {
-                                    *existing = existing.merge(&depends_on);
+                                    existing.merge_in_place(depends_on);
                                     false
                                 } else {
-                                    handles.insert(handle, depends_on.clone());
+                                    handles.insert(handle, depends_on);
                                     true
                                 }
                             }
@@ -2022,8 +2050,7 @@ impl<'a> TransactionHandle<'a> {
                                 // is first resolved via search paths (fails) and later via an
                                 // explicit path (e.g., from bundled typeshed). Upgrade to Resolved.
                                 e.insert(ImportResolution::Resolved(SmallMap1::new(
-                                    handle,
-                                    depends_on.clone(),
+                                    handle, depends_on,
                                 )));
                                 true
                             }
