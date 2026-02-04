@@ -1677,6 +1677,176 @@ fn test_name_not_in_dunder_all_invalidates_importer() {
     );
 }
 
+/// Test that wildcard re-exports properly propagate invalidation.
+///
+/// When module A re-exports module B's __all__ (e.g., via `from B import *`),
+/// and B's __all__ changes, star importers of A should be invalidated.
+#[test]
+fn test_wildcard_reexport_invalidation() {
+    let mut i = Incremental::new();
+
+    // foo exports x via __all__
+    i.set("foo", "x = 1\n__all__ = [\"x\"]");
+    // bar re-exports foo's __all__ via from foo import *
+    i.set("bar", "from foo import *");
+    // main uses star import from bar
+    i.set("main", "from bar import *\nz = x");
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Add y to foo's __all__ - main should be invalidated because
+    // bar's effective wildcard set changed (even though bar's __all__ entries didn't)
+    i.set("foo", "x = 1\ny = 2\n__all__ = [\"x\", \"y\"]");
+    // bar is invalidated because it depends on foo with wildcard = true
+    // main is invalidated because bar's effective wildcard set changed
+    i.check_ignoring_expectations(&["main"], &["foo", "bar", "main"]);
+}
+
+/// Test that type changes propagate through transitive star import chains.
+///
+/// When module A re-exports module B's exports (via `from B import *`),
+/// and a type in B changes, consumers of A that use that type should be invalidated.
+#[test]
+fn test_wildcard_reexport_type_change_invalidation() {
+    let mut i = Incremental::new();
+
+    // foo exports x via __all__
+    i.set("foo", "x: int = 1\n__all__ = [\"x\"]");
+    // bar re-exports foo's __all__ via from foo import * (pure pass-through)
+    i.set("bar", "from foo import *");
+    // main uses star import from bar and uses x
+    i.set("main", "from bar import *\nz: int = x");
+    i.check(&["main"], &["main", "foo", "bar"]);
+
+    // Change x's type from int to str - main should be invalidated because
+    // it uses x and the type changed, even though bar is just a pass-through.
+    i.set("foo", "x: str = 'hello'\n__all__ = [\"x\"]");
+    // foo is invalidated because its source changed
+    // bar is invalidated because it depends on foo with wildcard = true
+    // main is invalidated because x's type changed and main uses x
+    i.check_ignoring_expectations(&["main"], &["foo", "bar", "main"]);
+}
+
+/// Test that star imports invalidate on type changes to unused variable names.
+#[test]
+fn test_star_import_unused_variable_type_change() {
+    let mut i = Incremental::new();
+
+    // foo exports x and y
+    i.set("foo", "x: int = 1\ny: int = 2\n__all__ = ['x', 'y']");
+    // bar does star import but only uses x
+    i.set("bar", "from foo import *\nz = x + 1");
+    i.check(&["bar"], &["bar", "foo"]);
+
+    // Change y's type - bar IS invalidated even though it doesn't use y
+    i.set(
+        "foo",
+        "x: int = 1\ny: str = 'changed'\n__all__ = ['x', 'y']",
+    );
+    i.check_ignoring_expectations(&["bar"], &["foo", "bar"]);
+
+    // If we change x's type, bar SHOULD be invalidated
+    i.set(
+        "foo",
+        "x: str = 'now a string'\ny: str = 'changed'\n__all__ = ['x', 'y']",
+    );
+    i.check_ignoring_expectations(&["bar"], &["foo", "bar"]);
+}
+
+/// Test that star import errors clear when a missing name is added to the module.
+///
+/// When `__all__` lists a name that doesn't exist, star importers get an error.
+/// Adding the missing definition should clear the error.
+#[test]
+fn test_dunder_all_star_import_missing_definition_error_clears() {
+    let mut i = Incremental::new();
+
+    // foo has __all__ = ["x", "y"] but only defines x - y is missing
+    i.set(
+        "foo",
+        "x = 1\n__all__ = [\"x\", \"y\"] # E: Name `y` is listed in `__all__` but is not defined",
+    );
+    // main does star import and tries to use y - should error
+    i.set(
+        "main",
+        "from foo import * # E: Could not import `y` from `foo`\nz = y",
+    );
+    i.check(&["main", "foo"], &["main", "foo"]);
+
+    let main_handle = i.handle("main");
+
+    // Verify there's an error
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected error when using name listed in __all__ but not defined"
+    );
+
+    // Add the missing definition - error should disappear
+    i.set("foo", "x = 1\ny = 2\n__all__ = [\"x\", \"y\"]");
+    i.check_ignoring_expectations(&["main"], &["foo", "main"]);
+
+    let errors_after = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        errors_after.shown.is_empty(),
+        "Expected no errors after adding y definition, but got: {:?}",
+        errors_after.shown
+    );
+}
+
+/// Test that transitive star import errors clear when a missing name is added.
+///
+/// Similar to test_dunder_all_star_import_missing_definition_error_clears but:
+/// - No __all__ is used (relies on default public exports)
+/// - Uses transitive star imports (foo -> bar -> main)
+#[test]
+fn test_transitive_star_import_missing_name_error_clears() {
+    let mut i = Incremental::new();
+
+    // foo initially empty
+    i.set("foo", "");
+    // bar re-exports from foo via star import
+    i.set("bar", "from foo import *");
+    // main does star import from bar and tries to use x - should fail
+    i.set("main", "from bar import *\nz = x");
+    i.check_ignoring_expectations(&["main", "foo", "bar"], &["main", "foo", "bar"]);
+
+    let main_handle = i.handle("main");
+
+    // Verify there's an error
+    let errors = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        !errors.shown.is_empty(),
+        "Expected error when using undefined name via transitive star import"
+    );
+
+    // Add x to foo - error should disappear in main
+    i.set("foo", "x = 1");
+    i.check_ignoring_expectations(&["main"], &["foo", "bar", "main"]);
+
+    let errors_after = i
+        .state
+        .transaction()
+        .get_errors([&main_handle])
+        .collect_errors();
+    assert!(
+        errors_after.shown.is_empty(),
+        "Expected no errors after adding x to foo, but got: {:?}",
+        errors_after.shown
+    );
+}
+
 #[test]
 fn test_class_index_change_only_invalidates() {
     let mut i = Incremental::new();
