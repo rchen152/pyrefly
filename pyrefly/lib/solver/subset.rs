@@ -932,10 +932,9 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
     /// Implementation of subset equality for Type, other than Var.
     pub fn is_subset_eq_impl(&mut self, got: &Type, want: &Type) -> Result<(), SubsetError> {
         if matches!(got, Type::Materialization) {
-            return self
-                .is_subset_eq_impl(&self.type_order.stdlib().object().clone().to_type(), want);
+            return self.is_subset_eq(&self.type_order.stdlib().object().clone().to_type(), want);
         } else if matches!(want, Type::Materialization) {
-            return self.is_subset_eq_impl(got, &Type::never());
+            return self.is_subset_eq(got, &Type::never());
         }
         match (got, want) {
             (Type::Any(_), _) => {
