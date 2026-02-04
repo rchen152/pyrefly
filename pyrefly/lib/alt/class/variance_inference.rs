@@ -85,11 +85,9 @@ pub struct VarianceViolation {
 #[allow(dead_code)]
 impl VarianceViolation {
     pub fn format_message(&self) -> String {
-        let position_str = self.position_variance.to_string();
-        let declared_str = self.declared_variance.to_string();
         format!(
-            "Type variable `{}` is {declared_str} but is used in {position_str} position",
-            self.var_name
+            "Type variable `{}` is {} but is used in {} position",
+            self.var_name, self.declared_variance, self.position_variance
         )
     }
 }
