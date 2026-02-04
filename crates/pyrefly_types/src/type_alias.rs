@@ -109,6 +109,15 @@ impl TypeAlias {
     pub fn error(name: Name, style: TypeAliasStyle) -> Self {
         Self::new(name, Type::any_error(), style, Vec::new())
     }
+
+    pub fn unknown(name: Name) -> Self {
+        Self::new(
+            name,
+            Type::any_implicit(),
+            TypeAliasStyle::LegacyImplicit,
+            Vec::new(),
+        )
+    }
 }
 
 /// The index of a type alias within a file, used to resolve references to recursive type aliases.
