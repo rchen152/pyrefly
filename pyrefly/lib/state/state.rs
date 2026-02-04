@@ -289,6 +289,7 @@ impl ModuleDep {
             ChangedExport::Name(name) => self.names.get(name).is_some_and(|d| d.type_),
             ChangedExport::NameExistence(name) => self.names.contains_key(name),
             ChangedExport::ClassDefIndex(idx) => self.classes.contains(idx),
+            ChangedExport::Metadata(name) => self.names.get(name).is_some_and(|d| d.metadata),
             // We don't depend on wildcard (checked separately before calling this)
             ChangedExport::Wildcard => false,
         }
@@ -1141,6 +1142,11 @@ impl<'a> Transaction<'a> {
                             // Check for definition name changes (added/removed names)
                             for name in old.changed_definition_names(new) {
                                 changed_set.insert(ChangedExport::NameExistence(name));
+                            }
+
+                            // Check for metadata changes (is_reexport, implicitly_imported_submodule, deprecation, special_export)
+                            for name in old.changed_metadata_names(new) {
+                                changed_set.insert(ChangedExport::Metadata(name));
                             }
 
                             if changed_set.is_empty() {

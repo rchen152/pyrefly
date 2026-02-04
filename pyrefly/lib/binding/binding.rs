@@ -199,6 +199,9 @@ pub enum ChangedExport {
     /// A name was added or removed from the module's definitions.
     /// This is detected at the Exports step, before types are computed.
     NameExistence(Name),
+    /// The metadata of an export changed (is_reexport, implicitly_imported_submodule, deprecation, special_export).
+    /// This is detected at the Exports step by comparing Definition metadata.
+    Metadata(Name),
 }
 
 impl AnyExportedKey {

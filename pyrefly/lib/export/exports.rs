@@ -227,6 +227,45 @@ impl Exports {
             .collect()
     }
 
+    /// Get the names where metadata changed between self and other.
+    /// Checks: is_import status, implicitly_imported_submodules, deprecated, special_exports.
+    /// Only checks names that exist in both versions (existence changes tracked separately).
+    /// Ignores TextRange fields (range, docstring_range) per design doc.
+    pub fn changed_metadata_names(&self, other: &Self) -> SmallSet<Name> {
+        let self_defs = &self.0.definitions;
+        let other_defs = &other.0.definitions;
+
+        let mut changed = SmallSet::new();
+
+        // Check names that exist in both
+        for (name, self_def) in self_defs.definitions.iter() {
+            if let Some(other_def) = other_defs.definitions.get(name) {
+                // Check is_import status (is_reexport)
+                if self_def.style.is_import() != other_def.style.is_import() {
+                    changed.insert(name.clone());
+                    continue;
+                }
+                // Check implicitly_imported_submodules
+                let self_implicit = self_defs.implicitly_imported_submodules.contains(name);
+                let other_implicit = other_defs.implicitly_imported_submodules.contains(name);
+                if self_implicit != other_implicit {
+                    changed.insert(name.clone());
+                    continue;
+                }
+                // Check deprecated
+                if self_defs.deprecated.get(name) != other_defs.deprecated.get(name) {
+                    changed.insert(name.clone());
+                    continue;
+                }
+                // Check special_exports
+                if self_defs.special_exports.get(name) != other_defs.special_exports.get(name) {
+                    changed.insert(name.clone());
+                }
+            }
+        }
+        changed
+    }
+
     /// Get the docstring for this module.
     pub fn docstring_range(&self) -> Option<TextRange> {
         self.0.docstring_range

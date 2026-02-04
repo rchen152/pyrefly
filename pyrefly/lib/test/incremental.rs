@@ -1757,10 +1757,6 @@ fn test_class_deprecation_metadata_change_invalidates() {
 /// This tests the `is_reexport` metadata dependency. When an export changes from being
 /// defined in this module to being re-exported from another module, dependents should
 /// be recomputed.
-///
-/// BUG: Currently, when an export changes from direct definition to re-export (with the
-/// same type), dependents are not invalidated. This means hover info and go-to-definition
-/// may show stale information.
 #[test]
 fn test_reexport_status_change_invalidates() {
     let mut i = Incremental::new();
@@ -1778,10 +1774,7 @@ fn test_reexport_status_change_invalidates() {
     let res = i.unchecked(&["foo", "main"]);
     assert!(res.changed.contains(&"foo".to_owned()));
     assert!(res.changed.contains(&"bar".to_owned()));
-    // BUG: main should be recomputed but currently is not, because is_reexport
-    // metadata is not being tracked as a fine-grained dependency.
-    // Once the bug is fixed, uncomment the assertion below and remove the #[ignore]:
-    // assert!(res.changed.contains(&"main".to_owned()));
+    assert!(res.changed.contains(&"main".to_owned()));
 }
 
 /// Test that when a re-export's source changes, dependents are invalidated.
