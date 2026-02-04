@@ -16,6 +16,7 @@ use pyrefly_derive::VisitMut;
 use pyrefly_python::dunder;
 use pyrefly_types::types::Union;
 use ruff_python_ast::name::Name;
+use ruff_text_size::TextRange;
 use starlark_map::small_map::SmallMap;
 
 use crate::alt::answers::LookupAnswer;
@@ -70,6 +71,34 @@ impl VarianceMap {
             .copied()
             .unwrap_or(Variance::Invariant)
     }
+}
+
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct VarianceViolation {
+    pub range: TextRange,
+    pub var_name: Name,
+    pub position_variance: Variance,
+    pub declared_variance: PreInferenceVariance,
+}
+
+#[allow(dead_code)]
+impl VarianceViolation {
+    pub fn format_message(&self) -> String {
+        let position_str = self.position_variance.to_string();
+        let declared_str = self.declared_variance.to_string();
+        format!(
+            "Type variable `{}` is {declared_str} but is used in {position_str} position",
+            self.var_name
+        )
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct VarianceResult {
+    pub variance_map: VarianceMap,
+    pub violations: Vec<VarianceViolation>,
 }
 
 #[derive(Debug, Clone, Copy)]
