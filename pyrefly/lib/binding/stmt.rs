@@ -47,6 +47,7 @@ use crate::binding::binding::KeyTypeAlias;
 use crate::binding::binding::LinkedKey;
 use crate::binding::binding::NarrowUseLocation;
 use crate::binding::binding::RaisedException;
+use crate::binding::binding::TypeAliasParams;
 use crate::binding::bindings::BindingsBuilder;
 use crate::binding::expr::Usage;
 use crate::binding::narrow::NarrowOps;
@@ -401,10 +402,15 @@ impl<'a> BindingsBuilder<'a> {
         let binding_type_alias = BindingTypeAlias::TypeAliasType {
             name: name.id.clone(),
             annotation: ann,
-            expr: value.as_ref().map(|v| Box::new(v.clone())),
+            expr: value.map(Box::new),
         };
-        self.insert_binding(key_type_alias, binding_type_alias);
-        let binding = Binding::TypeAliasType(ann, name.id.clone(), Box::new((value, type_params)));
+        let idx_type_alias = self.insert_binding(key_type_alias, binding_type_alias);
+        let binding = Binding::TypeAlias {
+            name: name.id.clone(),
+            tparams: TypeAliasParams::TypeAliasType(type_params),
+            key_type_alias: idx_type_alias,
+            range: call.range(),
+        };
         self.insert_binding_current(assigned, binding);
     }
 
@@ -827,17 +833,19 @@ impl<'a> BindingsBuilder<'a> {
                     self.ensure_type(&mut x.value, &mut None);
                     // Pop the type alias scope before binding the definition
                     self.scopes.pop();
+                    let range = x.value.range();
                     let key_type_alias = KeyTypeAlias(self.type_alias_index());
                     let binding_type_alias = BindingTypeAlias::Scoped {
                         name: name.id.clone(),
-                        expr: x.value.clone(),
+                        expr: x.value,
                     };
-                    self.insert_binding(key_type_alias, binding_type_alias);
-                    let binding = Binding::ScopedTypeAlias(
-                        name.id.clone(),
-                        x.type_params.map(|x| *x),
-                        x.value,
-                    );
+                    let idx_type_alias = self.insert_binding(key_type_alias, binding_type_alias);
+                    let binding = Binding::TypeAlias {
+                        name: name.id.clone(),
+                        tparams: TypeAliasParams::Scoped(x.type_params.map(|x| *x)),
+                        key_type_alias: idx_type_alias,
+                        range,
+                    };
                     self.bind_definition(
                         &Ast::expr_name_identifier(name),
                         binding,

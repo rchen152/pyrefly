@@ -31,6 +31,7 @@ use crate::binding::binding::KeyExpect;
 use crate::binding::binding::KeyTypeAlias;
 use crate::binding::binding::MethodSelfKind;
 use crate::binding::binding::SizeExpectation;
+use crate::binding::binding::TypeAliasParams;
 use crate::binding::binding::UnpackedPosition;
 use crate::binding::bindings::BindingsBuilder;
 use crate::binding::bindings::LegacyTParamCollector;
@@ -504,22 +505,30 @@ impl<'a> BindingsBuilder<'a> {
             Some((_, idx)) => Some((AnnotationStyle::Direct, idx)),
             None => canonical_ann.map(|idx| (AnnotationStyle::Forwarded, idx)),
         };
-        if is_definitely_type_alias {
+        let binding = if is_definitely_type_alias {
+            let range = value.range();
             let key_type_alias = KeyTypeAlias(self.type_alias_index());
             let binding_type_alias = BindingTypeAlias::Legacy {
                 name: name.id.clone(),
                 annotation: ann,
-                expr: value.clone(),
+                expr: value,
                 is_explicit: has_type_alias_qualifier,
             };
-            self.insert_binding(key_type_alias, binding_type_alias);
-        }
-        let binding = Binding::NameAssign {
-            name: name.id.clone(),
-            annotation: ann,
-            expr: value,
-            legacy_tparams: tparams,
-            is_in_function_scope: self.scopes.in_function_scope(),
+            let idx_type_alias = self.insert_binding(key_type_alias, binding_type_alias);
+            Binding::TypeAlias {
+                name: name.id.clone(),
+                tparams: TypeAliasParams::Legacy(tparams),
+                key_type_alias: idx_type_alias,
+                range,
+            }
+        } else {
+            Binding::NameAssign {
+                name: name.id.clone(),
+                annotation: ann,
+                expr: value,
+                legacy_tparams: tparams,
+                is_in_function_scope: self.scopes.in_function_scope(),
+            }
         };
         // Record the raw assignment
         let def_idx = current.into_idx();

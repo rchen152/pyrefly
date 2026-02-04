@@ -1769,14 +1769,16 @@ pub enum Binding {
         legacy_tparams: Option<Box<[Idx<KeyLegacyTypeParam>]>>,
         is_in_function_scope: bool,
     },
-    /// A type alias declared with the `type` soft keyword
-    ScopedTypeAlias(Name, Option<TypeParams>, Box<Expr>),
-    /// A type alias declared with the `TypeAliasType` constructor
-    TypeAliasType(
-        Option<Idx<KeyAnnotation>>,
-        Name,
-        Box<(Option<Expr>, Vec<Expr>)>,
-    ),
+    /// A type alias (legacy, scoped, or `TypeAliasType` call).
+    /// Note that ambiguous assignments like `X = Foo` are handled via `NameAssign` bindings, which
+    /// are possibly converted to type aliases in the answers phase. Only assignments that we can
+    /// unambiguously determine are type aliases without type info get `TypeAlias` bindings.
+    TypeAlias {
+        name: Name,
+        tparams: TypeAliasParams,
+        key_type_alias: Idx<KeyTypeAlias>,
+        range: TextRange,
+    },
     /// An entry in a MatchMapping. The Key looks up the value being matched, the Expr is the key we're extracting.
     PatternMatchMapping(Expr, Idx<Key>),
     /// An entry in a MatchClass. The Key looks up the value being matched, the Expr is the class name.
@@ -2027,20 +2029,7 @@ impl DisplayWith<Bindings> for Binding {
                     m.display(expr)
                 )
             }
-            Self::ScopedTypeAlias(name, params, expr) => {
-                write!(
-                    f,
-                    "ScopedTypeAlias({name}, {}, {})",
-                    match params {
-                        None => "None".to_owned(),
-                        Some(params) => commas_iter(|| params.iter().map(|p| p.name())).to_string(),
-                    },
-                    m.display(expr)
-                )
-            }
-            Self::TypeAliasType(a, name, _) => {
-                write!(f, "TypeAliasType({}, {name})", ann(a))
-            }
+            Self::TypeAlias { name, .. } => write!(f, "TypeAlias({name})"),
             Self::PatternMatchMapping(mapping_key, binding_key) => {
                 write!(
                     f,
@@ -2197,9 +2186,7 @@ impl Binding {
             }
             Binding::ClassDef(_, _) => Some(SymbolKind::Class),
             Binding::Module(_, _, _) => Some(SymbolKind::Module),
-            Binding::ScopedTypeAlias(_, _, _) | Binding::TypeAliasType(_, _, _) => {
-                Some(SymbolKind::TypeAlias)
-            }
+            Binding::TypeAlias { .. } => Some(SymbolKind::TypeAlias),
             Binding::NameAssign { name, .. } if name.as_str() == name.to_uppercase() => {
                 Some(SymbolKind::Constant)
             }

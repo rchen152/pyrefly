@@ -3293,6 +3293,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     /// Handle `Binding::ScopedTypeAlias` - process PEP 695 type alias.
     /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[expect(dead_code)]
     #[inline(never)]
     fn binding_to_type_scoped_type_alias(
         &self,
@@ -3314,6 +3315,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     /// Handle `Binding::TypeAliasType` - process TypeAliasType constructor.
     /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[expect(dead_code)]
     #[inline(never)]
     fn binding_to_type_type_alias_type(
         &self,
@@ -4328,12 +4330,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.quantified_from_type_parameter(tp, errors).to_value()
             }
             Binding::Module(m, path, prev) => self.binding_to_type_module(*m, path, *prev),
-            Binding::ScopedTypeAlias(name, params, expr) => {
-                self.binding_to_type_scoped_type_alias(name, params, expr, errors)
-            }
-            Binding::TypeAliasType(ann, name, x) => {
-                self.binding_to_type_type_alias_type(*ann, name, x, errors)
-            }
+            Binding::TypeAlias {
+                name,
+                tparams,
+                key_type_alias,
+                range,
+            } => self.wrap_type_alias(
+                name,
+                (*self.get_idx(*key_type_alias)).clone(),
+                tparams,
+                *range,
+                errors,
+            ),
             Binding::LambdaParameter(var) => var.to_type(),
             Binding::FunctionParameter(param) => self.binding_to_type_function_parameter(param),
             Binding::SuperInstance(style, range) => self.solve_super_binding(style, *range, errors),

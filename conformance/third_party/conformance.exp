@@ -914,24 +914,24 @@
     },
     {
       "code": -2,
-      "column": 40,
+      "column": 13,
       "concise_description": "Type variable `S` is out of scope for this `TypeAliasType`",
       "description": "Type variable `S` is out of scope for this `TypeAliasType`\n  Type parameters must be passed as a tuple literal to the `type_params` argument",
       "line": 43,
       "name": "invalid-type-alias",
       "severity": "error",
-      "stop_column": 47,
+      "stop_column": 66,
       "stop_line": 43
     },
     {
       "code": -2,
-      "column": 40,
+      "column": 13,
       "concise_description": "Type variable `S` is out of scope for this `TypeAliasType`",
       "description": "Type variable `S` is out of scope for this `TypeAliasType`\n  Type parameters must be passed as a tuple literal to the `type_params` argument",
       "line": 44,
       "name": "invalid-type-alias",
       "severity": "error",
-      "stop_column": 47,
+      "stop_column": 48,
       "stop_line": 44
     },
     {
