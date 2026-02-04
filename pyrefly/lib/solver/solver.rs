@@ -1375,7 +1375,7 @@ pub struct Subset<'a, Ans: LookupAnswer> {
     pub type_order: TypeOrder<'a, Ans>,
     gas: Gas,
     /// Recursive assumptions of pairs of types that is_subset_eq returns true for.
-    /// Used for structural typechecking of protocols.
+    /// Used for structural typechecking of protocols and recursive type aliases.
     pub recursive_assumptions: SmallSet<(Type, Type)>,
     /// Class-level recursive assumptions for protocol checks.
     /// When checking `got <: protocol` where got's type arguments contain Vars

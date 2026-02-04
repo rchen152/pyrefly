@@ -5,10 +5,10 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use crate::test::util::TestEnv;
 use crate::testcase;
 
 testcase!(
-    bug = "Fails to catch type error in x4",
     test_basic,
     r#"
 from typing import Union
@@ -18,7 +18,7 @@ x1: X = 1
 x2: X = [1]
 x3: X = [[1]]
 
-x4: X = ["oops"]
+x4: X = ["oops"]  # E: not assignable
     "#,
 );
 
@@ -52,5 +52,35 @@ def f(x: X) -> X | None:
         for y in x:
             if y:
                 return y
+    "#,
+);
+
+testcase!(
+    test_import,
+    TestEnv::one("foo", "type X = int | list[X]"),
+    r#"
+import foo
+x1: foo.X = [[1]]
+x2: foo.X = [["oops"]]  # E: not assignable
+    "#,
+);
+
+testcase!(
+    test_from_import,
+    TestEnv::one("foo", "type X = int | list[X]"),
+    r#"
+from foo import X
+x1: X = [[1]]
+x2: X = [["oops"]]  # E: not assignable
+    "#,
+);
+
+testcase!(
+    test_equivalent,
+    r#"
+type X = int | list[X]
+type Y = int | list[Y]
+def f(x: X) -> Y:
+    return x
     "#,
 );

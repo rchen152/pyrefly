@@ -921,6 +921,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
     fn can_be_recursive(&self, ty: &Type) -> bool {
         match ty {
             Type::ClassType(cls) => self.type_order.is_protocol(cls.class_object()),
+            Type::TypeAlias(_) => true,
             _ => false,
         }
     }
@@ -966,12 +967,34 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             (_, Type::ClassType(want)) if want.is_builtin("object") => {
                 Ok(()) // everything is an instance of `object`
             }
-            // TODO(rechen): these are references to recursive type aliases, which used to resolve to `Any`.
-            // We keep the `Any` behavior to avoid spurious errors while real support is in-progress.
-            (Type::TypeAlias(box TypeAliasData::Ref(_)), _)
-            | (_, Type::TypeAlias(box TypeAliasData::Ref(_))) => Ok(()),
-            (Type::TypeAlias(box TypeAliasData::Value(ta)), _) => {
-                self.is_subset_eq(&ta.as_value(self.type_order.stdlib()), want)
+            (
+                Type::Forall(box Forall {
+                    body: Forallable::TypeAlias(got),
+                    ..
+                }),
+                Type::TypeAlias(box TypeAliasData::Ref(want)),
+            ) if *got.name() == want.name => {
+                // TODO(rechen): remove this once we support generic recursive aliases. Right now,
+                // we replace TypeAliasData::Ref with Any when subscripting, which messes up
+                // is_subset_eq comparisons between the Ref and the equivalent Value.
+
+                Ok(())
+            }
+            (Type::TypeAlias(box got), Type::TypeAlias(box want)) => self.is_subset_eq(
+                &self.type_order.untype_alias(got),
+                &self.type_order.untype_alias(want),
+            ),
+            (Type::TypeAlias(box TypeAliasData::Value(got)), _) => {
+                // We use `as_value` to get the alias's runtime type.
+                self.is_subset_eq(&got.as_value(self.type_order.stdlib()), want)
+            }
+            (Type::TypeAlias(box got @ TypeAliasData::Ref(_)), _) => {
+                // A TypeAliasData::Ref appears on the lhs when we're comparing it structurally
+                // against a TypeAliasData::Value, so we need its static, not runtime, type.
+                self.is_subset_eq(&self.type_order.untype_alias(got), want)
+            }
+            (_, Type::TypeAlias(box want)) => {
+                self.is_subset_eq(got, &self.type_order.untype_alias(want))
             }
             (Type::Quantified(q), Type::Ellipsis) | (Type::Ellipsis, Type::Quantified(q))
                 if q.kind() == QuantifiedKind::ParamSpec =>
