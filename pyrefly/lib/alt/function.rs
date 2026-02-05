@@ -1154,10 +1154,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // Compute the raw return type - this may need tweaks to handle Forall well.
         let inferred_ty =
             match self.call_infer(call_target, &[arg], &[], range, errors, None, None, None) {
-                Type::Callable(c) => Type::Function(Box::new(Function {
+                Type::Callable(c) => self.heap.mk_function(Function {
                     signature: *c,
                     metadata: metadata.clone(),
-                })),
+                }),
                 Type::Forall(box Forall {
                     tparams,
                     body: Forallable::Callable(c),
@@ -1436,7 +1436,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mp = tparams
             .as_vec()
             .map(|p| (&p.quantified, p.restriction().as_type(self.stdlib)));
-        match Type::Function(Box::new(func)).subst(&mp.iter().map(|(k, v)| (*k, v)).collect()) {
+        match self
+            .heap
+            .mk_function(func)
+            .subst(&mp.iter().map(|(k, v)| (*k, v)).collect())
+        {
             Type::Function(func) => *func,
             // We passed a Function in, we must get a Function out
             _ => unreachable!(),
@@ -1507,8 +1511,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // to the return type of the implementation. (Note that the two assignability checks
             // are in opposite directions.)
             self.check_type(
-                &Type::Callable(Box::new(sig_for_input_check(&impl_func.signature))),
-                &Type::Callable(Box::new(sig_for_input_check(&overload_func.signature))),
+                &self
+                    .heap
+                    .mk_callable_from(sig_for_input_check(&impl_func.signature)),
+                &self
+                    .heap
+                    .mk_callable_from(sig_for_input_check(&overload_func.signature)),
                 *range,
                 errors,
                 &|| {
@@ -1528,10 +1536,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             if let Err(specialization_errors) = self.solver().finish_quantified(vs, false) {
                 let mut msg = vec1![format!(
                     "Overload signature `{}` is not consistent with implementation signature `{}`",
-                    self.for_display(Type::Callable(Box::new(
-                        original_overload_func.signature.clone()
-                    ))),
-                    self.for_display(Type::Callable(Box::new(impl_sig.clone()))),
+                    self.for_display(
+                        self.heap
+                            .mk_callable_from(original_overload_func.signature.clone())
+                    ),
+                    self.for_display(self.heap.mk_callable_from(impl_sig.clone())),
                 )];
                 for e in specialization_errors {
                     msg.push(e.to_error_msg(self));
@@ -1661,11 +1670,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     pub fn bind_dunder_new(&self, t: &Type, cls: ClassType) -> Option<Type> {
-        self.bind_function(
-            t,
-            &Type::Type(Box::new(Type::SelfType(cls))),
-            &mut |a, b| self.is_subset_eq(a, b),
-        )
+        self.bind_function(t, &self.heap.mk_type(Type::SelfType(cls)), &mut |a, b| {
+            self.is_subset_eq(a, b)
+        })
     }
 
     /// If this is an unbound callable (i.e., a callable that is not BoundMethod), strip the first parameter.
@@ -1709,12 +1716,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             },
             Type::Callable(callable) => callable
                 .split_first_param(&mut owner)
-                .map(|(_, c)| Type::Callable(Box::new(c))),
+                .map(|(_, c)| self.heap.mk_callable_from(c)),
             Type::Function(func) => func.signature.split_first_param(&mut owner).map(|(_, c)| {
-                Type::Function(Box::new(Function {
+                self.heap.mk_function(Function {
                     signature: c,
                     metadata: func.metadata.clone(),
-                }))
+                })
             }),
             Type::Overload(overload) => overload
                 .signatures
