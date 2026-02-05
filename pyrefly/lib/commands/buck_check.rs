@@ -32,6 +32,7 @@ use crate::config::finder::ConfigFinder;
 use crate::error::error::Error;
 use crate::error::legacy::LegacyErrors;
 use crate::state::require::Require;
+use crate::state::require::RequireLevels;
 use crate::state::state::State;
 
 /// Arguments for Buck-powered type checking.
@@ -87,8 +88,10 @@ fn compute_errors(sys_info: SysInfo, sourcedb: impl SourceDatabase + 'static) ->
     let state = State::new(ConfigFinder::new_constant(config));
     state.run(
         &modules_to_check,
-        Require::Errors,
-        Require::Exports,
+        RequireLevels {
+            specified: Require::Errors,
+            default: Require::Exports,
+        },
         None,
         None,
     );

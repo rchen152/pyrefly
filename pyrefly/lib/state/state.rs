@@ -110,6 +110,7 @@ use crate::state::memory::MemoryFiles;
 use crate::state::memory::MemoryFilesLookup;
 use crate::state::memory::MemoryFilesOverlay;
 use crate::state::require::Require;
+use crate::state::require::RequireLevels;
 use crate::state::steps::Context;
 use crate::state::steps::Step;
 use crate::state::steps::Steps;
@@ -2649,13 +2650,12 @@ impl State {
     pub fn run(
         &self,
         handles: &[Handle],
-        require: Require,
-        default_require: Require,
+        require: RequireLevels,
         subscriber: Option<Box<dyn Subscriber>>,
         telemetry: Option<&mut TelemetryEvent>,
     ) {
-        let mut transaction = self.new_committable_transaction(default_require, subscriber);
-        transaction.transaction.run(handles, require);
+        let mut transaction = self.new_committable_transaction(require.default, subscriber);
+        transaction.transaction.run(handles, require.specified);
         self.commit_transaction(transaction, telemetry);
     }
 
