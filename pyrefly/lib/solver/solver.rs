@@ -13,6 +13,7 @@ use std::fmt;
 use std::fmt::Display;
 use std::mem;
 
+use pyrefly_types::heap::TypeHeap;
 use pyrefly_types::quantified::Quantified;
 use pyrefly_types::simplify::intersect;
 use pyrefly_types::special_form::SpecialForm;
@@ -322,6 +323,7 @@ pub struct Solver {
     variables: Mutex<Variables>,
     instantiation_errors: RwLock<SmallMap<Var, TypeVarSpecializationError>>,
     pub infer_with_first_use: bool,
+    pub heap: TypeHeap,
 }
 
 impl Display for Solver {
@@ -344,6 +346,7 @@ impl Solver {
             variables: Default::default(),
             instantiation_errors: Default::default(),
             infer_with_first_use,
+            heap: TypeHeap::new(),
         }
     }
 

@@ -24,6 +24,7 @@ use pyrefly_graph::calculation::ProposalResult;
 use pyrefly_graph::index::Idx;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::module_path::ModulePath;
+use pyrefly_types::heap::TypeHeap;
 use pyrefly_types::type_alias::TypeAlias;
 use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::type_alias::TypeAliasRef;
@@ -653,6 +654,7 @@ pub struct AnswersSolver<'a, Ans: LookupAnswer> {
     pub uniques: &'a UniqueFactory,
     pub recurser: &'a VarRecurser,
     pub stdlib: &'a Stdlib,
+    pub heap: &'a TypeHeap,
 }
 
 impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
@@ -666,6 +668,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         recurser: &'a VarRecurser,
         stdlib: &'a Stdlib,
         thread_state: &'a ThreadState,
+        heap: &'a TypeHeap,
     ) -> AnswersSolver<'a, Ans> {
         AnswersSolver {
             stdlib,
@@ -677,6 +680,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             recurser,
             current,
             thread_state,
+            heap,
         }
     }
 

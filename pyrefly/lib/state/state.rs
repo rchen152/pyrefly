@@ -1835,6 +1835,7 @@ impl<'a> Transaction<'a> {
             &recurser,
             &stdlib,
             &thread_state,
+            answers.heap(),
         );
         let result = solve(solver);
         Some(result)
