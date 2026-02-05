@@ -65,7 +65,6 @@ use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorContext;
 use crate::error::context::ErrorInfo;
 use crate::error::context::TypeCheckContext;
-use crate::types::callable::Callable;
 use crate::types::callable::Param;
 use crate::types::callable::ParamList;
 use crate::types::callable::Params;
@@ -432,7 +431,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     return_hint.as_ref().map(|hint| hint.as_ref()),
                     errors,
                 );
-                Type::Callable(Box::new(Callable { params, ret }))
+                self.heap.mk_callable(params, ret)
             }
             Expr::Tuple(x) => self.tuple_infer(x, hint, errors),
             Expr::List(x) => {
@@ -598,7 +597,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Expr::EllipsisLiteral(_) => Type::Ellipsis,
             Expr::Starred(ExprStarred { value, .. }) => {
                 let ty = self.expr_untype(value, TypeFormContext::TypeArgument, errors);
-                Type::Unpack(Box::new(ty))
+                self.heap.mk_unpack(ty)
             }
             Expr::Slice(x) => {
                 let elt_exprs = [x.lower.as_ref(), x.upper.as_ref(), x.step.as_ref()];
@@ -1936,7 +1935,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 Type::Type(box Type::Quantified(quantified)) if quantified.is_type_var() => {
                     let quantified = *quantified;
                     let base_display_ty =
-                        Type::Type(Box::new(Type::Quantified(Box::new(quantified.clone()))));
+                        self.heap.mk_type(self.heap.mk_quantified(quantified.clone()));
                     if self.is_restricted_to_enum_class_def_type(&quantified) {
                         if self.is_subset_eq(
                             &self.expr(slice, None, errors),

@@ -569,7 +569,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         _ => None,
                     })
                     .collect(),
-                Type::Quantified(Box::new(q.clone())),
+                self.heap.mk_quantified(q.clone()),
                 ret,
             )
         } else {
@@ -1689,10 +1689,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 Forallable::Callable(c) => c.split_first_param(&mut owner).map(|(param, c)| {
                     let c =
                         self.instantiate_callable_self(&forall.tparams, obj, param, c, is_subset);
-                    Type::Forall(Box::new(Forall {
+                    self.heap.mk_forall(Forall {
                         tparams: forall.tparams.clone(),
                         body: Forallable::Callable(c),
-                    }))
+                    })
                 }),
                 Forallable::Function(f) => {
                     f.signature.split_first_param(&mut owner).map(|(param, c)| {
@@ -1703,13 +1703,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             c,
                             is_subset,
                         );
-                        Type::Forall(Box::new(Forall {
+                        self.heap.mk_forall(Forall {
                             tparams: forall.tparams.clone(),
                             body: Forallable::Function(Function {
                                 signature: c,
                                 metadata: f.metadata.clone(),
                             }),
-                        }))
+                        })
                     })
                 }
                 Forallable::TypeAlias(_) => None,

@@ -838,7 +838,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 Iterable::OfType(t) => produced_types.push(t),
                 Iterable::FixedLen(ts) => produced_types.extend(ts),
                 Iterable::OfTypeVarTuple(q) => {
-                    produced_types.push(Type::ElementOfTypeVarTuple(Box::new(q)))
+                    produced_types.push(self.heap.mk_element_of_type_var_tuple(q))
                 }
             }
         }
@@ -2213,6 +2213,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 match self.get_idx(*cls_binding).ty() {
                     Type::Any(style) => style.propagate(),
                     cls_type @ Type::ClassDef(cls) => {
+                        let heap = self.heap;
                         let make_super_instance = |obj_cls, super_obj: &dyn Fn() -> SuperObj| {
                             let lookup_cls = self.get_super_lookup_class(cls, obj_cls);
                             lookup_cls.map_or_else (
@@ -2228,7 +2229,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                     )
                                 },
                                 |lookup_cls| {
-                                    Type::SuperInstance(Box::new((lookup_cls, super_obj())))
+                                    heap.mk_super_instance(lookup_cls, super_obj())
                                 }
                             )
                         };
@@ -2294,7 +2295,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 SuperObj::Instance(obj_type)
                             }
                         };
-                        Type::SuperInstance(Box::new((lookup_cls, obj)))
+                        self.heap.mk_super_instance(lookup_cls, obj)
                     }
                     None => Type::any_implicit(),
                 }
@@ -3903,6 +3904,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn promote_callable_legacy_typevars(&self, callable: &mut Callable) -> Vec<TParam> {
         let mut seen_type_vars = SmallMap::new();
         let mut tparams = Vec::new();
+        let heap = self.heap;
         callable.visit_mut(&mut |ty| {
             ty.transform_raw_legacy_type_variables(&mut |ty| {
                 if let Type::TypeVar(tv) = ty {
@@ -3916,7 +3918,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             q
                         })
                         .clone();
-                    *ty = Type::Quantified(Box::new(q));
+                    *ty = heap.mk_quantified(q);
                 }
                 // TODO: handle TypeVarTuple and ParamSpec
             });
@@ -4537,7 +4539,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             t @ Type::TypeAlias(box TypeAliasData::Ref(_)) => Some(t),
             Type::Unpack(box Type::Var(v)) if let Some(_guard) = self.recurse(v) => self
                 .untype_opt(
-                    Type::Unpack(Box::new(self.solver().force_var(v))),
+                    self.heap.mk_unpack(self.solver().force_var(v)),
                     range,
                     errors,
                 ),
@@ -4675,7 +4677,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // Determine whether we're simply missing an `Unpack[...]` or the TypeVarTuple isn't allowed at all in this context.
             let tmp_collector = self.error_collector();
             self.validate_type_form(
-                Type::Unpack(Box::new(ty)),
+                self.heap.mk_unpack(ty),
                 range,
                 type_form_context,
                 &tmp_collector,

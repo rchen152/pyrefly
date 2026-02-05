@@ -376,10 +376,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Expr::List(ExprList { elts, .. }) => {
                         match self.check_args_and_construct_tuple(elts, errors) {
                             Some((tuple, true)) => Type::type_form(Type::callable(
-                                vec![Param::VarArg(
-                                    None,
-                                    Type::Unpack(Box::new(Type::Tuple(tuple))),
-                                )],
+                                vec![Param::VarArg(None, self.heap.mk_unpack(Type::Tuple(tuple)))],
                                 ret,
                             )),
                             Some((Tuple::Concrete(elts), false)) => {
@@ -459,9 +456,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     arguments.len()
                 ),
             ),
-            SpecialForm::TypeIs if arguments.len() == 1 => Type::type_form(Type::TypeIs(Box::new(
+            SpecialForm::TypeIs if arguments.len() == 1 => Type::type_form(self.heap.mk_type_is(
                 self.expr_untype(&arguments[0], TypeFormContext::TypeArgument, errors),
-            ))),
+            )),
             SpecialForm::TypeIs => self.error(
                 errors,
                 range,
@@ -471,9 +468,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     arguments.len()
                 ),
             ),
-            SpecialForm::Unpack if arguments.len() == 1 => Type::type_form(Type::Unpack(Box::new(
-                self.expr_untype(&arguments[0], TypeFormContext::TypeArgument, errors),
-            ))),
+            SpecialForm::Unpack if arguments.len() == 1 => {
+                Type::type_form(self.heap.mk_unpack(self.expr_untype(
+                    &arguments[0],
+                    TypeFormContext::TypeArgument,
+                    errors,
+                )))
+            }
             SpecialForm::Unpack => self.error(
                 errors,
                 range,

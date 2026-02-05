@@ -171,7 +171,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // Literal types have no lax coercion - they require exact values
             Type::Literal(_) => ty.clone(),
             Type::LiteralString(_) => ty.clone(),
-            Type::Type(box inner) => Type::Type(Box::new(self.expand_type_for_lax_mode(inner))),
+            Type::Type(box inner) => self.heap.mk_type(self.expand_type_for_lax_mode(inner)),
             // Tuple types: convert to Iterable[T] where T is a union of expanded element types
             Type::Tuple(tuple) => self
                 .stdlib

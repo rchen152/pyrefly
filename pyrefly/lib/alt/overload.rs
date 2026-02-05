@@ -392,7 +392,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 };
                 let signature = self
                     .solver()
-                    .for_display(Type::Callable(Box::new(signature)));
+                    .for_display(self.heap.mk_callable_from(signature));
                 msg.push(format!("{signature}{suffix}"));
             }
             // We intentionally discard closest_overload.call_errors. When no overload matches,

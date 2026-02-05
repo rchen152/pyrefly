@@ -1047,11 +1047,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     kws.0.insert(name.id.clone(), kw.value.infer(self, errors));
                 }
             }
-            Type::KwCall(Box::new(KwCall {
+            self.heap.mk_kw_call(KwCall {
                 func_metadata,
                 keywords: kws,
                 return_ty: res,
-            }))
+            })
         } else {
             res
         }
@@ -1233,11 +1233,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
         }
         // Default constructor that takes no args and returns Self.
+        let heap = self.heap;
         let default_constructor = || {
-            Type::Callable(Box::new(Callable::list(
+            heap.mk_callable_from(Callable::list(
                 ParamList::new(Vec::new()),
                 class_type.clone(),
-            )))
+            ))
         };
         // Check the __new__ method and whether it comes from object or has been overridden
         let (new_attr_ty, overrides_new) = if let Some(t) = self
