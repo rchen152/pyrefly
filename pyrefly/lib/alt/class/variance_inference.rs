@@ -167,13 +167,27 @@ fn on_class(
             }
 
             Type::Function(t) => {
-                on_type(
-                    variance,
-                    inj,
-                    &Type::Callable(Box::new(t.signature.clone())),
-                    on_edge,
-                    on_var,
-                );
+                // Walk return type covariantly
+                on_type(variance, inj, &t.signature.ret, on_edge, on_var);
+
+                // Walk parameters contravariantly (same as Callable handling)
+                match &t.signature.params {
+                    Params::List(param_list) => {
+                        for param in param_list.items().iter() {
+                            let ty = param.as_type();
+                            on_type(variance.inv(), inj, ty, on_edge, on_var);
+                        }
+                    }
+                    Params::Ellipsis | Params::Materialization => {
+                        // Unknown params
+                    }
+                    Params::ParamSpec(prefix, param_spec) => {
+                        for (ty, _) in prefix.iter() {
+                            on_type(variance.inv(), inj, ty, on_edge, on_var);
+                        }
+                        on_type(variance.inv(), inj, param_spec, on_edge, on_var);
+                    }
+                }
             }
 
             Type::ClassType(class) => {
