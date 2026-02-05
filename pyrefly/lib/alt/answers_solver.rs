@@ -1226,7 +1226,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Type::Var(v) if let Some(_guard) = self.me.recurse(*v) => {
                         self.go(&self.me.solver().force_var(*v), in_type)
                     }
-                    _ if in_type => (self.f)(&Type::Type(Box::new(ty.clone()))),
+                    _ if in_type => (self.f)(&self.me.heap.mk_type(ty.clone())),
                     _ => {
                         // If we haven't encountered a union this must be the only type, no need to cache it.
                         // Otherwise, if inserting succeeds (we haven't processed this type before) actually do it.

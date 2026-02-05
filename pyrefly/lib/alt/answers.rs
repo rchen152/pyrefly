@@ -677,14 +677,14 @@ impl Answers {
         let lock = self.trace.as_ref()?.lock();
         match lock.overloaded_callees.get(&range)? {
             OverloadedCallee::Resolved { callable } => {
-                Some(self.deep_force(Type::Callable(Box::new(callable.clone()))))
+                Some(self.deep_force(self.heap().mk_callable_from(callable.clone())))
             }
             OverloadedCallee::Candidates {
                 closest,
                 is_closest_chosen,
                 ..
             } if *is_closest_chosen => {
-                Some(self.deep_force(Type::Callable(Box::new(closest.clone()))))
+                Some(self.deep_force(self.heap().mk_callable_from(closest.clone())))
             }
             _ => None,
         }
