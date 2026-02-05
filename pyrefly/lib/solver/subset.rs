@@ -1154,18 +1154,6 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 self.is_subset_params(&l.params, &u.params)?;
                 self.is_subset_eq(&l.ret, &u.ret)
             }
-
-            // Callable is not allowed as an argument to type.
-            // https://typing.python.org/en/latest/spec/special-types.html#type
-            (Type::Type(box Type::Callable(_)), Type::ClassType(cls)) if cls.is_builtin("type") => {
-                Err(SubsetError::TypeCannotAcceptSpecialForms(
-                    SpecialForm::Callable,
-                ))
-            }
-            (Type::Type(box Type::Callable(_)), Type::Type(_)) => Err(
-                SubsetError::TypeCannotAcceptSpecialForms(SpecialForm::Callable),
-            ),
-
             (Type::TypedDict(got), Type::TypedDict(want)) => self.is_subset_typed_dict(got, want),
             (Type::TypedDict(got), Type::PartialTypedDict(want)) => {
                 self.is_subset_partial_typed_dict(got, want)
@@ -1442,15 +1430,24 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             (Type::LiteralString(_), _) => {
                 self.is_subset_eq(&self.type_order.stdlib().str().clone().to_type(), want)
             }
-
+            // Most special forms are not allowed as an argument to type.
+            // https://typing.python.org/en/latest/spec/special-types.html#type
             (Type::Type(box Type::SpecialForm(special_form)), Type::ClassType(cls))
                 if cls.is_builtin("type") =>
             {
                 Err(SubsetError::TypeCannotAcceptSpecialForms(*special_form))
             }
+            (Type::Type(box Type::Callable(_)), Type::ClassType(cls)) if cls.is_builtin("type") => {
+                Err(SubsetError::TypeCannotAcceptSpecialForms(
+                    SpecialForm::Callable,
+                ))
+            }
             (Type::Type(box Type::SpecialForm(special_form)), Type::Type(_)) => {
                 Err(SubsetError::TypeCannotAcceptSpecialForms(*special_form))
             }
+            (Type::Type(box Type::Callable(_)), Type::Type(_)) => Err(
+                SubsetError::TypeCannotAcceptSpecialForms(SpecialForm::Callable),
+            ),
             (Type::Type(l), Type::Type(u)) => self.is_subset_eq(l, u),
             (Type::Type(_), _) => self.is_subset_eq(
                 &self.type_order.stdlib().builtins_type().clone().to_type(),
