@@ -18,6 +18,7 @@ use crate::callable::Callable;
 use crate::callable::Function;
 use crate::callable::ParamList;
 use crate::callable::Params;
+use crate::callable::Required;
 use crate::class::ClassType;
 use crate::keywords::KwCall;
 use crate::quantified::Quantified;
@@ -206,5 +207,10 @@ impl TypeHeap {
     /// Create a `Type::ParamSpecValue` from a ParamSpec.
     pub fn mk_param_spec_value(&self, params: ParamList) -> Type {
         Type::ParamSpecValue(params)
+    }
+
+    /// Create a `Type::Concatenate` from types and a ParamSpec.
+    pub fn mk_concatenate(&self, types: Box<[(Type, Required)]>, param_spec: Type) -> Type {
+        Type::Concatenate(types, Box::new(param_spec))
     }
 }

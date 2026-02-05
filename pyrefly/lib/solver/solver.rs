@@ -382,12 +382,12 @@ impl Solver {
             }
             Variable::PartialContained(range) if pin_partial_types => {
                 let range = *range;
-                *variable = Variable::Answer(Type::any_implicit());
+                *variable = Variable::Answer(self.heap.mk_any_implicit());
                 Some(PinError::ImplicitPartialContained(range))
             }
             Variable::PartialContained(_) => None,
             Variable::Unwrap => {
-                *variable = Variable::Answer(Type::any_implicit());
+                *variable = Variable::Answer(self.heap.mk_any_implicit());
                 None
             }
             Variable::AliasRecursive(r) => {
@@ -432,7 +432,7 @@ impl Solver {
         if limit == 0 {
             // TODO: Should probably add an error here, and use any_error,
             // but don't have any good location information to hand.
-            *t = Type::any_implicit();
+            *t = self.heap.mk_any_implicit();
         } else if let Type::Var(x) = t {
             let lock = self.variables.lock();
             if let Some(_guard) = lock.recurse(*x, recurser) {
@@ -447,7 +447,7 @@ impl Solver {
                     _ => {}
                 }
             } else {
-                *t = Type::any_implicit();
+                *t = self.heap.mk_any_implicit();
             }
         } else {
             t.recurse_mut(&mut |t| self.expand_with_limit(t, limit - 1, recurser));
@@ -471,7 +471,7 @@ impl Solver {
                     Variable::Quantified(q) => q.as_gradual_type(),
                     Variable::PartialQuantified(q) => q.as_gradual_type(),
                     Variable::AliasRecursive(r) => Self::finish_alias_recursive(r),
-                    _ => Type::any_implicit(),
+                    _ => self.heap.mk_any_implicit(),
                 };
                 *e = Variable::Answer(ty.clone());
                 ty
@@ -483,13 +483,13 @@ impl Solver {
         if limit == 0 {
             // TODO: Should probably add an error here, and use any_error,
             // but don't have any good location information to hand.
-            *t = Type::any_implicit();
+            *t = self.heap.mk_any_implicit();
         } else if let Type::Var(v) = t {
             if let Some(_guard) = self.recurse(*v, recurser) {
                 *t = self.force_var(*v);
                 self.deep_force_mut_with_limit(t, limit - 1, recurser);
             } else {
-                *t = Type::any_implicit();
+                *t = self.heap.mk_any_implicit();
             }
         } else {
             t.recurse_mut(&mut |t| self.deep_force_mut_with_limit(t, limit - 1, recurser));
@@ -522,17 +522,21 @@ impl Solver {
                 *x = intersect(mem::take(&mut y.0), y.1.clone());
             }
             if let Type::Tuple(tuple) = x {
-                *x = Type::Tuple(simplify_tuples(mem::take(tuple)));
+                *x = self.heap.mk_tuple(simplify_tuples(mem::take(tuple)));
             }
             // When a param spec is resolved, collapse any Concatenate and Callable types that use it
             if let Type::Concatenate(ts, box Type::ParamSpecValue(paramlist)) = x {
                 let params = mem::take(paramlist).prepend_types(ts).into_owned();
-                *x = Type::ParamSpecValue(params);
+                *x = self.heap.mk_param_spec_value(params);
             }
             if let Type::Concatenate(ts, box Type::Concatenate(ts2, pspec)) = x {
-                *x = Type::Concatenate(
-                    ts.iter().chain(ts2.iter()).cloned().collect(),
-                    pspec.clone(),
+                *x = self.heap.mk_concatenate(
+                    ts.iter()
+                        .chain(ts2.iter())
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                    (**pspec).clone(),
                 );
             }
             let (callable, kind) = match x {
@@ -618,7 +622,7 @@ impl Solver {
                 if should_erase {
                     for (x, erase) in xs.iter_mut().zip(erase_xs) {
                         if erase {
-                            *x = Type::never();
+                            *x = self.heap.mk_never();
                         }
                     }
                 }
@@ -990,7 +994,7 @@ impl Solver {
         type_order: TypeOrder<Ans>,
     ) -> Type {
         if branches.is_empty() {
-            return Type::never();
+            return self.heap.mk_never();
         }
         if branches.len() == 1 {
             return branches.pop().unwrap();
