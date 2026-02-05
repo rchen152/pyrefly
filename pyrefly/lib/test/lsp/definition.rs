@@ -1479,6 +1479,53 @@ Definition Result:
 }
 
 #[test]
+fn string_literal_not_in_dunder_all() {
+    let pkg = r#"
+class Foo:
+    pass
+
+x = "Foo"
+#    ^
+
+__all__ = ["Foo"]
+"#;
+    let report = get_batched_lsp_operations_report(&[("pkg", pkg)], get_test_report);
+    assert_eq!(
+        r#"
+# pkg.py
+5 | x = "Foo"
+         ^
+Definition Result: None
+
+
+"#
+        .trim(),
+        report.trim(),
+    );
+}
+
+#[test]
+fn dunder_all_nonexistent_symbol() {
+    let pkg = r#"
+__all__ = ["NonExistent"]
+#            ^
+"#;
+    let report = get_batched_lsp_operations_report_allow_error(&[("pkg", pkg)], get_test_report);
+    assert_eq!(
+        r#"
+# pkg.py
+2 | __all__ = ["NonExistent"]
+                 ^
+Definition Result: None
+
+
+"#
+        .trim(),
+        report.trim(),
+    );
+}
+
+#[test]
 fn renamed_reexport() {
     let lib2 = r#"
 def foo() -> None: ...
