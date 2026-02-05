@@ -209,8 +209,24 @@ impl TypeHeap {
         Type::ParamSpecValue(params)
     }
 
+    /// Create a `Type::Any` with error style.
+    pub fn mk_any_error(&self) -> Type {
+        Type::any_error()
+    }
+
     /// Create a `Type::Concatenate` from types and a ParamSpec.
     pub fn mk_concatenate(&self, types: Box<[(Type, Required)]>, param_spec: Type) -> Type {
         Type::Concatenate(types, Box::new(param_spec))
+    }
+    /// Create a `Type::Callable` with ellipsis params.
+    pub fn mk_callable_ellipsis(&self, ret: Type) -> Type {
+        Type::callable_ellipsis(ret)
+    }
+
+    /// Create a `Type::Type` wrapping an inner type (type form).
+    ///
+    /// This is an alias for `mk_type` matching the `Type::type_form` helper.
+    pub fn mk_type_form(&self, inner: Type) -> Type {
+        Type::type_form(inner)
     }
 }
