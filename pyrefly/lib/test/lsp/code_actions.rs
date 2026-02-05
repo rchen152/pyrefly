@@ -1550,6 +1550,74 @@ A = 1
 }
 
 #[test]
+fn convert_star_import_multiline() {
+    // Multi-line star imports with parentheses should be handled correctly.
+    let code_main = r#"
+# MULTILINE-START
+from foo import (
+    *,
+)
+# MULTILINE-END
+x = A
+"#;
+    let code_foo = r#"
+A = 1
+"#;
+    let selection = find_marked_range_with(code_main, "# MULTILINE-START", "# MULTILINE-END");
+    let (module_info, actions, titles) = compute_convert_star_import_actions(
+        &[("main", code_main), ("foo", code_foo)],
+        "main",
+        selection,
+    );
+    assert_eq!(vec!["Convert to explicit imports from `foo`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    // The replacement should produce a valid single-line import.
+    let expected = r#"
+# MULTILINE-START
+from foo import A
+# MULTILINE-END
+x = A
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn convert_star_import_shadowed_name() {
+    // When a name from the star import is shadowed by a local assignment,
+    // it should not appear in the explicit import list.
+    let code_main = r#"
+# CONVERT-START
+from foo import *
+# CONVERT-END
+A = 42
+print(A)
+print(B)
+"#;
+    let code_foo = r#"
+A = 1
+B = 2
+"#;
+    let selection = find_marked_range_with(code_main, "# CONVERT-START", "# CONVERT-END");
+    let (module_info, actions, titles) = compute_convert_star_import_actions(
+        &[("main", code_main), ("foo", code_foo)],
+        "main",
+        selection,
+    );
+    assert_eq!(vec!["Convert to explicit imports from `foo`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    // Only B should be imported since A is shadowed by a local assignment.
+    let expected = r#"
+# CONVERT-START
+from foo import B
+# CONVERT-END
+A = 42
+print(A)
+print(B)
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
 fn extract_variable_name_increments_when_taken() {
     let code = r#"
 def compute():
