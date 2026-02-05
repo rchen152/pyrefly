@@ -17,6 +17,10 @@
 use crate::callable::Callable;
 use crate::callable::Function;
 use crate::callable::Params;
+use crate::quantified::Quantified;
+use crate::types::BoundMethod;
+use crate::types::Forall;
+use crate::types::Forallable;
 use crate::types::Type;
 use crate::types::Union;
 
@@ -78,5 +82,20 @@ impl TypeHeap {
     /// Create a `Type::Type` wrapping an inner type.
     pub fn mk_type(&self, inner: Type) -> Type {
         Type::Type(Box::new(inner))
+    }
+
+    /// Create a `Type::Quantified` from a Quantified.
+    pub fn mk_quantified(&self, quantified: Quantified) -> Type {
+        Type::Quantified(Box::new(quantified))
+    }
+
+    /// Create a `Type::Forall` from a Forall.
+    pub fn mk_forall(&self, forall: Forall<Forallable>) -> Type {
+        Type::Forall(Box::new(forall))
+    }
+
+    /// Create a `Type::BoundMethod` from a BoundMethod.
+    pub fn mk_bound_method(&self, bound_method: BoundMethod) -> Type {
+        Type::BoundMethod(Box::new(bound_method))
     }
 }

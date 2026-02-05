@@ -43,10 +43,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.class_self_param(cls, false),
             Param::Pos(Name::new_static("_x"), base_type, Required::Required),
         ];
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), self.instantiate(cls)),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::INIT),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 
@@ -59,10 +59,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             ),
             Param::Pos(Name::new_static("_x"), base_type, Required::Required),
         ];
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), self.instantiate(cls)),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::NEW),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 

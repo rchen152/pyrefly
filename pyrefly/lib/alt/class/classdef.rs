@@ -155,7 +155,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::Type(box Type::Any(a)) => Some((TParams::empty(), a.propagate())),
             Type::Type(box Type::SpecialForm(SpecialForm::Callable)) => Some((
                 TParams::empty(),
-                Type::Callable(Box::new(Callable::ellipsis(Type::any_implicit()))),
+                self.heap
+                    .mk_callable_from(Callable::ellipsis(Type::any_implicit())),
             )),
             Type::None | Type::Type(box Type::None) => Some((TParams::empty(), Type::None)),
             Type::ClassType(cls) if cls.is_builtin("type") => {

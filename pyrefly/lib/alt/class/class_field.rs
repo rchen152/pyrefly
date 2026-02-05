@@ -2451,11 +2451,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         match &ty {
             Type::Function(func) => {
                 forall(Forallable::Function((**func).clone()), &quantified, None)
-                    .map_or(ty, |forall| Type::Forall(Box::new(forall)))
+                    .map_or(ty, |forall| self.heap.mk_forall(forall))
             }
             Type::Forall(box Forall { tparams, body }) => {
                 forall(body.clone(), &quantified, Some(tparams))
-                    .map_or(ty, |forall| Type::Forall(Box::new(forall)))
+                    .map_or(ty, |forall| self.heap.mk_forall(forall))
             }
             Type::Overload(overload) => Type::Overload(Overload {
                 signatures: overload.signatures.clone().mapped(|sig| match &sig {
@@ -2540,13 +2540,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         cls: None,
                         name: field_name.clone(),
                     };
-                    ty = Type::Function(Box::new(Function {
+                    ty = self.heap.mk_function(Function {
                         signature: callable,
                         metadata: FuncMetadata {
                             kind: FunctionKind::Def(Box::new(func_id)),
                             flags: FuncFlags::default(),
                         },
-                    }))
+                    })
                 }
                 if let Some(quantified) = self_quantified {
                     ty = self.wrap_with_quantified(ty, quantified);

@@ -148,10 +148,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             };
         let root_param = Param::Pos(ROOT, root_model_type, root_requiredness);
         let params = vec![self.class_self_param(cls, false), root_param];
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), Type::None),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::INIT),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 
@@ -169,7 +169,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // `RootModel` should always have a type parameter unless we're working with a broken copy
         // of Pydantic.
         let tparam = tparams.iter().next()?;
-        let root_model_type = Type::Quantified(Box::new(tparam.quantified.clone()));
+        let root_model_type = self.heap.mk_quantified(tparam.quantified.clone());
         Some(
             self.get_pydantic_root_model_init(cls, root_model_type, false)
                 .inner

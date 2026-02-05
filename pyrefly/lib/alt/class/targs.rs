@@ -227,7 +227,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }]);
         let tuple_ty = Type::Tuple(Tuple::Unpacked(Box::new((
             Vec::new(),
-            Type::Quantified(Box::new(quantified)),
+            self.heap.mk_quantified(quantified),
             Vec::new(),
         ))));
         (tparams, tuple_ty)
@@ -268,7 +268,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> (QuantifiedHandle, Function) {
         let (qs, t) =
             self.solver()
-                .fresh_quantified(tparams, Type::Function(Box::new(func)), self.uniques);
+                .fresh_quantified(tparams, self.heap.mk_function(func), self.uniques);
         match t {
             Type::Function(func) => (qs, *func),
             // We passed a Function to fresh_quantified(), so we know we get a Function back out.
@@ -283,7 +283,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> (QuantifiedHandle, Callable) {
         let (qs, t) =
             self.solver()
-                .fresh_quantified(tparams, Type::Callable(Box::new(c)), self.uniques);
+                .fresh_quantified(tparams, self.heap.mk_callable_from(c), self.uniques);
         match t {
             Type::Callable(c) => (qs, *c),
             // We passed a Function to fresh_quantified(), so we know we get a Function back out.

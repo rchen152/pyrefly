@@ -761,13 +761,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.get_typed_dict_value_type_from_fields(cls, fields),
         );
         let metadata = FuncMetadata::def(self.module().dupe(), cls.dupe(), ITEMS_METHOD);
-        ClassSynthesizedField::new(Type::Function(Box::new(Function {
+        ClassSynthesizedField::new(self.heap.mk_function(Function {
             signature: Callable::list(
                 ParamList::new(vec![self.class_self_param(cls, false)]),
                 dict_items.to_type(),
             ),
             metadata,
-        })))
+        }))
     }
 
     /// Synthesize a `values()` method.
@@ -781,13 +781,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.get_typed_dict_value_type_from_fields(cls, fields),
         );
         let metadata = FuncMetadata::def(self.module().dupe(), cls.dupe(), VALUES_METHOD);
-        ClassSynthesizedField::new(Type::Function(Box::new(Function {
+        ClassSynthesizedField::new(self.heap.mk_function(Function {
             signature: Callable::list(
                 ParamList::new(vec![self.class_self_param(cls, false)]),
                 dict_values.to_type(),
             ),
             metadata,
-        })))
+        }))
     }
 
     fn all_items_are_removable(&self, cls: &Class, fields: &SmallMap<Name, bool>) -> bool {
@@ -808,7 +808,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if !self.all_items_are_removable(cls, fields) {
             return None;
         }
-        Some(ClassSynthesizedField::new(Type::Function(Box::new(
+        Some(ClassSynthesizedField::new(self.heap.mk_function(
             Function {
                 signature: Callable::list(
                     ParamList::new(vec![self.class_self_param(cls, true)]),
@@ -816,7 +816,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ),
                 metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), CLEAR_METHOD),
             },
-        ))))
+        )))
     }
 
     fn get_typed_dict_popitem(
@@ -827,7 +827,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if !self.all_items_are_removable(cls, fields) {
             return None;
         }
-        Some(ClassSynthesizedField::new(Type::Function(Box::new(
+        Some(ClassSynthesizedField::new(self.heap.mk_function(
             Function {
                 signature: Callable::list(
                     ParamList::new(vec![self.class_self_param(cls, true)]),
@@ -838,7 +838,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ),
                 metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), POPITEM_METHOD),
             },
-        ))))
+        )))
     }
 
     pub fn get_typed_dict_synthesized_fields(&self, cls: &Class) -> Option<ClassSynthesizedFields> {

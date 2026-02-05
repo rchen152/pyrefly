@@ -97,13 +97,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Required::Required,
         )];
         params.extend(self.get_named_tuple_field_params(cls, elements));
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(
                 ParamList::new(params),
                 Type::SelfType(self.as_class_type_unchecked(cls)),
             ),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::NEW),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 
@@ -114,10 +114,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Param::VarArg(None, Type::any_implicit()),
             Param::Kwargs(None, Type::any_implicit()),
         ];
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), Type::None),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::INIT),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 
@@ -136,13 +136,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 },
             )
             .collect();
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(
                 ParamList::new(params),
                 Type::ClassType(self.stdlib.iterable(self.unions(element_types))),
             ),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::ITER),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 

@@ -419,10 +419,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             params.push(Param::Kwargs(None, Type::Any(AnyStyle::Implicit)));
         }
 
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), self.instantiate(cls)),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::REPLACE),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 
@@ -494,10 +494,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ));
             }
         }
-        let want = Type::Callable(Box::new(Callable::list(
+        let want = self.heap.mk_callable_from(Callable::list(
             ParamList::new(params),
             self.stdlib.object().clone().to_type(),
-        )));
+        ));
         self.check_type(&post_init, &want, range, errors, &|| {
             TypeCheckContext::of_kind(TypeCheckKind::PostInit)
         });
@@ -889,10 +889,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             params.push(Param::Kwargs(None, Type::Any(AnyStyle::Implicit)));
         }
 
-        let ty = Type::Function(Box::new(Function {
+        let ty = self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), Type::None),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::INIT),
-        }));
+        });
         ClassSynthesizedField::new(ty)
     }
 
@@ -956,14 +956,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .map(|name| {
                 (
                     name.clone(),
-                    ClassSynthesizedField::new(Type::Function(Box::new(Function {
+                    ClassSynthesizedField::new(self.heap.mk_function(Function {
                         signature: if *name == dunder::EQ || *name == dunder::NE {
                             callable_eq.clone()
                         } else {
                             callable.clone()
                         },
                         metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), name.clone()),
-                    }))),
+                    })),
                 )
             })
             .collect()
@@ -972,9 +972,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn get_dataclass_hash(&self, cls: &Class) -> ClassSynthesizedField {
         let params = vec![self.class_self_param(cls, false)];
         let ret = self.stdlib.int().clone().to_type();
-        ClassSynthesizedField::new(Type::Function(Box::new(Function {
+        ClassSynthesizedField::new(self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), ret),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::HASH),
-        })))
+        }))
     }
 }

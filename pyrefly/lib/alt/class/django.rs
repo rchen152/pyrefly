@@ -377,10 +377,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             setter: None,
             has_deleter: false,
         });
-        Type::Function(Box::new(Function {
+        self.heap.mk_function(Function {
             signature,
             metadata,
-        }))
+        })
     }
 
     /// Get the primary key field type for a Django model.
@@ -465,10 +465,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn get_display_method(&self, cls: &Class, method_name: &Name) -> ClassSynthesizedField {
         let params = vec![self.class_self_param(cls, false)];
         let ret = self.stdlib.str().clone().to_type();
-        ClassSynthesizedField::new(Type::Function(Box::new(Function {
+        ClassSynthesizedField::new(self.heap.mk_function(Function {
             signature: Callable::list(ParamList::new(params), ret),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), method_name.clone()),
-        })))
+        }))
     }
 
     /// Returns the primary key type of the related model.
