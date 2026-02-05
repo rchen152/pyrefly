@@ -15,6 +15,7 @@
 //! incremental migration of construction sites before switching to arena allocation.
 
 use crate::callable::Callable;
+use crate::callable::Function;
 use crate::callable::Params;
 use crate::types::Type;
 use crate::types::Union;
@@ -62,6 +63,16 @@ impl TypeHeap {
     /// Create a `Type::Callable` from params and return type.
     pub fn mk_callable(&self, params: Params, ret: Type) -> Type {
         Type::Callable(Box::new(Callable { params, ret }))
+    }
+
+    /// Create a `Type::Callable` from an existing Callable.
+    pub fn mk_callable_from(&self, callable: Callable) -> Type {
+        Type::Callable(Box::new(callable))
+    }
+
+    /// Create a `Type::Function` from a Function.
+    pub fn mk_function(&self, func: Function) -> Type {
+        Type::Function(Box::new(func))
     }
 
     /// Create a `Type::Type` wrapping an inner type.

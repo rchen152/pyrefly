@@ -550,12 +550,12 @@ impl Solver {
             {
                 let new_callable = |c| {
                     if let Some(k) = kind {
-                        Type::Function(Box::new(Function {
+                        self.heap.mk_function(Function {
                             signature: c,
                             metadata: k.clone(),
-                        }))
+                        })
                     } else {
-                        Type::Callable(Box::new(c))
+                        self.heap.mk_callable_from(c)
                     }
                 };
                 match pspec {
