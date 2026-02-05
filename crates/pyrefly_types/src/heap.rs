@@ -16,6 +16,7 @@
 
 use crate::callable::Callable;
 use crate::callable::Function;
+use crate::callable::ParamList;
 use crate::callable::Params;
 use crate::class::ClassType;
 use crate::keywords::KwCall;
@@ -140,5 +141,70 @@ impl TypeHeap {
     /// Create a `Type::KwargsValue` from a Quantified.
     pub fn mk_kwargs_value(&self, quantified: Quantified) -> Type {
         Type::KwargsValue(Box::new(quantified))
+    }
+
+    /// Create a `Type::ClassType` from a ClassType.
+    pub fn mk_class_type(&self, class_type: ClassType) -> Type {
+        Type::ClassType(class_type)
+    }
+
+    /// Create a `Type::Any` with implicit style (unknown).
+    pub fn mk_any_implicit(&self) -> Type {
+        Type::any_implicit()
+    }
+
+    /// Create a `Type::Any` with explicit style.
+    pub fn mk_any_explicit(&self) -> Type {
+        Type::any_explicit()
+    }
+
+    /// Create an optional type (T | None).
+    pub fn mk_optional(&self, inner: Type) -> Type {
+        Type::optional(inner)
+    }
+
+    /// Create a `Type::SelfType` from a ClassType.
+    pub fn mk_self_type(&self, class_type: ClassType) -> Type {
+        Type::SelfType(class_type)
+    }
+
+    /// Create a `Type::ClassDef` from a Class.
+    pub fn mk_class_def(&self, class: crate::class::Class) -> Type {
+        Type::ClassDef(class)
+    }
+
+    /// Create a `Type::Tuple` with concrete elements.
+    pub fn mk_concrete_tuple(&self, elts: Vec<Type>) -> Type {
+        Type::concrete_tuple(elts)
+    }
+
+    /// Create a `Type::Never`.
+    pub fn mk_never(&self) -> Type {
+        Type::never()
+    }
+
+    /// Create a `Type::Tuple` from a Tuple.
+    pub fn mk_tuple(&self, tuple: crate::tuple::Tuple) -> Type {
+        Type::Tuple(tuple)
+    }
+
+    /// Create an unbounded tuple type.
+    pub fn mk_unbounded_tuple(&self, elem: Type) -> Type {
+        Type::unbounded_tuple(elem)
+    }
+
+    /// Create an unpacked tuple type.
+    pub fn mk_unpacked_tuple(&self, before: Vec<Type>, middle: Type, after: Vec<Type>) -> Type {
+        Type::unpacked_tuple(before, middle, after)
+    }
+
+    /// Create a `Type::Var` from a Var.
+    pub fn mk_var(&self, var: crate::types::Var) -> Type {
+        Type::Var(var)
+    }
+
+    /// Create a `Type::ParamSpecValue` from a ParamSpec.
+    pub fn mk_param_spec_value(&self, params: ParamList) -> Type {
+        Type::ParamSpecValue(params)
     }
 }
