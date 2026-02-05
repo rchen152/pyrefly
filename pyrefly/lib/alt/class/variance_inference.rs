@@ -116,7 +116,7 @@ fn handle_tuple_type(
     variance: Variance,
     inj: bool,
     on_edge: &mut impl FnMut(&Class) -> InferenceMap,
-    on_var: &mut impl FnMut(&Name, Variance, bool),
+    on_var: &mut impl FnMut(&Name, Variance, bool, PreInferenceVariance),
 ) {
     match tuple {
         Tuple::Concrete(concrete_types) => {
@@ -145,7 +145,7 @@ fn on_type(
     inj: bool,
     typ: &Type,
     on_edge: &mut impl FnMut(&Class) -> InferenceMap,
-    on_var: &mut impl FnMut(&Name, Variance, bool),
+    on_var: &mut impl FnMut(&Name, Variance, bool, PreInferenceVariance),
 ) {
     match typ {
         Type::Type(t) => {
@@ -203,7 +203,7 @@ fn on_type(
             }
         }
         Type::Quantified(q) => {
-            on_var(q.name(), variance, inj);
+            on_var(q.name(), variance, inj, q.variance());
         }
         Type::Union(box Union { members: tys, .. }) => {
             for ty in tys {
@@ -261,7 +261,7 @@ fn on_type(
 fn on_class(
     class: &Class,
     on_edge: &mut impl FnMut(&Class) -> InferenceMap,
-    on_var: &mut impl FnMut(&Name, Variance, bool),
+    on_var: &mut impl FnMut(&Name, Variance, bool, PreInferenceVariance),
     get_class_bases: &impl Fn(&Class) -> Arc<ClassBases>,
     get_fields: &impl Fn(&Class) -> SmallMap<Name, Arc<ClassField>>,
 ) {
@@ -351,7 +351,7 @@ fn initialize_environment_impl<'a>(
     let params = initial_inference_map(get_tparams(class).as_vec());
 
     environment.insert(class.dupe(), params.clone());
-    let mut on_var = |_name: &Name, _variance: Variance, _inj: bool| {};
+    let mut on_var = |_name: &Name, _variance: Variance, _inj: bool, _: PreInferenceVariance| {};
 
     // get the variance results of a given class c
     let mut on_edge = |c: &Class| {
@@ -376,7 +376,7 @@ fn initialize_environment<'a>(
     get_fields: &impl Fn(&Class) -> SmallMap<Name, Arc<ClassField>>,
     get_tparams: &impl Fn(&Class) -> Arc<TParams>,
 ) {
-    let mut on_var = |_name: &Name, _variance: Variance, _inj: bool| {};
+    let mut on_var = |_name: &Name, _variance: Variance, _inj: bool, _: PreInferenceVariance| {};
     let mut on_edge = |c: &Class| {
         initialize_environment_impl(c, environment, get_class_bases, get_fields, get_tparams)
     };
@@ -404,28 +404,32 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 for (my_class, params) in env.iter() {
                     let mut new_params = params.clone();
 
-                    let mut on_var = |name: &Name, variance: Variance, has_inferred: bool| {
-                        if let Some(old_status) = new_params.get_mut(name) {
-                            let new_inferred_variance =
-                                variance.union(old_status.inferred_variance);
-                            // Mark as inferred if:
-                            // 1. It was already marked as inferred, OR
-                            // 2. The caller says this is an injective (reliable) constraint, OR
-                            // 3. The inferred variance is no longer Bivariant (we found a constraint)
-                            // Case 3 fixes self-referential types where `has_inferred` is always false
-                            // but we still discover variance constraints through the fixpoint iteration.
-                            let new_has_variance_inferred = old_status.has_variance_inferred
-                                || has_inferred
-                                || new_inferred_variance != Variance::Bivariant;
-                            if new_inferred_variance != old_status.inferred_variance
-                                || new_has_variance_inferred != old_status.has_variance_inferred
-                            {
-                                old_status.inferred_variance = new_inferred_variance;
-                                old_status.has_variance_inferred = new_has_variance_inferred;
-                                changed = true;
+                    let mut on_var =
+                        |name: &Name,
+                         variance: Variance,
+                         has_inferred: bool,
+                         _: PreInferenceVariance| {
+                            if let Some(old_status) = new_params.get_mut(name) {
+                                let new_inferred_variance =
+                                    variance.union(old_status.inferred_variance);
+                                // Mark as inferred if:
+                                // 1. It was already marked as inferred, OR
+                                // 2. The caller says this is an injective (reliable) constraint, OR
+                                // 3. The inferred variance is no longer Bivariant (we found a constraint)
+                                // Case 3 fixes self-referential types where `has_inferred` is always false
+                                // but we still discover variance constraints through the fixpoint iteration.
+                                let new_has_variance_inferred = old_status.has_variance_inferred
+                                    || has_inferred
+                                    || new_inferred_variance != Variance::Bivariant;
+                                if new_inferred_variance != old_status.inferred_variance
+                                    || new_has_variance_inferred != old_status.has_variance_inferred
+                                {
+                                    old_status.inferred_variance = new_inferred_variance;
+                                    old_status.has_variance_inferred = new_has_variance_inferred;
+                                    changed = true;
+                                }
                             }
-                        }
-                    };
+                        };
                     let mut on_edge = |c: &Class| env.get(c).cloned().unwrap_or_default();
                     on_class(
                         my_class,
