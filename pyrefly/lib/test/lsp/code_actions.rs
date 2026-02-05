@@ -18,6 +18,7 @@ use crate::state::require::Require;
 use crate::state::state::State;
 use crate::test::util::extract_cursors_for_test;
 use crate::test::util::get_batched_lsp_operations_report_allow_error;
+use crate::test::util::mk_multi_file_state;
 use crate::test::util::mk_multi_file_state_assert_no_errors;
 
 fn apply_patch(info: &ModuleInfo, range: TextRange, patch: String) -> (String, String) {
@@ -181,6 +182,19 @@ fn apply_first_inline_variable_action(code: &str) -> Option<String> {
 fn apply_first_inline_method_action(code: &str) -> Option<String> {
     let (handles, state) =
         mk_multi_file_state_assert_no_errors(&[("main", code)], Require::Everything);
+    let handle = handles.get("main").unwrap();
+    let transaction = state.transaction();
+    let module_info = transaction.get_module_info(handle).unwrap();
+    let selection = cursor_selection(code);
+    let actions = transaction
+        .inline_method_code_actions(handle, selection)
+        .unwrap_or_default();
+    let edits = actions.first()?.edits.clone();
+    Some(apply_refactor_edits_for_module(&module_info, &edits))
+}
+
+fn apply_first_inline_method_action_allow_errors(code: &str) -> Option<String> {
+    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::Everything, false);
     let handle = handles.get("main").unwrap();
     let transaction = state.transaction();
     let module_info = transaction.get_module_info(handle).unwrap();
@@ -2346,6 +2360,91 @@ class A:
     def bar(self):
         1
 #        ^
+"#;
+    assert_eq!(expected, updated);
+}
+
+#[test]
+fn inline_method_for_class_no_action_staticmethod() {
+    // @staticmethod methods cannot use self.foo() pattern
+    let code = r#"
+class A:
+    @staticmethod
+    def foo():
+        return 1
+
+    def bar(self):
+        self.foo()
+#        ^
+"#;
+    assert!(apply_first_inline_method_action(code).is_none());
+}
+
+#[test]
+fn inline_method_for_class_no_action_classmethod() {
+    // @classmethod methods cannot use self.foo() pattern
+    let code = r#"
+class A:
+    @classmethod
+    def foo(cls):
+        return 1
+
+    def bar(self):
+        self.foo()
+#        ^
+"#;
+    assert!(apply_first_inline_method_action(code).is_none());
+}
+
+#[test]
+fn inline_method_for_class_no_action_method_not_found() {
+    // Cannot inline a method that doesn't exist in the class
+    let code = r#"
+class A:
+    def bar(self):
+        self.foo()
+#        ^
+"#;
+    assert!(apply_first_inline_method_action_allow_errors(code).is_none());
+}
+
+#[test]
+fn inline_method_for_class_no_action_different_receiver() {
+    // Cannot inline when receiver name doesn't match the self parameter
+    let code = r#"
+class A:
+    def foo(self):
+        return 1
+
+    def bar(self):
+        this.foo()
+#        ^
+"#;
+    assert!(apply_first_inline_method_action_allow_errors(code).is_none());
+}
+
+#[test]
+fn inline_method_for_nested_class() {
+    let code = r#"
+class Outer:
+    class Inner:
+        def foo(self):
+            return 1
+
+        def bar(self):
+            self.foo()
+#            ^
+"#;
+    let updated = apply_first_inline_method_action(code).expect("expected inline method action");
+    let expected = r#"
+class Outer:
+    class Inner:
+        def foo(self):
+            return 1
+
+        def bar(self):
+            1
+#            ^
 "#;
     assert_eq!(expected, updated);
 }
