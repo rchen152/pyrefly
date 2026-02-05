@@ -11,17 +11,12 @@
   "aliases_newtype.py": [],
   "aliases_recursive.py": [
     "Line 63: Expected 1 errors",
-    "Line 69: Expected 1 errors",
-    "Line 72: Expected 1 errors",
-    "Line 75: Expected 1 errors"
+    "Line 69: Expected 1 errors"
   ],
   "aliases_type_statement.py": [
-    "Line 82: Expected 1 errors",
-    "Line 84: Expected 1 errors",
-    "Lines 88, 89: Expected error (tag 'RTA6+')"
+    "Line 84: Expected 1 errors"
   ],
   "aliases_typealiastype.py": [
-    "Line 46: Expected 1 errors",
     "Line 47: Expected 1 errors",
     "Line 48: Expected 1 errors",
     "Line 66: Expected 1 errors"

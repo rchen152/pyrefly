@@ -1159,7 +1159,33 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .iter()
             .map(|e| self.expr_infer(e, &self.error_swallower()))
             .collect();
+        self.check_type_alias_for_cyclic_reference(name, &ty, range, errors);
         TypeAlias::new(name.clone(), Type::type_form(ty), style, annotated_metadata)
+    }
+
+    fn check_type_alias_for_cyclic_reference(
+        &self,
+        name: &Name,
+        ty: &Type,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) {
+        let mut contains_cyclic_ref = false;
+        // We only check for the name of the current alias to avoid reporting duplicate errors
+        // for a cycle involving multiple aliases.
+        let is_self_ref =
+            |ty: &Type| matches!(ty, Type::TypeAlias(box TypeAliasData::Ref(r)) if r.name == *name);
+        self.map_over_union(ty, |ty| {
+            contains_cyclic_ref |= is_self_ref(ty);
+        });
+        if contains_cyclic_ref {
+            self.error(
+                errors,
+                range,
+                ErrorInfo::Kind(ErrorKind::InvalidTypeAlias),
+                format!("Found cyclic self-reference in `{name}`"),
+            );
+        }
     }
 
     /// `typealiastype_tparams` refers specifically to the elements of the tuple literal passed to the `TypeAliasType` constructor

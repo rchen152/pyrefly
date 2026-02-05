@@ -180,3 +180,31 @@ class C[T: A]: pass
 type R = int | C[R]
     "#,
 );
+
+testcase!(
+    test_cyclic,
+    r#"
+type W = W  # E: cyclic self-reference in `W`
+type X = int | X  # E: cyclic self-reference in `X`
+type Y = int | Z
+type Z = int | Y  # E: cyclic self-reference in `Z`
+    "#,
+);
+
+testcase!(
+    test_recursive_function_type,
+    r#"
+from typing import Callable
+type F = Callable[[int], None | F]
+def g(f: F): pass
+def h1(x: int) -> None:
+    pass
+def h2(x: int) -> Callable[[int], None]:
+    return h1
+def h3(x: int) -> int:
+    return x
+g(h1)
+g(h2)
+g(h3)  # E: not assignable
+    "#,
+);

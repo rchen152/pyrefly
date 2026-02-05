@@ -677,6 +677,28 @@
       "severity": "error",
       "stop_column": 83,
       "stop_line": 52
+    },
+    {
+      "code": -2,
+      "column": 29,
+      "concise_description": "Found cyclic self-reference in `RecursiveUnion`",
+      "description": "Found cyclic self-reference in `RecursiveUnion`",
+      "line": 72,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 57,
+      "stop_line": 72
+    },
+    {
+      "code": -2,
+      "column": 31,
+      "concise_description": "Found cyclic self-reference in `MutualReference1`",
+      "description": "Found cyclic self-reference in `MutualReference1`",
+      "line": 75,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 61,
+      "stop_line": 75
     }
   ],
   "aliases_type_statement.py": [
@@ -965,6 +987,28 @@
       "severity": "error",
       "stop_column": 41,
       "stop_line": 79
+    },
+    {
+      "code": -2,
+      "column": 28,
+      "concise_description": "Found cyclic self-reference in `RecursiveTypeAlias3`",
+      "description": "Found cyclic self-reference in `RecursiveTypeAlias3`",
+      "line": 82,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 47,
+      "stop_line": 82
+    },
+    {
+      "code": -2,
+      "column": 28,
+      "concise_description": "Found cyclic self-reference in `RecursiveTypeAlias7`",
+      "description": "Found cyclic self-reference in `RecursiveTypeAlias7`",
+      "line": 89,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 47,
+      "stop_line": 89
     }
   ],
   "aliases_typealiastype.py": [
@@ -1022,6 +1066,28 @@
       "severity": "error",
       "stop_column": 65,
       "stop_line": 45
+    },
+    {
+      "code": -2,
+      "column": 41,
+      "concise_description": "Found cyclic self-reference in `BadAlias4`",
+      "description": "Found cyclic self-reference in `BadAlias4`",
+      "line": 46,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 50,
+      "stop_line": 46
+    },
+    {
+      "code": -2,
+      "column": 40,
+      "concise_description": "Found cyclic self-reference in `BadAlias7`",
+      "description": "Found cyclic self-reference in `BadAlias7`",
+      "line": 49,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 49,
+      "stop_line": 49
     },
     {
       "code": -2,

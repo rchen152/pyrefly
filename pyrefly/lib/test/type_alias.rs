@@ -1084,14 +1084,14 @@ from typing import TypeAliasType, TypeVar
 T = TypeVar("T")
 
 # Direct self-reference
-BadAlias4 = TypeAliasType("BadAlias4", "BadAlias4")  # should error: circular dependency
+BadAlias4 = TypeAliasType("BadAlias4", "BadAlias4")  # E: cyclic self-reference in `BadAlias4`
 
 # Self-reference in union with type param
 BadAlias5 = TypeAliasType("BadAlias5", T | "BadAlias5[str]", type_params=(T,))  # should error: circular dependency
 
 # Mutual circular reference
-BadAlias6 = TypeAliasType("BadAlias6", "BadAlias7")  # should error: circular dependency
-BadAlias7 = TypeAliasType("BadAlias7", BadAlias6)
+BadAlias6 = TypeAliasType("BadAlias6", "BadAlias7")
+BadAlias7 = TypeAliasType("BadAlias7", BadAlias6)  # E: cyclic self-reference in `BadAlias7`
 
 # Self-reference via list
 BadAlias21 = TypeAliasType("BadAlias21", list[BadAlias21])  # should error: circular dependency
@@ -1105,12 +1105,12 @@ testcase!(
 from typing import Callable
 
 # Direct self-reference (not through generic param)
-type RecursiveTypeAlias3 = RecursiveTypeAlias3  # should error: circular definition
+type RecursiveTypeAlias3 = RecursiveTypeAlias3  # E: cyclic self-reference in `RecursiveTypeAlias3`
 
 type RecursiveTypeAlias4[T] = T | RecursiveTypeAlias4[str]  # should error: circular definition
 
-type RecursiveTypeAlias6 = RecursiveTypeAlias7  # should error: circular definition
-type RecursiveTypeAlias7 = RecursiveTypeAlias6
+type RecursiveTypeAlias6 = RecursiveTypeAlias7
+type RecursiveTypeAlias7 = RecursiveTypeAlias6  # E: cyclic self-reference in `RecursiveTypeAlias7`
 "#,
 );
 
