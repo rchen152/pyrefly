@@ -26,7 +26,6 @@ use lsp_types::ConfigurationParams;
 use lsp_types::HoverContents;
 use lsp_types::PublishDiagnosticsParams;
 use lsp_types::RegistrationParams;
-use lsp_types::UnregistrationParams;
 use lsp_types::Url;
 use lsp_types::notification::DidChangeConfiguration;
 use lsp_types::notification::DidChangeNotebookDocument;
@@ -58,7 +57,6 @@ use lsp_types::request::SemanticTokensFullRequest;
 use lsp_types::request::SemanticTokensRangeRequest;
 use lsp_types::request::Shutdown;
 use lsp_types::request::SignatureHelpRequest;
-use lsp_types::request::UnregisterCapability;
 use lsp_types::request::WillRenameFiles;
 use lsp_types::request::WorkspaceConfiguration;
 use pretty_assertions::assert_eq;
@@ -635,6 +633,7 @@ impl TestClient {
     }
 
     /// Send a file creation event notification
+    #[allow(dead_code)]
     pub fn file_created(&self, file: &str) {
         let path = self.get_root_or_panic().join(file);
         self.send_notification::<DidChangeWatchedFiles>(json!({
@@ -657,6 +656,7 @@ impl TestClient {
     }
 
     /// Send a file deletion event notification
+    #[allow(dead_code)]
     pub fn file_deleted(&self, file: &str) {
         let path = self.get_root_or_panic().join(file);
         self.send_notification::<DidChangeWatchedFiles>(json!({
@@ -1150,30 +1150,6 @@ impl TestClient {
             client: self,
             _type: PhantomData,
         })
-    }
-
-    /// Expect a file watcher unregistration request.
-    /// Validates that the request is specifically unregistering the file watcher (ID: "FILEWATCHER").
-    pub fn expect_file_watcher_unregister(&self) -> Result<(), LspMessageError> {
-        let params: UnregistrationParams = self.expect_message(
-            &format!("Request {}", UnregisterCapability::METHOD),
-            |msg| {
-                if let Message::Request(x) = msg
-                    && x.method == UnregisterCapability::METHOD
-                {
-                    Some(Ok(serde_json::from_value(x.params).unwrap()))
-                } else {
-                    None
-                }
-            },
-        )?;
-        assert!(
-            params
-                .unregisterations
-                .iter()
-                .any(|x| x.id == "FILEWATCHER")
-        );
-        Ok(())
     }
 
     #[expect(dead_code)]

@@ -528,6 +528,7 @@ pub struct Server {
     outgoing_request_id: AtomicI32,
     outgoing_requests: Mutex<HashMap<RequestId, Request>>,
     filewatcher_registered: AtomicBool,
+    watched_patterns: Mutex<SmallSet<WatchPattern>>,
     version_info: Mutex<HashMap<PathBuf, i32>>,
     id: Uuid,
     /// The surface/entrypoint for the language server (`--from` CLI arg)
@@ -1864,6 +1865,7 @@ impl Server {
             outgoing_request_id: AtomicI32::new(1),
             outgoing_requests: Mutex::new(HashMap::new()),
             filewatcher_registered: AtomicBool::new(false),
+            watched_patterns: Mutex::new(SmallSet::new()),
             version_info: Mutex::new(HashMap::new()),
             id: Uuid::new_v4(),
             surface,
@@ -4041,14 +4043,6 @@ impl Server {
                 ..
             }) => {
                 let relative_pattern_support = relative_pattern_support.is_some_and(|b| b);
-                if self.filewatcher_registered.load(Ordering::Relaxed) {
-                    self.send_request::<UnregisterCapability>(UnregistrationParams {
-                        unregisterations: Vec::from([Unregistration {
-                            id: Self::FILEWATCHER_ID.to_owned(),
-                            method: DidChangeWatchedFiles::METHOD.to_owned(),
-                        }]),
-                    });
-                }
                 let configs = self.workspaces.loaded_configs.clean_and_get_configs();
                 let mut glob_patterns = SmallSet::new();
                 for root in &roots {
@@ -4062,15 +4056,43 @@ impl Server {
                     });
                 }
                 glob_patterns.extend(ConfigFile::get_paths_to_watch(&configs));
-                let watchers = glob_patterns
+                let mut watched_patterns = self.watched_patterns.lock();
+
+                let should_rewatch = watched_patterns.difference(&glob_patterns).next().is_some();
+                // Serialization is the most expensive part of this function, so avoid rewatching
+                // when we can.
+                let (new_patterns, should_rewatch) = if should_rewatch {
+                    *watched_patterns = glob_patterns.clone();
+                    // we should clear out all of our watchers and rewatch everything
+                    (glob_patterns, true)
+                } else {
+                    // we only want to watch new patterns
+                    let new_patterns = glob_patterns
+                        .difference(&watched_patterns)
+                        .cloned()
+                        .collect();
+                    watched_patterns.extend(glob_patterns);
+                    (new_patterns, false)
+                };
+
+                let watchers = new_patterns
                     .into_iter()
-                    .map(|p| Self::get_pattern_to_watch(p, relative_pattern_support))
+                    .map(|p| Self::get_pattern_to_watch(p.to_owned(), relative_pattern_support))
                     .map(|glob_pattern| FileSystemWatcher {
                         glob_pattern,
                         kind: Some(WatchKind::Create | WatchKind::Change | WatchKind::Delete),
                     })
                     .collect::<Vec<_>>();
+
                 pattern_count = watchers.len();
+                if self.filewatcher_registered.load(Ordering::Relaxed) && should_rewatch {
+                    self.send_request::<UnregisterCapability>(UnregistrationParams {
+                        unregisterations: Vec::from([Unregistration {
+                            id: Self::FILEWATCHER_ID.to_owned(),
+                            method: DidChangeWatchedFiles::METHOD.to_owned(),
+                        }]),
+                    });
+                }
                 self.send_request::<RegisterCapability>(RegistrationParams {
                     registrations: Vec::from([Registration {
                         id: Self::FILEWATCHER_ID.to_owned(),
