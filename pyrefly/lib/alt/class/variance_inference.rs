@@ -111,6 +111,153 @@ type InferenceMap = SmallMap<Name, InferenceStatus>;
 // Why is this not Class or ClassObject
 type VarianceEnv = SmallMap<Class, InferenceMap>;
 
+fn handle_tuple_type(
+    tuple: &Tuple,
+    variance: Variance,
+    inj: bool,
+    on_edge: &mut impl FnMut(&Class) -> InferenceMap,
+    on_var: &mut impl FnMut(&Name, Variance, bool),
+) {
+    match tuple {
+        Tuple::Concrete(concrete_types) => {
+            for ty in concrete_types {
+                on_type(variance, inj, ty, on_edge, on_var);
+            }
+        }
+        Tuple::Unbounded(unbounded_ty) => {
+            on_type(variance, inj, unbounded_ty, on_edge, on_var);
+        }
+        Tuple::Unpacked(boxed_parts) => {
+            let (before, middle, after) = &**boxed_parts;
+            for ty in before {
+                on_type(variance, inj, ty, on_edge, on_var);
+            }
+            on_type(variance, inj, middle, on_edge, on_var);
+            for ty in after {
+                on_type(variance, inj, ty, on_edge, on_var);
+            }
+        }
+    }
+}
+
+fn on_type(
+    variance: Variance,
+    inj: bool,
+    typ: &Type,
+    on_edge: &mut impl FnMut(&Class) -> InferenceMap,
+    on_var: &mut impl FnMut(&Name, Variance, bool),
+) {
+    match typ {
+        Type::Type(t) => {
+            on_type(variance, inj, t, on_edge, on_var);
+        }
+
+        Type::Function(t) => {
+            // Walk return type covariantly
+            on_type(variance, inj, &t.signature.ret, on_edge, on_var);
+
+            // Walk parameters contravariantly
+            match &t.signature.params {
+                Params::List(param_list) => {
+                    for param in param_list.items().iter() {
+                        let ty = param.as_type();
+                        on_type(variance.inv(), inj, ty, on_edge, on_var);
+                    }
+                }
+                Params::Ellipsis | Params::Materialization => {
+                    // Unknown params
+                }
+                Params::ParamSpec(prefix, param_spec) => {
+                    for (ty, _) in prefix.iter() {
+                        on_type(variance.inv(), inj, ty, on_edge, on_var);
+                    }
+                    on_type(variance.inv(), inj, param_spec, on_edge, on_var);
+                }
+            }
+        }
+
+        Type::ClassType(class) => {
+            let params = on_edge(class.class_object());
+            let targs = class.targs().as_slice();
+
+            // If targs is empty, nothing to do
+            if targs.is_empty() {
+                return;
+            }
+
+            // Zip params (from on_edge) with targs
+            // Note: if params.len() != targs.len(), zip will stop at the shorter one
+            for (status, ty) in params.values().zip(targs) {
+                // Use specified_variance if available (for externally defined TypeVars
+                // with explicit variance like covariant=True), otherwise use inferred.
+                let effective_variance = status
+                    .specified_variance
+                    .unwrap_or(status.inferred_variance);
+                on_type(
+                    variance.compose(effective_variance),
+                    status.has_variance_inferred,
+                    ty,
+                    on_edge,
+                    on_var,
+                );
+            }
+        }
+        Type::Quantified(q) => {
+            on_var(q.name(), variance, inj);
+        }
+        Type::Union(box Union { members: tys, .. }) => {
+            for ty in tys {
+                on_type(variance, inj, ty, on_edge, on_var);
+            }
+        }
+        Type::Overload(t) => {
+            let sigs = &t.signatures;
+            for sig in sigs {
+                on_type(variance, inj, &sig.as_type(), on_edge, on_var);
+            }
+        }
+        Type::Callable(t) => {
+            // Walk return type covariantly
+            on_type(variance, inj, &t.ret, on_edge, on_var);
+
+            // Walk parameters contravariantly
+            match &t.params {
+                Params::List(param_list) => {
+                    for param in param_list.items().iter() {
+                        let ty = param.as_type();
+                        on_type(variance.inv(), inj, ty, on_edge, on_var);
+                    }
+                }
+                Params::Ellipsis | Params::Materialization => {
+                    // Unknown params
+                }
+                Params::ParamSpec(prefix, param_spec) => {
+                    for (ty, _) in prefix.iter() {
+                        on_type(variance.inv(), inj, ty, on_edge, on_var);
+                    }
+                    on_type(variance.inv(), inj, param_spec, on_edge, on_var);
+                }
+            }
+        }
+        Type::Tuple(t) => {
+            handle_tuple_type(t, variance, inj, on_edge, on_var);
+        }
+        Type::Forall(forall) => {
+            // Methods with type parameters are wrapped in Forall. We need to visit
+            // the body to find class-level type variables used within.
+            on_type(
+                variance,
+                inj,
+                &forall.body.clone().as_type(),
+                on_edge,
+                on_var,
+            );
+        }
+
+        _ => {}
+    }
+}
+
 fn on_class(
     class: &Class,
     on_edge: &mut impl FnMut(&Class) -> InferenceMap,
@@ -123,153 +270,6 @@ fn on_class(
         let ends_with_double_underscore = name.ends_with("__");
 
         starts_with_underscore && !ends_with_double_underscore
-    }
-
-    fn handle_tuple_type(
-        tuple: &Tuple,
-        variance: Variance,
-        inj: bool,
-        on_edge: &mut impl FnMut(&Class) -> InferenceMap,
-        on_var: &mut impl FnMut(&Name, Variance, bool),
-    ) {
-        match tuple {
-            Tuple::Concrete(concrete_types) => {
-                for ty in concrete_types {
-                    on_type(variance, inj, ty, on_edge, on_var);
-                }
-            }
-            Tuple::Unbounded(unbounded_ty) => {
-                on_type(variance, inj, unbounded_ty, on_edge, on_var);
-            }
-            Tuple::Unpacked(boxed_parts) => {
-                let (before, middle, after) = &**boxed_parts;
-                for ty in before {
-                    on_type(variance, inj, ty, on_edge, on_var);
-                }
-                on_type(variance, inj, middle, on_edge, on_var);
-                for ty in after {
-                    on_type(variance, inj, ty, on_edge, on_var);
-                }
-            }
-        }
-    }
-
-    fn on_type(
-        variance: Variance,
-        inj: bool,
-        typ: &Type,
-        on_edge: &mut impl FnMut(&Class) -> InferenceMap,
-        on_var: &mut impl FnMut(&Name, Variance, bool),
-    ) {
-        match typ {
-            Type::Type(t) => {
-                on_type(variance, inj, t, on_edge, on_var);
-            }
-
-            Type::Function(t) => {
-                // Walk return type covariantly
-                on_type(variance, inj, &t.signature.ret, on_edge, on_var);
-
-                // Walk parameters contravariantly (same as Callable handling)
-                match &t.signature.params {
-                    Params::List(param_list) => {
-                        for param in param_list.items().iter() {
-                            let ty = param.as_type();
-                            on_type(variance.inv(), inj, ty, on_edge, on_var);
-                        }
-                    }
-                    Params::Ellipsis | Params::Materialization => {
-                        // Unknown params
-                    }
-                    Params::ParamSpec(prefix, param_spec) => {
-                        for (ty, _) in prefix.iter() {
-                            on_type(variance.inv(), inj, ty, on_edge, on_var);
-                        }
-                        on_type(variance.inv(), inj, param_spec, on_edge, on_var);
-                    }
-                }
-            }
-
-            Type::ClassType(class) => {
-                let params = on_edge(class.class_object());
-                let targs = class.targs().as_slice();
-
-                // If targs is empty, nothing to do
-                if targs.is_empty() {
-                    return;
-                }
-
-                // Zip params (from on_edge) with targs
-                // Note: if params.len() != targs.len(), zip will stop at the shorter one
-                for (status, ty) in params.values().zip(targs) {
-                    // Use specified_variance if available (for externally defined TypeVars
-                    // with explicit variance like covariant=True), otherwise use inferred.
-                    let effective_variance = status
-                        .specified_variance
-                        .unwrap_or(status.inferred_variance);
-                    on_type(
-                        variance.compose(effective_variance),
-                        status.has_variance_inferred,
-                        ty,
-                        on_edge,
-                        on_var,
-                    );
-                }
-            }
-            Type::Quantified(q) => {
-                on_var(q.name(), variance, inj);
-            }
-            Type::Union(box Union { members: tys, .. }) => {
-                for ty in tys {
-                    on_type(variance, inj, ty, on_edge, on_var);
-                }
-            }
-            Type::Overload(t) => {
-                let sigs = &t.signatures;
-                for sig in sigs {
-                    on_type(variance, inj, &sig.as_type(), on_edge, on_var);
-                }
-            }
-            Type::Callable(t) => {
-                // Walk return type covariantly
-                on_type(variance, inj, &t.ret, on_edge, on_var);
-
-                // Walk parameters contravariantly
-                match &t.params {
-                    Params::List(param_list) => {
-                        for param in param_list.items().iter() {
-                            let ty = param.as_type();
-                            on_type(variance.inv(), inj, ty, on_edge, on_var);
-                        }
-                    }
-                    Params::Ellipsis | Params::Materialization => {
-                        // Unknown params
-                    }
-                    Params::ParamSpec(prefix, param_spec) => {
-                        for (ty, _) in prefix.iter() {
-                            on_type(variance.inv(), inj, ty, on_edge, on_var);
-                        }
-                        on_type(variance.inv(), inj, param_spec, on_edge, on_var);
-                    }
-                }
-            }
-            Type::Tuple(t) => {
-                handle_tuple_type(t, variance, inj, on_edge, on_var);
-            }
-            Type::Forall(forall) => {
-                // Methods with type parameters are wrapped in Forall. We need to visit
-                // the body to find class-level type variables used within.
-                on_type(
-                    variance,
-                    inj,
-                    &forall.body.clone().as_type(),
-                    on_edge,
-                    on_var,
-                );
-            }
-
-            _ => {}
-        }
     }
 
     for base_type in get_class_bases(class).iter() {
