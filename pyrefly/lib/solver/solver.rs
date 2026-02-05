@@ -95,7 +95,12 @@ enum Variable {
     /// A loop-recursive variable, e.g. `x = None; while x is None: x = f()`
     /// The Variable tracks the prior type bound to this name before the loop.
     LoopRecursive(Type, LoopBound),
-    /// A recursive type alias
+    /// A reference to a recursive type alias, like `type X = int | list[X]`.
+    ///
+    /// These are created when, in the process of inferring a type for the RHS of a type alias,
+    /// we encounter the name of the same alias. Unlike most other variables, AliasRecursive
+    /// represents a known, fixed type and exists so that we can reference the type before we've
+    /// finished computing it.
     AliasRecursive(TypeAliasRef),
     /// A variable that used to decompose a type, e.g. getting T from Awaitable[T]
     Unwrap,
