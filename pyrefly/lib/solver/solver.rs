@@ -1383,7 +1383,7 @@ impl SubsetError {
 /// A helper to implement subset ergonomically.
 /// Should only be used within `crate::subset`, which implements part of it.
 pub struct Subset<'a, Ans: LookupAnswer> {
-    solver: &'a Solver,
+    pub(crate) solver: &'a Solver,
     pub type_order: TypeOrder<'a, Ans>,
     gas: Gas,
     /// Recursive assumptions of pairs of types that is_subset_eq returns true for.
