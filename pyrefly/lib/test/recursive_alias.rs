@@ -170,3 +170,13 @@ def f[K, V](x1: X[K, V], x2: X[int, int]):
     reveal_type(x2)  # E: dict[int, int] | list[Unknown]
     "#,
 );
+
+testcase!(
+    bug = "We should report the bound violation in `C[R]`",
+    test_check_class_tparam_bound,
+    r#"
+class A: pass
+class C[T: A]: pass
+type R = int | C[R]
+    "#,
+);
