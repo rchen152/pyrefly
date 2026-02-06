@@ -156,11 +156,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::Type(box Type::SpecialForm(SpecialForm::Callable)) => Some((
                 TParams::empty(),
                 self.heap
-                    .mk_callable_from(Callable::ellipsis(Type::any_implicit())),
+                    .mk_callable_from(Callable::ellipsis(self.heap.mk_any_implicit())),
             )),
-            Type::None | Type::Type(box Type::None) => Some((TParams::empty(), Type::None)),
+            Type::None | Type::Type(box Type::None) => {
+                Some((TParams::empty(), self.heap.mk_none()))
+            }
             Type::ClassType(cls) if cls.is_builtin("type") => {
-                Some((TParams::empty(), Type::any_implicit()))
+                Some((TParams::empty(), self.heap.mk_any_implicit()))
             }
             Type::Any(_) => Some((TParams::empty(), ty.clone())),
             _ => None,
