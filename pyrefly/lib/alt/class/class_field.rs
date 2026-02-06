@@ -569,9 +569,9 @@ impl ClassField {
         }
     }
 
-    fn instantiate_for(&self, instance: &Instance) -> Self {
+    fn instantiate_for(&self, heap: &TypeHeap, instance: &Instance) -> Self {
         self.instantiate_helper(&mut |ty| {
-            ty.subst_self_type_mut(&instance.to_type());
+            ty.subst_self_type_mut(&instance.to_type(heap));
             instance.instantiate_member(ty)
         })
     }
@@ -693,8 +693,8 @@ impl ClassField {
         }
     }
 
-    fn as_raw_special_method_type(&self, instance: &Instance) -> Option<Type> {
-        match self.instantiate_for(instance).0 {
+    fn as_raw_special_method_type(&self, heap: &TypeHeap, instance: &Instance) -> Option<Type> {
+        match self.instantiate_for(heap, instance).0 {
             ClassFieldInner::Descriptor { ty, .. } => Some(ty),
             ClassFieldInner::Method { ty, .. } => Some(ty),
             ClassFieldInner::NestedClass { ty, .. } => Some(ty),
@@ -710,8 +710,8 @@ impl ClassField {
     }
 
     fn as_special_method_type(&self, heap: &TypeHeap, instance: &Instance) -> Option<Type> {
-        self.as_raw_special_method_type(instance)
-            .and_then(|ty| make_bound_method(heap, instance.to_type(), ty).ok())
+        self.as_raw_special_method_type(heap, instance)
+            .and_then(|ty| make_bound_method(heap, instance.to_type(heap), ty).ok())
     }
 
     pub fn is_simple_instance_attribute(&self) -> bool {
@@ -1144,7 +1144,7 @@ impl<'a> Instance<'a> {
         self.targs.substitute_into_mut(raw_member)
     }
 
-    fn to_type(&self) -> Type {
+    fn to_type(&self, heap: &TypeHeap) -> Type {
         match &self.kind {
             InstanceKind::ClassType => {
                 ClassType::new(self.class.dupe(), self.targs.clone()).to_type()
@@ -1157,7 +1157,7 @@ impl<'a> Instance<'a> {
                 Type::SelfType(ClassType::new(self.class.dupe(), self.targs.clone()))
             }
             InstanceKind::Protocol(self_type) => self_type.clone(),
-            InstanceKind::Metaclass(cls) => cls.clone().to_type(),
+            InstanceKind::Metaclass(cls) => cls.clone().to_type(heap),
             InstanceKind::LiteralString => Type::LiteralString(LitStyle::Implicit),
         }
     }
@@ -1256,7 +1256,7 @@ fn make_bound_method_helper(
 
 fn make_bound_classmethod(heap: &TypeHeap, cls: &ClassBase, attr: Type) -> Result<Type, Type> {
     let should_bind = |meta: &FuncMetadata| meta.flags.is_classmethod;
-    make_bound_method_helper(heap, cls.clone().to_type(), attr, &should_bind)
+    make_bound_method_helper(heap, cls.clone().to_type(heap), attr, &should_bind)
 }
 
 fn make_bound_method(heap: &TypeHeap, obj: Type, attr: Type) -> Result<Type, Type> {
@@ -2491,7 +2491,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // special case because it's not legal to use `Self` in other static methods.
         let self_quantified =
             if field_name == &dunder::NEW && matches!(instance.kind, InstanceKind::ClassType) {
-                Some(self.get_self_quantified(instance.class.name(), instance.to_type()))
+                Some(self.get_self_quantified(instance.class.name(), instance.to_type(self.heap)))
             } else {
                 None
             };
@@ -2503,15 +2503,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             },
             None => instance,
         };
-        match field.instantiate_for(instance).0 {
+        match field.instantiate_for(self.heap, instance).0 {
             ClassFieldInner::Property { ty, .. } => {
                 // Properties on instances bind to the getter/setter
                 if let Some(getter) = ty.is_property_setter_with_getter() {
                     // Property with a setter: bind both getter and setter
                     ClassAttribute::property(
-                        make_bound_method(self.heap, instance.to_type(), getter).into_inner(),
+                        make_bound_method(self.heap, instance.to_type(self.heap), getter)
+                            .into_inner(),
                         Some(
-                            make_bound_method(self.heap, instance.to_type(), ty.clone())
+                            make_bound_method(self.heap, instance.to_type(self.heap), ty.clone())
                                 .into_inner(),
                         ),
                         instance.class.dupe(),
@@ -2519,7 +2520,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 } else {
                     // Property getter only (no setter)
                     ClassAttribute::property(
-                        make_bound_method(self.heap, instance.to_type(), ty.clone()).into_inner(),
+                        make_bound_method(self.heap, instance.to_type(self.heap), ty.clone())
+                            .into_inner(),
                         None,
                         instance.class.dupe(),
                     )
@@ -2561,10 +2563,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ty = self.wrap_with_quantified(ty, quantified);
                 }
                 ClassAttribute::read_write(
-                    make_bound_method(self.heap, instance.to_type(), ty).unwrap_or_else(|ty| {
-                        make_bound_classmethod(self.heap, &instance.to_class_base(), ty)
-                            .into_inner()
-                    }),
+                    make_bound_method(self.heap, instance.to_type(self.heap), ty).unwrap_or_else(
+                        |ty| {
+                            make_bound_classmethod(self.heap, &instance.to_class_base(), ty)
+                                .into_inner()
+                        },
+                    ),
                 )
             }
             ClassFieldInner::NestedClass { ty, .. } => {
@@ -2619,7 +2623,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         };
         let self_type = match &self_quantified {
             Some(quantified) => quantified.clone().to_type(),
-            None => cls.clone().to_self_type(),
+            None => cls.clone().to_self_type(self.heap),
         };
         let mut ambiguous = false;
         let field = match cls.targs() {
@@ -3477,7 +3481,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 continue;
             };
             let instance = Instance::of_protocol(ancestor, derived_instance.clone());
-            let instantiated = member.instantiate_for(&instance);
+            let instantiated = member.instantiate_for(self.heap, &instance);
             if let Some(sig) = Self::callable_params_and_flags(instantiated.ty()) {
                 return Some(sig);
             }
@@ -3716,7 +3720,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             None
         } else {
             Arc::unwrap_or_clone(new_member.value)
-                .as_raw_special_method_type(&Instance::of_class(cls))
+                .as_raw_special_method_type(self.heap, &Instance::of_class(cls))
         }
     }
 
@@ -3772,10 +3776,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             None
         } else {
             Arc::unwrap_or_clone(attr.value)
-                .as_raw_special_method_type(&Instance::of_metaclass(
-                    ClassBase::ClassType(cls.clone()),
-                    metaclass,
-                ))
+                .as_raw_special_method_type(
+                    self.heap,
+                    &Instance::of_metaclass(ClassBase::ClassType(cls.clone()), metaclass),
+                )
                 .and_then(|ty| {
                     make_bound_method(self.heap, self.heap.mk_type_form(cls.clone().to_type()), ty)
                         .ok()
@@ -3785,7 +3789,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn resolve_named_tuple_element(&self, cls: &ClassType, name: &Name) -> Option<Type> {
         let field = self.get_class_member(cls.class_object(), name)?;
-        match field.instantiate_for(&Instance::of_class(cls)).0 {
+        match field.instantiate_for(self.heap, &Instance::of_class(cls)).0 {
             ClassFieldInner::ClassAttribute {
                 ty,
                 read_only_reason: Some(_),

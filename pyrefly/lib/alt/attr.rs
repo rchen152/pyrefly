@@ -11,6 +11,7 @@ use dupe::Dupe;
 use pyrefly_python::dunder;
 use pyrefly_python::module::TextRangeWithModule;
 use pyrefly_python::module_name::ModuleName;
+use pyrefly_types::heap::TypeHeap;
 use pyrefly_types::literal::LitEnum;
 use pyrefly_types::special_form::SpecialForm;
 use pyrefly_types::typed_dict::TypedDictInner;
@@ -501,22 +502,22 @@ impl ClassBase {
         }
     }
 
-    pub fn to_type(self) -> Type {
+    pub fn to_type(self, heap: &TypeHeap) -> Type {
         match self {
-            ClassBase::ClassDef(c) => Type::ClassDef(c.into_class_object()),
-            ClassBase::ClassType(c) => Type::Type(Box::new(c.to_type())),
-            ClassBase::Quantified(q, _) => Type::type_form(q.to_type()),
-            ClassBase::SelfType(c) => Type::type_form(Type::SelfType(c)),
-            ClassBase::Protocol(_, self_type) => Type::type_form(self_type),
+            ClassBase::ClassDef(c) => heap.mk_class_def(c.into_class_object()),
+            ClassBase::ClassType(c) => heap.mk_type(c.to_type()),
+            ClassBase::Quantified(q, _) => heap.mk_type_form(q.to_type()),
+            ClassBase::SelfType(c) => heap.mk_type_form(heap.mk_self_type(c)),
+            ClassBase::Protocol(_, self_type) => heap.mk_type_form(self_type),
         }
     }
 
-    pub fn to_self_type(self) -> Type {
+    pub fn to_self_type(self, heap: &TypeHeap) -> Type {
         match self {
             ClassBase::ClassDef(c) => c.to_type(),
             ClassBase::ClassType(c) => c.to_type(),
             ClassBase::Quantified(q, _) => q.to_type(),
-            ClassBase::SelfType(c) => Type::SelfType(c),
+            ClassBase::SelfType(c) => heap.mk_self_type(c),
             ClassBase::Protocol(_, self_type) => self_type,
         }
     }
