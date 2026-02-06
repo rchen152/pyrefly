@@ -926,7 +926,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             Type::TypedDict(typed_dict) => {
                 if is_new_type {
-                    BaseClassParseResult::InvalidType(typed_dict.to_type(), range)
+                    BaseClassParseResult::InvalidType(typed_dict.to_type(self.heap), range)
                 } else {
                     match typed_dict {
                         TypedDict::TypedDict(inner) => {
@@ -941,7 +941,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             })
                         }
                         TypedDict::Anonymous(_) => {
-                            BaseClassParseResult::InvalidType(typed_dict.to_type(), range)
+                            BaseClassParseResult::InvalidType(typed_dict.to_type(self.heap), range)
                         }
                     }
                 }

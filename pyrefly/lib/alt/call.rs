@@ -762,7 +762,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let vs = self
                 .solver()
                 .freshen_class_targs(typed_dict.targs_mut(), self.uniques);
-            self.is_subset_eq(&typed_dict.clone().to_type(), hint.ty());
+            self.is_subset_eq(&typed_dict.clone().to_type(self.heap), hint.ty());
             self.solver().generalize_class_targs(typed_dict.targs_mut());
             vs
         } else {
