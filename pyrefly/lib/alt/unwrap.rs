@@ -207,7 +207,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
 
         // Check if the type is a subtype of Sequence
-        let sequence_ty = self.stdlib.sequence(Type::any_implicit()).to_type();
+        let sequence_ty = self.stdlib.sequence(self.heap.mk_any_implicit()).to_type();
         self.is_subset_eq(ty, &sequence_ty)
     }
 

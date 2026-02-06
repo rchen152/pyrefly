@@ -731,14 +731,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             AtomicNarrowOp::IsMapping => {
                 let mapping = self
                     .stdlib
-                    .mapping(Type::any_implicit(), Type::any_implicit())
+                    .mapping(self.heap.mk_any_implicit(), self.heap.mk_any_implicit())
                     .to_type();
                 self.is_type_for_pattern(ty, |t| self.is_subset_eq(t, &mapping))
             }
             AtomicNarrowOp::IsNotMapping => {
                 let mapping = self
                     .stdlib
-                    .mapping(Type::any_implicit(), Type::any_implicit())
+                    .mapping(self.heap.mk_any_implicit(), self.heap.mk_any_implicit())
                     .to_type();
                 self.is_not_type_for_pattern(ty, |t| self.is_subset_eq(t, &mapping))
             }
@@ -1081,7 +1081,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     /// Narrow for pattern matching
     fn is_type_for_pattern(&self, ty: &Type, is_type: impl Fn(&Type) -> bool) -> Type {
-        self.distribute_over_union(ty, |t| if is_type(t) { t.clone() } else { Type::never() })
+        self.distribute_over_union(ty, |t| {
+            if is_type(t) {
+                t.clone()
+            } else {
+                self.heap.mk_never()
+            }
+        })
     }
 
     /// Narrow to exclude a type for pattern matching
@@ -1092,7 +1098,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             if self.behaves_like_any(t) {
                 t.clone()
             } else if is_type(t) {
-                Type::never()
+                self.heap.mk_never()
             } else {
                 t.clone()
             }
