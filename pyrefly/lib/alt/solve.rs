@@ -2521,71 +2521,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     // Helper functions for binding_to_type - extracted to reduce stack frame size
     // =========================================================================
 
-    /// Handle `Binding::MatchExhaustive` - check if a match statement is exhaustive.
+    /// Handle `Binding::Exhaustive` - check if a match or if/elif chain is exhaustive.
     /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
     #[inline(never)]
-    fn binding_to_type_match_exhaustive(
-        &self,
-        subject_idx: Idx<Key>,
-        subject_range: TextRange,
-        exhaustiveness_info: &Option<(NarrowingSubject, (Box<NarrowOp>, TextRange))>,
-    ) -> Type {
-        // If we couldn't determine narrowing info, conservatively assume not exhaustive
-        let Some((narrowing_subject, (op, narrow_range))) = exhaustiveness_info else {
-            return Type::None;
-        };
-
-        let subject_info = self.get_idx(subject_idx);
-        let mut subject_ty = subject_info.ty().clone();
-        self.expand_vars_mut(&mut subject_ty);
-
-        // Check if this type should have exhaustiveness checked
-        if !self.should_check_exhaustiveness(&subject_ty) {
-            return Type::None; // Not exhaustible, assume fall-through
-        }
-
-        let ignore_errors = self.error_swallower();
-        let narrowing_subject_info = match narrowing_subject {
-            NarrowingSubject::Name(_) => &subject_info,
-            NarrowingSubject::Facets(_, facets) => {
-                let Some(resolved_chain) = self.resolve_facet_chain(facets.chain.clone()) else {
-                    return Type::None;
-                };
-                let type_info = TypeInfo::of_ty(Type::any_implicit());
-                &type_info.with_narrow(resolved_chain.facets(), subject_ty.clone())
-            }
-        };
-
-        let narrowed = self.narrow(
-            narrowing_subject_info,
-            op.as_ref(),
-            *narrow_range,
-            &ignore_errors,
-        );
-
-        let mut remaining_ty = match narrowing_subject {
-            NarrowingSubject::Name(_) => narrowed.ty().clone(),
-            NarrowingSubject::Facets(_, facets) => {
-                let Some(resolved_chain) = self.resolve_facet_chain(facets.chain.clone()) else {
-                    return Type::None;
-                };
-                self.get_facet_chain_type(&narrowed, &resolved_chain, subject_range)
-            }
-        };
-        self.expand_vars_mut(&mut remaining_ty);
-
-        // If the result is `Never` then the cases were exhaustive
-        if remaining_ty.is_never() {
-            Type::never()
-        } else {
-            Type::None
-        }
-    }
-
-    /// Handle `Binding::IfExhaustive` - check if an if/elif chain is exhaustive.
-    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
-    #[inline(never)]
-    fn binding_to_type_if_exhaustive(
+    fn binding_to_type_exhaustive(
         &self,
         subject_idx: Idx<Key>,
         subject_range: TextRange,
@@ -3008,12 +2947,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         );
                         !context_catch(&res)
                     }
-                    LastStmt::Match(_) => {
-                        // Check if the MatchExhaustive binding at this range resolved to Never
-                        e.ty().is_never()
-                    }
-                    LastStmt::If(_) => {
-                        // Check if the IfExhaustive binding at this range resolved to Never
+                    LastStmt::Exhaustive(_, _) => {
+                        // Check if the Exhaustive binding at this range resolved to Never
                         e.ty().is_never()
                     }
                 }
@@ -4209,24 +4144,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Binding::ClassBodyUnknownName(class_key, name, suggestion) => {
                 self.binding_to_type_class_body_unknown_name(*class_key, name, suggestion, errors)
             }
-            Binding::MatchExhaustive {
+            Binding::Exhaustive {
                 subject_idx,
                 subject_range,
                 exhaustiveness_info,
-            } => self.binding_to_type_match_exhaustive(
-                *subject_idx,
-                *subject_range,
-                exhaustiveness_info,
-            ),
-            Binding::IfExhaustive {
-                subject_idx,
-                subject_range,
-                exhaustiveness_info,
-            } => self.binding_to_type_if_exhaustive(
-                *subject_idx,
-                *subject_range,
-                exhaustiveness_info,
-            ),
+                ..
+            } => self.binding_to_type_exhaustive(*subject_idx, *subject_range, exhaustiveness_info),
             Binding::CompletedPartialType(unpinned_idx, first_use) => {
                 // Calculate the first use for its side-effects (it might pin `Var`s)
                 match first_use {

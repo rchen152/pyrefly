@@ -40,6 +40,7 @@ use crate::binding::binding::BindingDecoratedFunction;
 use crate::binding::binding::BindingUndecoratedFunction;
 use crate::binding::binding::BindingYield;
 use crate::binding::binding::BindingYieldFrom;
+use crate::binding::binding::ExhaustivenessKind;
 use crate::binding::binding::FunctionDefData;
 use crate::binding::binding::FunctionStubOrImpl;
 use crate::binding::binding::IsAsync;
@@ -852,10 +853,13 @@ fn function_last_expressions<'a>(
                 }
                 if last_test.is_some() {
                     // The if/elif chain has no else clause, so it's not syntactically exhaustive.
-                    // But it might be type-exhaustive. Add a LastStmt::If entry so we can check
+                    // But it might be type-exhaustive. Add a LastStmt::Exhaustive entry so we can check
                     // at solve time. We use the test expression as a placeholder; the actual
-                    // exhaustiveness check uses the if range to find the IfExhaustive binding.
-                    res.push((LastStmt::If(x.range), &x.test));
+                    // exhaustiveness check uses the if range to find the Exhaustive binding.
+                    res.push((
+                        LastStmt::Exhaustive(ExhaustivenessKind::IfElif, x.range),
+                        &x.test,
+                    ));
                 }
             }
             Stmt::Try(x) => {
@@ -892,10 +896,13 @@ fn function_last_expressions<'a>(
                 }
                 if !syntactically_exhaustive {
                     // The match is not syntactically exhaustive, but might be type-exhaustive.
-                    // Add a LastStmt::Match entry so we can check at solve time.
+                    // Add a LastStmt::Exhaustive entry so we can check at solve time.
                     // We use the subject expression as a placeholder; the actual exhaustiveness
-                    // check uses the match range to find the MatchExhaustive binding.
-                    res.push((LastStmt::Match(x.range), x.subject.as_ref()));
+                    // check uses the match range to find the Exhaustive binding.
+                    res.push((
+                        LastStmt::Exhaustive(ExhaustivenessKind::Match, x.range),
+                        x.subject.as_ref(),
+                    ));
                 }
             }
             _ => return None,

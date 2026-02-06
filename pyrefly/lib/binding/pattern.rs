@@ -22,6 +22,7 @@ use ruff_text_size::Ranged;
 
 use crate::binding::binding::Binding;
 use crate::binding::binding::BindingExpect;
+use crate::binding::binding::ExhaustivenessKind;
 use crate::binding::binding::Key;
 use crate::binding::binding::KeyExpect;
 use crate::binding::binding::NarrowUseLocation;
@@ -502,12 +503,13 @@ impl<'a> BindingsBuilder<'a> {
                     },
                 );
             }
-            // Always create Key::MatchExhaustive binding for return analysis.
+            // Always create Key::Exhaustive binding for return analysis.
             // When exhaustiveness_info is None, the solver will conservatively
             // assume the match is not exhaustive (resolves to Type::None).
             self.insert_binding(
-                Key::MatchExhaustive(x.range),
-                Binding::MatchExhaustive {
+                Key::Exhaustive(ExhaustivenessKind::Match, x.range),
+                Binding::Exhaustive {
+                    kind: ExhaustivenessKind::Match,
                     subject_idx,
                     subject_range: x.subject.range(),
                     exhaustiveness_info,

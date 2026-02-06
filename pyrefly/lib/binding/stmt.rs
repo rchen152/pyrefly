@@ -38,6 +38,7 @@ use crate::binding::binding::Binding;
 use crate::binding::binding::BindingAnnotation;
 use crate::binding::binding::BindingExpect;
 use crate::binding::binding::BindingTypeAlias;
+use crate::binding::binding::ExhaustivenessKind;
 use crate::binding::binding::ExprOrBinding;
 use crate::binding::binding::IsAsync;
 use crate::binding::binding::Key;
@@ -987,7 +988,7 @@ impl<'a> BindingsBuilder<'a> {
                         break; // We definitely picked this branch if we got here, nothing below is reachable.
                     }
                 }
-                // Create IfExhaustive binding for type-based exhaustiveness checking.
+                // Create Exhaustive binding for type-based exhaustiveness checking.
                 // This is done BEFORE finish_*_fork() so the binding exists in the right scope.
                 // Only do this when there's no else clause (not syntactically exhaustive).
                 if !exhaustive {
@@ -1019,8 +1020,9 @@ impl<'a> BindingsBuilder<'a> {
                             (fallback_idx, if_range, None)
                         };
                     self.insert_binding(
-                        Key::IfExhaustive(if_range),
-                        Binding::IfExhaustive {
+                        Key::Exhaustive(ExhaustivenessKind::IfElif, if_range),
+                        Binding::Exhaustive {
+                            kind: ExhaustivenessKind::IfElif,
                             subject_idx,
                             subject_range,
                             exhaustiveness_info: info_for_binding,

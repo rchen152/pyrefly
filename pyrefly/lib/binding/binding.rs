@@ -535,6 +535,13 @@ impl Ranged for NarrowUseLocation {
     }
 }
 
+/// Distinguishes between match statements and if/elif chains for exhaustiveness checking.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ExhaustivenessKind {
+    Match,
+    IfElif,
+}
+
 /// Keys that refer to a `Type`.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum Key {
@@ -609,10 +616,8 @@ pub enum Key {
     /// This `Key` is *only* ever used if the variable has only a `del` but is not otherwise defined (which is
     /// always a type error, since you cannot delete an uninitialized variable).
     Delete(TextRange),
-    /// Match statement that needs type-based exhaustiveness checking
-    MatchExhaustive(TextRange),
-    /// If/elif chain that needs type-based exhaustiveness checking
-    IfExhaustive(TextRange),
+    /// Match statement or if/elif chain that needs type-based exhaustiveness checking
+    Exhaustive(ExhaustivenessKind, TextRange),
 }
 
 impl Ranged for Key {
@@ -643,8 +648,7 @@ impl Ranged for Key {
             Self::SelfTypeLiteral(r) => *r,
             Self::PossibleLegacyTParam(r) => *r,
             Self::PatternNarrow(r) => *r,
-            Self::MatchExhaustive(r) => *r,
-            Self::IfExhaustive(r) => *r,
+            Self::Exhaustive(_, r) => *r,
         }
     }
 }
@@ -690,8 +694,9 @@ impl DisplayWith<ModuleInfo> for Key {
                 write!(f, "Key::PossibleLegacyTParam({})", ctx.display(r))
             }
             Self::PatternNarrow(r) => write!(f, "Key::PatternNarrow({})", ctx.display(r)),
-            Self::MatchExhaustive(r) => write!(f, "Key::MatchExhaustive({})", ctx.display(r)),
-            Self::IfExhaustive(r) => write!(f, "Key::IfExhaustive({})", ctx.display(r)),
+            Self::Exhaustive(kind, r) => {
+                write!(f, "Key::Exhaustive({:?}, {})", kind, ctx.display(r))
+            }
         }
     }
 }
@@ -1636,12 +1641,9 @@ pub enum LastStmt {
     /// The last statement is a `with`, with the following context,
     /// which might (if exit is true) catch an exception
     With(IsAsync),
-    /// The last statement is a match that may be type-exhaustive.
-    /// Contains the match statement range to look up exhaustiveness at solve time.
-    Match(TextRange),
-    /// The last statement is an if/elif chain that may be type-exhaustive.
-    /// Contains the if statement range for error reporting.
-    If(TextRange),
+    /// The last statement is a match or if/elif chain that may be type-exhaustive.
+    /// Contains the statement range to look up exhaustiveness at solve time.
+    Exhaustive(ExhaustivenessKind, TextRange),
 }
 
 #[derive(Clone, Debug)]
@@ -1917,27 +1919,17 @@ pub enum Binding {
     /// It could either be an unbound name or a reference to an inherited attribute
     /// We'll find out which when we solve the class
     ClassBodyUnknownName(Idx<KeyClass>, Identifier, Option<Name>),
-    /// A match statement that may be type-exhaustive.
+    /// A match statement or if/elif chain that may be type-exhaustive.
     /// Resolves to Never if exhaustive, None otherwise.
     /// When `exhaustiveness_info` is None, we couldn't determine narrowing info,
-    /// so we conservatively assume the match is not exhaustive.
-    MatchExhaustive {
+    /// so we conservatively assume the statement is not exhaustive.
+    Exhaustive {
+        kind: ExhaustivenessKind,
         subject_idx: Idx<Key>,
         subject_range: TextRange,
         /// Narrowing information needed to check exhaustiveness. None if we couldn't
         /// determine the narrowing subject (e.g., complex expressions) or couldn't
         /// accumulate narrow ops for it.
-        exhaustiveness_info: Option<(NarrowingSubject, (Box<NarrowOp>, TextRange))>,
-    },
-    /// An if/elif chain that may be type-exhaustive.
-    /// Resolves to Never if exhaustive, None otherwise.
-    /// When `exhaustiveness_info` is None, we couldn't determine narrowing info,
-    /// so we conservatively assume the if/elif is not exhaustive.
-    IfExhaustive {
-        subject_idx: Idx<Key>,
-        subject_range: TextRange,
-        /// Narrowing information: (subject identity, (accumulated narrowing op, range))
-        /// None if we couldn't determine a single consistent narrowing subject.
         exhaustiveness_info: Option<(NarrowingSubject, (Box<NarrowOp>, TextRange))>,
     },
 }
@@ -2210,26 +2202,16 @@ impl DisplayWith<Bindings> for Binding {
                 }
                 write!(f, ")")
             }
-            Self::MatchExhaustive {
+            Self::Exhaustive {
+                kind,
                 subject_idx,
                 subject_range,
                 ..
             } => {
                 write!(
                     f,
-                    "MatchExhaustive({}, {})",
-                    ctx.display(*subject_idx),
-                    ctx.module().display(subject_range)
-                )
-            }
-            Self::IfExhaustive {
-                subject_idx,
-                subject_range,
-                ..
-            } => {
-                write!(
-                    f,
-                    "IfExhaustive({}, {})",
+                    "Exhaustive({:?}, {}, {})",
+                    kind,
                     ctx.display(*subject_idx),
                     ctx.module().display(subject_range)
                 )
@@ -2305,8 +2287,7 @@ impl Binding {
             | Binding::PartialTypeWithUpstreamsCompleted(..)
             | Binding::Delete(_)
             | Binding::ClassBodyUnknownName(_, _, _)
-            | Binding::MatchExhaustive { .. }
-            | Binding::IfExhaustive { .. } => None,
+            | Binding::Exhaustive { .. } => None,
         }
     }
 }
