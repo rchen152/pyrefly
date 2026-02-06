@@ -16,6 +16,7 @@
 
 use crate::callable::Callable;
 use crate::callable::Function;
+use crate::callable::Param;
 use crate::callable::ParamList;
 use crate::callable::Params;
 use crate::callable::Required;
@@ -231,6 +232,26 @@ impl TypeHeap {
     /// Create a `Type::Callable` with ellipsis params.
     pub fn mk_callable_ellipsis(&self, ret: Type) -> Type {
         Type::callable_ellipsis(ret)
+    }
+
+    /// Create a `Type::Callable` from a vec of params and return type.
+    pub fn mk_callable_from_vec(&self, params: Vec<Param>, ret: Type) -> Type {
+        Type::callable(params, ret)
+    }
+
+    /// Create a `Type::Callable` with param spec.
+    pub fn mk_callable_param_spec(&self, param_spec: Type, ret: Type) -> Type {
+        Type::callable_param_spec(param_spec, ret)
+    }
+
+    /// Create a `Type::Callable` with concatenate.
+    pub fn mk_callable_concatenate(
+        &self,
+        params: Box<[(Type, Required)]>,
+        param_spec: Type,
+        ret: Type,
+    ) -> Type {
+        Type::callable_concatenate(params, param_spec, ret)
     }
 
     /// Create a `Type::Type` wrapping an inner type (type form).
