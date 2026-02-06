@@ -983,6 +983,18 @@ def f(cls: type[C], x: C | int):
 );
 
 testcase!(
+    test_not_issubclass_no_narrow,
+    r#"
+from typing import assert_type
+
+def f(cls: type[int], x: type[int] | type[str]):
+    if not issubclass(x, cls):
+        # cls might be a subclass of int, so x can still be int here
+        assert_type(x, type[int] | type[str])
+    "#,
+);
+
+testcase!(
     test_issubclass_union,
     r#"
 from typing import assert_type

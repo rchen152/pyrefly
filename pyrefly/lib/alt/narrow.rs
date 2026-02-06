@@ -422,13 +422,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn narrow_is_not_subclass(
         &self,
         left: &Type,
-        right: &Type,
-        range: TextRange,
+        right_expr: &Expr,
         errors: &ErrorCollector,
     ) -> Type {
         let mut res = Vec::new();
-        for right in self.as_class_info(right.clone()) {
-            if let Some(left_untyped) = self.untype_opt(left.clone(), range, errors)
+        for (right, allows_negative_narrow) in self.expr_as_class_info(right_expr, errors) {
+            if allows_negative_narrow
+                && let Some(left_untyped) =
+                    self.untype_opt(left.clone(), right_expr.range(), errors)
                 && let Some((tparams, right)) = self.unwrap_class_object_silently(&right)
             {
                 let (vs, right) = self
@@ -985,10 +986,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let right = self.expr_infer(v, errors);
                 self.narrow_issubclass(ty, &right, v.range(), errors)
             }
-            AtomicNarrowOp::IsNotSubclass(v) => {
-                let right = self.expr_infer(v, errors);
-                self.narrow_is_not_subclass(ty, &right, v.range(), errors)
-            }
+            AtomicNarrowOp::IsNotSubclass(v) => self.narrow_is_not_subclass(ty, v, errors),
             // `hasattr` and `getattr` are handled in `narrow`
             AtomicNarrowOp::HasAttr(_) => ty.clone(),
             AtomicNarrowOp::NotHasAttr(_) => ty.clone(),
