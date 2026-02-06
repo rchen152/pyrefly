@@ -80,6 +80,7 @@ fn compute_errors(sys_info: SysInfo, sourcedb: impl SourceDatabase + 'static) ->
     config.root.untyped_def_behavior = Some(UntypedDefBehavior::CheckAndInferReturnAny);
     let mut error_config = ErrorDisplayConfig::default();
     error_config.set_error_severity(ErrorKind::Deprecated, Severity::Ignore);
+    error_config.set_error_severity(ErrorKind::UnusedIgnore, Severity::Error);
     config.root.errors = Some(error_config);
 
     config.configure();
@@ -96,10 +97,15 @@ fn compute_errors(sys_info: SysInfo, sourcedb: impl SourceDatabase + 'static) ->
         None,
     );
     let transaction = state.transaction();
-    transaction
-        .get_errors(&modules_to_check)
-        .collect_errors()
-        .shown
+    let errors = transaction.get_errors(&modules_to_check);
+
+    // Collect main errors
+    let mut shown = errors.collect_errors().shown;
+
+    // Also collect unused ignore errors (respects severity config)
+    shown.extend(errors.collect_unused_ignore_errors_for_display().shown);
+
+    shown
 }
 
 fn write_output_to_file(path: &Path, legacy_errors: &LegacyErrors) -> anyhow::Result<()> {
