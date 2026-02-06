@@ -3449,7 +3449,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn binding_to_type_module(&self, m: ModuleName, path: &[Name], prev: Option<Idx<Key>>) -> Type {
         let prev = prev.and_then(|x| self.get_idx(x).ty().as_module().cloned());
         match prev {
-            Some(prev) if prev.parts() == path => prev.add_module(m).to_type(),
+            Some(prev) if prev.parts() == path => prev.add_module(m).to_type(self.heap),
             _ => {
                 if path.len() == 1 {
                     self.heap

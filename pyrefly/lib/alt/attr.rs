@@ -1694,7 +1694,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // toplevel of `module_name` has been executed.
         let submodule = module.push_part(attr_name.clone());
         if submodule.is_submodules_imported_directly() {
-            return Some(Attribute::simple(submodule.to_type()));
+            return Some(Attribute::simple(submodule.to_type(self.heap)));
         }
 
         let module_name = ModuleName::from_parts(module.parts());
@@ -1718,7 +1718,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .finding()
                 .is_some()
         {
-            Some(Attribute::simple(submodule.to_type()))
+            Some(Attribute::simple(submodule.to_type(self.heap)))
         } else if self
             .exports
             .module_exists(module_name.append(attr_name))
@@ -1730,7 +1730,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Some(Attribute::ModuleFallback(
                 NotFoundOn::Module(module.clone()),
                 module_name.append(attr_name),
-                submodule.to_type(),
+                submodule.to_type(self.heap),
             ))
         } else {
             None
