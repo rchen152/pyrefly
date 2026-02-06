@@ -7,6 +7,7 @@
 
 use pyrefly_graph::index::Idx;
 use pyrefly_python::ast::Ast;
+use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_util::visit::VisitMut;
 use ruff_python_ast::Arguments;
@@ -977,10 +978,11 @@ impl<'a> BindingsBuilder<'a> {
                 self.ensure_type_impl(left, tparams_builder, in_string_literal);
                 self.ensure_type_impl(right, tparams_builder, in_string_literal);
 
-                // Only create the check if at least one side is a forward ref,
-                // and we're not in Python 3.14+ or with future annotations
+                // Only create the check if we're in an executable file, at least one side
+                // is a forward ref, and we're not in Python 3.14+ or with future annotations
                 // (which make annotations lazy and avoid the runtime error)
-                if (left_is_forward_ref || right_is_forward_ref)
+                if self.module_info.path().style() == ModuleStyle::Executable
+                    && (left_is_forward_ref || right_is_forward_ref)
                     && !self.sys_info.version().at_least(3, 14)
                     && !self.scopes.has_future_annotations()
                 {

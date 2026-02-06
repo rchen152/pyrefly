@@ -114,3 +114,15 @@ type IntAlias = C[int]
 bad: IntAlias | "str" = "foo"  # E: `|` union syntax does not work with string literals
 "#,
 );
+
+fn env_3_13_with_stub() -> TestEnv {
+    let mut env = TestEnv::new_with_version(PythonVersion::new(3, 13, 0));
+    env.add_with_path("foo", "foo.pyi", "x: int | 'str'");
+    env
+}
+
+testcase!(
+    test_union_forward_ref_ok_in_stub,
+    env_3_13_with_stub(),
+    "import foo",
+);
