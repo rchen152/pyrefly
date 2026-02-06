@@ -1262,7 +1262,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         msg: String,
     ) -> Type {
         errors.add(range, info, vec1![msg]);
-        Type::any_error()
+        self.heap.mk_any_error()
     }
 
     /// Create a new error collector. Useful when a caller wants to decide whether or not to report

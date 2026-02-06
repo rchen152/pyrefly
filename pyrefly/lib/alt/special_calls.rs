@@ -103,7 +103,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     args.len()
                 ),
             );
-            Type::any_error()
+            self.heap.mk_any_error()
         };
         for keyword in keywords {
             unexpected_keyword(
@@ -153,7 +153,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     args.len()
                 ),
             );
-            Type::any_error()
+            self.heap.mk_any_error()
         };
         for keyword in keywords {
             unexpected_keyword(
@@ -581,7 +581,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 Type::Type(box Type::Union(box Union { members: ts, .. })) => {
                     for t in ts {
-                        f(me, Type::type_form(t), res)
+                        f(me, me.heap.mk_type_form(t), res)
                     }
                 }
                 Type::TypeAlias(ta) => f(me, me.get_type_alias(&ta).as_value(me.stdlib), res),

@@ -432,7 +432,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.expand_vars_mut(&mut ty);
                 // This can either be `P.args` or `tuple[Any, ...]`
                 matches!(&ty, Type::Args(q2) if &**q2 == q)
-                    || self.is_subset_eq(&ty, &Type::unbounded_tuple(Type::never()))
+                    || self.is_subset_eq(&ty, &self.heap.mk_unbounded_tuple(self.heap.mk_never()))
             }
             _ => false,
         }
@@ -452,7 +452,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 &ty,
                 &self
                     .stdlib
-                    .dict(self.stdlib.str().clone().to_type(), Type::never())
+                    .dict(self.stdlib.str().clone().to_type(), self.heap.mk_never())
                     .to_type(),
             )
     }
@@ -641,10 +641,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
             }
             let unpacked_args_ty = match middle.len() {
-                0 => Type::concrete_tuple(prefix),
-                1 => Type::unpacked_tuple(
+                0 => self.heap.mk_concrete_tuple(prefix),
+                1 => self.heap.mk_unpacked_tuple(
                     prefix,
-                    Type::unbounded_tuple(middle.pop().unwrap()),
+                    self.heap.mk_unbounded_tuple(middle.pop().unwrap()),
                     suffix,
                 ),
                 _ => {
@@ -660,7 +660,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             "Expected at most one unpacked variadic argument".to_owned(),
                         );
                     }
-                    Type::unpacked_tuple(prefix, Type::unbounded_tuple(self.unions(middle)), suffix)
+                    self.heap.mk_unpacked_tuple(
+                        prefix,
+                        self.heap.mk_unbounded_tuple(self.unions(middle)),
+                        suffix,
+                    )
                 }
             };
             self.check_type(
@@ -711,7 +715,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 Param::VarArg(_, Type::Unpack(box unpacked)) => {
                     // If we have a TypeVarTuple *args with no matched arguments, resolve it to empty tuple
-                    self.is_subset_eq(unpacked, &Type::concrete_tuple(Vec::new()));
+                    self.is_subset_eq(unpacked, &self.heap.mk_concrete_tuple(Vec::new()));
                 }
                 Param::VarArg(..) => {}
                 Param::Pos(name, ty, required) | Param::KwOnly(name, ty, required) => {
