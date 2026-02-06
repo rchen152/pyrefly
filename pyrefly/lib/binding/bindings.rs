@@ -792,6 +792,7 @@ impl<'a> BindingsBuilder<'a> {
             LastStmt::Expr => Key::StmtExpr(x.range()),
             LastStmt::With(_) => Key::ContextExpr(x.range()),
             LastStmt::Match(match_range) => Key::MatchExhaustive(match_range),
+            LastStmt::If(if_range) => Key::IfExhaustive(if_range),
         })
     }
 

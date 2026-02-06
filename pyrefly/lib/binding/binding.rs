@@ -611,6 +611,8 @@ pub enum Key {
     Delete(TextRange),
     /// Match statement that needs type-based exhaustiveness checking
     MatchExhaustive(TextRange),
+    /// If/elif chain that needs type-based exhaustiveness checking
+    IfExhaustive(TextRange),
 }
 
 impl Ranged for Key {
@@ -642,6 +644,7 @@ impl Ranged for Key {
             Self::PossibleLegacyTParam(r) => *r,
             Self::PatternNarrow(r) => *r,
             Self::MatchExhaustive(r) => *r,
+            Self::IfExhaustive(r) => *r,
         }
     }
 }
@@ -688,6 +691,7 @@ impl DisplayWith<ModuleInfo> for Key {
             }
             Self::PatternNarrow(r) => write!(f, "Key::PatternNarrow({})", ctx.display(r)),
             Self::MatchExhaustive(r) => write!(f, "Key::MatchExhaustive({})", ctx.display(r)),
+            Self::IfExhaustive(r) => write!(f, "Key::IfExhaustive({})", ctx.display(r)),
         }
     }
 }
@@ -1635,6 +1639,9 @@ pub enum LastStmt {
     /// The last statement is a match that may be type-exhaustive.
     /// Contains the match statement range to look up exhaustiveness at solve time.
     Match(TextRange),
+    /// The last statement is an if/elif chain that may be type-exhaustive.
+    /// Contains the if statement range for error reporting.
+    If(TextRange),
 }
 
 #[derive(Clone, Debug)]
@@ -1922,6 +1929,17 @@ pub enum Binding {
         /// accumulate narrow ops for it.
         exhaustiveness_info: Option<(NarrowingSubject, (Box<NarrowOp>, TextRange))>,
     },
+    /// An if/elif chain that may be type-exhaustive.
+    /// Resolves to Never if exhaustive, None otherwise.
+    /// When `exhaustiveness_info` is None, we couldn't determine narrowing info,
+    /// so we conservatively assume the if/elif is not exhaustive.
+    IfExhaustive {
+        subject_idx: Idx<Key>,
+        subject_range: TextRange,
+        /// Narrowing information: (subject identity, (accumulated narrowing op, range))
+        /// None if we couldn't determine a single consistent narrowing subject.
+        exhaustiveness_info: Option<(NarrowingSubject, (Box<NarrowOp>, TextRange))>,
+    },
 }
 
 impl DisplayWith<Bindings> for Binding {
@@ -2204,6 +2222,18 @@ impl DisplayWith<Bindings> for Binding {
                     ctx.module().display(subject_range)
                 )
             }
+            Self::IfExhaustive {
+                subject_idx,
+                subject_range,
+                ..
+            } => {
+                write!(
+                    f,
+                    "IfExhaustive({}, {})",
+                    ctx.display(*subject_idx),
+                    ctx.module().display(subject_range)
+                )
+            }
         }
     }
 }
@@ -2275,7 +2305,8 @@ impl Binding {
             | Binding::PartialTypeWithUpstreamsCompleted(..)
             | Binding::Delete(_)
             | Binding::ClassBodyUnknownName(_, _, _)
-            | Binding::MatchExhaustive { .. } => None,
+            | Binding::MatchExhaustive { .. }
+            | Binding::IfExhaustive { .. } => None,
         }
     }
 }

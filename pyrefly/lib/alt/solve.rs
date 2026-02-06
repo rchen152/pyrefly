@@ -2582,6 +2582,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
+    /// Handle `Binding::IfExhaustive` - check if an if/elif chain is exhaustive.
+    /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
+    #[inline(never)]
+    fn binding_to_type_if_exhaustive(
+        &self,
+        _subject_idx: Idx<Key>,
+        _subject_range: TextRange,
+        _exhaustiveness_info: &Option<(NarrowingSubject, (Box<NarrowOp>, TextRange))>,
+    ) -> Type {
+        // TODO: Implement if/elif exhaustiveness checking.
+        // For now, conservatively assume not exhaustive.
+        Type::None
+    }
+
     /// Handle `Binding::PatternMatchClassPositional` - extract positional pattern from __match_args__.
     /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
     #[inline(never)]
@@ -2949,6 +2963,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                     LastStmt::Match(_) => {
                         // Check if the MatchExhaustive binding at this range resolved to Never
+                        e.ty().is_never()
+                    }
+                    LastStmt::If(_) => {
+                        // Check if the IfExhaustive binding at this range resolved to Never
                         e.ty().is_never()
                     }
                 }
@@ -4149,6 +4167,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 subject_range,
                 exhaustiveness_info,
             } => self.binding_to_type_match_exhaustive(
+                *subject_idx,
+                *subject_range,
+                exhaustiveness_info,
+            ),
+            Binding::IfExhaustive {
+                subject_idx,
+                subject_range,
+                exhaustiveness_info,
+            } => self.binding_to_type_if_exhaustive(
                 *subject_idx,
                 *subject_range,
                 exhaustiveness_info,
