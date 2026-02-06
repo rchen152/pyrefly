@@ -1261,8 +1261,8 @@
     {
       "code": -2,
       "column": 7,
-      "concise_description": "Cannot use `|` operator with forward reference string literal and type",
-      "description": "Cannot use `|` operator with forward reference string literal and type",
+      "concise_description": "`|` union syntax does not work with string literals",
+      "description": "`|` union syntax does not work with string literals\n  Hint: put the quotes around the entire union type",
       "line": 24,
       "name": "invalid-annotation",
       "severity": "error",
@@ -1272,8 +1272,8 @@
     {
       "code": -2,
       "column": 7,
-      "concise_description": "Cannot use `|` operator with forward reference string literal and type",
-      "description": "Cannot use `|` operator with forward reference string literal and type",
+      "concise_description": "`|` union syntax does not work with string literals",
+      "description": "`|` union syntax does not work with string literals\n  Hint: put the quotes around the entire union type",
       "line": 25,
       "name": "invalid-annotation",
       "severity": "error",

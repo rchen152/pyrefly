@@ -30,11 +30,11 @@ testcase!(
 from typing import assert_type, TypeVar, Generic
 T = TypeVar("T")
 class C(Generic[T]): ...
-bad1: int | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
-bad2: int | "str" | T = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
-bad3: "str" | int = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
-bad4: "str" | int | T = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
-bad5: C | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
+bad1: int | "str" = "foo"  # E: `|` union syntax does not work with string literals
+bad2: int | "str" | T = "foo"  # E: `|` union syntax does not work with string literals
+bad3: "str" | int = "foo"  # E: `|` union syntax does not work with string literals
+bad4: "str" | int | T = "foo"  # E: `|` union syntax does not work with string literals
+bad5: C | "str" = "foo"  # E: `|` union syntax does not work with string literals
 ok1: T | "str" = "foo"
 ok2: "str" | T = "foo"
 ok3 = list["str" | T]
@@ -47,15 +47,15 @@ ok6: C[int] | "str" = "foo"
 testcase!(
     test_union_of_plain_type_and_complex_forward_ref,
     r#"
-bad1: int | "list[str]" = []  # E: Cannot use `|` operator with forward reference string literal and type
-bad2: "list[str]" | int = []  # E: Cannot use `|` operator with forward reference string literal and type
+bad1: int | "list[str]" = []  # E: `|` union syntax does not work with string literals
+bad2: "list[str]" | int = []  # E: `|` union syntax does not work with string literals
     "#,
 );
 
 testcase!(
     test_union_of_forward_refs,
     r#"
-bad: "int" | "list[str]" = 1  # E: Cannot use `|` operator with forward reference string literal and type
+bad: "int" | "list[str]" = 1  # E: `|` union syntax does not work with string literals
     "#,
 );
 
@@ -98,8 +98,8 @@ IntAlias4: TypeAlias = int
 
 ok1: IntAlias1 | "str" = "foo"
 ok2: IntAlias2 | "str" = "foo"
-bad1: IntAlias3 | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
-bad2: IntAlias4 | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
+bad1: IntAlias3 | "str" = "foo"  # E: `|` union syntax does not work with string literals
+bad2: IntAlias4 | "str" = "foo"  # E: `|` union syntax does not work with string literals
 "#,
 );
 
@@ -111,6 +111,6 @@ testcase!(
     r#"
 class C[T]: pass
 type IntAlias = C[int]
-bad: IntAlias | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
+bad: IntAlias | "str" = "foo"  # E: `|` union syntax does not work with string literals
 "#,
 );
