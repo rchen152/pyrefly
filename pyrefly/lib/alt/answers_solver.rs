@@ -763,13 +763,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let result = match self.sccs().pre_calculate_state(&current) {
             SccState::NoDetectedCycle => match calculation.propose_calculation() {
                 ProposalResult::Calculated(v) => v,
-                ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(r)),
+                ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
                 ProposalResult::CycleDetected => {
                     let current_cycle = self.stack().current_cycle().unwrap();
                     match self.sccs().on_scc_detected(current_cycle, self.stack()) {
                         SccDetectedResult::BreakHere => self
                             .attempt_to_unwind_cycle_from_here(idx, calculation)
-                            .unwrap_or_else(|r| Arc::new(K::promote_recursive(r))),
+                            .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r))),
                         SccDetectedResult::Continue => {
                             self.calculate_and_record_answer(current, idx, calculation)
                         }
@@ -782,7 +782,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 )],
                             );
                             self.attempt_to_unwind_cycle_from_here(idx, calculation)
-                                .unwrap_or_else(|r| Arc::new(K::promote_recursive(r)))
+                                .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
                         }
                     }
                 }
@@ -793,7 +793,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             SccState::BreakAt => {
                 // Begin unwinding the cycle using a recursive placeholder
                 self.attempt_to_unwind_cycle_from_here(idx, calculation)
-                    .unwrap_or_else(|r| Arc::new(K::promote_recursive(r)))
+                    .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
             }
             SccState::Participant => {
                 match calculation.propose_calculation() {
@@ -816,7 +816,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                     ProposalResult::CycleBroken(r) => {
                         self.sccs().on_calculation_finished(&current);
-                        Arc::new(K::promote_recursive(r))
+                        Arc::new(K::promote_recursive(self.heap, r))
                     }
                 }
             }
@@ -974,7 +974,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         );
         // Return recursive placeholder (same pattern as cycle handling)
         self.attempt_to_unwind_cycle_from_here(idx, calculation)
-            .unwrap_or_else(|r| Arc::new(K::promote_recursive(r)))
+            .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
     }
 
     /// PanicWithDebugInfo handler: dump debug info to stderr and panic.
