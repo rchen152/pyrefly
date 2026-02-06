@@ -20,6 +20,7 @@ use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::nesting_context::NestingContext;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
+use pyrefly_types::special_form::SpecialForm;
 use pyrefly_types::type_alias::TypeAlias;
 use pyrefly_types::type_alias::TypeAliasIndex;
 use pyrefly_util::assert_bytes;
@@ -2408,8 +2409,8 @@ pub enum BindingAnnotation {
     /// The type is annotated to be this key, will have the outer type removed.
     /// Optionally occurring within a class, in which case Self refers to this class.
     AnnotateExpr(AnnotationTarget, Expr, Option<Idx<KeyClass>>),
-    /// A literal type we know statically.
-    Type(AnnotationTarget, Type),
+    /// A special form declaration like `Literal: _SpecialForm`.
+    SpecialForm(AnnotationTarget, SpecialForm),
 }
 
 impl DisplayWith<Bindings> for BindingAnnotation {
@@ -2424,7 +2425,7 @@ impl DisplayWith<Bindings> for BindingAnnotation {
                     Some(t) => ctx.display(*t).to_string(),
                 }
             ),
-            Self::Type(target, t) => write!(f, "Type({target}, {t})"),
+            Self::SpecialForm(target, sf) => write!(f, "SpecialForm({target}, {sf})"),
         }
     }
 }

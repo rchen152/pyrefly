@@ -400,9 +400,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     annotation: ann,
                 })
             }
-            BindingAnnotation::Type(target, x) => Arc::new(AnnotationWithTarget {
+            BindingAnnotation::SpecialForm(target, sf) => Arc::new(AnnotationWithTarget {
                 target: target.clone(),
-                annotation: Annotation::new_type(x.clone()),
+                annotation: Annotation::new_type(sf.to_type(self.heap)),
             }),
         }
     }
