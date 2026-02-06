@@ -1329,7 +1329,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // Given that the default is falsy:
                 // If the attribute does not exist we narrow to `Any`
                 // If the attribute exists we narrow it to be truthy
-                if attr_ty == Type::any_error() {
+                if attr_ty.is_error() {
                     type_info.with_narrow(&facets, self.heap.mk_any_implicit())
                 } else {
                     let narrowed_ty = self.atomic_narrow(

@@ -891,7 +891,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         for expr in exprs {
             let ty = self.expr_infer(expr, errors);
             let ty = self.untype(ty, expr.range(), errors);
-            if ty == Type::any_error() {
+            if ty.is_error() {
                 continue;
             }
             match ty {
