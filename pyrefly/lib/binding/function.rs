@@ -851,8 +851,11 @@ fn function_last_expressions<'a>(
                     f(sys_info, body, res)?;
                 }
                 if last_test.is_some() {
-                    // The final `if` can fall through, so the `if` itself might be the last statement.
-                    return None;
+                    // The if/elif chain has no else clause, so it's not syntactically exhaustive.
+                    // But it might be type-exhaustive. Add a LastStmt::If entry so we can check
+                    // at solve time. We use the test expression as a placeholder; the actual
+                    // exhaustiveness check uses the if range to find the IfExhaustive binding.
+                    res.push((LastStmt::If(x.range), &x.test));
                 }
             }
             Stmt::Try(x) => {

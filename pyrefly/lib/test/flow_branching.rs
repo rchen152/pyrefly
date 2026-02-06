@@ -1564,7 +1564,6 @@ def f(x: int) -> str:
 );
 
 testcase!(
-    bug = "if/elif exhaustiveness not yet implemented",
     test_if_elif_enum_exhaustive,
     r#"
 from enum import Enum
@@ -1573,7 +1572,7 @@ class Color(Enum):
     GREEN = 2
     BLUE = 3
 
-def f(c: Color) -> str:  # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
+def f(c: Color) -> str:
     if c == Color.RED:
         return "warm"
     elif c == Color.GREEN:
@@ -1584,7 +1583,7 @@ def f(c: Color) -> str:  # E: Function declared to return `str`, but one or more
 );
 
 testcase!(
-    bug = "if/elif exhaustiveness not yet implemented",
+    bug = "isinstance exhaustiveness not yet working for all union patterns",
     test_if_elif_isinstance_exhaustive,
     r#"
 def f(x: int | str) -> str:  # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
@@ -1633,12 +1632,11 @@ def f(c: Color) -> str:
 );
 
 testcase!(
-    bug = "if/elif exhaustiveness not yet implemented",
     test_if_elif_literal_union_exhaustive,
     r#"
 from typing import Literal
 
-def f(x: Literal["a", "b", "c"]) -> str:  # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
+def f(x: Literal["a", "b", "c"]) -> str:
     if x == "a":
         return "first"
     elif x == "b":
@@ -1649,7 +1647,7 @@ def f(x: Literal["a", "b", "c"]) -> str:  # E: Function declared to return `str`
 );
 
 testcase!(
-    bug = "if/elif exhaustiveness not yet implemented",
+    bug = "mixed is/isinstance narrowing exhaustiveness not yet working",
     test_if_elif_mixed_narrowing,
     r#"
 def f(x: int | None) -> str:  # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
@@ -1661,10 +1659,9 @@ def f(x: int | None) -> str:  # E: Function declared to return `str`, but one or
 );
 
 testcase!(
-    bug = "if/elif exhaustiveness not yet implemented",
     test_if_elif_bool_exhaustive,
     r#"
-def f(x: bool) -> str:  # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
+def f(x: bool) -> str:
     if x:
         return "true"
     elif not x:
@@ -1673,7 +1670,6 @@ def f(x: bool) -> str:  # E: Function declared to return `str`, but one or more 
 );
 
 testcase!(
-    bug = "multiple subjects - graceful degradation expected",
     test_if_elif_multiple_subjects,
     r#"
 def f(x: int | str, y: int | str) -> str:  # E: Function declared to return `str`, but one or more paths are missing an explicit `return`
