@@ -49,6 +49,7 @@ use crate::binding::binding::NarrowUseLocation;
 use crate::binding::binding::RaisedException;
 use crate::binding::binding::TypeAliasParams;
 use crate::binding::bindings::BindingsBuilder;
+use crate::binding::bindings::NameLookupResult;
 use crate::binding::expr::Usage;
 use crate::binding::narrow::NarrowOp;
 use crate::binding::narrow::NarrowOps;
@@ -925,7 +926,8 @@ impl<'a> BindingsBuilder<'a> {
             Stmt::If(x) => {
                 let is_definitely_unreachable = self.scopes.is_definitely_unreachable();
                 let mut exhaustive = false;
-                self.start_fork(x.range);
+                let if_range = x.range;
+                self.start_fork(if_range);
                 // Type narrowing operations that are carried over from one branch to the next. For example, in:
                 //   if x is None:
                 //     pass
@@ -984,6 +986,46 @@ impl<'a> BindingsBuilder<'a> {
                         exhaustive = true;
                         break; // We definitely picked this branch if we got here, nothing below is reachable.
                     }
+                }
+                // Create IfExhaustive binding for type-based exhaustiveness checking.
+                // This is done BEFORE finish_*_fork() so the binding exists in the right scope.
+                // Only do this when there's no else clause (not syntactically exhaustive).
+                if !exhaustive {
+                    let exhaustiveness_info =
+                        Self::extract_if_exhaustiveness_info(&negated_prev_ops);
+                    let (subject_idx, subject_range, info_for_binding) =
+                        if let Some((name, narrowing_subject, (op, narrow_range))) =
+                            exhaustiveness_info
+                        {
+                            let hashed_name = Hashed::new(&name);
+                            if let NameLookupResult::Found { idx, .. } =
+                                self.lookup_name(hashed_name, &mut Usage::Narrowing(None))
+                            {
+                                (
+                                    idx,
+                                    narrow_range,
+                                    Some((narrowing_subject, (op, narrow_range))),
+                                )
+                            } else {
+                                // Name lookup failed - create a fallback binding with None info
+                                let fallback_idx = self
+                                    .insert_binding(Key::Anon(if_range), Binding::Type(Type::None));
+                                (fallback_idx, if_range, None)
+                            }
+                        } else {
+                            // Couldn't extract exhaustiveness info - create a fallback binding
+                            let fallback_idx =
+                                self.insert_binding(Key::Anon(if_range), Binding::Type(Type::None));
+                            (fallback_idx, if_range, None)
+                        };
+                    self.insert_binding(
+                        Key::IfExhaustive(if_range),
+                        Binding::IfExhaustive {
+                            subject_idx,
+                            subject_range,
+                            exhaustiveness_info: info_for_binding,
+                        },
+                    );
                 }
                 if exhaustive {
                     self.finish_exhaustive_fork();
@@ -1401,7 +1443,6 @@ impl<'a> BindingsBuilder<'a> {
     ///
     /// Note: This returns the Name, not an Idx<Key>. The caller is responsible for
     /// looking up the subject's Idx<Key> through appropriate scope mechanisms.
-    #[expect(dead_code)] // will be used in the next diff
     pub fn extract_if_exhaustiveness_info(
         ops: &NarrowOps,
     ) -> Option<(Name, NarrowingSubject, (Box<NarrowOp>, TextRange))> {
