@@ -168,10 +168,10 @@ fn strip_optional(type_: &Type) -> Option<&Type> {
     match type_ {
         Type::Union(box Union {
             members: elements, ..
-        }) if elements.len() == 2 && elements[0] == Type::None => Some(&elements[1]),
+        }) if elements.len() == 2 && elements[0].is_none() => Some(&elements[1]),
         Type::Union(box Union {
             members: elements, ..
-        }) if elements.len() == 2 && elements[1] == Type::None => Some(&elements[0]),
+        }) if elements.len() == 2 && elements[1].is_none() => Some(&elements[0]),
         _ => None,
     }
 }

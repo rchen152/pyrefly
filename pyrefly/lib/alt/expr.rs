@@ -945,7 +945,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             typed_dict_fields.push((
                                 key_name,
                                 TypedDictField {
-                                    ty: if value_t == Type::None {
+                                    ty: if value_t.is_none() {
                                         self.heap.mk_union(vec![
                                             self.heap.mk_none(),
                                             self.solver()
