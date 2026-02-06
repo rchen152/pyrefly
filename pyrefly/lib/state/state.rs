@@ -1109,6 +1109,7 @@ impl<'a> Transaction<'a> {
                     .untyped_def_behavior(module_data.handle.path().as_path()),
                 infer_with_first_use: config
                     .infer_with_first_use(module_data.handle.path().as_path()),
+                tensor_shapes: config.tensor_shapes(module_data.handle.path().as_path()),
                 recursion_limit_config: config.recursion_limit_config(),
             };
             let set = todo.compute(&exclusive.steps, &ctx);
@@ -2056,6 +2057,7 @@ impl<'a> Transaction<'a> {
                 lookup: &self.lookup(m.dupe()),
                 untyped_def_behavior: config.untyped_def_behavior(m.handle.path().as_path()),
                 infer_with_first_use: config.infer_with_first_use(m.handle.path().as_path()),
+                tensor_shapes: config.tensor_shapes(m.handle.path().as_path()),
                 recursion_limit_config: config.recursion_limit_config(),
             };
             let mut step = Step::Load; // Start at AST (Load.next)
