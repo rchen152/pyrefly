@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Tag name to upload assets to (e.g., v0.51.0)'
+        description: 'Tag name to upload assets to (e.g., 0.51.0)'
         required: true
         type: string
 
@@ -73,6 +73,7 @@ jobs:
         uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ github.event.release.tag_name || inputs.tag_name }}
 
       - name: Install container dependencies
         if: matrix.container == 'ubuntu:20.04'
