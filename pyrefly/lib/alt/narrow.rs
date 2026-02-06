@@ -108,10 +108,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    fn is_final(&self, ty: &Type) -> bool {
-        let Type::ClassType(cls) = ty else {
-            return false;
-        };
+    fn is_final(&self, cls: &ClassType) -> bool {
         let class = cls.class_object();
         self.get_metadata_for_class(class).is_final()
             || (self.get_enum_from_class(class).is_some()
@@ -146,9 +143,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let fallback = fallback();
             if fallback.is_never() {
                 fallback
-            } else if matches!(left, Type::ClassType(_))
-                && matches!(right, Type::ClassType(_))
-                && (self.is_final(left) || self.is_final(right))
+            } else if let Type::ClassType(left_cls) = left
+                && let Type::ClassType(right_cls) = right
+                && (self.is_final(left_cls) || self.is_final(right_cls))
             {
                 // The only way for `left & right` to exist is if it is an instance of a class that
                 // multiply inherits from both `left` and `right`'s classes. But at least one of
@@ -1528,21 +1525,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.is_dict_like(&base_ty)
     }
 
-    fn is_non_flag_enum(&self, cls: &ClassType) -> bool {
+    fn is_flag_enum(&self, cls: &ClassType) -> bool {
         self.get_metadata_for_class(cls.class_object())
             .enum_metadata()
-            .is_some_and(|meta| !meta.is_flag)
+            .is_some_and(|meta| meta.is_flag)
     }
 
     /// Determines if a type should be checked for match exhaustiveness.
     /// We check exhaustiveness when the type has a finite, known set of possible values.
     pub(crate) fn should_check_exhaustiveness(&self, ty: &Type) -> bool {
         match ty {
-            // Enums have a fixed set of members
             Type::ClassType(cls) | Type::SelfType(cls) => {
-                self.is_non_flag_enum(cls)
-                    // Final classes can't have subclasses, so they are exhaustible
-                    || self.get_metadata_for_class(cls.class_object()).is_final()
+                // Final classes can't have subclasses, so they are exhaustible, with the exception
+                // of Flag enums, whose members can be combined into new members via bitwise ops
+                !self.is_flag_enum(cls) && self.is_final(cls)
                     // bool is effectively Literal[True] | Literal[False]
                     || cls.is_builtin("bool")
             }
