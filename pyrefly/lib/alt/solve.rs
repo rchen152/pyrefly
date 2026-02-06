@@ -4330,7 +4330,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             },
             Binding::None => self.heap.mk_none(),
             Binding::Any(style) => self.heap.mk_any(*style),
-            Binding::Global(global) => global.as_type(self.stdlib),
+            Binding::Global(global) => global.as_type(self.stdlib, self.heap),
             Binding::TypeParameter(tp) => {
                 self.quantified_from_type_parameter(tp, errors).to_value()
             }
