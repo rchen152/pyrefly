@@ -39,7 +39,6 @@ use crate::types::callable::unexpected_keyword;
 use crate::types::class::Class;
 use crate::types::special_form::SpecialForm;
 use crate::types::tuple::Tuple;
-use crate::types::types::AnyStyle;
 use crate::types::types::Type;
 
 impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
@@ -562,7 +561,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 Type::ClassType(ref c) if Some(c) == me.stdlib.union_type() => {
                     // Could be anything inside here, so add in Any.
-                    res.push(Type::Any(AnyStyle::Implicit));
+                    res.push(me.heap.mk_any_implicit());
                 }
                 Type::Tuple(Tuple::Concrete(ts)) | Type::Union(box Union { members: ts, .. }) => {
                     for t in ts {

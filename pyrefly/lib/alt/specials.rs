@@ -198,7 +198,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Expr::BooleanLiteral(x) => {
                 literals.push(Lit::from_boolean_literal(x).to_explicit_type())
             }
-            Expr::NoneLiteral(_) => literals.push(Type::None),
+            Expr::NoneLiteral(_) => literals.push(self.heap.mk_none()),
             Expr::Name(_) => {
                 fn is_valid_literal(x: &Type) -> bool {
                     match x {

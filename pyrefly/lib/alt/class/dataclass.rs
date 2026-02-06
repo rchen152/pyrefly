@@ -57,7 +57,6 @@ use crate::types::keywords::ConverterMap;
 use crate::types::keywords::DataclassFieldKeywords;
 use crate::types::keywords::TypeMap;
 use crate::types::literal::Lit;
-use crate::types::types::AnyStyle;
 use crate::types::types::Type;
 
 impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
@@ -151,7 +150,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
         let dataclass_fields_type = self.stdlib.dict(
             self.stdlib.str().clone().to_type(),
-            Type::Any(AnyStyle::Implicit),
+            self.heap.mk_any_implicit(),
         );
         fields.insert(
             dunder::DATACLASS_FIELDS,
@@ -419,7 +418,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
         }
         if dataclass_metadata.kws.extra {
-            params.push(Param::Kwargs(None, Type::Any(AnyStyle::Implicit)));
+            params.push(Param::Kwargs(None, self.heap.mk_any_implicit()));
         }
 
         let ty = self.heap.mk_function(Function {
