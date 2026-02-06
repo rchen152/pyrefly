@@ -328,11 +328,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 _ => {
                     let t = me.expr_infer(e, errors);
-                    if matches!(&t, Type::Type(box Type::ClassType(_))) {
-                        // Because `type` is covariant, `type[C]` may be a subclass of `C`,
+                    if let Type::Type(box Type::ClassType(cls)) = &t {
+                        // If `C` is not final, `type[C]` may be a subclass of `C`,
                         // making negative narrowing unsafe.
-                        // TODO(rechen): we can narrow if the class is un-subclassable.
-                        res.push((t, false));
+                        let allows_negative_narrow = me.is_final(cls);
+                        res.push((t, allows_negative_narrow));
                     } else {
                         for t in me.as_class_info(t) {
                             res.push((t, true));

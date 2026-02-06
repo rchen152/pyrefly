@@ -970,6 +970,19 @@ def g(x: int | str) -> None:
 );
 
 testcase!(
+    test_is_not_instance_of_final_class,
+    r#"
+from typing import assert_type, final
+@final
+class C: ...
+def f(cls: type[C], x: C | int):
+    if not isinstance(x, cls):
+        # Because `C` is final, we can assume that `cls` is exactly `C` and has been narrowed away
+        assert_type(x, int)
+    "#,
+);
+
+testcase!(
     test_issubclass_union,
     r#"
 from typing import assert_type
