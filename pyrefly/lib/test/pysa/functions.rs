@@ -13,7 +13,6 @@ use pyrefly_types::callable::Param;
 use pyrefly_types::callable::ParamList;
 use pyrefly_types::callable::Required;
 use pyrefly_types::class::ClassType;
-use pyrefly_types::types::Type;
 use ruff_python_ast::name::Name;
 
 use crate::report::pysa::call_graph::Target;
@@ -288,10 +287,13 @@ class MyClass:
                 vec![FunctionParameter::Pos {
                     name: "cls".into(),
                     annotation: PysaType::from_type(
-                        &Type::Type(Box::new(Type::ClassType(ClassType::new(
-                            get_class("test", "MyClass", context),
-                            Default::default(),
-                        )))),
+                        &context.answers.heap().mk_type(
+                            ClassType::new(
+                                get_class("test", "MyClass", context),
+                                Default::default(),
+                            )
+                            .to_type(),
+                        ),
                         context,
                     ),
                     required: true,
@@ -467,14 +469,14 @@ def foo(x: int) -> int:
 "#,
     &|context: &ModuleContext| {
         let callable_int_to_int = PysaType::from_type(
-            &Type::Callable(Box::new(Callable::list(
+            &context.answers.heap().mk_callable_from(Callable::list(
                 ParamList::new(vec![Param::PosOnly(
                     None,
-                    Type::ClassType(context.stdlib.int().clone()),
+                    context.stdlib.int().clone().to_type(),
                     Required::Required,
                 )]),
-                Type::ClassType(context.stdlib.int().clone()),
-            ))),
+                context.stdlib.int().clone().to_type(),
+            )),
             context,
         );
         vec![
@@ -529,14 +531,14 @@ def foo(x: int) -> int:
     return x
 "#,
     &|context: &ModuleContext| {
-        let callable_int_to_int = Type::Callable(Box::new(Callable::list(
+        let callable_int_to_int = context.answers.heap().mk_callable_from(Callable::list(
             ParamList::new(vec![Param::PosOnly(
                 None,
-                Type::ClassType(context.stdlib.int().clone()),
+                context.stdlib.int().clone().to_type(),
                 Required::Required,
             )]),
-            Type::ClassType(context.stdlib.int().clone()),
-        )));
+            context.stdlib.int().clone().to_type(),
+        ));
         vec![
             create_function_definition(
                 "decorator",
@@ -549,14 +551,14 @@ def foo(x: int) -> int:
                         required: true,
                     }],
                     PysaType::from_type(
-                        &Type::Callable(Box::new(Callable::list(
+                        &context.answers.heap().mk_callable_from(Callable::list(
                             ParamList::new(vec![Param::PosOnly(
                                 None,
                                 callable_int_to_int.clone(),
                                 Required::Required,
                             )]),
                             callable_int_to_int.clone(),
-                        ))),
+                        )),
                         context,
                     ),
                 )],
@@ -604,14 +606,14 @@ def foo(x: int) -> int:
 "#,
     &|context: &ModuleContext| {
         let callable_int_to_int = PysaType::from_type(
-            &Type::Callable(Box::new(Callable::list(
+            &context.answers.heap().mk_callable_from(Callable::list(
                 ParamList::new(vec![Param::PosOnly(
                     None,
-                    Type::ClassType(context.stdlib.int().clone()),
+                    context.stdlib.int().clone().to_type(),
                     Required::Required,
                 )]),
-                Type::ClassType(context.stdlib.int().clone()),
-            ))),
+                context.stdlib.int().clone().to_type(),
+            )),
             context,
         );
         vec![
@@ -1138,10 +1140,10 @@ class B(A):
                     vec![FunctionParameter::Pos {
                         name: "cls".into(),
                         annotation: PysaType::from_type(
-                            &Type::Type(Box::new(Type::ClassType(ClassType::new(
-                                get_class("test", "A", context),
-                                Default::default(),
-                            )))),
+                            &context.answers.heap().mk_type(
+                                ClassType::new(get_class("test", "A", context), Default::default())
+                                    .to_type(),
+                            ),
                             context,
                         ),
                         required: true,
@@ -1161,10 +1163,10 @@ class B(A):
                     vec![FunctionParameter::Pos {
                         name: "cls".into(),
                         annotation: PysaType::from_type(
-                            &Type::Type(Box::new(Type::ClassType(ClassType::new(
-                                get_class("test", "B", context),
-                                Default::default(),
-                            )))),
+                            &context.answers.heap().mk_type(
+                                ClassType::new(get_class("test", "B", context), Default::default())
+                                    .to_type(),
+                            ),
                             context,
                         ),
                         required: true,

@@ -218,10 +218,10 @@ class Foo:
                 "Bar".into(),
                 PysaClassField {
                     type_: PysaType::from_type(
-                        &Type::Type(Box::new(Type::ClassType(ClassType::new(
-                            get_class("test", "Bar", context),
-                            Default::default(),
-                        )))),
+                        &context.answers.heap().mk_type(
+                            ClassType::new(get_class("test", "Bar", context), Default::default())
+                                .to_type(),
+                        ),
                         context,
                     ),
                     explicit_annotation: None,
