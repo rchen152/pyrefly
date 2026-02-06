@@ -84,7 +84,6 @@ ok2: "str" | int = "foo"
 
 // Test legacy type alias with forward reference string literal
 testcase!(
-    bug = "Missing error on `bad2`",
     test_union_operator_with_legacy_type_alias,
     TestEnv::new_with_version(PythonVersion::new(3, 13, 0)),
     r#"
@@ -100,19 +99,18 @@ IntAlias4: TypeAlias = int
 ok1: IntAlias1 | "str" = "foo"
 ok2: IntAlias2 | "str" = "foo"
 bad1: IntAlias3 | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
-bad2: IntAlias4 | "str" = "foo"
+bad2: IntAlias4 | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
 "#,
 );
 
 // Test scoped type alias with forward reference string literal
 // TypeAliasType is a plain type, so this is a runtime error
 testcase!(
-    bug = "We should error because `|` does not work with TypeAliasType",
     test_union_operator_with_scoped_type_alias,
     TestEnv::new_with_version(PythonVersion::new(3, 13, 0)),
     r#"
 class C[T]: pass
 type IntAlias = C[int]
-bad: IntAlias | "str" = "foo"
+bad: IntAlias | "str" = "foo"  # E: Cannot use `|` operator with forward reference string literal and type
 "#,
 );
