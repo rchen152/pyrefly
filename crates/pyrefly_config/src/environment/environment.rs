@@ -140,9 +140,9 @@ import json, sys, sysconfig
 platform = sys.platform
 v = sys.version_info
 version = '{}.{}.{}'.format(v.major, v.minor, v.micro)
-site_package_path = list(filter(lambda x: x != '' and '.zip' not in x, sys.path))
-stdlib_paths = [sysconfig.get_path('stdlib'), sysconfig.get_path('platstdlib')]
-print(json.dumps({'python_platform': platform, 'python_version': version, 'site_package_path': site_package_path, 'stdlib_paths': stdlib_paths}))
+stdlib_paths = {p for p in [sysconfig.get_path('stdlib'), sysconfig.get_path('platstdlib')] if p is not None}
+site_package_path = [p for p in sys.path if p != '' and '.zip' not in p and not p.endswith('/lib-dynload') and p not in stdlib_paths]
+print(json.dumps({'python_platform': platform, 'python_version': version, 'site_package_path': site_package_path, 'stdlib_paths': list(stdlib_paths)}))
 ";
 
         let mut command = Command::new(interpreter);
