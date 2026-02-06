@@ -440,7 +440,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         || {
                             self.solver()
                                 .fresh_partial_contained(self.uniques, x.range)
-                                .to_type()
+                                .to_type(self.heap)
                         },
                         |hint| hint.to_type(),
                     );
@@ -458,7 +458,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         || {
                             self.solver()
                                 .fresh_partial_contained(self.uniques, x.range)
-                                .to_type()
+                                .to_type(self.heap)
                         },
                         |hint| hint.to_type(),
                     );
@@ -900,7 +900,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 || {
                     self.solver()
                         .fresh_partial_contained(self.uniques, range)
-                        .to_type()
+                        .to_type(self.heap)
                 },
                 |ty| ty.to_type(),
             );
@@ -908,7 +908,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 || {
                     self.solver()
                         .fresh_partial_contained(self.uniques, range)
-                        .to_type()
+                        .to_type(self.heap)
                 },
                 |ty| ty.to_type(),
             );
@@ -953,7 +953,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                                     self.uniques,
                                                     x.value.range(),
                                                 )
-                                                .to_type(),
+                                                .to_type(self.heap),
                                         ])
                                     } else {
                                         value_t.clone()

@@ -4343,7 +4343,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 *range,
                 errors,
             ),
-            Binding::LambdaParameter(var) => var.to_type(),
+            Binding::LambdaParameter(var) => var.to_type(self.heap),
             Binding::FunctionParameter(param) => self.binding_to_type_function_parameter(param),
             Binding::SuperInstance(style, range) => self.solve_super_binding(style, *range, errors),
             // For first-usage-based type inference, we occasionally just want a way to force

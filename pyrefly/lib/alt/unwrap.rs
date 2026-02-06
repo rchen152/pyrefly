@@ -116,7 +116,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         match ty {
             Type::Any(style) => self.heap.mk_any(*style),
             Type::Never(style) => self.heap.mk_never_style(*style),
-            _ => self.solver().expand_vars(var.to_type()),
+            _ => self.solver().expand_vars(var.to_type(self.heap)),
         }
     }
 
@@ -143,7 +143,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let value = self.fresh_var();
                 let dict_type = self
                     .stdlib
-                    .mapping(key.to_type(), value.to_type())
+                    .mapping(key.to_type(self.heap), value.to_type(self.heap))
                     .to_type();
                 if self.is_subset_eq(ty, &dict_type) {
                     Some((self.resolve_var(ty, key), self.resolve_var(ty, value)))
@@ -157,7 +157,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Warning: this returns `Some` if the type is `Any` or a class that extends `Any`
     pub fn unwrap_awaitable(&self, ty: &Type) -> Option<Type> {
         let var = self.fresh_var();
-        let awaitable_ty = self.stdlib.awaitable(var.to_type()).to_type();
+        let awaitable_ty = self.stdlib.awaitable(var.to_type(self.heap)).to_type();
         if self.is_subset_eq(ty, &awaitable_ty) {
             Some(self.resolve_var(ty, var))
         } else {
@@ -172,7 +172,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let var3 = self.fresh_var();
         let coroutine_ty = self
             .stdlib
-            .coroutine(var1.to_type(), var2.to_type(), var3.to_type())
+            .coroutine(
+                var1.to_type(self.heap),
+                var2.to_type(self.heap),
+                var3.to_type(self.heap),
+            )
             .to_type();
         self.is_subset_eq(ty, &coroutine_ty)
     }
@@ -218,7 +222,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let return_ty = self.fresh_var();
         let coroutine_ty = self
             .stdlib
-            .coroutine(yield_ty.to_type(), send_ty.to_type(), return_ty.to_type())
+            .coroutine(
+                yield_ty.to_type(self.heap),
+                send_ty.to_type(self.heap),
+                return_ty.to_type(self.heap),
+            )
             .to_type();
         if self.is_subset_eq(ty, &coroutine_ty) {
             let yield_ty: Type = self.resolve_var(ty, yield_ty);
@@ -237,7 +245,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let return_ty = self.fresh_var();
         let generator_ty = self
             .stdlib
-            .generator(yield_ty.to_type(), send_ty.to_type(), return_ty.to_type())
+            .generator(
+                yield_ty.to_type(self.heap),
+                send_ty.to_type(self.heap),
+                return_ty.to_type(self.heap),
+            )
             .to_type();
         if self.is_subset_eq(ty, &generator_ty) {
             let yield_ty: Type = self.resolve_var(ty, yield_ty);
@@ -252,7 +264,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Warning: this returns `Some` if the type is `Any` or a class that extends `Any`
     pub fn unwrap_iterable(&self, ty: &Type) -> Option<Type> {
         let iter_ty = self.fresh_var();
-        let iterable_ty = self.stdlib.iterable(iter_ty.to_type()).to_type();
+        let iterable_ty = self.stdlib.iterable(iter_ty.to_type(self.heap)).to_type();
         if self.is_subset_eq(ty, &iterable_ty) {
             Some(self.resolve_var(ty, iter_ty))
         } else {
@@ -263,7 +275,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Warning: this returns `Some` if the type is `Any` or a class that extends `Any`
     pub fn unwrap_async_iterable(&self, ty: &Type) -> Option<Type> {
         let iter_ty = self.fresh_var();
-        let iterable_ty = self.stdlib.async_iterable(iter_ty.to_type()).to_type();
+        let iterable_ty = self
+            .stdlib
+            .async_iterable(iter_ty.to_type(self.heap))
+            .to_type();
         if self.is_subset_eq(ty, &iterable_ty) {
             Some(self.resolve_var(ty, iter_ty))
         } else {
@@ -274,7 +289,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Warning: this returns `Some` if the type is `Any` or a class that extends `Any`
     pub fn unwrap_async_iterator(&self, ty: &Type) -> Option<Type> {
         let var = self.fresh_var();
-        let iterator_ty = self.stdlib.async_iterator(var.to_type()).to_type();
+        let iterator_ty = self.stdlib.async_iterator(var.to_type(self.heap)).to_type();
         if self.is_subset_eq(ty, &iterator_ty) {
             Some(self.resolve_var(ty, var))
         } else {
@@ -288,7 +303,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> (Option<Hint<'b>>, Option<Hint<'b>>) {
         let key = self.fresh_var();
         let value = self.fresh_var();
-        let dict_type = self.stdlib.dict(key.to_type(), value.to_type()).to_type();
+        let dict_type = self
+            .stdlib
+            .dict(key.to_type(self.heap), value.to_type(self.heap))
+            .to_type();
         if self.is_subset_eq(&dict_type, hint.ty()) {
             let key = hint.map_ty_opt(|ty| self.resolve_var_opt(ty, key));
             let value = hint.map_ty_opt(|ty| self.resolve_var_opt(ty, value));
@@ -300,7 +318,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn decompose_set<'b>(&self, hint: HintRef<'b, '_>) -> Option<Hint<'b>> {
         let elem = self.fresh_var();
-        let set_type = self.stdlib.set(elem.to_type()).to_type();
+        let set_type = self.stdlib.set(elem.to_type(self.heap)).to_type();
         if self.is_subset_eq(&set_type, hint.ty()) {
             hint.map_ty_opt(|ty| self.resolve_var_opt(ty, elem))
         } else {
@@ -310,7 +328,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn decompose_list<'b>(&self, hint: HintRef<'b, '_>) -> Option<Hint<'b>> {
         let elem = self.fresh_var();
-        let list_type = self.stdlib.list(elem.to_type()).to_type();
+        let list_type = self.stdlib.list(elem.to_type(self.heap)).to_type();
         if self.is_subset_eq(&list_type, hint.ty()) {
             hint.map_ty_opt(|ty| self.resolve_var_opt(ty, elem))
         } else {
@@ -320,7 +338,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn decompose_tuple<'b>(&self, hint: HintRef<'b, '_>) -> Option<Hint<'b>> {
         let elem = self.fresh_var();
-        let tuple_type = self.stdlib.tuple(elem.to_type()).to_type();
+        let tuple_type = self.stdlib.tuple(elem.to_type(self.heap)).to_type();
         if self.is_subset_eq(&tuple_type, hint.ty()) {
             hint.map_ty_opt(|ty| self.resolve_var_opt(ty, elem))
         } else {
@@ -336,9 +354,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let return_ty = self.fresh_var();
         let params = param_vars
             .iter()
-            .map(|(name, var)| Param::Pos((*name).clone(), var.to_type(), Required::Required))
+            .map(|(name, var)| {
+                Param::Pos((*name).clone(), var.to_type(self.heap), Required::Required)
+            })
             .collect::<Vec<_>>();
-        let callable_ty = self.heap.mk_callable_from_vec(params, return_ty.to_type());
+        let callable_ty = self
+            .heap
+            .mk_callable_from_vec(params, return_ty.to_type(self.heap));
 
         if self.is_subset_eq(&callable_ty, hint.ty()) {
             hint.map_ty_opt(|ty| self.resolve_var_opt(ty, return_ty))
@@ -352,9 +374,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let generator_ty = self
             .stdlib
             .generator(
-                yield_ty.to_type(),
-                self.fresh_var().to_type(),
-                self.fresh_var().to_type(),
+                yield_ty.to_type(self.heap),
+                self.fresh_var().to_type(self.heap),
+                self.fresh_var().to_type(self.heap),
             )
             .to_type();
         if self.is_subset_eq(&generator_ty, hint.ty()) {
@@ -370,7 +392,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let return_ty = self.fresh_var();
         let generator_ty = self
             .stdlib
-            .generator(yield_ty.to_type(), send_ty.to_type(), return_ty.to_type())
+            .generator(
+                yield_ty.to_type(self.heap),
+                send_ty.to_type(self.heap),
+                return_ty.to_type(self.heap),
+            )
             .to_type();
         if self.is_subset_eq(&generator_ty, ty) {
             let yield_ty: Type = self.resolve_var_opt(ty, yield_ty)?;
@@ -391,7 +417,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let send_ty = self.fresh_var();
         let async_generator_ty = self
             .stdlib
-            .async_generator(yield_ty.to_type(), send_ty.to_type())
+            .async_generator(yield_ty.to_type(self.heap), send_ty.to_type(self.heap))
             .to_type();
         if self.is_subset_eq(&async_generator_ty, ty) {
             let yield_ty: Type = self.resolve_var_opt(ty, yield_ty)?;

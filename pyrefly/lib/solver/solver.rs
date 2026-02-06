@@ -716,7 +716,7 @@ impl Solver {
 
         let qs = params.iter().map(|p| &p.quantified).collect::<Vec<_>>();
         let vs = self.fresh_quantified_vars(&qs, uniques);
-        let ts = vs.0.map(|v| v.to_type());
+        let ts = vs.0.map(|v| v.to_type(&self.heap));
         let t = t.subst(&qs.into_iter().zip(&ts).collect());
         (vs, t)
     }
@@ -753,7 +753,7 @@ impl Solver {
 
         // Substitute fresh vars for the quantifieds in the self param.
         let vs = self.fresh_quantified_vars(&qs, uniques);
-        let ts = vs.0.map(|v| v.to_type());
+        let ts = vs.0.map(|v| v.to_type(&self.heap));
         let mp = qs.into_iter().zip(&ts).collect();
         let self_param = self_param.clone().subst(&mp);
         callable.visit_mut(&mut |t| t.subst_mut(&mp));
@@ -834,7 +834,7 @@ impl Solver {
             {
                 let v = Var::new(uniques);
                 vs.push(v);
-                *t = v.to_type();
+                *t = v.to_type(&self.heap);
                 lock.insert_fresh(v, Variable::Quantified(param.quantified.clone()));
             }
         });
@@ -902,7 +902,7 @@ impl Solver {
                 } else if self.infer_with_first_use {
                     let v = Var::new(uniques);
                     self.variables.lock().insert_fresh(v, Variable::finished(q));
-                    Some(v.to_type())
+                    Some(v.to_type(&self.heap))
                 } else {
                     Some(q.as_gradual_type())
                 }
@@ -1037,7 +1037,13 @@ impl Solver {
         errors: &ErrorCollector,
         range: TextRange,
     ) -> Type {
-        fn expand(t: Type, variables: &Variables, recurser: &VarRecurser, res: &mut Vec<Type>) {
+        fn expand(
+            t: Type,
+            variables: &Variables,
+            recurser: &VarRecurser,
+            heap: &TypeHeap,
+            res: &mut Vec<Type>,
+        ) {
             match t {
                 Type::Var(v) if let Some(_guard) = variables.recurse(v, recurser) => {
                     let variable = variables.get(v);
@@ -1045,14 +1051,14 @@ impl Solver {
                         Variable::Answer(t) => {
                             let t = t.clone();
                             drop(variable);
-                            expand(t, variables, recurser, res);
+                            expand(t, variables, recurser, heap, res);
                         }
-                        _ => res.push(v.to_type()),
+                        _ => res.push(v.to_type(heap)),
                     }
                 }
                 Type::Union(box Union { members: ts, .. }) => {
                     for t in ts {
-                        expand(t, variables, recurser, res);
+                        expand(t, variables, recurser, heap, res);
                     }
                 }
                 _ => res.push(t),
@@ -1107,7 +1113,7 @@ impl Solver {
                 // possibilities, so just ignore it.
                 let mut res = Vec::new();
                 // First expand all union/var into a list of the possible unions
-                expand(ty, &lock, &VarRecurser::new(), &mut res);
+                expand(ty, &lock, &VarRecurser::new(), &self.heap, &mut res);
                 // Then remove any reference to self, before unioning it back together
                 res.retain(|x| x != &Type::Var(var));
                 let ty = unions(res);

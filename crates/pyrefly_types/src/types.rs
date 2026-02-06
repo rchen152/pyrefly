@@ -44,6 +44,7 @@ use crate::callable::Required;
 use crate::class::Class;
 use crate::class::ClassKind;
 use crate::class::ClassType;
+use crate::heap::TypeHeap;
 use crate::keywords::DataclassTransformMetadata;
 use crate::keywords::KwCall;
 use crate::literal::Lit;
@@ -81,8 +82,8 @@ impl Var {
         Self(uniques.fresh())
     }
 
-    pub fn to_type(self) -> Type {
-        Type::Var(self)
+    pub fn to_type(self, heap: &TypeHeap) -> Type {
+        heap.mk_var(self)
     }
 }
 
