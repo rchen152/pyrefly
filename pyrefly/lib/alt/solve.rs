@@ -3399,7 +3399,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         let ty = self
             .typevartuple_from_call(name.clone(), x, errors)
-            .to_type();
+            .to_type(self.heap);
         if let Some(k) = ann
             && let AnnotationWithTarget {
                 target,
