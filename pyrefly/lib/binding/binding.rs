@@ -205,8 +205,6 @@ pub enum ChangedExport {
     Name(Name),
     /// A changed class (from class-related keys like `KeyClassField`, `KeyClassMetadata`, etc.).
     ClassDefIndex(ClassDefIndex),
-    /// The wildcard set changed (names exported via `from M import *`).
-    Wildcard,
     /// A name was added or removed from the module's definitions.
     /// This is detected at the Exports step, before types are computed.
     NameExistence(Name),

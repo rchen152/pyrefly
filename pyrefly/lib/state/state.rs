@@ -312,8 +312,6 @@ impl ModuleDep {
             ChangedExport::ClassDefIndex(idx) => self.classes.contains(idx),
             ChangedExport::TypeAliasIndex(idx) => self.type_aliases.contains(idx),
             ChangedExport::Metadata(name) => self.names.get(name).is_some_and(|d| d.metadata),
-            // We don't depend on wildcard (checked separately before calling this)
-            ChangedExport::Wildcard => false,
         }
     }
 }
@@ -1158,13 +1156,8 @@ impl<'a> Transaction<'a> {
                     match (old_exports.as_ref(), writer.steps.exports.as_ref()) {
                         (Some(old), Some(new)) => {
                             let mut changed_set: SmallSet<ChangedExport> = SmallSet::new();
-                            // Module entries changed, fall back to Wildcard
-                            if old.wildcard_entries_changed(new) {
-                                changed_set.insert(ChangedExport::Wildcard);
-                            }
-
                             // Check for definition name changes (added/removed names)
-                            for name in old.changed_definition_names(new) {
+                            for name in old.changed_names(new) {
                                 changed_set.insert(ChangedExport::NameExistence(name));
                             }
 
