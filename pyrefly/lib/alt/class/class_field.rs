@@ -1150,15 +1150,15 @@ impl<'a> Instance<'a> {
                 ClassType::new(self.class.dupe(), self.targs.clone()).to_type()
             }
             InstanceKind::TypedDict => {
-                Type::TypedDict(TypedDict::new(self.class.dupe(), self.targs.clone()))
+                heap.mk_typed_dict(TypedDict::new(self.class.dupe(), self.targs.clone()))
             }
             InstanceKind::TypeVar(q) => q.clone().to_type(),
             InstanceKind::SelfType => {
-                Type::SelfType(ClassType::new(self.class.dupe(), self.targs.clone()))
+                heap.mk_self_type(ClassType::new(self.class.dupe(), self.targs.clone()))
             }
             InstanceKind::Protocol(self_type) => self_type.clone(),
             InstanceKind::Metaclass(cls) => cls.clone().to_type(heap),
-            InstanceKind::LiteralString => Type::LiteralString(LitStyle::Implicit),
+            InstanceKind::LiteralString => heap.mk_literal_string(LitStyle::Implicit),
         }
     }
 
@@ -2463,7 +2463,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 forall(body.clone(), &quantified, Some(tparams))
                     .map_or(ty, |forall| self.heap.mk_forall(forall))
             }
-            Type::Overload(overload) => Type::Overload(Overload {
+            Type::Overload(overload) => self.heap.mk_overload(Overload {
                 signatures: overload.signatures.clone().mapped(|sig| match &sig {
                     OverloadType::Function(func) => {
                         forall(func.clone(), &quantified, None).map_or(sig, OverloadType::Forall)

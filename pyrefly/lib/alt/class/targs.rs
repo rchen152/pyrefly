@@ -526,7 +526,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     fn create_paramspec_value(&self, targs: &[Type]) -> Type {
         let params: Vec<Param> = targs.map(|t| Param::PosOnly(None, t.clone(), Required::Required));
-        Type::ParamSpecValue(ParamList::new(params))
+        self.heap.mk_param_spec_value(ParamList::new(params))
     }
 
     fn create_next_paramspec_arg(
@@ -540,7 +540,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else if arg.is_any() {
             // Any is the universal type that is compatible with any ParamSpec.
             // Convert it to Ellipsis, which is the gradual type for ParamSpec.
-            Type::Ellipsis
+            self.heap.mk_ellipsis()
         } else {
             self.error(
                 errors,
@@ -551,7 +551,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.for_display(arg.clone())
                 ),
             );
-            Type::Ellipsis
+            self.heap.mk_ellipsis()
         }
     }
 
