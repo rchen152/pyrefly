@@ -779,7 +779,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let ty = self
                     .unwrap_iterable(iterable)
                     .or_else(|| {
-                        let int_ty = self.stdlib.int().clone().to_type();
+                        let int_ty = self.heap.mk_class_type(self.stdlib.int().clone());
                         let arg = CallArg::ty(&int_ty, range);
                         self.call_magic_dunder_method(
                             iterable,
@@ -857,7 +857,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let base_exception_class_type = self
             .heap
             .mk_class_def(base_exception_class.class_object().dupe());
-        let base_exception_type = base_exception_class.clone().to_type();
+        let base_exception_type = self.heap.mk_class_type(base_exception_class.clone());
         let mut expected_types = vec![base_exception_type, base_exception_class_type];
         let mut expected = "`BaseException`";
         if allow_none {
@@ -1392,12 +1392,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ),
             },
         };
-        let base_exception_class_type = self
-            .heap
-            .mk_type_form(self.stdlib.base_exception().clone().to_type());
+        let base_exception_class_type = self.heap.mk_type_form(
+            self.heap
+                .mk_class_type(self.stdlib.base_exception().clone()),
+        );
         let arg1 = base_exception_class_type;
-        let arg2 = self.stdlib.base_exception().clone().to_type();
-        let arg3 = self.stdlib.traceback_type().clone().to_type();
+        let arg2 = self
+            .heap
+            .mk_class_type(self.stdlib.base_exception().clone());
+        let arg3 = self
+            .heap
+            .mk_class_type(self.stdlib.traceback_type().clone());
         let exit_with_error_args = [
             CallArg::ty(&arg1, range),
             CallArg::ty(&arg2, range),
@@ -1458,7 +1463,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.context_value_exit(context_manager_type, kind, range, errors, Some(&context));
             self.check_type(
                 &exit_type,
-                &self.heap.mk_optional(self.stdlib.bool().clone().to_type()),
+                &self
+                    .heap
+                    .mk_optional(self.heap.mk_class_type(self.stdlib.bool().clone())),
                 range,
                 errors,
                 &|| TypeCheckContext {
@@ -2019,7 +2026,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) {
         let value_type = self.expr_infer(&expect.value, errors);
         // Name mangling only occurs on attributes of classes.
-        if self.is_subset_eq(&value_type, &self.stdlib.module_type().clone().to_type()) {
+        if self.is_subset_eq(
+            &value_type,
+            &self.heap.mk_class_type(self.stdlib.module_type().clone()),
+        ) {
             return;
         }
         if let Some(class_idx) = expect.class_idx {
@@ -2846,19 +2856,22 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     });
                     let any_implicit = self.heap.mk_any_implicit();
                     if x.is_async {
-                        self.stdlib
-                            .async_generator(yield_ty, any_implicit)
-                            .to_type()
+                        self.heap
+                            .mk_class_type(self.stdlib.async_generator(yield_ty, any_implicit))
                     } else {
-                        self.stdlib
-                            .generator(yield_ty, any_implicit, return_ty)
-                            .to_type()
+                        self.heap.mk_class_type(self.stdlib.generator(
+                            yield_ty,
+                            any_implicit,
+                            return_ty,
+                        ))
                     }
                 } else if x.is_async {
                     let any_implicit = self.heap.mk_any_implicit();
-                    self.stdlib
-                        .coroutine(any_implicit.clone(), any_implicit, return_ty)
-                        .to_type()
+                    self.heap.mk_class_type(self.stdlib.coroutine(
+                        any_implicit.clone(),
+                        any_implicit,
+                        return_ty,
+                    ))
                 } else {
                     return_ty
                 }
@@ -2988,7 +3001,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         is_star: bool,
         errors: &ErrorCollector,
     ) -> Type {
-        let base_exception_type = self.stdlib.base_exception().clone().to_type();
+        let base_exception_type = self
+            .heap
+            .mk_class_type(self.stdlib.base_exception().clone());
         let base_exception_group_any_type = if is_star {
             // Only query for `BaseExceptionGroup` if we see an `except*` handler (which
             // was introduced in Python3.11).
@@ -2997,7 +3012,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let res = self
                 .stdlib
                 .base_exception_group(self.heap.mk_any_implicit())
-                .map(|x| x.to_type());
+                .map(|x| self.heap.mk_class_type(x));
             if res.is_none() {
                 self.error(
                     errors,
@@ -3050,7 +3065,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         };
         let exceptions = self.unions(exceptions);
         if is_star && let Some(t) = self.stdlib.exception_group(exceptions.clone()) {
-            t.to_type()
+            self.heap.mk_class_type(t)
         } else {
             exceptions
         }
@@ -3091,8 +3106,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         };
         let iterables = if is_async.is_async() {
             let infer_hint = ann.clone().and_then(|x| {
-                x.ty(self.stdlib)
-                    .map(|ty| self.stdlib.async_iterable(ty.clone()).to_type())
+                x.ty(self.stdlib).map(|ty| {
+                    self.heap
+                        .mk_class_type(self.stdlib.async_iterable(ty.clone()))
+                })
             });
             let iterable =
                 self.expr_infer_with_hint(e, infer_hint.as_ref().map(HintRef::soft), errors);
@@ -3100,7 +3117,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             let infer_hint = ann.clone().and_then(|x| {
                 x.ty(self.stdlib)
-                    .map(|ty| self.stdlib.iterable(ty.clone()).to_type())
+                    .map(|ty| self.heap.mk_class_type(self.stdlib.iterable(ty.clone())))
             });
             let iterable =
                 self.expr_infer_with_hint(e, infer_hint.as_ref().map(HintRef::soft), errors);
@@ -3132,16 +3149,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             values.push(match iterable {
                 Iterable::OfType(ty) => match pos {
                     UnpackedPosition::Index(_) | UnpackedPosition::ReverseIndex(_) => ty,
-                    UnpackedPosition::Slice(_, _) => self.stdlib.list(ty).to_type(),
+                    UnpackedPosition::Slice(_, _) => self.heap.mk_class_type(self.stdlib.list(ty)),
                 },
                 Iterable::OfTypeVarTuple(_) => {
                     // Type var tuples can resolve to anything so we fall back to object
-                    let object_type = self.stdlib.object().clone().to_type();
+                    let object_type = self.heap.mk_class_type(self.stdlib.object().clone());
                     match pos {
                         UnpackedPosition::Index(_) | UnpackedPosition::ReverseIndex(_) => {
                             object_type
                         }
-                        UnpackedPosition::Slice(_, _) => self.stdlib.list(object_type).to_type(),
+                        UnpackedPosition::Slice(_, _) => {
+                            self.heap.mk_class_type(self.stdlib.list(object_type))
+                        }
                     }
                 }
                 Iterable::FixedLen(ts) => {
@@ -3169,7 +3188,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 && let Some(items) = ts.get(start..end)
                             {
                                 let elem_ty = self.unions(items.to_vec());
-                                self.stdlib.list(elem_ty).to_type()
+                                self.heap.mk_class_type(self.stdlib.list(elem_ty))
                             } else {
                                 // We'll report this error when solving for Binding::UnpackedLength.
                                 self.heap.mk_any_error()
@@ -3359,10 +3378,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn binding_to_type_function_parameter(&self, param: &FunctionParameter) -> Type {
         let finalize = |target: &AnnotationTarget, ty| match target {
             AnnotationTarget::ArgsParam(_) => self.heap.mk_unbounded_tuple(ty),
-            AnnotationTarget::KwargsParam(_) => self
-                .stdlib
-                .dict(self.stdlib.str().clone().to_type(), ty)
-                .to_type(),
+            AnnotationTarget::KwargsParam(_) => self.heap.mk_class_type(
+                self.stdlib
+                    .dict(self.heap.mk_class_type(self.stdlib.str().clone()), ty),
+            ),
             _ => ty,
         };
         match param {
@@ -3921,9 +3940,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         )
                     }
                     (Type::TypedDict(typed_dict), key)
-                        if self.is_subset_eq(key, &self.stdlib.str().clone().to_type())
-                            && let Some(field_ty) =
-                                self.get_typed_dict_value_type_as_builtins_dict(typed_dict) =>
+                        if self.is_subset_eq(
+                            key,
+                            &self.heap.mk_class_type(self.stdlib.str().clone()),
+                        ) && let Some(field_ty) =
+                            self.get_typed_dict_value_type_as_builtins_dict(typed_dict) =>
                     {
                         self.check_assign_to_typed_dict_field(
                             typed_dict.name(),
@@ -4136,9 +4157,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         if is_async && !is_generator {
             let any_implicit = self.heap.mk_any_implicit();
-            self.stdlib
-                .coroutine(any_implicit.clone(), any_implicit, annotated_ty)
-                .to_type()
+            self.heap.mk_class_type(self.stdlib.coroutine(
+                any_implicit.clone(),
+                any_implicit,
+                annotated_ty,
+            ))
         } else {
             annotated_ty
         }
@@ -4508,10 +4531,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     // with a `None` send type.
                     // TODO: This might cause confusing type errors.
                     let none = self.heap.mk_none();
-                    ty = self
-                        .stdlib
-                        .generator(yield_ty.clone(), none.clone(), none)
-                        .to_type();
+                    ty = self.heap.mk_class_type(self.stdlib.generator(
+                        yield_ty.clone(),
+                        none.clone(),
+                        none,
+                    ));
                     YieldFromResult::from_iterable(self.heap, yield_ty)
                 } else {
                     ty = if is_async.is_async() {
@@ -4532,10 +4556,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 };
                 if let Some((want_yield, want_send, _)) = want {
                     // We don't need to be compatible with the expected generator return type.
-                    let want = self
-                        .stdlib
-                        .generator(want_yield, want_send, self.heap.mk_any_implicit())
-                        .to_type();
+                    let want = self.heap.mk_class_type(self.stdlib.generator(
+                        want_yield,
+                        want_send,
+                        self.heap.mk_any_implicit(),
+                    ));
                     self.check_type(&ty, &want, x.range, errors, &|| {
                         TypeCheckContext::of_kind(TypeCheckKind::YieldFrom)
                     });
@@ -4682,7 +4707,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         .clone(),
                 ),
             ),
-            _ => self.stdlib.builtins_type().clone().to_type(),
+            _ => self.heap.mk_class_type(self.stdlib.builtins_type().clone()),
         }
     }
 
@@ -4910,10 +4935,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             );
                         }
                         (Type::TypedDict(typed_dict), key)
-                            if self.is_subset_eq(key, &self.stdlib.str().clone().to_type())
-                                && self
-                                    .get_typed_dict_value_type_as_builtins_dict(typed_dict)
-                                    .is_some() =>
+                            if self.is_subset_eq(
+                                key,
+                                &self.heap.mk_class_type(self.stdlib.str().clone()),
+                            ) && self
+                                .get_typed_dict_value_type_as_builtins_dict(typed_dict)
+                                .is_some() =>
                         {
                             self.check_del_typed_dict_field(
                                 typed_dict.name(),
