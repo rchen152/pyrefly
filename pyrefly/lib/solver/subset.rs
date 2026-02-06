@@ -1218,7 +1218,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                     &self
                         .type_order
                         .stdlib()
-                        .param_spec_kwargs_as_dict()
+                        .param_spec_kwargs_as_dict(&self.solver.heap)
                         .to_type(),
                     want,
                 )
@@ -1229,7 +1229,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                     &self
                         .type_order
                         .stdlib()
-                        .param_spec_args_as_tuple()
+                        .param_spec_args_as_tuple(&self.solver.heap)
                         .to_type(),
                     want,
                 )

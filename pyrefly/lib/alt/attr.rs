@@ -1918,10 +1918,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.stdlib.type_var_tuple().clone(),
             )),
             Type::Args(_) => acc.push(AttributeBase1::ClassInstance(
-                self.stdlib.param_spec_args_as_tuple(),
+                self.stdlib.param_spec_args_as_tuple(self.heap),
             )),
             Type::Kwargs(_) => acc.push(AttributeBase1::ClassInstance(
-                self.stdlib.param_spec_kwargs_as_dict(),
+                self.stdlib.param_spec_kwargs_as_dict(self.heap),
             )),
             Type::ArgsValue(_) => acc.push(AttributeBase1::ClassInstance(
                 self.stdlib.param_spec_args().clone(),
@@ -1942,10 +1942,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 ClassBase::ClassType(q.class_type(self.stdlib).clone()),
             )),
             Type::Type(box Type::Args(_)) => acc.push(AttributeBase1::ClassObject(
-                ClassBase::ClassType(self.stdlib.param_spec_args_as_tuple()),
+                ClassBase::ClassType(self.stdlib.param_spec_args_as_tuple(self.heap)),
             )),
             Type::Type(box Type::Kwargs(_)) => acc.push(AttributeBase1::ClassObject(
-                ClassBase::ClassType(self.stdlib.param_spec_kwargs_as_dict()),
+                ClassBase::ClassType(self.stdlib.param_spec_kwargs_as_dict(self.heap)),
             )),
             Type::Type(box Type::ArgsValue(_)) => acc.push(AttributeBase1::ClassObject(
                 ClassBase::ClassType(self.stdlib.param_spec_args().clone()),
