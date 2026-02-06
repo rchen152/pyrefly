@@ -970,17 +970,12 @@ impl<'a> BindingsBuilder<'a> {
             }) => {
                 // Check if either side is a string literal BEFORE recursing,
                 // since ensure_type_impl will parse and replace them.
-                let left_was_string_literal = matches!(&**left, Expr::StringLiteral(s) if as_forward_ref(s, in_string_literal).is_some());
-                let right_was_string_literal = matches!(&**right, Expr::StringLiteral(s) if as_forward_ref(s, in_string_literal).is_some());
+                let left_is_forward_ref = matches!(&**left, Expr::StringLiteral(s) if as_forward_ref(s, in_string_literal).is_some());
+                let right_is_forward_ref = matches!(&**right, Expr::StringLiteral(s) if as_forward_ref(s, in_string_literal).is_some());
 
                 // Recurse into children to handle string literal parsing
                 self.ensure_type_impl(left, tparams_builder, in_string_literal);
                 self.ensure_type_impl(right, tparams_builder, in_string_literal);
-
-                // A forward reference is a string literal that parsed to a simple name
-                // (like "str"), not a complex type (like "list[str]" which parses to a subscript)
-                let left_is_forward_ref = left_was_string_literal && left.is_name_expr();
-                let right_is_forward_ref = right_was_string_literal && right.is_name_expr();
 
                 // Only create the check if at least one side is a forward ref,
                 // and we're not in Python 3.14+ or with future annotations
