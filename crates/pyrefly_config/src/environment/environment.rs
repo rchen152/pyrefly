@@ -18,11 +18,10 @@ use itertools::Itertools;
 use pyrefly_python::sys_info::PythonPlatform;
 use pyrefly_python::sys_info::PythonVersion;
 use pyrefly_util::lock::Mutex;
-use pyrefly_util::lock::RwLock;
+use pyrefly_util::stdlib::register_stdlib_paths;
 use serde::Deserialize;
 use serde::Serialize;
 use starlark_map::small_map::SmallMap;
-use starlark_map::small_set::SmallSet;
 use tracing::warn;
 
 use crate::environment::interpreters::Interpreters;
@@ -30,9 +29,6 @@ use crate::environment::interpreters::Interpreters;
 static INTERPRETER_ENV_REGISTRY: LazyLock<
     Mutex<SmallMap<PathBuf, Result<PythonEnvironment, String>>>,
 > = LazyLock::new(|| Mutex::new(SmallMap::new()));
-
-static INTERPRETER_STDLIB_PATH_REGISTRY: LazyLock<RwLock<SmallSet<PathBuf>>> =
-    LazyLock::new(|| RwLock::new(SmallSet::new()));
 
 /// Values representing the environment of the Python interpreter.
 /// These values are `None` by default, so we can tell if a config
@@ -211,13 +207,7 @@ print(json.dumps({'python_platform': platform, 'python_version': version, 'site_
     }
 
     fn cache_interpreter_stdlib_path(path: Vec<PathBuf>) {
-        INTERPRETER_STDLIB_PATH_REGISTRY.write().extend(path);
-    }
-
-    /// todo(jvansch): Remove this once function is used to filter standard library files
-    #[allow(dead_code)]
-    pub fn get_interpreter_stdlib_path() -> &'static LazyLock<RwLock<SmallSet<PathBuf>>> {
-        &INTERPRETER_STDLIB_PATH_REGISTRY
+        register_stdlib_paths(path);
     }
 
     /// [`Self::get_default_interpreter()`] and [`Self::get_interpreter_env()`] with the resulting value,
