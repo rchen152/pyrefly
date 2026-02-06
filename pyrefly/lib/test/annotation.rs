@@ -45,21 +45,17 @@ ok6: C[int] | "str" = "foo"
 );
 
 testcase!(
-    bug = "These should be errors",
     test_union_of_plain_type_and_complex_forward_ref,
     r#"
-# More complex types in quotes - current implementation only detects simple names
-# so "list[str]" (which parses to a subscript, not a name) is not detected
-bad1: int | "list[str]" = []
-bad2: "list[str]" | int = []
+bad1: int | "list[str]" = []  # E: Cannot use `|` operator with forward reference string literal and type
+bad2: "list[str]" | int = []  # E: Cannot use `|` operator with forward reference string literal and type
     "#,
 );
 
 testcase!(
-    bug = "This should be an error because `|` is not supported between strings",
     test_union_of_forward_refs,
     r#"
-bad: "int" | "list[str]" = 1
+bad: "int" | "list[str]" = 1  # E: Cannot use `|` operator with forward reference string literal and type
     "#,
 );
 
