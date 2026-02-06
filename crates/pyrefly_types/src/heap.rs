@@ -21,10 +21,20 @@ use crate::callable::Params;
 use crate::callable::Required;
 use crate::class::ClassType;
 use crate::keywords::KwCall;
+use crate::literal::LitStyle;
+use crate::literal::Literal;
+use crate::module::ModuleType;
+use crate::param_spec::ParamSpec;
 use crate::quantified::Quantified;
+use crate::special_form::SpecialForm;
+use crate::type_alias::TypeAliasData;
+use crate::type_var::TypeVar;
+use crate::type_var_tuple::TypeVarTuple;
+use crate::typed_dict::TypedDict;
 use crate::types::BoundMethod;
 use crate::types::Forall;
 use crate::types::Forallable;
+use crate::types::Overload;
 use crate::types::SuperObj;
 use crate::types::Type;
 use crate::types::Union;
@@ -228,5 +238,100 @@ impl TypeHeap {
     /// This is an alias for `mk_type` matching the `Type::type_form` helper.
     pub fn mk_type_form(&self, inner: Type) -> Type {
         Type::type_form(inner)
+    }
+
+    /// Create a `Type::Literal` from a Literal.
+    pub fn mk_literal(&self, literal: Literal) -> Type {
+        Type::Literal(Box::new(literal))
+    }
+
+    /// Create a `Type::LiteralString` with the given style.
+    pub fn mk_literal_string(&self, style: LitStyle) -> Type {
+        Type::LiteralString(style)
+    }
+
+    /// Create a `Type::Overload` from an Overload.
+    pub fn mk_overload(&self, overload: Overload) -> Type {
+        Type::Overload(overload)
+    }
+
+    /// Create a `Type::Intersect` from members and a fallback type.
+    pub fn mk_intersect(&self, members: Vec<Type>, fallback: Type) -> Type {
+        Type::Intersect(Box::new((members, fallback)))
+    }
+
+    /// Create a `Type::TypedDict` from a TypedDict.
+    pub fn mk_typed_dict(&self, typed_dict: TypedDict) -> Type {
+        Type::TypedDict(typed_dict)
+    }
+
+    /// Create a `Type::PartialTypedDict` from a TypedDict.
+    pub fn mk_partial_typed_dict(&self, typed_dict: TypedDict) -> Type {
+        Type::PartialTypedDict(typed_dict)
+    }
+
+    /// Create a `Type::Module` from a ModuleType.
+    pub fn mk_module(&self, module: ModuleType) -> Type {
+        Type::Module(module)
+    }
+
+    /// Create a `Type::QuantifiedValue` from a Quantified.
+    pub fn mk_quantified_value(&self, quantified: Quantified) -> Type {
+        Type::QuantifiedValue(Box::new(quantified))
+    }
+
+    /// Create a `Type::TypeVar` from a TypeVar.
+    pub fn mk_type_var(&self, type_var: TypeVar) -> Type {
+        Type::TypeVar(type_var)
+    }
+
+    /// Create a `Type::ParamSpec` from a ParamSpec.
+    pub fn mk_param_spec(&self, param_spec: ParamSpec) -> Type {
+        Type::ParamSpec(param_spec)
+    }
+
+    /// Create a `Type::TypeVarTuple` from a TypeVarTuple.
+    pub fn mk_type_var_tuple(&self, type_var_tuple: TypeVarTuple) -> Type {
+        Type::TypeVarTuple(type_var_tuple)
+    }
+
+    /// Create a `Type::SpecialForm` from a SpecialForm.
+    pub fn mk_special_form(&self, special_form: SpecialForm) -> Type {
+        Type::SpecialForm(special_form)
+    }
+
+    /// Create a `Type::Args` from a Quantified.
+    pub fn mk_args(&self, quantified: Quantified) -> Type {
+        Type::Args(Box::new(quantified))
+    }
+
+    /// Create a `Type::Kwargs` from a Quantified.
+    pub fn mk_kwargs(&self, quantified: Quantified) -> Type {
+        Type::Kwargs(Box::new(quantified))
+    }
+
+    /// Create a `Type::Ellipsis`.
+    pub fn mk_ellipsis(&self) -> Type {
+        Type::Ellipsis
+    }
+
+    /// Create a `Type::TypeAlias` from a TypeAliasData.
+    pub fn mk_type_alias(&self, type_alias: TypeAliasData) -> Type {
+        Type::TypeAlias(Box::new(type_alias))
+    }
+
+    /// Create a `Type::Materialization`.
+    pub fn mk_materialization(&self) -> Type {
+        Type::Materialization
+    }
+
+    /// Create a `Type::Any` with the given style.
+    pub fn mk_any(&self, style: crate::types::AnyStyle) -> Type {
+        Type::Any(style)
+    }
+
+    /// Create a `Type::Never` with the given style.
+    pub fn mk_never_style(&self, style: crate::types::NeverStyle) -> Type {
+        Type::Never(style)
     }
 }
