@@ -189,7 +189,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if dataclass.kws.unsafe_hash || (dataclass.kws.eq && dataclass.kws.frozen) {
             fields.insert(dunder::HASH, self.get_dataclass_hash(cls));
         } else if dataclass.kws.eq {
-            fields.insert(dunder::HASH, ClassSynthesizedField::new(Type::None));
+            fields.insert(
+                dunder::HASH,
+                ClassSynthesizedField::new(self.heap.mk_none()),
+            );
         }
         fields.insert(
             dunder::REPLACE,
@@ -703,7 +706,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let constructor_callable = self.constructor_to_callable_distributed(converter);
         let converter = constructor_callable.as_ref().unwrap_or(converter);
         self.distribute_over_union(converter, |ty| {
-            ty.callable_first_param().unwrap_or_else(Type::any_implicit)
+            ty.callable_first_param()
+                .unwrap_or_else(|| self.heap.mk_any_implicit())
         })
     }
 
@@ -721,7 +725,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .as_ref()
                 .unwrap_or(factory)
                 .callable_return_type()
-                .unwrap_or_else(Type::any_implicit),
+                .unwrap_or_else(|| self.heap.mk_any_implicit()),
         )
     }
 
@@ -886,11 +890,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
         }
         if dataclass.kws.extra {
-            params.push(Param::Kwargs(None, Type::Any(AnyStyle::Implicit)));
+            params.push(Param::Kwargs(None, self.heap.mk_any_implicit()));
         }
 
         let ty = self.heap.mk_function(Function {
-            signature: Callable::list(ParamList::new(params), Type::None),
+            signature: Callable::list(ParamList::new(params), self.heap.mk_none()),
             metadata: FuncMetadata::def(self.module().dupe(), cls.dupe(), dunder::INIT),
         });
         ClassSynthesizedField::new(ty)
@@ -919,7 +923,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 })
                 .collect()
         };
-        let ty = Type::concrete_tuple(ts);
+        let ty = self.heap.mk_concrete_tuple(ts);
         ClassSynthesizedField::new(ty)
     }
 
@@ -934,7 +938,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .iter()
             .map(|(name, _, _)| Lit::Str(name.as_str().into()).to_implicit_type())
             .collect();
-        let ty = Type::concrete_tuple(ts);
+        let ty = self.heap.mk_concrete_tuple(ts);
         ClassSynthesizedField::new(ty)
     }
 
