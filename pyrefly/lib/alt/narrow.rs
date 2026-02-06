@@ -23,9 +23,11 @@ use pyrefly_util::visit::Visit;
 use ruff_python_ast::Arguments;
 use ruff_python_ast::AtomicNodeIndex;
 use ruff_python_ast::Expr;
+use ruff_python_ast::ExprBinOp;
 use ruff_python_ast::ExprNumberLiteral;
 use ruff_python_ast::Int;
 use ruff_python_ast::Number;
+use ruff_python_ast::Operator;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
@@ -272,11 +274,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.unions(res)
     }
 
-    fn narrow_is_not_instance(&self, left: &Type, right: &Type) -> Type {
+    fn narrow_is_not_instance(
+        &self,
+        left: &Type,
+        right_expr: &Expr,
+        errors: &ErrorCollector,
+    ) -> Type {
         let mut res = Vec::new();
-        for right in self.as_class_info(right.clone()) {
+        for (right, allows_negative_narrow) in self.expr_as_class_info(right_expr, errors) {
             res.push(self.distribute_over_union(left, |l| {
-                if let Some((tparams, right)) = self.unwrap_class_object_silently(&right) {
+                if allows_negative_narrow
+                    && let Some((tparams, right)) = self.unwrap_class_object_silently(&right)
+                {
                     let (vs, right) = self
                         .solver()
                         .fresh_quantified(&tparams, right, self.uniques);
@@ -292,6 +301,52 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }));
         }
         self.intersects(&res)
+    }
+
+    /// Turn an expression into a list of (type, allows_negative_narrow) pairs.
+    /// allows_negative_narrow means that we can do `not isinstance`/`not issubclass` narrowing
+    /// with the type. We allow negative narrowing as long as it is not definitely unsafe - that
+    /// is, if we're unsure, we allow it.
+    fn expr_as_class_info(&self, e: &Expr, errors: &ErrorCollector) -> Vec<(Type, bool)> {
+        fn f<'a, Ans: LookupAnswer>(
+            me: &AnswersSolver<'a, Ans>,
+            e: &Expr,
+            res: &mut Vec<(Type, bool)>,
+            errors: &ErrorCollector,
+        ) {
+            match e {
+                Expr::BinOp(ExprBinOp {
+                    left,
+                    op: Operator::BitOr,
+                    right,
+                    ..
+                }) => {
+                    f(me, left, res, errors);
+                    f(me, right, res, errors);
+                }
+                Expr::Tuple(tuple) if !tuple.elts.iter().any(|e| matches!(e, Expr::Starred(_))) => {
+                    for e in &tuple.elts {
+                        f(me, e, res, errors);
+                    }
+                }
+                _ => {
+                    let t = me.expr_infer(e, errors);
+                    if matches!(&t, Type::Type(box Type::ClassType(_))) {
+                        // Because `type` is covariant, `type[C]` may be a subclass of `C`,
+                        // making negative narrowing unsafe.
+                        // TODO(rechen): we can narrow if the class is un-subclassable.
+                        res.push((t, false));
+                    } else {
+                        for t in me.as_class_info(t) {
+                            res.push((t, true));
+                        }
+                    }
+                }
+            }
+        }
+        let mut res = Vec::new();
+        f(self, e, &mut res, errors);
+        res
     }
 
     fn issubclass_result(&self, instance_result: Type, original: &Type) -> Type {
@@ -920,10 +975,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 self.narrow_isinstance(ty, &right)
             }
-            AtomicNarrowOp::IsNotInstance(v, _source) => {
-                let right = self.expr_infer(v, errors);
-                self.narrow_is_not_instance(ty, &right)
-            }
+            AtomicNarrowOp::IsNotInstance(v, _source) => self.narrow_is_not_instance(ty, v, errors),
             AtomicNarrowOp::TypeEq(v) => {
                 // If type(X) == Y then X can't be a subclass of Y
                 // We can't model that, so we narrow it exactly like isinstance(X, Y)
