@@ -206,9 +206,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             _ => {}
         }
 
-        // Check if the type is a subtype of Sequence[T] for some T
-        let var = self.fresh_var();
-        let sequence_ty = self.stdlib.sequence(var.to_type()).to_type();
+        // Check if the type is a subtype of Sequence
+        let sequence_ty = self.stdlib.sequence(Type::any_implicit()).to_type();
         self.is_subset_eq(ty, &sequence_ty)
     }
 
