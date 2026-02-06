@@ -336,7 +336,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             Type::Type(box Type::Intersect(box (_, fallback))) => {
                 // TODO(rechen): implement calling `type[A & B]`
-                self.as_call_target_impl(Type::type_form(fallback), quantified, dunder_call)
+                self.as_call_target_impl(self.heap.mk_type_form(fallback), quantified, dunder_call)
             }
             Type::Quantified(q) if q.is_type_var() => match q.restriction() {
                 Restriction::Unrestricted => CallTargetLookup::Error(vec![]),
@@ -634,7 +634,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut dunder_new_ret = None;
         let (overrides_new, dunder_new_has_errors) =
             if let Some(new_method) = self.get_dunder_new(&cls) {
-                let cls_ty = Type::type_form(cls.clone().to_type());
+                let cls_ty = self.heap.mk_type_form(cls.clone().to_type());
                 let full_args = iter::once(CallArg::ty(&cls_ty, arguments_range))
                     .chain(args.iter().cloned())
                     .collect::<Vec<_>>();
@@ -1132,10 +1132,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // and the class object as `objtype`.
         let (objtype, obj) = match base {
             DescriptorBase::Instance(classtype) => (
-                Type::ClassDef(classtype.class_object().dupe()),
-                Type::ClassType(classtype),
+                self.heap.mk_class_def(classtype.class_object().dupe()),
+                self.heap.mk_class_type(classtype),
             ),
-            DescriptorBase::ClassDef(class) => (Type::ClassDef(class), Type::None),
+            DescriptorBase::ClassDef(class) => (self.heap.mk_class_def(class), self.heap.mk_none()),
         };
         let args = [CallArg::ty(&obj, range), CallArg::ty(&objtype, range)];
         let call_target = self.as_call_target_or_error(
@@ -1161,7 +1161,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // When a descriptor is set on an instance, it gets the instance `class_type` and the value `got` as arguments.
         // Descriptor setters cannot be called on a class (an attempt to assign will overwrite the
         // descriptor itself rather than call the setter).
-        let instance = Type::ClassType(class_type);
+        let instance = self.heap.mk_class_type(class_type);
         let args = [CallArg::ty(&instance, range), got];
         let call_target = self.as_call_target_or_error(
             setter_method,
@@ -1288,7 +1288,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // we can't handle things like local aliases to super. If we hit a case where the binding
             // wasn't constructed, fall back to `Any`.
             self.get_hashed_opt(Hashed::new(&Key::SuperInstance(x.range)))
-                .map_or_else(Type::any_implicit, |type_info| type_info.arc_clone_ty())
+                .map_or_else(
+                    || self.heap.mk_any_implicit(),
+                    |type_info| type_info.arc_clone_ty(),
+                )
         } else {
             self.expand_vars_mut(&mut callee_ty);
 
