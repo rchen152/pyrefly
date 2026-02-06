@@ -721,28 +721,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.narrow_length_less_than(ty, len + 1)
             }
             AtomicNarrowOp::IsSequence => {
-                // Narrow to only sequence types (for sequence pattern matching)
-                self.distribute_over_union(ty, |t| {
-                    if self.is_sequence_for_pattern(t) {
-                        t.clone()
-                    } else {
-                        Type::never()
-                    }
-                })
+                self.is_type_for_pattern(ty, |t| self.is_sequence_for_pattern(t))
             }
             AtomicNarrowOp::IsNotSequence => {
-                // Narrow to exclude sequence types (negation of sequence pattern)
-                // Note: Any and classes that extend Any must be preserved (not narrowed to Never)
-                // since we can't know at static analysis time whether they're sequences or not
-                self.distribute_over_union(ty, |t| {
-                    if self.behaves_like_any(t) {
-                        t.clone()
-                    } else if self.is_sequence_for_pattern(t) {
-                        Type::never()
-                    } else {
-                        t.clone()
-                    }
-                })
+                self.is_not_type_for_pattern(ty, |t| self.is_sequence_for_pattern(t))
             }
             AtomicNarrowOp::In(v) => {
                 // First, check for List, Tuple, and Set literal expressions (syntactic check,
@@ -1087,6 +1069,26 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.narrow_is_not_instance(ty, &Type::ClassDef(mapping_class))
             }
         }
+    }
+
+    /// Narrow for pattern matching
+    fn is_type_for_pattern(&self, ty: &Type, is_type: impl Fn(&Type) -> bool) -> Type {
+        self.distribute_over_union(ty, |t| if is_type(t) { t.clone() } else { Type::never() })
+    }
+
+    /// Narrow to exclude a type for pattern matching
+    fn is_not_type_for_pattern(&self, ty: &Type, is_type: impl Fn(&Type) -> bool) -> Type {
+        // Note: Any and classes that extend Any must be preserved (not narrowed to Never)
+        // since we can't know at static analysis time whether they're the pattern type or not
+        self.distribute_over_union(ty, |t| {
+            if self.behaves_like_any(t) {
+                t.clone()
+            } else if is_type(t) {
+                Type::never()
+            } else {
+                t.clone()
+            }
+        })
     }
 
     pub(crate) fn get_facet_chain_type(
