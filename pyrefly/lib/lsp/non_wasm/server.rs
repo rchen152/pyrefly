@@ -241,6 +241,7 @@ use crate::lsp::non_wasm::lsp::as_request;
 use crate::lsp::non_wasm::lsp::as_request_response_pair;
 use crate::lsp::non_wasm::lsp::new_notification;
 use crate::lsp::non_wasm::lsp::new_response;
+use crate::lsp::non_wasm::module_helpers::PathRemapper;
 use crate::lsp::non_wasm::module_helpers::handle_from_module_path;
 use crate::lsp::non_wasm::module_helpers::make_open_handle;
 use crate::lsp::non_wasm::module_helpers::module_info_to_uri;
@@ -564,6 +565,8 @@ pub struct Server {
     /// When true, background indexing (populate_project/workspace_files) is deferred
     /// until we receive the config response, avoiding double-indexing at startup.
     awaiting_initial_workspace_config: AtomicBool,
+    /// Optional callback for remapping paths before converting to URIs.
+    path_remapper: Option<PathRemapper>,
 }
 
 pub fn shutdown_finish(connection: &Connection, id: RequestId) {
@@ -971,6 +974,7 @@ pub fn lsp_loop(
     indexing_mode: IndexingMode,
     workspace_indexing_limit: usize,
     build_system_blocking: bool,
+    path_remapper: Option<PathRemapper>,
     telemetry: &impl Telemetry,
 ) -> anyhow::Result<()> {
     info!("Reading messages");
@@ -984,6 +988,7 @@ pub fn lsp_loop(
         workspace_indexing_limit,
         build_system_blocking,
         from,
+        path_remapper,
     );
     std::thread::scope(|scope| {
         scope.spawn(|| {
@@ -1802,6 +1807,7 @@ impl Server {
         workspace_indexing_limit: usize,
         build_system_blocking: bool,
         surface: Option<String>,
+        path_remapper: Option<PathRemapper>,
     ) -> Self {
         let folders = if let Some(capability) = &initialize_params.capabilities.workspace
             && let Some(true) = capability.workspace_folders
@@ -1875,6 +1881,7 @@ impl Server {
             do_not_commit_recheck: AtomicBool::new(false),
             // Will be set to true if we send a workspace/configuration request
             awaiting_initial_workspace_config: AtomicBool::new(should_request_workspace_settings),
+            path_remapper,
         };
 
         if let Some(init_options) = &s.initialize_params.initialization_options {
@@ -3141,6 +3148,7 @@ impl Server {
                 Ok(None),
             ));
         };
+        let path_remapper = self.path_remapper.clone();
         self.async_find_from_definition_helper(
             request_id,
             transaction,
@@ -3183,7 +3191,7 @@ impl Server {
             move |results: Vec<(ModuleInfo, Vec<TextRange>)>| {
                 let mut lsp_targets = Vec::new();
                 for (info, ranges) in results {
-                    if let Some(uri) = module_info_to_uri(&info) {
+                    if let Some(uri) = module_info_to_uri(&info, path_remapper.as_ref()) {
                         for range in ranges {
                             lsp_targets.push(Location {
                                 uri: uri.clone(),
@@ -3481,6 +3489,7 @@ impl Server {
         position: Position,
         map_result: impl FnOnce(Vec<(Url, Vec<Range>)>) -> V + Send + Sync + 'static,
     ) {
+        let path_remapper = self.path_remapper.clone();
         self.async_find_from_definition_helper(
             request_id,
             transaction,
@@ -3509,7 +3518,7 @@ impl Server {
                 // Transform ModuleInfo -> Url and TextRange -> Range
                 let mut locations = Vec::new();
                 for (info, ranges) in results {
-                    if let Some(uri) = module_info_to_uri(&info) {
+                    if let Some(uri) = module_info_to_uri(&info, path_remapper.as_ref()) {
                         locations.push((uri, ranges.into_map(|range| info.to_lsp_range(range))));
                     };
                 }
@@ -4216,6 +4225,7 @@ impl Server {
             &self.open_files,
             params,
             supports_document_changes,
+            self.path_remapper.as_ref(),
         )
     }
 
@@ -4224,7 +4234,7 @@ impl Server {
             module: definition_module_info,
             range,
         } = location;
-        let mut uri = module_info_to_uri(definition_module_info)?;
+        let mut uri = module_info_to_uri(definition_module_info, self.path_remapper.as_ref())?;
         if let Some(cell_idx) = definition_module_info.to_cell_for_lsp(range.start()) {
             // We only have this information for open notebooks, without being provided the URI from the client
             // we don't know what URI refers to which cell.
@@ -4289,6 +4299,7 @@ impl Server {
             >(request_id, Ok(None)));
         };
 
+        let path_remapper = self.path_remapper.clone();
         // The CallHierarchyItem we receive is already at the definition position
         // (thanks to prepare_call_hierarchy doing the go-to-definition step).
         self.async_find_from_definition_helper(
@@ -4308,7 +4319,7 @@ impl Server {
                     &target_def,
                 )
             },
-            transform_incoming_calls,
+            move |callers| transform_incoming_calls(callers, path_remapper.as_ref()),
         );
     }
 
@@ -4384,7 +4395,7 @@ impl Server {
 
         for def in definitions {
             // Get the URI for the definition's module
-            let Some(def_uri) = module_info_to_uri(&def.module) else {
+            let Some(def_uri) = module_info_to_uri(&def.module, self.path_remapper.as_ref()) else {
                 continue;
             };
 
@@ -4458,6 +4469,7 @@ impl Server {
         transaction: &CancellableTransaction,
         target: &TypeHierarchyTarget,
         handles: Vec<Handle>,
+        path_remapper: Option<&PathRemapper>,
     ) -> Vec<TypeHierarchyItem> {
         let mut items = Vec::new();
         let mut seen: HashSet<(ModulePath, TextRange)> = HashSet::new();
@@ -4474,7 +4486,7 @@ impl Server {
             let Some(module_info) = transaction.as_ref().get_module_info(&candidate) else {
                 continue;
             };
-            let Some(candidate_uri) = module_info_to_uri(&module_info) else {
+            let Some(candidate_uri) = module_info_to_uri(&module_info, path_remapper) else {
                 continue;
             };
 
@@ -4543,7 +4555,7 @@ impl Server {
         let definitions = transaction.find_definition(&handle, position, FindPreference::default());
 
         for def in definitions {
-            let Some(def_uri) = module_info_to_uri(&def.module) else {
+            let Some(def_uri) = module_info_to_uri(&def.module, self.path_remapper.as_ref()) else {
                 continue;
             };
             let Some(def_handle) = self.make_handle_if_enabled(&def_uri, None) else {
@@ -4577,11 +4589,12 @@ impl Server {
             ));
         };
 
+        let path_remapper = self.path_remapper.clone();
         let type_hierarchy_item_from_class_type =
-            |class_type: &crate::types::class::ClassType| -> Option<TypeHierarchyItem> {
+            move |class_type: &crate::types::class::ClassType| -> Option<TypeHierarchyItem> {
                 let class = class_type.class_object();
                 let module = class.module();
-                let uri = module_info_to_uri(module)?;
+                let uri = module_info_to_uri(module, path_remapper.as_ref())?;
                 let range = module.to_lsp_range(class.range());
                 Some(TypeHierarchyItem {
                     name: class.name().to_string(),
@@ -4649,6 +4662,7 @@ impl Server {
             ));
         };
 
+        let path_remapper = self.path_remapper.clone();
         self.async_find_from_definition_helper(
             request_id,
             transaction,
@@ -4674,6 +4688,7 @@ impl Server {
                     transaction,
                     &target,
                     handles,
+                    path_remapper.as_ref(),
                 ))
             },
             |items| items,

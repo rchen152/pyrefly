@@ -1225,7 +1225,7 @@ impl LspInteraction {
                 workspace_indexing_limit: 50,
                 build_system_blocking: false,
             };
-            let _ = run_lsp(conn_server, args, None, &NoTelemetry);
+            let _ = run_lsp(conn_server, args, None, None, &NoTelemetry);
             finish_server.notify_finished();
         });
 
