@@ -1771,8 +1771,6 @@ pub enum Binding {
     /// A record of an "augmented assignment" statement like `x -= _`
     /// or `a.b *= _`. These desugar to special method calls.
     AugAssign(Option<Idx<KeyAnnotation>>, StmtAugAssign),
-    /// An explicit type.
-    Type(Type),
     /// The None type, constructed lazily with TypeHeap during solving.
     None,
     /// An Any type with a specific style, constructed lazily with TypeHeap during solving.
@@ -2017,7 +2015,6 @@ impl DisplayWith<Bindings> for Binding {
             Self::ClassDef(x, _) => write!(f, "ClassDef({})", ctx.display(*x)),
             Self::Forward(k) => write!(f, "Forward({})", ctx.display(*k)),
             Self::AugAssign(a, s) => write!(f, "AugAssign({}, {})", ann(a), m.display(s)),
-            Self::Type(t) => write!(f, "Type({t})"),
             Self::None => write!(f, "None"),
             Self::Any(style) => write!(f, "Any({style:?})"),
             Self::Global(g) => write!(f, "Global({})", g.name()),
@@ -2276,7 +2273,6 @@ impl Binding {
             | Binding::ContextValue(_, _, _, _)
             | Binding::AnnotatedType(_, _)
             | Binding::AugAssign(_, _)
-            | Binding::Type(_)
             | Binding::None
             | Binding::Any(_)
             | Binding::Forward(_)

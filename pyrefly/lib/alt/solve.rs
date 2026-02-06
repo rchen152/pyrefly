@@ -4324,7 +4324,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 Some(ty) => self.wrap_callable_legacy_typevars(ty),
                 None => self.binding_to_type(val, errors),
             },
-            Binding::Type(x) => x.clone(),
             Binding::None => Type::None,
             Binding::Any(style) => self.heap.mk_any(*style),
             Binding::Global(global) => global.as_type(self.stdlib),
