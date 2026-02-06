@@ -1906,9 +1906,24 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // correctly, so we only error for non-parameterized class definitions.
                 let lhs = self.expr_infer(left, errors);
                 let rhs = self.expr_infer(right, errors);
-                let is_plain_type = |t: &Type| matches!(t, Type::ClassDef(_));
-                if (*left_is_forward_ref && is_plain_type(&rhs))
-                    || (*right_is_forward_ref && is_plain_type(&lhs))
+                fn is_plain_type<Ans: LookupAnswer>(me: &AnswersSolver<Ans>, t: Type) -> bool {
+                    match t {
+                        Type::ClassDef(_) => true,
+                        Type::Type(box Type::ClassType(cls)) => cls.targs().is_empty(),
+                        Type::TypeAlias(ta) => {
+                            let ta = me.get_type_alias(&ta);
+                            let t = if ta.style == TypeAliasStyle::Scoped {
+                                Type::ClassDef(me.stdlib.type_alias_type().class_object().dupe())
+                            } else {
+                                ta.as_type()
+                            };
+                            is_plain_type(me, t)
+                        }
+                        _ => false,
+                    }
+                }
+                if (*left_is_forward_ref && is_plain_type(self, rhs))
+                    || (*right_is_forward_ref && is_plain_type(self, lhs))
                 {
                     self.error(
                         errors,
