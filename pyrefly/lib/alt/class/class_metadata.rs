@@ -344,8 +344,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         };
 
         // Get types of class keywords.
-        let keywords =
-            keywords.into_map(|(name, annot)| (name, annot.ty.unwrap_or_else(Type::any_implicit)));
+        let keywords = keywords.into_map(|(name, annot)| {
+            (
+                name,
+                annot.ty.unwrap_or_else(|| self.heap.mk_any_implicit()),
+            )
+        });
 
         // get pydantic model info. A root model is by default also a base model, while not every base model is a root model
         let pydantic_model_kind = pydantic_config
