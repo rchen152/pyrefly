@@ -4235,7 +4235,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 errors,
             ),
             Binding::TypeVar(ann, name, x) => {
-                let ty = self.typevar_from_call(name.clone(), x, errors).to_type();
+                let ty = self
+                    .typevar_from_call(name.clone(), x, errors)
+                    .to_type(self.heap);
                 if let Some(k) = ann
                     && let AnnotationWithTarget {
                         target,
