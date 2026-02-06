@@ -778,7 +778,7 @@ impl<'a> BindingsBuilder<'a> {
                     Expr::Attribute(attr) => {
                         let mut x_cloned = x.clone();
                         self.bind_attr_assign(attr.clone(), &mut x.value, move |expr, ann| {
-                            x_cloned.value = Box::new(expr.clone());
+                            *x_cloned.value = expr.clone();
                             ExprOrBinding::Binding(Binding::AugAssign(ann, x_cloned))
                         });
                     }
@@ -788,7 +788,7 @@ impl<'a> BindingsBuilder<'a> {
                             subscr.clone(),
                             &mut x.value,
                             move |expr, ann| {
-                                x_cloned.value = Box::new(expr.clone());
+                                *x_cloned.value = expr.clone();
                                 ExprOrBinding::Binding(Binding::AugAssign(ann, x_cloned))
                             },
                         );
