@@ -4325,6 +4325,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 None => self.binding_to_type(val, errors),
             },
             Binding::Type(x) => x.clone(),
+            Binding::None => Type::None,
+            Binding::Any(style) => self.heap.mk_any(*style),
             Binding::Global(global) => global.as_type(self.stdlib),
             Binding::TypeParameter(tp) => {
                 self.quantified_from_type_parameter(tp, errors).to_value()

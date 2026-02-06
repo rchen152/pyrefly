@@ -80,6 +80,7 @@ use crate::types::quantified::QuantifiedKind;
 use crate::types::stdlib::Stdlib;
 use crate::types::type_info::JoinStyle;
 use crate::types::type_info::TypeInfo;
+use crate::types::types::AnyStyle;
 use crate::types::types::TParams;
 use crate::types::types::Type;
 use crate::types::types::Var;
@@ -1772,6 +1773,10 @@ pub enum Binding {
     AugAssign(Option<Idx<KeyAnnotation>>, StmtAugAssign),
     /// An explicit type.
     Type(Type),
+    /// The None type, constructed lazily with TypeHeap during solving.
+    None,
+    /// An Any type with a specific style, constructed lazily with TypeHeap during solving.
+    Any(AnyStyle),
     /// A global variable.
     Global(ImplicitGlobal),
     /// A type parameter.
@@ -2013,6 +2018,8 @@ impl DisplayWith<Bindings> for Binding {
             Self::Forward(k) => write!(f, "Forward({})", ctx.display(*k)),
             Self::AugAssign(a, s) => write!(f, "AugAssign({}, {})", ann(a), m.display(s)),
             Self::Type(t) => write!(f, "Type({t})"),
+            Self::None => write!(f, "None"),
+            Self::Any(style) => write!(f, "Any({style:?})"),
             Self::Global(g) => write!(f, "Global({})", g.name()),
             Self::TypeParameter(tp) => {
                 write!(f, "TypeParameter({}, {}, ..)", tp.unique, tp.kind)
@@ -2270,6 +2277,8 @@ impl Binding {
             | Binding::AnnotatedType(_, _)
             | Binding::AugAssign(_, _)
             | Binding::Type(_)
+            | Binding::None
+            | Binding::Any(_)
             | Binding::Forward(_)
             | Binding::Phi(_, _)
             | Binding::LoopPhi(_, _)
