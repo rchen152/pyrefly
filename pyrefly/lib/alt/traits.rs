@@ -238,9 +238,9 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyDecorator {
         answers.solve_decorator(binding, errors)
     }
 
-    fn promote_recursive(_heap: &TypeHeap, _: Var) -> Self::Answer {
+    fn promote_recursive(heap: &TypeHeap, _: Var) -> Self::Answer {
         Decorator {
-            ty: Type::any_implicit(),
+            ty: heap.mk_any_implicit(),
             deprecation: None,
         }
     }
@@ -256,10 +256,10 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyDecoratedFunction {
         answers.solve_decorated_function(binding, errors)
     }
 
-    fn promote_recursive(_heap: &TypeHeap, _: Var) -> Self::Answer {
+    fn promote_recursive(heap: &TypeHeap, _: Var) -> Self::Answer {
         // TODO(samgoldman) I'm not sure this really makes sense. These bindings should never
         // be recursive, but this definition is required.
-        Type::any_implicit()
+        heap.mk_any_implicit()
     }
 }
 
@@ -464,8 +464,8 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyLegacyTypeParam {
         answers.solve_legacy_tparam(binding)
     }
 
-    fn promote_recursive(_heap: &TypeHeap, _: Var) -> Self::Answer {
-        LegacyTypeParameterLookup::NotParameter(Type::any_implicit())
+    fn promote_recursive(heap: &TypeHeap, _: Var) -> Self::Answer {
+        LegacyTypeParameterLookup::NotParameter(heap.mk_any_implicit())
     }
 }
 
