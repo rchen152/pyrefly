@@ -200,6 +200,7 @@ use pyrefly_util::task_heap::CancellationHandle;
 use pyrefly_util::task_heap::Cancelled;
 use pyrefly_util::telemetry::SubTaskTelemetry;
 use pyrefly_util::telemetry::Telemetry;
+use pyrefly_util::telemetry::TelemetryDidChangeWatchedFilesStats;
 use pyrefly_util::telemetry::TelemetryEvent;
 use pyrefly_util::telemetry::TelemetryEventKind;
 use pyrefly_util::telemetry::TelemetryFileStats;
@@ -2822,6 +2823,41 @@ impl Server {
         if events.is_empty() {
             return;
         }
+
+        // Log the files that changed
+        let total = events.created.len()
+            + events.modified.len()
+            + events.removed.len()
+            + events.unknown.len();
+        info!(
+            "[Pyrefly] DidChangeWatchedFiles: {} file(s) changed ({} created, {} modified, {} removed, {} unknown)",
+            total,
+            events.created.len(),
+            events.modified.len(),
+            events.removed.len(),
+            events.unknown.len()
+        );
+        for path in &events.created {
+            info!("[Pyrefly]   created: {}", path.display());
+        }
+        for path in &events.modified {
+            info!("[Pyrefly]   modified: {}", path.display());
+        }
+        for path in &events.removed {
+            info!("[Pyrefly]   removed: {}", path.display());
+        }
+        for path in &events.unknown {
+            info!("[Pyrefly]   unknown: {}", path.display());
+        }
+
+        // Record the files that changed for telemetry
+        telemetry_event.set_did_change_watched_files_stats(TelemetryDidChangeWatchedFilesStats {
+            created: events.created.clone(),
+            modified: events.modified.clone(),
+            removed: events.removed.clone(),
+            unknown: events.unknown.clone(),
+        });
+
         let should_requery_build_system = should_requery_build_system(&events);
 
         // Rewatch files if necessary (config changed, files added/removed, etc.)
