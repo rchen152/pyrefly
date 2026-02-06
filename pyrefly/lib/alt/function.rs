@@ -381,7 +381,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let is_top_level_function = defining_cls.is_none();
         let mut self_type = defining_cls
             .as_ref()
-            .map(|cls| Type::SelfType(self.as_class_type_unchecked(cls)));
+            .map(|cls| self.heap.mk_self_type(self.as_class_type_unchecked(cls)));
 
         // __new__ is an implicit staticmethod, __init_subclass__ is an implicit classmethod
         // __new__, unlike decorated staticmethods, uses Self
@@ -449,7 +449,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // accordingly. This is not totally correct, since it doesn't account for chaining
         // decorators, or weird cases like both decorators existing at the same time.
         if flags.is_classmethod || found_class_property || is_dunder_new {
-            self_type = self_type.map(Type::type_form);
+            self_type = self_type.map(|t| self.heap.mk_type_form(t));
         } else if flags.is_staticmethod {
             self_type = None;
         }
@@ -662,7 +662,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             SpecialDecorator::Property(_) => {
                 flags.property_metadata = Some(PropertyMetadata {
                     role: PropertyRole::Getter,
-                    getter: Type::any_error(),
+                    getter: self.heap.mk_any_error(),
                     setter: None,
                     has_deleter: false,
                 });
@@ -671,7 +671,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             SpecialDecorator::CachedProperty(_) => {
                 flags.property_metadata = Some(PropertyMetadata {
                     role: PropertyRole::Getter,
-                    getter: Type::any_error(),
+                    getter: self.heap.mk_any_error(),
                     setter: None,
                     has_deleter: false,
                 });
@@ -784,7 +784,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.solver().solve_parameter(
                         *var,
                         self.union(
-                            Type::any_implicit(),
+                            self.heap.mk_any_implicit(),
                             default_ty.clone().promote_implicit_literals(self.stdlib),
                         ),
                     );
@@ -992,8 +992,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             params = params
                 .into_iter()
                 .map(|p| match p {
-                    Param::Kwargs(name, Type::Kwargs(_)) => Param::Kwargs(name, Type::any_error()),
-                    Param::VarArg(name, Type::Args(_)) => Param::VarArg(name, Type::any_error()),
+                    Param::Kwargs(name, Type::Kwargs(_)) => {
+                        Param::Kwargs(name, self.heap.mk_any_error())
+                    }
+                    Param::VarArg(name, Type::Args(_)) => {
+                        Param::VarArg(name, self.heap.mk_any_error())
+                    }
                     _ => p,
                 })
                 .collect();
@@ -1386,7 +1390,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ),
                 );
                         OverloadType::Function(Function {
-                            signature: Callable::ellipsis(Type::any_error()),
+                            signature: Callable::ellipsis(self.heap.mk_any_error()),
                             metadata,
                         })
                     }
@@ -1479,7 +1483,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let sig_for_input_check = |sig: &Callable| {
             let mut sig = sig.clone();
             // Set the return type to `Any` so that we check just the input signature.
-            sig.ret = Type::any_implicit();
+            sig.ret = self.heap.mk_any_implicit();
             sig
         };
         for (range, overload) in overloads.iter() {
@@ -1670,9 +1674,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     pub fn bind_dunder_new(&self, t: &Type, cls: ClassType) -> Option<Type> {
-        self.bind_function(t, &self.heap.mk_type(Type::SelfType(cls)), &mut |a, b| {
-            self.is_subset_eq(a, b)
-        })
+        self.bind_function(
+            t,
+            &self.heap.mk_type_form(self.heap.mk_self_type(cls)),
+            &mut |a, b| self.is_subset_eq(a, b),
+        )
     }
 
     /// If this is an unbound callable (i.e., a callable that is not BoundMethod), strip the first parameter.
