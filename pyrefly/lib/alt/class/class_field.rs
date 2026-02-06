@@ -1449,8 +1449,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 } else {
                     ClassFieldInitialization::Uninitialized
                 };
-                let value =
-                    value_storage.push(ExprOrBinding::Binding(Binding::Type(Type::any_implicit())));
+                let value = value_storage.push(ExprOrBinding::Binding(Binding::Type(
+                    self.heap.mk_any_implicit(),
+                )));
                 let (value_ty, annotation, is_inherited) = self.analyze_class_field_value(
                     value,
                     class,
@@ -1659,8 +1660,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 } else {
                     ClassFieldInitialization::Uninitialized
                 };
-                let value =
-                    value_storage.push(ExprOrBinding::Binding(Binding::Type(Type::any_implicit())));
+                let value = value_storage.push(ExprOrBinding::Binding(Binding::Type(
+                    self.heap.mk_any_implicit(),
+                )));
                 let (value_ty, annotation, is_inherited) =
                     self.analyze_class_field_value(value, class, name, None, false, range, errors);
                 (
@@ -1964,7 +1966,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // We interpret `self.foo = None` to mean the type of foo is None or some unknown type.
             (None, Expr::NoneLiteral(_)) => {
                 self.error(errors, x.range(), ErrorInfo::Kind(ErrorKind::UnannotatedAttribute), "This expression is implicitly inferred to be `Any | None`. Please provide an explicit type annotation.".to_owned());
-                self.union(Type::None, Type::any_implicit())
+                self.union(self.heap.mk_none(), self.heap.mk_any_implicit())
             }
             (None, _) => self.expr_infer(x, errors),
         };
@@ -2705,7 +2707,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // use it regardless of strict mode
             converter_param
         } else if !strict {
-            Type::any_explicit()
+            self.heap.mk_any_explicit()
         } else if let Some(x) = descriptor
             && let Some(setter) = self.resolve_descriptor_setter(name, x, errors)
         {
@@ -3311,7 +3313,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 // While it would be safer to assume that the `Any` ancestor could appear first in
                 // the MRO, we choose to instead return a more precise attribute type if we can find
                 // one on a non-`Any` ancestor.
-                Some(Arc::new(ClassField::new_synthesized(Type::any_implicit())))
+                Some(Arc::new(ClassField::new_synthesized(
+                    self.heap.mk_any_implicit(),
+                )))
             } else {
                 get_field(ancestor.class_object(), name)
             }
@@ -3748,7 +3752,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         //   `__new__`), under at least some circumstances constructor calls *still* work
         //   because `__new__` is likely only part of `__annotations__`
         self.get_dunder_init_helper(&Instance::of_typed_dict(td), true)
-            .unwrap_or(Type::any_error())
+            .unwrap_or_else(|| self.heap.mk_any_error())
     }
 
     /// Get the metaclass `__call__` method
@@ -3774,7 +3778,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     metaclass,
                 ))
                 .and_then(|ty| {
-                    make_bound_method(self.heap, Type::type_form(cls.clone().to_type()), ty).ok()
+                    make_bound_method(self.heap, self.heap.mk_type_form(cls.clone().to_type()), ty)
+                        .ok()
                 })
         }
     }
@@ -4069,7 +4074,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             (ClassAttribute::ReadOnly(got, _), ClassAttribute::Property(want, _, _)) => {
                 is_subset(
                     // Synthesize a getter method
-                    &Type::callable_ellipsis(got.clone()),
+                    &self.heap.mk_callable_ellipsis(got.clone()),
                     want,
                 )
                 .map_err(|subset_error| AttrSubsetError::Covariant {
@@ -4083,7 +4088,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             (ClassAttribute::ReadWrite(got), ClassAttribute::Property(want, want_setter, _)) => {
                 is_subset(
                     // Synthesize a getter method
-                    &Type::callable_ellipsis(got.clone()),
+                    &self.heap.mk_callable_ellipsis(got.clone()),
                     want,
                 )
                 .map_err(|subset_error| AttrSubsetError::Covariant {
@@ -4097,9 +4102,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     // Synthesize a setter method
                     is_subset(
                         want_setter,
-                        &Type::callable(
+                        &self.heap.mk_callable_from_vec(
                             vec![Param::PosOnly(None, got.clone(), Required::Required)],
-                            Type::None,
+                            self.heap.mk_none(),
                         ),
                     )
                     .map_err(|subset_error| AttrSubsetError::Contravariant {
