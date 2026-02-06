@@ -114,8 +114,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ///   the first entry in a union.
     fn resolve_var(&self, ty: &Type, var: Var) -> Type {
         match ty {
-            Type::Any(style) => Type::Any(*style),
-            Type::Never(style) => Type::Never(*style),
+            Type::Any(style) => self.heap.mk_any(*style),
+            Type::Never(style) => self.heap.mk_never_style(*style),
             _ => self.solver().expand_vars(var.to_type()),
         }
     }
@@ -425,7 +425,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         elements.push(*unbounded_middle);
                     }
                     Type::Quantified(q) if q.is_type_var_tuple() => {
-                        elements.push(Type::ElementOfTypeVarTuple(q))
+                        elements.push(self.heap.mk_element_of_type_var_tuple((*q).clone()))
                     }
                     _ => {
                         // We can't figure out the middle, fall back to `object`

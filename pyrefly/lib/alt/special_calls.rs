@@ -55,7 +55,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let expr_b = &args[1];
             let a = self.expr_infer_with_hint(expr_a, hint, errors);
             let b = self.expr_untype(expr_b, TypeFormContext::FunctionArgument, errors);
-            let self_form = Type::SpecialForm(SpecialForm::SelfType);
+            let self_form = self.heap.mk_special_form(SpecialForm::SelfType);
             let normalize_type = |ty: Type, expr: &Expr| {
                 let mut ty = self
                     .canonicalize_all_class_types(

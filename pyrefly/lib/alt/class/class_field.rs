@@ -603,6 +603,7 @@ impl ClassField {
 
     fn instantiate_for_class_tparams(
         &self,
+        heap: &TypeHeap,
         cls_tparams: Arc<TParams>,
         self_type: Type,
         ambiguous: &mut bool,
@@ -631,10 +632,10 @@ impl ClassField {
             match ty {
                 Type::Function(func) => {
                     if let Some(tparams) = prepend_class_tparams_if_used(func, None) {
-                        *ty = Type::Forall(Box::new(Forall {
+                        *ty = heap.mk_forall(Forall {
                             tparams,
                             body: Forallable::Function((**func).clone()),
-                        }));
+                        });
                     }
                 }
                 Type::Forall(forall) => {
@@ -2630,7 +2631,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Some(targs) => field.instantiate_for_class_targs(targs, self_type, &mut ambiguous),
             None => {
                 let tparams = self.get_class_tparams(cls.class_object());
-                field.instantiate_for_class_tparams(tparams, self_type, &mut ambiguous)
+                field.instantiate_for_class_tparams(self.heap, tparams, self_type, &mut ambiguous)
             }
         };
         match field.0 {
