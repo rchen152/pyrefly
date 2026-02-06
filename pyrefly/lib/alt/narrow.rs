@@ -726,6 +726,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             AtomicNarrowOp::IsNotSequence => {
                 self.is_not_type_for_pattern(ty, |t| self.is_sequence_for_pattern(t))
             }
+            AtomicNarrowOp::IsMapping => {
+                let mapping = self
+                    .stdlib
+                    .mapping(Type::any_implicit(), Type::any_implicit())
+                    .to_type();
+                self.is_type_for_pattern(ty, |t| self.is_subset_eq(t, &mapping))
+            }
+            AtomicNarrowOp::IsNotMapping => {
+                let mapping = self
+                    .stdlib
+                    .mapping(Type::any_implicit(), Type::any_implicit())
+                    .to_type();
+                self.is_not_type_for_pattern(ty, |t| self.is_subset_eq(t, &mapping))
+            }
             AtomicNarrowOp::In(v) => {
                 // First, check for List, Tuple, and Set literal expressions (syntactic check,
                 // avoids type inference on the container itself)
@@ -1059,14 +1073,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 } else {
                     ty.clone()
                 }
-            }
-            AtomicNarrowOp::IsMapping => {
-                let mapping_class = self.stdlib.mapping_object().clone();
-                self.narrow_isinstance(ty, &Type::ClassDef(mapping_class))
-            }
-            AtomicNarrowOp::IsNotMapping => {
-                let mapping_class = self.stdlib.mapping_object().clone();
-                self.narrow_is_not_instance(ty, &Type::ClassDef(mapping_class))
             }
         }
     }
