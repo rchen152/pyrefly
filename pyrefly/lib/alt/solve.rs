@@ -4455,7 +4455,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ErrorInfo::Kind(ErrorKind::InvalidYield),
                     "Invalid `yield` outside of a function".to_owned(),
                 );
-                Arc::new(YieldResult::any_error())
+                Arc::new(YieldResult::any_error(self.heap))
             }
             BindingYield::Unreachable(x) => {
                 if let Some(expr) = x.value.as_ref() {
@@ -4467,7 +4467,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ErrorInfo::Kind(ErrorKind::Unreachable),
                     "This `yield` expression is unreachable".to_owned(),
                 );
-                Arc::new(YieldResult::any_error())
+                Arc::new(YieldResult::any_error(self.heap))
             }
         }
     }
@@ -4507,7 +4507,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         .stdlib
                         .generator(yield_ty.clone(), none.clone(), none)
                         .to_type();
-                    YieldFromResult::from_iterable(yield_ty)
+                    YieldFromResult::from_iterable(self.heap, yield_ty)
                 } else {
                     ty = if is_async.is_async() {
                         // We already errored above.
@@ -4523,7 +4523,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             ),
                         )
                     };
-                    YieldFromResult::any_error()
+                    YieldFromResult::any_error(self.heap)
                 };
                 if let Some((want_yield, want_send, _)) = want {
                     // We don't need to be compatible with the expected generator return type.
@@ -4545,7 +4545,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ErrorInfo::Kind(ErrorKind::InvalidYield),
                     "Invalid `yield from` outside of a function".to_owned(),
                 );
-                Arc::new(YieldFromResult::any_error())
+                Arc::new(YieldFromResult::any_error(self.heap))
             }
             BindingYieldFrom::Unreachable(x) => {
                 self.expr_infer(&x.value, errors);
@@ -4555,7 +4555,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     ErrorInfo::Kind(ErrorKind::Unreachable),
                     "This `yield from` expression is unreachable".to_owned(),
                 );
-                Arc::new(YieldFromResult::any_error())
+                Arc::new(YieldFromResult::any_error(self.heap))
             }
         }
     }

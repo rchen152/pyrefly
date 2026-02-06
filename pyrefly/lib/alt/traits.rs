@@ -479,9 +479,9 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyYield {
         answers.solve_yield(binding, errors)
     }
 
-    fn promote_recursive(_heap: &TypeHeap, _: Var) -> Self::Answer {
+    fn promote_recursive(heap: &TypeHeap, _: Var) -> Self::Answer {
         // In practice, we should never have recursive bindings with yield.
-        YieldResult::recursive()
+        YieldResult::recursive(heap)
     }
 }
 
@@ -495,8 +495,8 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyYieldFrom {
         answers.solve_yield_from(binding, errors)
     }
 
-    fn promote_recursive(_heap: &TypeHeap, _: Var) -> Self::Answer {
+    fn promote_recursive(heap: &TypeHeap, _: Var) -> Self::Answer {
         // In practice, we should never have recursive bindings with yield from.
-        YieldFromResult::recursive()
+        YieldFromResult::recursive(heap)
     }
 }
