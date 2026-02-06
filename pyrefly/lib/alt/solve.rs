@@ -1925,12 +1925,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 if (*left_is_forward_ref && is_plain_type(self, rhs))
                     || (*right_is_forward_ref && is_plain_type(self, lhs))
                 {
-                    self.error(
-                        errors,
+                    errors.add(
                         *range,
                         ErrorInfo::Kind(ErrorKind::InvalidAnnotation),
-                        "Cannot use `|` operator with forward reference string literal and type"
-                            .to_owned(),
+                        vec1![
+                            "`|` union syntax does not work with string literals".to_owned(),
+                            "Hint: put the quotes around the entire union type".to_owned(),
+                        ],
                     );
                 }
             }
