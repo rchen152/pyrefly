@@ -4256,7 +4256,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
             }
             Binding::ParamSpec(ann, name, x) => {
-                let ty = self.paramspec_from_call(name.clone(), x, errors).to_type();
+                let ty = self
+                    .paramspec_from_call(name.clone(), x, errors)
+                    .to_type(self.heap);
                 if let Some(k) = ann
                     && let AnnotationWithTarget {
                         target,
