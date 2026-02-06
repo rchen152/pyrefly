@@ -354,9 +354,9 @@ impl ClassField {
         )
     }
 
-    pub fn invalid_typed_dict_field() -> Self {
+    pub fn invalid_typed_dict_field(heap: &TypeHeap) -> Self {
         ClassField::new(
-            Type::any_error(),
+            heap.mk_any_error(),
             None,
             ClassFieldInitialization::Magic,
             None,
@@ -443,10 +443,10 @@ impl ClassField {
         }
     }
 
-    pub fn recursive() -> Self {
+    pub fn recursive(heap: &TypeHeap) -> Self {
         Self(
             ClassFieldInner::ClassAttribute {
-                ty: Type::any_implicit(),
+                ty: heap.mk_any_implicit(),
                 annotation: None,
                 initialization: ClassFieldInitialization::recursive(),
                 read_only_reason: None,
@@ -676,7 +676,7 @@ impl ClassField {
     }
 
     /// Given a `__set__(self, instance, value)` function, gets the type of `value`.
-    fn get_descriptor_setter_value(setter: &Type) -> Type {
+    fn get_descriptor_setter_value(heap: &TypeHeap, setter: &Type) -> Type {
         let mut values = Vec::new();
         setter.visit_toplevel_callable(|callable| match &callable.params {
             Params::List(params) => match params.items().get(2) {
@@ -686,7 +686,7 @@ impl ClassField {
             _ => {}
         });
         if values.is_empty() {
-            Type::any_implicit()
+            heap.mk_any_implicit()
         } else {
             unions(values)
         }
@@ -1018,7 +1018,7 @@ impl ClassField {
         }
     }
 
-    fn dataclass_flags_of(&self) -> DataclassFieldKeywords {
+    fn dataclass_flags_of(&self, heap: &TypeHeap) -> DataclassFieldKeywords {
         match &self.0 {
             ClassFieldInner::Property { .. } => DataclassFieldKeywords::new(),
             // Descriptors are always initialized in the class body (otherwise they wouldn't
@@ -1027,7 +1027,7 @@ impl ClassField {
             // For non-data descriptors, we separately emit an error in check_dataclass_non_data_descriptors.
             ClassFieldInner::Descriptor { .. } => {
                 let mut kws = DataclassFieldKeywords::new();
-                kws.default = Some(Type::any_implicit());
+                kws.default = Some(heap.mk_any_implicit());
                 kws
             }
             ClassFieldInner::Method { .. } => DataclassFieldKeywords::new(),
@@ -1036,7 +1036,7 @@ impl ClassField {
                 ClassFieldInitialization::ClassBody(Some(field_flags)) => (**field_flags).clone(),
                 ClassFieldInitialization::ClassBody(None) => {
                     let mut kws = DataclassFieldKeywords::new();
-                    kws.default = Some(Type::any_implicit());
+                    kws.default = Some(heap.mk_any_implicit());
                     kws
                 }
                 ClassFieldInitialization::Method
@@ -2368,7 +2368,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         {
             DataclassMember::NotAField
         } else {
-            let flags = field.dataclass_flags_of();
+            let flags = field.dataclass_flags_of(self.heap);
             if field.is_init_var() {
                 DataclassMember::InitVar(member, flags)
             } else {
@@ -2711,7 +2711,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else if let Some(x) = descriptor
             && let Some(setter) = self.resolve_descriptor_setter(name, x, errors)
         {
-            ClassField::get_descriptor_setter_value(&setter)
+            ClassField::get_descriptor_setter_value(self.heap, &setter)
         } else {
             ty.clone()
         };

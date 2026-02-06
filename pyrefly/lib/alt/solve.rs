@@ -2201,7 +2201,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             BindingClass::FunctionalClassDef(_, _, _, _)
         );
         let field = match &self.get_idx(field.class_idx).0 {
-            None => ClassField::recursive(),
+            None => ClassField::recursive(self.heap),
             Some(class) => self.calculate_class_field(
                 class,
                 &field.name,

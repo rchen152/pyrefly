@@ -334,10 +334,10 @@ impl<Ans: LookupAnswer> Solve<Ans> for KeyClassField {
         answers.solve_class_field(binding, errors)
     }
 
-    fn promote_recursive(_heap: &TypeHeap, _: Var) -> Self::Answer {
+    fn promote_recursive(heap: &TypeHeap, _: Var) -> Self::Answer {
         // TODO(stroxler) Revisit the recursive handling, which needs changes in the plumbing
         // to work correctly; what we have here is a fallback to permissive gradual typing.
-        ClassField::recursive()
+        ClassField::recursive(heap)
     }
 }
 

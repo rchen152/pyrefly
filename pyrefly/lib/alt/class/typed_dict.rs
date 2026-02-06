@@ -918,7 +918,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
         let annotation = match annotation {
             None => {
-                return ClassField::invalid_typed_dict_field();
+                return ClassField::invalid_typed_dict_field(self.heap);
             }
             Some(idx) => self.get_idx(*idx).annotation.clone(),
         };
