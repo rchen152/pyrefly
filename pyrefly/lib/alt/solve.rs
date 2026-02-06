@@ -3358,7 +3358,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     #[inline(never)]
     fn binding_to_type_function_parameter(&self, param: &FunctionParameter) -> Type {
         let finalize = |target: &AnnotationTarget, ty| match target {
-            AnnotationTarget::ArgsParam(_) => Type::unbounded_tuple(ty),
+            AnnotationTarget::ArgsParam(_) => self.heap.mk_unbounded_tuple(ty),
             AnnotationTarget::KwargsParam(_) => self
                 .stdlib
                 .dict(self.stdlib.str().clone().to_type(), ty)

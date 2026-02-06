@@ -301,7 +301,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         {
             original.clone()
         } else {
-            Type::type_form(instance_result)
+            self.heap.mk_type_form(instance_result)
         }
     }
 
@@ -557,14 +557,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Tuple::Unpacked(box (prefix, _, suffix)) if prefix.len() + suffix.len() > len => {
                 self.heap.mk_never()
             }
-            Tuple::Unpacked(box (prefix, _, suffix)) if prefix.len() + suffix.len() == len => {
-                Type::concrete_tuple(prefix.iter().cloned().chain(suffix.clone()).collect())
-            }
+            Tuple::Unpacked(box (prefix, _, suffix)) if prefix.len() + suffix.len() == len => self
+                .heap
+                .mk_concrete_tuple(prefix.iter().cloned().chain(suffix.clone()).collect()),
             Tuple::Unpacked(box (prefix, Type::Tuple(Tuple::Unbounded(middle)), suffix))
                 if prefix.len() + suffix.len() < len =>
             {
                 let middle_elements = vec![(**middle).clone(); len - prefix.len() - suffix.len()];
-                Type::concrete_tuple(
+                self.heap.mk_concrete_tuple(
                     prefix
                         .iter()
                         .cloned()
@@ -579,7 +579,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Tuple::Unpacked(Box::new((prefix.clone(), forced_middle, suffix.clone())));
                 self.tuple_len_eq(&simplify_tuples(new_tuple), len, range, errors)
             }
-            Tuple::Unbounded(elements) => Type::concrete_tuple(vec![(**elements).clone(); len]),
+            Tuple::Unbounded(elements) => {
+                self.heap.mk_concrete_tuple(vec![(**elements).clone(); len])
+            }
             _ => self.heap.mk_tuple(tuple.clone()),
         }
     }

@@ -121,7 +121,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     pub fn behaves_like_any(&self, ty: &Type) -> bool {
-        ty.is_any() || (!ty.is_never() && self.is_subset_eq(ty, &Type::never()))
+        ty.is_any() || (!ty.is_never() && self.is_subset_eq(ty, &self.heap.mk_never()))
     }
 
     /// Warning: this returns `Some` if the type is `Any` or a class that extends `Any`
