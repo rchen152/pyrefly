@@ -183,7 +183,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     fn intersect(&self, left: &Type, right: &Type) -> Type {
-        self.intersect_with_fallback(left, right, &Type::never)
+        self.intersect_with_fallback(left, right, &|| self.heap.mk_never())
     }
 
     /// Calculate the intersection of a number of types
