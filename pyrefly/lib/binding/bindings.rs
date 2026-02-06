@@ -1801,7 +1801,8 @@ impl<'a> SemanticSyntaxContext for BindingsBuilder<'a> {
     }
 
     fn future_annotations_or_stub(&self) -> bool {
-        self.module_info.source_type() == ruff_python_ast::PySourceType::Stub
+        self.scopes.has_future_annotations()
+            || self.module_info.source_type() == ruff_python_ast::PySourceType::Stub
     }
 
     fn report_semantic_error(&self, error: SemanticSyntaxError) {
