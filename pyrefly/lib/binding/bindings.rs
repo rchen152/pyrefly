@@ -23,7 +23,6 @@ use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::sys_info::SysInfo;
 use pyrefly_types::type_alias::TypeAliasIndex;
 use pyrefly_types::type_info::JoinStyle;
-use pyrefly_types::types::Type;
 use pyrefly_util::display::DisplayWithCtx;
 use pyrefly_util::gas::Gas;
 use pyrefly_util::uniques::UniqueFactory;
@@ -96,6 +95,7 @@ use crate::table_for_each;
 use crate::table_try_for_each;
 use crate::types::globals::ImplicitGlobal;
 use crate::types::quantified::QuantifiedKind;
+use crate::types::types::AnyStyle;
 use crate::types::types::Var;
 
 /// The result of looking up a name. Similar to `NameReadInfo`, but
@@ -1001,7 +1001,7 @@ impl<'a> BindingsBuilder<'a> {
                         error.message(name),
                     );
                 }
-                Binding::Type(Type::any_error())
+                Binding::Any(AnyStyle::Error)
             }
         };
         // Insert that type into the current flow.

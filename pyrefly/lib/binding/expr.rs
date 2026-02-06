@@ -63,7 +63,7 @@ use crate::config::error_kind::ErrorKind;
 use crate::error::context::ErrorInfo;
 use crate::export::special::SpecialExport;
 use crate::types::callable::unexpected_keyword;
-use crate::types::types::Type;
+use crate::types::types::AnyStyle;
 
 /// Match on an expression by name. Should be used only for special names that we essentially treat like keywords,
 /// like reveal_type.
@@ -323,7 +323,7 @@ impl<'a> BindingsBuilder<'a> {
             // We still need to produce a `Key` here just to be safe, because other
             // code may rely on all `Identifier`s having `Usage` keys and we could panic
             // in an IDE setting if we don't ensure this is the case.
-            return self.insert_binding_overwrite(key, Binding::Type(Type::any_error()));
+            return self.insert_binding_overwrite(key, Binding::Any(AnyStyle::Error));
         }
         let used_in_static_type = matches!(usage, Usage::StaticTypeInformation);
         let lookup_result =
@@ -385,7 +385,7 @@ impl<'a> BindingsBuilder<'a> {
                             name
                         ),
                     );
-                    self.insert_binding(key, Binding::Type(Type::any_error()))
+                    self.insert_binding(key, Binding::Any(AnyStyle::Error))
                 } else if self.scopes.in_class_body()
                     && let Some((cls, _)) = self.scopes.current_class_and_metadata_keys()
                 {
@@ -400,7 +400,7 @@ impl<'a> BindingsBuilder<'a> {
                         msg.push(format!("Did you mean `{suggestion}`?"));
                     }
                     self.error_multiline(name.range, ErrorInfo::Kind(ErrorKind::UnknownName), msg);
-                    self.insert_binding(key, Binding::Type(Type::any_error()))
+                    self.insert_binding(key, Binding::Any(AnyStyle::Error))
                 }
             }
         }

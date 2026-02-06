@@ -80,7 +80,7 @@ use crate::error::context::ErrorInfo;
 use crate::export::special::SpecialExport;
 use crate::types::class::ClassDefIndex;
 use crate::types::class::ClassFieldProperties;
-use crate::types::types::Type;
+use crate::types::types::AnyStyle;
 
 enum IllegalIdentifierHandling {
     Error,
@@ -660,7 +660,7 @@ impl<'a> BindingsBuilder<'a> {
                     alias_of: None,
                 },
                 (None, true) => ClassFieldDefinition::AssignedInBody {
-                    value: ExprOrBinding::Binding(Binding::Type(Type::any_implicit())),
+                    value: ExprOrBinding::Binding(Binding::Any(AnyStyle::Implicit)),
                     annotation,
                     alias_of: None,
                 },

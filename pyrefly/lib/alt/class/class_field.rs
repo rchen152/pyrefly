@@ -85,6 +85,7 @@ use crate::types::read_only::ReadOnlyReason;
 use crate::types::stdlib::Stdlib;
 use crate::types::typed_dict::TypedDict;
 use crate::types::typed_dict::TypedDictField;
+use crate::types::types::AnyStyle;
 use crate::types::types::BoundMethod;
 use crate::types::types::BoundMethodType;
 use crate::types::types::Forall;
@@ -1449,9 +1450,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 } else {
                     ClassFieldInitialization::Uninitialized
                 };
-                let value = value_storage.push(ExprOrBinding::Binding(Binding::Type(
-                    self.heap.mk_any_implicit(),
-                )));
+                let value =
+                    value_storage.push(ExprOrBinding::Binding(Binding::Any(AnyStyle::Implicit)));
                 let (value_ty, annotation, is_inherited) = self.analyze_class_field_value(
                     value,
                     class,
@@ -1660,9 +1660,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 } else {
                     ClassFieldInitialization::Uninitialized
                 };
-                let value = value_storage.push(ExprOrBinding::Binding(Binding::Type(
-                    self.heap.mk_any_implicit(),
-                )));
+                let value =
+                    value_storage.push(ExprOrBinding::Binding(Binding::Any(AnyStyle::Implicit)));
                 let (value_ty, annotation, is_inherited) =
                     self.analyze_class_field_value(value, class, name, None, false, range, errors);
                 (

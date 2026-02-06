@@ -68,7 +68,7 @@ use crate::binding::scope::UnusedVariable;
 use crate::binding::scope::YieldsAndReturns;
 use crate::config::base::UntypedDefBehavior;
 use crate::export::special::SpecialExport;
-use crate::types::types::Type;
+use crate::types::types::AnyStyle;
 
 struct Decorators {
     has_no_type_check: bool,
@@ -170,7 +170,7 @@ impl<'a> SelfAttrNames<'a> {
                 (
                     n,
                     InstanceAttribute(
-                        super::binding::ExprOrBinding::Binding(Binding::Type(Type::any_implicit())),
+                        super::binding::ExprOrBinding::Binding(Binding::Any(AnyStyle::Implicit)),
                         None,
                         r,
                         MethodSelfKind::Instance,
@@ -486,7 +486,7 @@ impl<'a> BindingsBuilder<'a> {
             Key::ReturnType(ShortIdentifier::new(func_name)),
             // TODO(grievejia): traverse the function body and calculate the `is_generator` flag, then
             // use ReturnTypeKind::ShouldReturnAny to get more precision here.
-            Binding::Type(Type::any_implicit()),
+            Binding::Any(AnyStyle::Implicit),
         );
     }
 

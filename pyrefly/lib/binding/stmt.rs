@@ -67,7 +67,7 @@ use crate::state::loader::FindError;
 use crate::state::loader::FindingOrError;
 use crate::types::alias::resolve_typeshed_alias;
 use crate::types::special_form::SpecialForm;
-use crate::types::types::Type;
+use crate::types::types::AnyStyle;
 
 /// Checks if an iterable expression is guaranteed to be non-empty and thus
 /// the for-loop body will definitely execute at least once.
@@ -153,16 +153,16 @@ impl<'a> BindingsBuilder<'a> {
     }
 
     fn bind_unimportable_names(&mut self, x: &StmtImportFrom, as_error: bool) {
-        let any = if as_error {
-            Type::any_error()
+        let style = if as_error {
+            AnyStyle::Error
         } else {
-            Type::any_explicit()
+            AnyStyle::Explicit
         };
         for x in &x.names {
             if &x.name != "*" {
                 let asname = x.asname.as_ref().unwrap_or(&x.name);
                 // We pass None as imported_from, since we are really faking up a local error definition
-                self.bind_definition(asname, Binding::Type(any.clone()), FlowStyle::Other);
+                self.bind_definition(asname, Binding::Any(style), FlowStyle::Other);
             }
         }
     }
@@ -469,7 +469,7 @@ impl<'a> BindingsBuilder<'a> {
         {
             match oops_top_level.value {
                 Some(v) => self.insert_binding_current(ret, Binding::Expr(None, *v)),
-                None => self.insert_binding_current(ret, Binding::Type(Type::None)),
+                None => self.insert_binding_current(ret, Binding::None),
             };
             self.error(
                 oops_top_level.range,
@@ -671,7 +671,7 @@ impl<'a> BindingsBuilder<'a> {
                             &name,
                             Binding::AnnotatedType(
                                 ann_idx,
-                                Box::new(Binding::Type(Type::any_implicit())),
+                                Box::new(Binding::Any(AnyStyle::Implicit)),
                             ),
                             if self.scopes.in_class_body() {
                                 FlowStyle::ClassField {
@@ -717,7 +717,7 @@ impl<'a> BindingsBuilder<'a> {
                                 ExprOrBinding::Expr(v.clone())
                             })
                         }
-                        _ => ExprOrBinding::Binding(Binding::Type(Type::any_implicit())),
+                        _ => ExprOrBinding::Binding(Binding::Any(AnyStyle::Implicit)),
                     };
                     if !self
                         .scopes
@@ -757,7 +757,7 @@ impl<'a> BindingsBuilder<'a> {
                         ),
                         None => {
                             self.bind_target_no_expr(&mut target, &|_| {
-                                Binding::Type(Type::any_error())
+                                Binding::Any(AnyStyle::Error)
                             });
                         }
                     }
@@ -1009,14 +1009,14 @@ impl<'a> BindingsBuilder<'a> {
                                 )
                             } else {
                                 // Name lookup failed - create a fallback binding with None info
-                                let fallback_idx = self
-                                    .insert_binding(Key::Anon(if_range), Binding::Type(Type::None));
+                                let fallback_idx =
+                                    self.insert_binding(Key::Anon(if_range), Binding::None);
                                 (fallback_idx, if_range, None)
                             }
                         } else {
                             // Couldn't extract exhaustiveness info - create a fallback binding
                             let fallback_idx =
-                                self.insert_binding(Key::Anon(if_range), Binding::Type(Type::None));
+                                self.insert_binding(Key::Anon(if_range), Binding::None);
                             (fallback_idx, if_range, None)
                         };
                     self.insert_binding(
@@ -1140,7 +1140,7 @@ impl<'a> BindingsBuilder<'a> {
                             self.bind_current_as(
                                 name,
                                 handler,
-                                Binding::Type(Type::any_error()),
+                                Binding::Any(AnyStyle::Error),
                                 FlowStyle::Other,
                             );
                         }
@@ -1274,7 +1274,7 @@ impl<'a> BindingsBuilder<'a> {
                 } else {
                     unreachable!("args.len() can only be 1 or 2")
                 };
-                self.insert_binding(Key::StmtExpr(expr_range), Binding::Type(Type::None));
+                self.insert_binding(Key::StmtExpr(expr_range), Binding::None);
                 self.assert(call_range, test, msg);
             }
             Stmt::Expr(mut x) => {
@@ -1348,7 +1348,7 @@ impl<'a> BindingsBuilder<'a> {
                             ErrorInfo::Kind(ErrorKind::MissingModuleAttribute),
                             format!("Could not import `{name}` from `{m}`"),
                         );
-                        Binding::Type(Type::any_error())
+                        Binding::Any(AnyStyle::Error)
                     };
                     let key = self.insert_binding(key, val);
                     // Register the imported name from wildcard imports
@@ -1410,9 +1410,9 @@ impl<'a> BindingsBuilder<'a> {
                             ErrorInfo::Kind(ErrorKind::MissingModuleAttribute),
                             format!("Could not import `{}` from `{m}`", x.name.id),
                         );
-                        Binding::Type(Type::any_error())
+                        Binding::Any(AnyStyle::Error)
                     } else {
-                        Binding::Type(Type::any_explicit())
+                        Binding::Any(AnyStyle::Explicit)
                     }
                 };
                 // __future__ imports have side effects even if not explicitly used,
