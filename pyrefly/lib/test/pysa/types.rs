@@ -105,7 +105,7 @@ class MyTypedDict(TypedDict):
 
     assert_eq!(
         PysaType::new("None".to_owned(), ClassNamesFromType::not_a_class()),
-        PysaType::from_type(&Type::None, &context),
+        PysaType::from_type(&context.answers.heap().mk_none(), &context),
     );
 
     assert_eq!(

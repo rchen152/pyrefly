@@ -667,7 +667,7 @@ mod tests {
             flags: FuncFlags::default(),
         };
         heap.mk_function(Function {
-            signature: Callable::ellipsis(Type::None),
+            signature: Callable::ellipsis(heap.mk_none()),
             metadata,
         })
     }
