@@ -151,7 +151,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             && let Some(call_expr) = e.as_call_expr()
             && self.is_django_field_nullable(call_expr)
         {
-            Some(self.union(maybe_narrowed_type, Type::None))
+            Some(self.union(maybe_narrowed_type, self.heap.mk_none()))
         } else {
             Some(maybe_narrowed_type)
         }
@@ -338,11 +338,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 )
                 .ok()
             })
-            .unwrap_or_else(Type::any_implicit);
+            .unwrap_or_else(|| self.heap.mk_any_implicit());
 
         // if value is optional, make the type optional
         let values_type = if has_empty {
-            self.union(base_value_type.clone(), Type::None)
+            self.union(base_value_type.clone(), self.heap.mk_none())
         } else {
             base_value_type
         };
@@ -356,7 +356,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             (
                 CHOICES,
                 self.stdlib
-                    .list(Type::concrete_tuple(vec![values_type, label_type]))
+                    .list(self.heap.mk_concrete_tuple(vec![values_type, label_type]))
                     .to_type(),
             ),
         ];
@@ -373,7 +373,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut metadata = FuncMetadata::def(self.module().dupe(), cls.dupe(), name);
         metadata.flags.property_metadata = Some(PropertyMetadata {
             role: PropertyRole::Getter,
-            getter: Type::any_error(),
+            getter: self.heap.mk_any_error(),
             setter: None,
             has_deleter: false,
         });
@@ -496,7 +496,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // Get the pk type from the related model and make it nullable if needed
         let (pk_type, _) = self.get_pk_field_type(related_cls.class_object())?;
         if is_foreign_key_nullable {
-            Some(self.union(pk_type, Type::None))
+            Some(self.union(pk_type, self.heap.mk_none()))
         } else {
             Some(pk_type)
         }
