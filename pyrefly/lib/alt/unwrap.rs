@@ -338,7 +338,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .iter()
             .map(|(name, var)| Param::Pos((*name).clone(), var.to_type(), Required::Required))
             .collect::<Vec<_>>();
-        let callable_ty = Type::callable(params, return_ty.to_type());
+        let callable_ty = self.heap.mk_callable_from_vec(params, return_ty.to_type());
 
         if self.is_subset_eq(&callable_ty, hint.ty()) {
             hint.map_ty_opt(|ty| self.resolve_var_opt(ty, return_ty))
@@ -374,8 +374,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .to_type();
         if self.is_subset_eq(&generator_ty, ty) {
             let yield_ty: Type = self.resolve_var_opt(ty, yield_ty)?;
-            let send_ty = self.resolve_var_opt(ty, send_ty).unwrap_or(Type::None);
-            let return_ty = self.resolve_var_opt(ty, return_ty).unwrap_or(Type::None);
+            let send_ty = self
+                .resolve_var_opt(ty, send_ty)
+                .unwrap_or_else(|| self.heap.mk_none());
+            let return_ty = self
+                .resolve_var_opt(ty, return_ty)
+                .unwrap_or_else(|| self.heap.mk_none());
             Some((yield_ty, send_ty, return_ty))
         } else {
             None
@@ -391,10 +395,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             .to_type();
         if self.is_subset_eq(&async_generator_ty, ty) {
             let yield_ty: Type = self.resolve_var_opt(ty, yield_ty)?;
-            let send_ty = self.resolve_var_opt(ty, send_ty).unwrap_or(Type::None);
+            let send_ty = self
+                .resolve_var_opt(ty, send_ty)
+                .unwrap_or_else(|| self.heap.mk_none());
             Some((yield_ty, send_ty))
         } else if ty.is_any() {
-            Some((Type::any_explicit(), Type::any_explicit()))
+            Some((self.heap.mk_any_explicit(), self.heap.mk_any_explicit()))
         } else {
             None
         }
@@ -407,7 +413,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Tuple::Unbounded(element) => self.stdlib.tuple(*element),
             Tuple::Concrete(elements) => {
                 if elements.is_empty() {
-                    self.stdlib.tuple(Type::any_implicit())
+                    self.stdlib.tuple(self.heap.mk_any_implicit())
                 } else {
                     self.stdlib.tuple(self.unions(elements))
                 }
