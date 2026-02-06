@@ -198,7 +198,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let tparams = self.get_class_tparams(class);
         TArgs::new(
             tparams.dupe(),
-            tparams.quantifieds().map(|q| q.clone().to_type()).collect(),
+            tparams
+                .quantifieds()
+                .map(|q| q.clone().to_type(self.heap))
+                .collect(),
         )
     }
 

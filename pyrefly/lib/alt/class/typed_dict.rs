@@ -478,11 +478,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         self.key_param(name),
                         Param::PosOnly(
                             Some(DEFAULT_PARAM.clone()),
-                            q.clone().to_type(),
+                            q.clone().to_type(self.heap),
                             Required::Required,
                         ),
                     ]),
-                    self.union(ty, q.to_type()),
+                    self.union(ty, q.to_type(self.heap)),
                 ),
                 metadata: metadata.clone(),
             },

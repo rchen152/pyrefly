@@ -856,7 +856,7 @@ impl Solver {
                 && let Variable::Quantified(q) = &*lock.get(*v)
                 && *q == param.quantified
             {
-                *t = param.quantified.clone().to_type();
+                *t = param.quantified.clone().to_type(&self.heap);
             }
         })
     }

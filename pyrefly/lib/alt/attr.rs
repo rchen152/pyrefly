@@ -506,7 +506,7 @@ impl ClassBase {
         match self {
             ClassBase::ClassDef(c) => heap.mk_class_def(c.into_class_object()),
             ClassBase::ClassType(c) => heap.mk_type(c.to_type()),
-            ClassBase::Quantified(q, _) => heap.mk_type_form(q.to_type()),
+            ClassBase::Quantified(q, _) => heap.mk_type_form(q.to_type(heap)),
             ClassBase::SelfType(c) => heap.mk_type_form(heap.mk_self_type(c)),
             ClassBase::Protocol(_, self_type) => heap.mk_type_form(self_type),
         }
@@ -516,7 +516,7 @@ impl ClassBase {
         match self {
             ClassBase::ClassDef(c) => c.to_type(),
             ClassBase::ClassType(c) => c.to_type(),
-            ClassBase::Quantified(q, _) => q.to_type(),
+            ClassBase::Quantified(q, _) => q.to_type(heap),
             ClassBase::SelfType(c) => heap.mk_self_type(c),
             ClassBase::Protocol(_, self_type) => self_type,
         }

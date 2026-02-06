@@ -1950,7 +1950,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             &self.expr(slice, None, errors),
                             &self.stdlib.str().clone().to_type(),
                         ) {
-                            quantified.to_type()
+                            quantified.to_type(self.heap)
                         } else {
                             self.error(
                                 errors,

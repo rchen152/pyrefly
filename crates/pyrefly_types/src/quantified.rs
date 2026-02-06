@@ -20,6 +20,7 @@ use pyrefly_util::uniques::UniqueFactory;
 use ruff_python_ast::name::Name;
 
 use crate::class::ClassType;
+use crate::heap::TypeHeap;
 use crate::stdlib::Stdlib;
 use crate::type_var::PreInferenceVariance;
 use crate::type_var::Restriction;
@@ -197,8 +198,8 @@ impl Quantified {
         )
     }
 
-    pub fn to_type(self) -> Type {
-        Type::Quantified(Box::new(self))
+    pub fn to_type(self, heap: &TypeHeap) -> Type {
+        heap.mk_quantified(self)
     }
 
     pub fn to_value(self) -> Type {

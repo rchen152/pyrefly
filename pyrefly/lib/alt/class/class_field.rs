@@ -1153,7 +1153,7 @@ impl<'a> Instance<'a> {
             InstanceKind::TypedDict => {
                 heap.mk_typed_dict(TypedDict::new(self.class.dupe(), self.targs.clone()))
             }
-            InstanceKind::TypeVar(q) => q.clone().to_type(),
+            InstanceKind::TypeVar(q) => q.clone().to_type(heap),
             InstanceKind::SelfType => {
                 heap.mk_self_type(ClassType::new(self.class.dupe(), self.targs.clone()))
             }
@@ -2623,7 +2623,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             None
         };
         let self_type = match &self_quantified {
-            Some(quantified) => quantified.clone().to_type(),
+            Some(quantified) => quantified.clone().to_type(self.heap),
             None => cls.clone().to_self_type(self.heap),
         };
         let mut ambiguous = false;

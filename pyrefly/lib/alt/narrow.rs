@@ -350,7 +350,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     res.push(if matches!(&intersection, Type::Type(t) if t.is_never()) {
                         intersection
                     } else {
-                        intersect(vec![q.to_type(), right.clone()], right.clone())
+                        intersect(vec![q.to_type(self.heap), right.clone()], right.clone())
                     })
                 }
                 if !nonquantifieds.is_empty() {

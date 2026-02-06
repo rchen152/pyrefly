@@ -1064,7 +1064,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         q
                     }
                 };
-                *ty = q.to_type();
+                *ty = q.to_type(self.heap);
             }
             Type::TypeVarTuple(ty_var_tuple) => {
                 let q = match seen_type_var_tuples.entry(ty_var_tuple.dupe()) {
@@ -1085,7 +1085,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         q
                     }
                 };
-                *ty = q.to_type();
+                *ty = q.to_type(self.heap);
             }
             Type::ParamSpec(param_spec) => {
                 let q = match seen_param_specs.entry(param_spec.dupe()) {
@@ -1106,7 +1106,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         q
                     }
                 };
-                *ty = q.to_type();
+                *ty = q.to_type(self.heap);
             }
             Type::Unpack(t) => self.tvars_to_tparams_for_type_alias(
                 t,
@@ -4630,7 +4630,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     range,
                     errors,
                 ),
-            Type::QuantifiedValue(q) => Some(q.to_type()),
+            Type::QuantifiedValue(q) => Some(q.to_type(self.heap)),
             Type::ArgsValue(q) => Some(self.heap.mk_args(*q)),
             Type::KwargsValue(q) => Some(self.heap.mk_kwargs(*q)),
             _ => None,
