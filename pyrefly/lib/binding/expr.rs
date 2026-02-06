@@ -16,15 +16,19 @@ use ruff_python_ast::Comprehension;
 use ruff_python_ast::Decorator;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprAttribute;
+use ruff_python_ast::ExprBinOp;
 use ruff_python_ast::ExprBoolOp;
 use ruff_python_ast::ExprCall;
 use ruff_python_ast::ExprLambda;
 use ruff_python_ast::ExprName;
 use ruff_python_ast::ExprNoneLiteral;
+use ruff_python_ast::ExprStringLiteral;
 use ruff_python_ast::ExprSubscript;
 use ruff_python_ast::ExprYield;
 use ruff_python_ast::ExprYieldFrom;
 use ruff_python_ast::Identifier;
+use ruff_python_ast::Operator;
+use ruff_python_ast::StringLiteral;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use starlark_map::Hashed;
@@ -868,6 +872,16 @@ impl<'a> BindingsBuilder<'a> {
         self.track_potential_typing_self(x);
         // We do not treat static types as usage for the purpose of first-usage-based type inference.
         let static_type_usage = &mut Usage::StaticTypeInformation;
+        fn as_forward_ref<'b>(
+            literal: &'b ExprStringLiteral,
+            in_string_literal: bool,
+        ) -> Option<&'b StringLiteral> {
+            if in_string_literal {
+                None
+            } else {
+                literal.as_single_part_string()
+            }
+        }
         match x {
             Expr::Name(x) => {
                 let name = Ast::expr_name_identifier(x.clone());
@@ -897,7 +911,7 @@ impl<'a> BindingsBuilder<'a> {
                 self.ensure_type_impl(&mut *slice, tparams_builder, in_string_literal);
             }
             Expr::StringLiteral(literal)
-                if !in_string_literal && let Some(literal) = literal.as_single_part_string() =>
+                if let Some(literal) = as_forward_ref(literal, in_string_literal) =>
             {
                 match Ast::parse_type_literal(literal) {
                     Ok(expr) => {
@@ -946,6 +960,46 @@ impl<'a> BindingsBuilder<'a> {
                     static_type_usage,
                     tparams_builder,
                 );
+            }
+            Expr::BinOp(ExprBinOp {
+                left,
+                op: Operator::BitOr,
+                right,
+                range,
+                ..
+            }) => {
+                // Check if either side is a string literal BEFORE recursing,
+                // since ensure_type_impl will parse and replace them.
+                let left_was_string_literal = matches!(&**left, Expr::StringLiteral(s) if as_forward_ref(s, in_string_literal).is_some());
+                let right_was_string_literal = matches!(&**right, Expr::StringLiteral(s) if as_forward_ref(s, in_string_literal).is_some());
+
+                // Recurse into children to handle string literal parsing
+                self.ensure_type_impl(left, tparams_builder, in_string_literal);
+                self.ensure_type_impl(right, tparams_builder, in_string_literal);
+
+                // A forward reference is a string literal that parsed to a simple name
+                // (like "str"), not a complex type (like "list[str]" which parses to a subscript)
+                let left_is_forward_ref = left_was_string_literal && left.is_name_expr();
+                let right_is_forward_ref = right_was_string_literal && right.is_name_expr();
+
+                // Only create the check if at least one side is a forward ref,
+                // and we're not in Python 3.14+ or with future annotations
+                // (which make annotations lazy and avoid the runtime error)
+                if (left_is_forward_ref || right_is_forward_ref)
+                    && !self.sys_info.version().at_least(3, 14)
+                    && !self.scopes.has_future_annotations()
+                {
+                    self.insert_binding(
+                        KeyExpect::ForwardRefUnion(*range),
+                        BindingExpect::ForwardRefUnion {
+                            left: Box::new((**left).clone()),
+                            right: Box::new((**right).clone()),
+                            left_is_forward_ref,
+                            right_is_forward_ref,
+                            range: *range,
+                        },
+                    );
+                }
             }
             _ => {
                 x.recurse_mut(&mut |x| self.ensure_type_impl(x, tparams_builder, in_string_literal))
