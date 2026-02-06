@@ -110,12 +110,12 @@ class MyTypedDict(TypedDict):
 
     assert_eq!(
         PysaType::new("Unknown".to_owned(), ClassNamesFromType::not_a_class()),
-        PysaType::from_type(&Type::any_implicit(), &context),
+        PysaType::from_type(&context.answers.heap().mk_any_implicit(), &context),
     );
 
     assert_eq!(
         PysaType::new("typing.Any".to_owned(), ClassNamesFromType::not_a_class()),
-        PysaType::from_type(&Type::any_explicit(), &context),
+        PysaType::from_type(&context.answers.heap().mk_any_explicit(), &context),
     );
 
     assert_eq!(
