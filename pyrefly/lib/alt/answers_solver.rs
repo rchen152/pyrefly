@@ -682,6 +682,58 @@ impl Sccs {
         // Do we still have active SCCs?
         !stack.is_empty()
     }
+
+    /// Merge all SCCs from the target SCC to the top of the stack, and add
+    /// any free-floating CalcStack nodes between the target SCC's min_stack_depth
+    /// and the current stack position.
+    ///
+    /// This is called when we detect a read into a previous (non-top) SCC via
+    /// `RevisitingPreviousScc`. After this call, the SCC stack will have one
+    /// merged SCC at the top containing all participants from the merged SCCs
+    /// plus any free-floating nodes from the CalcStack.
+    ///
+    /// The oldest previously-known Scc we should merge is identified based on its
+    /// `detected_at`; this has the potentially-useful property of being a valid
+    /// identifier of the merged Scc *after* the merge, since we always use the
+    /// very first cycle detected for `detected_at`.
+    #[expect(dead_code)] // Used in later commit when handling RevisitingPreviousScc in get_idx
+    #[allow(clippy::mutable_key_type)]
+    fn merge_sccs(&self, detected_at_of_scc: &CalcId, calc_stack: &CalcStack) {
+        let calc_stack_vec = calc_stack.into_vec();
+        let mut stack = self.0.borrow_mut();
+
+        // Pop SCCs until we find the target component (identified by detected_at).
+        //
+        // Push them to a vec we will merge; in addition, when we reach the last component
+        // use it to determine how much of the CalcStack needs to be merged in order
+        // to ensure bindings that weren't yet part of a known SCC are included.
+        let mut sccs_to_merge: Vec<Scc> = Vec::new();
+        let mut target_min_stack_depth: Option<usize> = None;
+        while let Some(scc) = stack.pop() {
+            let is_target = scc.detected_at() == *detected_at_of_scc;
+            if is_target {
+                target_min_stack_depth = Some(scc.min_stack_depth);
+            }
+            sccs_to_merge.push(scc);
+            if is_target {
+                break;
+            }
+        }
+        let min_depth = target_min_stack_depth
+            .expect("Target SCC not found during merge - this indicates a bug in SCC tracking");
+
+        // Perform the merge, then add any free-floating bindings that weren't previously part
+        // of a known SCC.
+        let mut merged = Scc::merge_many(sccs_to_merge, detected_at_of_scc.dupe());
+        for calc_id in calc_stack_vec.iter().skip(min_depth) {
+            merged
+                .node_state
+                .entry(calc_id.dupe())
+                .or_insert(NodeState::Fresh);
+        }
+
+        stack.push(merged);
+    }
 }
 
 /// Represents thread-local state for the current `AnswersSolver` and any
