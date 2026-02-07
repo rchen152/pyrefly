@@ -37,10 +37,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         K: Keyed,
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
     {
-        self.show_idx_with(self.bindings(), idx)
+        self.show_idx_with(idx, self.bindings())
     }
 
-    pub fn show_idx_with<K>(&self, bindings: &Bindings, idx: Idx<K>) -> String
+    pub fn show_idx_with<K>(&self, idx: Idx<K>, bindings: &Bindings) -> String
     where
         K: Keyed,
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
@@ -67,10 +67,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     where
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
     {
-        self.show_binding_for_with(self.bindings(), idx)
+        self.show_binding_for_with(idx, self.bindings())
     }
 
-    pub fn show_binding_for_with<K: Keyed>(&self, bindings: &Bindings, idx: Idx<K>) -> String
+    pub fn show_binding_for_with<K: Keyed>(&self, idx: Idx<K>, bindings: &Bindings) -> String
     where
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
     {
@@ -98,32 +98,32 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 "(None)".to_owned()
             }
             Some(CalcId(bindings, idx)) => match idx {
-                AnyIdx::Key(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyExpect(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyTypeAlias(idx) => self.show_binding_for_with(&bindings, idx),
+                AnyIdx::Key(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyExpect(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyTypeAlias(idx) => self.show_binding_for_with(idx, &bindings),
                 AnyIdx::KeyConsistentOverrideCheck(idx) => {
-                    self.show_binding_for_with(&bindings, idx)
+                    self.show_binding_for_with(idx, &bindings)
                 }
-                AnyIdx::KeyClass(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyTParams(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyClassBaseType(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyClassField(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyVariance(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyVarianceCheck(idx) => self.show_binding_for_with(&bindings, idx),
+                AnyIdx::KeyClass(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyTParams(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyClassBaseType(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyClassField(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyVariance(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyVarianceCheck(idx) => self.show_binding_for_with(idx, &bindings),
                 AnyIdx::KeyClassSynthesizedFields(idx) => {
-                    self.show_binding_for_with(&bindings, idx)
+                    self.show_binding_for_with(idx, &bindings)
                 }
-                AnyIdx::KeyExport(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyDecorator(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyDecoratedFunction(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyUndecoratedFunction(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyAnnotation(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyClassMetadata(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyClassMro(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyAbstractClassCheck(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyLegacyTypeParam(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyYield(idx) => self.show_binding_for_with(&bindings, idx),
-                AnyIdx::KeyYieldFrom(idx) => self.show_binding_for_with(&bindings, idx),
+                AnyIdx::KeyExport(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyDecorator(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyDecoratedFunction(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyUndecoratedFunction(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyAnnotation(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyClassMetadata(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyClassMro(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyAbstractClassCheck(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyLegacyTypeParam(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyYield(idx) => self.show_binding_for_with(idx, &bindings),
+                AnyIdx::KeyYieldFrom(idx) => self.show_binding_for_with(idx, &bindings),
             },
         }
     }
