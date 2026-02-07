@@ -19,6 +19,7 @@ use crate::binding::bindings::BindingEntry;
 use crate::binding::bindings::BindingTable;
 use crate::binding::bindings::Bindings;
 use crate::binding::table::TableKeyed;
+use crate::dispatch_anyidx;
 
 /// Debugging helpers for the AnswersSolver.
 ///

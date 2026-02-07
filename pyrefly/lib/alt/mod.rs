@@ -6,7 +6,6 @@
  */
 
 pub mod answers;
-#[macro_use]
 pub mod answers_solver;
 pub mod attr;
 pub mod call;

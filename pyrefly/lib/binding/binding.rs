@@ -151,6 +151,156 @@ pub enum AnyIdx {
     KeyYieldFrom(Idx<KeyYieldFrom>),
 }
 
+/// Dispatches a method call on `self` based on the variant of an `AnyIdx`.
+///
+/// This macro reduces boilerplate by generating a match statement that covers all
+/// `AnyIdx` variants, extracting the typed index and calling the specified method
+/// with the appropriate type parameter.
+///
+/// # Usage
+///
+/// ```ignore
+/// // For methods that take only the dereferenced idx:
+/// dispatch_anyidx!(any_idx, self, check_calculation_written)
+///
+/// // For methods that take idx and additional arguments:
+/// dispatch_anyidx!(any_idx, self, commit_typed, result)
+/// ```
+///
+/// The extracted index is passed to the method, and the method is called with
+/// the variant's type as the type parameter.
+#[macro_export]
+macro_rules! dispatch_anyidx {
+    // Pattern for methods that take only the dereferenced idx (*idx)
+    ($any_idx:expr, $self:ident, $method:ident) => {
+        match $any_idx {
+            AnyIdx::Key(idx) => $self.$method::<$crate::binding::binding::Key>(*idx),
+            AnyIdx::KeyExpect(idx) => $self.$method::<$crate::binding::binding::KeyExpect>(*idx),
+            AnyIdx::KeyTypeAlias(idx) => {
+                $self.$method::<$crate::binding::binding::KeyTypeAlias>(*idx)
+            }
+            AnyIdx::KeyConsistentOverrideCheck(idx) => {
+                $self.$method::<$crate::binding::binding::KeyConsistentOverrideCheck>(*idx)
+            }
+            AnyIdx::KeyClass(idx) => $self.$method::<$crate::binding::binding::KeyClass>(*idx),
+            AnyIdx::KeyTParams(idx) => $self.$method::<$crate::binding::binding::KeyTParams>(*idx),
+            AnyIdx::KeyClassBaseType(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassBaseType>(*idx)
+            }
+            AnyIdx::KeyClassField(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassField>(*idx)
+            }
+            AnyIdx::KeyVariance(idx) => {
+                $self.$method::<$crate::binding::binding::KeyVariance>(*idx)
+            }
+            AnyIdx::KeyClassSynthesizedFields(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassSynthesizedFields>(*idx)
+            }
+            AnyIdx::KeyExport(idx) => $self.$method::<$crate::binding::binding::KeyExport>(*idx),
+            AnyIdx::KeyDecorator(idx) => {
+                $self.$method::<$crate::binding::binding::KeyDecorator>(*idx)
+            }
+            AnyIdx::KeyDecoratedFunction(idx) => {
+                $self.$method::<$crate::binding::binding::KeyDecoratedFunction>(*idx)
+            }
+            AnyIdx::KeyUndecoratedFunction(idx) => {
+                $self.$method::<$crate::binding::binding::KeyUndecoratedFunction>(*idx)
+            }
+            AnyIdx::KeyAnnotation(idx) => {
+                $self.$method::<$crate::binding::binding::KeyAnnotation>(*idx)
+            }
+            AnyIdx::KeyClassMetadata(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassMetadata>(*idx)
+            }
+            AnyIdx::KeyClassMro(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassMro>(*idx)
+            }
+            AnyIdx::KeyAbstractClassCheck(idx) => {
+                $self.$method::<$crate::binding::binding::KeyAbstractClassCheck>(*idx)
+            }
+            AnyIdx::KeyLegacyTypeParam(idx) => {
+                $self.$method::<$crate::binding::binding::KeyLegacyTypeParam>(*idx)
+            }
+            AnyIdx::KeyYield(idx) => $self.$method::<$crate::binding::binding::KeyYield>(*idx),
+            AnyIdx::KeyYieldFrom(idx) => {
+                $self.$method::<$crate::binding::binding::KeyYieldFrom>(*idx)
+            }
+            AnyIdx::KeyVarianceCheck(idx) => {
+                $self.$method::<$crate::binding::binding::KeyVarianceCheck>(*idx)
+            }
+        }
+    };
+    // Pattern for methods that take idx (dereferenced) and additional arguments
+    ($any_idx:expr, $self:ident, $method:ident, $($args:expr),+) => {
+        match $any_idx {
+            AnyIdx::Key(idx) => $self.$method::<$crate::binding::binding::Key>(*idx, $($args),+),
+            AnyIdx::KeyExpect(idx) => {
+                $self.$method::<$crate::binding::binding::KeyExpect>(*idx, $($args),+)
+            }
+            AnyIdx::KeyTypeAlias(idx) => {
+                $self.$method::<$crate::binding::binding::KeyTypeAlias>(*idx, $($args),+)
+            }
+            AnyIdx::KeyConsistentOverrideCheck(idx) => {
+                $self.$method::<$crate::binding::binding::KeyConsistentOverrideCheck>(*idx, $($args),+)
+            }
+            AnyIdx::KeyClass(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClass>(*idx, $($args),+)
+            }
+            AnyIdx::KeyTParams(idx) => {
+                $self.$method::<$crate::binding::binding::KeyTParams>(*idx, $($args),+)
+            }
+            AnyIdx::KeyClassBaseType(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassBaseType>(*idx, $($args),+)
+            }
+            AnyIdx::KeyClassField(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassField>(*idx, $($args),+)
+            }
+            AnyIdx::KeyVariance(idx) => {
+                $self.$method::<$crate::binding::binding::KeyVariance>(*idx, $($args),+)
+            }
+            AnyIdx::KeyClassSynthesizedFields(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassSynthesizedFields>(*idx, $($args),+)
+            }
+            AnyIdx::KeyExport(idx) => {
+                $self.$method::<$crate::binding::binding::KeyExport>(*idx, $($args),+)
+            }
+            AnyIdx::KeyDecorator(idx) => {
+                $self.$method::<$crate::binding::binding::KeyDecorator>(*idx, $($args),+)
+            }
+            AnyIdx::KeyDecoratedFunction(idx) => {
+                $self.$method::<$crate::binding::binding::KeyDecoratedFunction>(*idx, $($args),+)
+            }
+            AnyIdx::KeyUndecoratedFunction(idx) => {
+                $self.$method::<$crate::binding::binding::KeyUndecoratedFunction>(*idx, $($args),+)
+            }
+            AnyIdx::KeyAnnotation(idx) => {
+                $self.$method::<$crate::binding::binding::KeyAnnotation>(*idx, $($args),+)
+            }
+            AnyIdx::KeyClassMetadata(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassMetadata>(*idx, $($args),+)
+            }
+            AnyIdx::KeyClassMro(idx) => {
+                $self.$method::<$crate::binding::binding::KeyClassMro>(*idx, $($args),+)
+            }
+            AnyIdx::KeyAbstractClassCheck(idx) => {
+                $self.$method::<$crate::binding::binding::KeyAbstractClassCheck>(*idx, $($args),+)
+            }
+            AnyIdx::KeyLegacyTypeParam(idx) => {
+                $self.$method::<$crate::binding::binding::KeyLegacyTypeParam>(*idx, $($args),+)
+            }
+            AnyIdx::KeyYield(idx) => {
+                $self.$method::<$crate::binding::binding::KeyYield>(*idx, $($args),+)
+            }
+            AnyIdx::KeyYieldFrom(idx) => {
+                $self.$method::<$crate::binding::binding::KeyYieldFrom>(*idx, $($args),+)
+            }
+            AnyIdx::KeyVarianceCheck(idx) => {
+                $self.$method::<$crate::binding::binding::KeyVarianceCheck>(*idx, $($args),+)
+            }
+        }
+    };
+}
+
 impl DisplayWith<Bindings> for AnyIdx {
     fn fmt(&self, f: &mut fmt::Formatter<'_>, ctx: &Bindings) -> fmt::Result {
         match self {
