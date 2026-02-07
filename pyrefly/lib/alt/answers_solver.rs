@@ -205,16 +205,6 @@ impl CalcStack {
     }
 }
 
-const MAXIMUM_SCC_DEPTH: usize = 100;
-
-/// Normalize a raw cycle for comparison by sorting and deduplicating.
-fn normalize_raw_cycle(raw: &Vec1<CalcId>) -> Vec<CalcId> {
-    let mut normalized: Vec<CalcId> = raw.iter().duped().collect();
-    normalized.sort();
-    normalized.dedup();
-    normalized
-}
-
 /// Tracks the state of a node within an active SCC.
 ///
 /// This replaces the previous stack-based tracking (recursion_stack, unwind_stack)
@@ -372,17 +362,6 @@ impl Scc {
             .all(|state| *state == NodeState::Done)
     }
 
-    /// Get all participants in this SCC as a sorted vector for comparison.
-    ///
-    /// This normalizes the SCC representation so SCCs can be compared regardless
-    /// of where they were detected or how far they've been processed.
-    fn participants_normalized(&self) -> Vec<CalcId> {
-        let mut participants: Vec<CalcId> = self.node_state.keys().duped().collect();
-        participants.sort();
-        participants.dedup();
-        participants
-    }
-
     /// Get the detection point of this SCC (stable identifier for merging).
     fn detected_at(&self) -> CalcId {
         self.detected_at.dupe()
@@ -468,9 +447,6 @@ enum SccDetectedResult {
     BreakHere,
     /// Continue recursing until we hit some other idx that is the minimal `break_at` idx.
     Continue,
-    /// Duplicate SCC detected in the stack - this indicates infinite recursion.
-    /// Raise a Pyrefly error and produce a placeholder result.
-    DuplicateSccDetected,
 }
 
 /// Represent the current thread's SCCs, which form a stack
@@ -534,21 +510,6 @@ impl Sccs {
     /// overlap (due to LIFO ordering of the SCC stack).
     #[allow(clippy::mutable_key_type)] // CalcId's Hash impl doesn't depend on mutable parts
     fn on_scc_detected(&self, raw: Vec1<CalcId>, calc_stack: &CalcStack) -> SccDetectedResult {
-        if self.0.borrow().len() > MAXIMUM_SCC_DEPTH {
-            // Check if this is a duplicate of an existing SCC (indicating infinite recursion)
-            let normalized_raw = normalize_raw_cycle(&raw);
-            let has_duplicate = self
-                .0
-                .borrow()
-                .iter()
-                .any(|existing_scc| existing_scc.participants_normalized() == normalized_raw);
-            if has_duplicate {
-                // Don't push the duplicate SCC - just return DuplicateSccDetected
-                return SccDetectedResult::DuplicateSccDetected;
-            }
-            // High depth but no duplicate - treat as normal SCC
-        }
-
         let stack_depth = calc_stack.len();
         let calc_stack_vec = calc_stack.into_vec();
 
@@ -889,19 +850,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             SccDetectedResult::Continue => {
                                 self.calculate_and_record_answer(current, idx, calculation)
                             }
-                            SccDetectedResult::DuplicateSccDetected => {
-                                let range = self.bindings().idx_to_key(idx).range();
-                                self.base_errors.internal_error(
-                                    range,
-                                    vec1![format!(
-                                        "Duplicate cycle detected at {current}; likely infinite recursion in type resolution"
-                                    )],
-                                );
-                                self.attempt_to_unwind_cycle_from_here(idx, calculation)
-                                    .unwrap_or_else(|r| {
-                                        Arc::new(K::promote_recursive(self.heap, r))
-                                    })
-                            }
                         }
                     }
                     ProposalResult::Calculatable => {
@@ -956,19 +904,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                     }),
                                 SccDetectedResult::Continue => {
                                     self.calculate_and_record_answer(current, idx, calculation)
-                                }
-                                SccDetectedResult::DuplicateSccDetected => {
-                                    let range = self.bindings().idx_to_key(idx).range();
-                                    self.base_errors.internal_error(
-                                            range,
-                                            vec1![format!(
-                                                "Duplicate cycle detected at {current}; likely infinite recursion in type resolution"
-                                            )],
-                                        );
-                                    self.attempt_to_unwind_cycle_from_here(idx, calculation)
-                                        .unwrap_or_else(|r| {
-                                            Arc::new(K::promote_recursive(self.heap, r))
-                                        })
                                 }
                             }
                         }
