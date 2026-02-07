@@ -782,17 +782,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.is_not_type_for_pattern(ty, |t| self.is_sequence_for_pattern(t))
             }
             AtomicNarrowOp::IsMapping => {
-                let mapping = self
-                    .stdlib
-                    .mapping(self.heap.mk_any_implicit(), self.heap.mk_any_implicit())
-                    .to_type();
+                let mapping = self.heap.mk_class_type(
+                    self.stdlib
+                        .mapping(self.heap.mk_any_implicit(), self.heap.mk_any_implicit()),
+                );
                 self.is_type_for_pattern(ty, |t| self.is_subset_eq(t, &mapping))
             }
             AtomicNarrowOp::IsNotMapping => {
-                let mapping = self
-                    .stdlib
-                    .mapping(self.heap.mk_any_implicit(), self.heap.mk_any_implicit())
-                    .to_type();
+                let mapping = self.heap.mk_class_type(
+                    self.stdlib
+                        .mapping(self.heap.mk_any_implicit(), self.heap.mk_any_implicit()),
+                );
                 self.is_not_type_for_pattern(ty, |t| self.is_subset_eq(t, &mapping))
             }
             AtomicNarrowOp::In(v) => {
