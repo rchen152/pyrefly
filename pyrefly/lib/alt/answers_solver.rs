@@ -210,16 +210,20 @@ impl CalcStack {
 /// This replaces the previous stack-based tracking (recursion_stack, unwind_stack)
 /// with explicit state tracking. The state transitions are:
 /// - Fresh → InProgress (when we first encounter the node as a Participant)
-/// - InProgress → Done (when the node's calculation completes)
+/// - InProgress → HasPlaceholder (when this is a break_at node and we record a placeholder)
+/// - InProgress/HasPlaceholder → Done (when the node's calculation completes)
 ///
-/// The variants are ordered by "advancement" (Fresh < InProgress < Done) so that
-/// when merging SCCs we can use `max()` to keep the more advanced state.
+/// The variants are ordered by "advancement" (Fresh < InProgress < HasPlaceholder < Done)
+/// so that when merging SCCs we can use `max()` to keep the more advanced state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 enum NodeState {
     /// Node hasn't been processed yet as part of SCC handling.
     Fresh,
     /// Node is currently being processed (on the Rust call stack).
     InProgress,
+    /// This is a break_at node: we've recorded a placeholder in Calculation
+    /// but haven't computed the real answer yet.
+    HasPlaceholder,
     /// Node's calculation has completed.
     Done,
 }
@@ -338,6 +342,10 @@ impl Scc {
                     // via a different path. This will trigger new cycle detection.
                     SccState::RevisitingInProgress
                 }
+                NodeState::HasPlaceholder => {
+                    // Already has placeholder, treat as break point
+                    SccState::BreakAt
+                }
                 NodeState::Done => {
                     // Node completed within this SCC - preliminary answer should exist.
                     SccState::RevisitingDone
@@ -352,6 +360,13 @@ impl Scc {
     fn on_calculation_finished(&mut self, current: &CalcId) {
         if let Some(state) = self.node_state.get_mut(current) {
             *state = NodeState::Done;
+        }
+    }
+
+    /// Track that a placeholder has been recorded for a break_at node.
+    fn on_placeholder_recorded(&mut self, current: &CalcId) {
+        if let Some(state) = self.node_state.get_mut(current) {
+            *state = NodeState::HasPlaceholder;
         }
     }
 
@@ -632,6 +647,14 @@ impl Sccs {
         !stack.is_empty()
     }
 
+    /// Track that a placeholder has been recorded for a break_at node.
+    fn on_placeholder_recorded(&self, current: &CalcId) {
+        let mut stack = self.0.borrow_mut();
+        for scc in stack.iter_mut() {
+            scc.on_placeholder_recorded(current);
+        }
+    }
+
     /// Merge all SCCs from the target SCC to the top of the stack, and add
     /// any free-floating CalcStack nodes between the target SCC's min_stack_depth
     /// and the current stack position.
@@ -831,7 +854,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if let Some(config) = self.recursion_limit_config()
             && self.stack().len() > config.limit as usize
         {
-            let result = self.handle_depth_overflow(idx, calculation, config);
+            let result = self.handle_depth_overflow(&current, idx, calculation, config);
             self.stack().pop();
             return result;
         }
@@ -845,7 +868,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         let current_cycle = self.stack().current_cycle().unwrap();
                         match self.sccs().on_scc_detected(current_cycle, self.stack()) {
                             SccDetectedResult::BreakHere => self
-                                .attempt_to_unwind_cycle_from_here(idx, calculation)
+                                .attempt_to_unwind_cycle_from_here(&current, idx, calculation)
                                 .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r))),
                             SccDetectedResult::Continue => {
                                 self.calculate_and_record_answer(current, idx, calculation)
@@ -859,7 +882,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             SccState::BreakAt => {
                 // Begin unwinding the cycle using a recursive placeholder
-                self.attempt_to_unwind_cycle_from_here(idx, calculation)
+                self.attempt_to_unwind_cycle_from_here(&current, idx, calculation)
                     .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
             }
             SccState::RevisitingPreviousScc {
@@ -872,7 +895,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     // Node was already a break-at index. Merge SCCs without any new break_at, and break here
                     RevisitingTargetState::BreakAt => {
                         self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
-                        self.attempt_to_unwind_cycle_from_here(idx, calculation)
+                        self.attempt_to_unwind_cycle_from_here(&current, idx, calculation)
                             .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
                     }
                     // Node already completed within the SCC. Merge SCCs without new break_at, and get preliminary answer.
@@ -898,7 +921,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             let current_cycle = self.stack().current_cycle().unwrap();
                             match self.sccs().on_scc_detected(current_cycle, self.stack()) {
                                 SccDetectedResult::BreakHere => self
-                                    .attempt_to_unwind_cycle_from_here(idx, calculation)
+                                    .attempt_to_unwind_cycle_from_here(&current, idx, calculation)
                                     .unwrap_or_else(|r| {
                                         Arc::new(K::promote_recursive(self.heap, r))
                                     }),
@@ -1038,6 +1061,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// we are doing extra work here to get partial protection against races through the mutex.
     fn attempt_to_unwind_cycle_from_here<K: Solve<Ans>>(
         &self,
+        current: &CalcId,
         idx: Idx<K>,
         calculation: &Calculation<Arc<K::Answer>, Var>,
     ) -> Result<Arc<K::Answer>, Var>
@@ -1050,6 +1074,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         match calculation.record_cycle(rec) {
             Either::Right(rec) => {
                 // No final answer is available, so we'll unwind the cycle using `rec`.
+                // Track that we've recorded a placeholder for this break_at node.
+                self.sccs().on_placeholder_recorded(current);
                 Err(rec)
             }
             Either::Left(v) => {
@@ -1062,6 +1088,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Handle depth overflow based on the configured handler.
     fn handle_depth_overflow<K: Solve<Ans>>(
         &self,
+        current: &CalcId,
         idx: Idx<K>,
         calculation: &Calculation<Arc<K::Answer>, Var>,
         config: RecursionLimitConfig,
@@ -1071,9 +1098,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
     {
         match config.handler {
-            RecursionOverflowHandler::BreakWithPlaceholder => {
-                self.handle_depth_overflow_break_with_placeholder(idx, calculation, config.limit)
-            }
+            RecursionOverflowHandler::BreakWithPlaceholder => self
+                .handle_depth_overflow_break_with_placeholder(
+                    current,
+                    idx,
+                    calculation,
+                    config.limit,
+                ),
             RecursionOverflowHandler::PanicWithDebugInfo => {
                 self.handle_depth_overflow_panic_with_debug_info(idx, config.limit)
             }
@@ -1083,6 +1114,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// BreakWithPlaceholder handler: emit an internal error and return a recursive placeholder.
     fn handle_depth_overflow_break_with_placeholder<K: Solve<Ans>>(
         &self,
+        current: &CalcId,
         idx: Idx<K>,
         calculation: &Calculation<Arc<K::Answer>, Var>,
         limit: u32,
@@ -1101,7 +1133,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             )],
         );
         // Return recursive placeholder (same pattern as cycle handling)
-        self.attempt_to_unwind_cycle_from_here(idx, calculation)
+        self.attempt_to_unwind_cycle_from_here(current, idx, calculation)
             .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
     }
 
