@@ -505,7 +505,7 @@ impl ClassBase {
     pub fn to_type(self, heap: &TypeHeap) -> Type {
         match self {
             ClassBase::ClassDef(c) => heap.mk_class_def(c.into_class_object()),
-            ClassBase::ClassType(c) => heap.mk_type(c.to_type()),
+            ClassBase::ClassType(c) => heap.mk_type(heap.mk_class_type(c)),
             ClassBase::Quantified(q, _) => heap.mk_type_form(q.to_type(heap)),
             ClassBase::SelfType(c) => heap.mk_type_form(heap.mk_self_type(c)),
             ClassBase::Protocol(_, self_type) => heap.mk_type_form(self_type),
@@ -515,7 +515,7 @@ impl ClassBase {
     pub fn to_self_type(self, heap: &TypeHeap) -> Type {
         match self {
             ClassBase::ClassDef(c) => c.to_type(),
-            ClassBase::ClassType(c) => c.to_type(),
+            ClassBase::ClassType(c) => heap.mk_class_type(c),
             ClassBase::Quantified(q, _) => q.to_type(heap),
             ClassBase::SelfType(c) => heap.mk_self_type(c),
             ClassBase::Protocol(_, self_type) => self_type,
@@ -1770,10 +1770,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::TypedDict(td @ TypedDict::Anonymous(_))
             | Type::PartialTypedDict(td @ TypedDict::Anonymous(_)) => {
                 let value_ty = self.get_typed_dict_value_type(&td);
-                acc.push(AttributeBase1::ClassInstance(
-                    self.stdlib
-                        .dict(self.stdlib.str().clone().to_type(), value_ty),
-                ))
+                acc.push(AttributeBase1::ClassInstance(self.stdlib.dict(
+                    self.heap.mk_class_type(self.stdlib.str().clone()),
+                    value_ty,
+                )))
             }
             Type::Type(box (Type::TypedDict(_) | Type::PartialTypedDict(_))) => {
                 acc.push(AttributeBase1::ClassObject(ClassBase::ClassDef(
@@ -1809,7 +1809,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
             Type::Type(box Type::Tuple(tuple)) => self.as_attribute_base1(
                 self.heap
-                    .mk_type_form(self.erase_tuple_type(tuple).to_type()),
+                    .mk_type_form(self.heap.mk_class_type(self.erase_tuple_type(tuple))),
                 acc,
             ),
             Type::Type(box Type::ClassType(class)) => {
