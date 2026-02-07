@@ -96,7 +96,7 @@ impl Display for CalcId {
 
 impl PartialEq for CalcId {
     fn eq(&self, other: &Self) -> bool {
-        (self.0.module(), &self.1) == (other.0.module(), &other.1)
+        (self.0.module().name(), &self.1) == (other.0.module().name(), &other.1)
     }
 }
 
@@ -119,7 +119,7 @@ impl PartialOrd for CalcId {
 
 impl Hash for CalcId {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.module().hash(state);
+        self.0.module().name().hash(state);
         self.1.hash(state);
     }
 }
