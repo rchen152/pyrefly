@@ -1855,8 +1855,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             } => {
                 let ann_new = self.get_idx(*new);
                 let ann_existing = self.get_idx(*existing);
-                if let Some(t_new) = ann_new.ty(self.stdlib)
-                    && let Some(t_existing) = ann_existing.ty(self.stdlib)
+                if let Some(t_new) = ann_new.ty(self.heap, self.stdlib)
+                    && let Some(t_existing) = ann_existing.ty(self.heap, self.stdlib)
                     && t_new != t_existing
                 {
                     let t_new = self.for_display(t_new.clone());
@@ -2732,7 +2732,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         AnnotationStyle::Forwarded => TypeCheckKind::AnnotatedName(name.clone()),
                     })
                 };
-                let annot_ty = annot.ty(self.stdlib);
+                let annot_ty = annot.ty(self.heap, self.stdlib);
                 let hint = annot_ty.as_ref().map(|t| (t, tcc));
                 let expr_ty = self.expr(expr, hint, errors);
                 let ty = if style == &AnnotationStyle::Direct {
@@ -2934,7 +2934,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     #[inline(never)]
     fn binding_to_type_return_explicit(&self, x: &ReturnExplicit, errors: &ErrorCollector) -> Type {
         let annot = x.annot.map(|k| self.get_idx(k));
-        let hint = annot.as_ref().and_then(|ann| ann.ty(self.stdlib));
+        let hint = annot
+            .as_ref()
+            .and_then(|ann| ann.ty(self.heap, self.stdlib));
         if x.is_unreachable {
             if let Some(box expr) = &x.expr {
                 self.expr_infer(expr, errors);
@@ -3145,7 +3147,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             | AnnotationTarget::ClassMember(name) => Some(name.clone()),
                             _ => None,
                         },
-                        t.ty(self.stdlib).clone(),
+                        t.ty(self.heap, self.stdlib).clone(),
                     ),
                 }
             };
@@ -3156,7 +3158,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         };
         let iterables = if is_async.is_async() {
             let infer_hint = ann.clone().and_then(|x| {
-                x.ty(self.stdlib).map(|ty| {
+                x.ty(self.heap, self.stdlib).map(|ty| {
                     self.heap
                         .mk_class_type(self.stdlib.async_iterable(ty.clone()))
                 })
@@ -3166,7 +3168,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.async_iterate(&iterable, e.range(), errors)
         } else {
             let infer_hint = ann.clone().and_then(|x| {
-                x.ty(self.stdlib)
+                x.ty(self.heap, self.stdlib)
                     .map(|ty| self.heap.mk_class_type(self.stdlib.iterable(ty.clone())))
             });
             let iterable =
@@ -3174,7 +3176,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.iterate(&iterable, e.range(), errors, None)
         };
         let value = self.get_produced_type(iterables);
-        let check_hint = ann.clone().and_then(|x| x.ty(self.stdlib));
+        let check_hint = ann.clone().and_then(|x| x.ty(self.heap, self.stdlib));
         if let Some(check_hint) = check_hint {
             self.check_and_return_type(value, &check_hint, e.range(), errors, tcc)
         } else {
@@ -3251,7 +3253,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let got = self.unions(values);
         if let Some(ann) = ann.map(|idx| self.get_idx(idx)) {
             self.check_final_reassignment(&ann, range, errors);
-            if let Some(want) = ann.ty(self.stdlib) {
+            if let Some(want) = ann.ty(self.heap, self.stdlib) {
                 self.check_type(&got, &want, range, errors, &|| {
                     TypeCheckContext::of_kind(TypeCheckKind::UnpackedAssign)
                 });
@@ -3280,7 +3282,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(&annot.target))
                 };
                 self.check_final_reassignment(&annot, e.range(), errors);
-                self.expr(e, annot.ty(self.stdlib).as_ref().map(|t| (t, tcc)), errors)
+                self.expr(
+                    e,
+                    annot.ty(self.heap, self.stdlib).as_ref().map(|t| (t, tcc)),
+                    errors,
+                )
             }
             None => {
                 // TODO(stroxler): propagate attribute narrows here
@@ -3304,7 +3310,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         if let Some(ann_idx) = ann {
             let annot = self.get_idx(ann_idx);
             self.check_final_reassignment(&annot, range, errors);
-            if let Some(annot_ty) = annot.ty(self.stdlib)
+            if let Some(annot_ty) = annot.ty(self.heap, self.stdlib)
                 && !self.is_subset_eq(ty, &annot_ty)
             {
                 self.error(
@@ -3410,7 +3416,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let ann = ann.map(|k| self.get_idx(k));
         if let Some(ann) = ann {
             self.check_final_reassignment(&ann, range, errors);
-            if let Some(ty) = ann.ty(self.stdlib) {
+            if let Some(ty) = ann.ty(self.heap, self.stdlib) {
                 self.check_and_return_type(context_value, &ty, range, errors, &|| {
                     TypeCheckContext::of_kind(TypeCheckKind::from_annotation_target(&ann.target))
                 })
@@ -3437,11 +3443,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         match param {
             FunctionParameter::Annotated(key) => {
                 let annotation = self.get_idx(*key);
-                annotation.ty(self.stdlib).clone().unwrap_or_else(|| {
-                    // This annotation isn't valid. It's something like `: Final` that doesn't
-                    // have enough information to create a real type.
-                    finalize(&annotation.target, self.heap.mk_any_implicit())
-                })
+                annotation
+                    .ty(self.heap, self.stdlib)
+                    .clone()
+                    .unwrap_or_else(|| {
+                        // This annotation isn't valid. It's something like `: Final` that doesn't
+                        // have enough information to create a real type.
+                        finalize(&annotation.target, self.heap.mk_any_implicit())
+                    })
             }
             FunctionParameter::Unannotated(var, function_idx, target) => {
                 // It's important that we force the undecorated function binding before reading
@@ -4397,7 +4406,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.heap.mk_class_def(cls.dupe())
                 }
             },
-            Binding::AnnotatedType(ann, val) => match self.get_idx(*ann).ty(self.stdlib) {
+            Binding::AnnotatedType(ann, val) => match self.get_idx(*ann).ty(self.heap, self.stdlib)
+            {
                 Some(ty) => self.wrap_callable_legacy_typevars(ty),
                 None => self.binding_to_type(val, errors),
             },
@@ -4486,7 +4496,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let annot = annot.map(|k| self.get_idx(k));
                 let hint = annot
                     .as_ref()
-                    .and_then(|x| x.ty(self.stdlib))
+                    .and_then(|x| x.ty(self.heap, self.stdlib))
                     .and_then(|ty| {
                         if let Some((yield_ty, send_ty, _)) = self.decompose_generator(&ty) {
                             Some((yield_ty, send_ty))
@@ -4568,7 +4578,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let annot = annot.map(|k| self.get_idx(k));
                 let want = annot
                     .as_ref()
-                    .and_then(|x| x.ty(self.stdlib))
+                    .and_then(|x| x.ty(self.heap, self.stdlib))
                     .and_then(|ty| self.decompose_generator(&ty));
 
                 let mut ty = self.expr_infer(&x.value, errors);

@@ -20,6 +20,7 @@ use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::nesting_context::NestingContext;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
+use pyrefly_types::heap::TypeHeap;
 use pyrefly_types::special_form::SpecialForm;
 use pyrefly_types::type_alias::TypeAlias;
 use pyrefly_types::type_alias::TypeAliasIndex;
@@ -2470,7 +2471,7 @@ pub struct AnnotationWithTarget {
 }
 
 impl AnnotationWithTarget {
-    pub fn ty(&self, stdlib: &Stdlib) -> Option<Type> {
+    pub fn ty(&self, heap: &TypeHeap, stdlib: &Stdlib) -> Option<Type> {
         let annotation_ty = self.annotation.ty.as_ref()?;
         match self.target {
             AnnotationTarget::ArgsParam(_) => {
@@ -2492,11 +2493,10 @@ impl AnnotationWithTarget {
                 } else if matches!(annotation_ty, Type::Kwargs(_) | Type::Unpack(_)) {
                     Some(annotation_ty.clone())
                 } else {
-                    Some(
-                        stdlib
-                            .dict(stdlib.str().clone().to_type(), annotation_ty.clone())
-                            .to_type(),
-                    )
+                    Some(heap.mk_class_type(stdlib.dict(
+                        heap.mk_class_type(stdlib.str().clone()),
+                        annotation_ty.clone(),
+                    )))
                 }
             }
             _ => Some(annotation_ty.clone()),

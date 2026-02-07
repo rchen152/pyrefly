@@ -340,7 +340,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // If we're assigning to something with an annotation, make sure the produced value is assignable to it
         if let Some(ann) = ann.map(|k| self.get_idx(k)) {
             self.check_final_reassignment(&ann, x.range(), errors);
-            if let Some(ann_ty) = ann.ty(self.stdlib) {
+            if let Some(ann_ty) = ann.ty(self.heap, self.stdlib) {
                 return self.check_and_return_type(result, &ann_ty, x.range(), errors, tcc);
             }
         }
