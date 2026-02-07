@@ -238,7 +238,6 @@ enum NodeState {
 /// When we read back into a previous (non-top) SCC, we need to know the
 /// target node's state to determine how to handle it after merging.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[expect(dead_code)] // Used in later commit when RevisitingPreviousScc is handled
 enum RevisitingTargetState {
     /// Node completed within the SCC, has preliminary answer.
     /// No new break_at needed - just merge and return the answer.
@@ -385,7 +384,6 @@ impl Scc {
     }
 
     /// Get the detection point of this SCC (stable identifier for merging).
-    #[expect(dead_code)] // Used in later commit for merge_into_previous_scc
     fn detected_at(&self) -> CalcId {
         self.detected_at.dupe()
     }
@@ -459,11 +457,12 @@ enum SccState {
     /// This occurs when the current computation reads a node that belongs to
     /// an SCC lower in the SCC stack. Requires merging all intervening nodes
     /// and SCCs before proceeding.
-    #[expect(dead_code)] // Constructed in later commit by Sccs::pre_calculate_state
     RevisitingPreviousScc {
         /// Stable identifier for the target SCC (the detected_at field of that SCC).
+        #[expect(dead_code)] // Read in later commit when handling RevisitingPreviousScc
         detected_at_of_scc: CalcId,
         /// The state of the target node within that SCC.
+        #[expect(dead_code)] // Read in later commit when handling RevisitingPreviousScc
         target_state: RevisitingTargetState,
     },
     /// This idx is part of the active SCC, and we are either (if this is a pre-calculation
@@ -626,11 +625,38 @@ impl Sccs {
     /// top-to-bottom, which will be the unique SCC containing this node (if any).
     fn pre_calculate_state(&self, current: &CalcId) -> SccState {
         let mut stack = self.0.borrow_mut();
-        // Check from top to bottom - return the first meaningful state
-        for scc in stack.iter_mut().rev() {
+
+        // Check from top to bottom (rev gives us index 0 = top)
+        for (rev_idx, scc) in stack.iter_mut().rev().enumerate() {
+            let is_top_scc = rev_idx == 0;
             let state = scc.pre_calculate_state(current);
-            if !matches!(state, SccState::NotInScc) {
-                return state;
+
+            match state {
+                SccState::NotInScc => continue,
+                // Only return the raw scc state when this is the top SCC
+                _ if is_top_scc => return state,
+                // Otherwise, remap it to a suitable RevisitingPreviousScc value, because
+                // we are going to need to merge SCCs when this happens.
+                SccState::RevisitingInProgress | SccState::Participant => {
+                    return SccState::RevisitingPreviousScc {
+                        detected_at_of_scc: scc.detected_at(),
+                        target_state: RevisitingTargetState::InProgress,
+                    };
+                }
+                SccState::RevisitingDone => {
+                    return SccState::RevisitingPreviousScc {
+                        detected_at_of_scc: scc.detected_at(),
+                        target_state: RevisitingTargetState::Done,
+                    };
+                }
+                SccState::BreakAt => {
+                    return SccState::RevisitingPreviousScc {
+                        detected_at_of_scc: scc.detected_at(),
+                        target_state: RevisitingTargetState::BreakAt,
+                    };
+                }
+                // RevisitingPreviousScc shouldn't be returned by Scc::pre_calculate_state
+                SccState::RevisitingPreviousScc { .. } => unreachable!(),
             }
         }
         SccState::NotInScc
