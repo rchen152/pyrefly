@@ -19,6 +19,7 @@ use std::sync::Arc;
 use dupe::Dupe;
 use dupe::IterDupedExt;
 use itertools::Either;
+use itertools::Itertools;
 use pyrefly_graph::calculation::Calculation;
 use pyrefly_graph::calculation::ProposalResult;
 use pyrefly_graph::index::Idx;
@@ -285,11 +286,10 @@ pub struct Scc {
 impl Display for Scc {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let states: Vec<_> = self.node_state.iter().collect();
-        let break_at_strs: Vec<_> = self.break_at.iter().map(|c| c.to_string()).collect();
         write!(
             f,
             "Scc{{break_at: [{}], node_state: {:?}, detected_at: {}}}",
-            break_at_strs.join(", "),
+            self.break_at.iter().format(", "),
             states,
             self.detected_at,
         )
