@@ -388,49 +388,39 @@ impl Scc {
         self.detected_at.dupe()
     }
 
-    /// Merge multiple SCCs into one, preserving all break points and taking the
+    /// Merge two SCCs into one, preserving all break points and taking the
     /// most advanced state for each participant.
-    ///
-    /// This is extracted for testability - the merge logic can be tested
-    /// independently of cycle detection.
-    #[cfg_attr(test, allow(dead_code))]
     #[allow(clippy::mutable_key_type)]
+    fn merge(mut self, other: Scc) -> Self {
+        // Union break_at sets
+        self.break_at.extend(other.break_at);
+        // Union node_state maps (keep the more advanced state)
+        for (k, v) in other.node_state {
+            self.node_state
+                .entry(k)
+                .and_modify(|existing| *existing = (*existing).max(v))
+                .or_insert(v);
+        }
+        // Keep the smallest detected_at for consistency/determinism
+        self.detected_at = self.detected_at.min(other.detected_at);
+        // Keep the minimum stack depth (the earliest anchor position)
+        self.min_stack_depth = self.min_stack_depth.min(other.min_stack_depth);
+        self
+    }
+
+    /// Merge multiple SCCs into one.
+    ///
+    /// The `detected_at` parameter is an additional candidate for the minimum
+    /// detected_at, used when the detection point may not be represented in
+    /// any of the SCCs being merged.
+    #[cfg_attr(test, allow(dead_code))]
     fn merge_many(sccs: Vec1<Scc>, detected_at: CalcId) -> Self {
-        let mut merged_break_at: BTreeSet<CalcId> = BTreeSet::new();
-        let mut merged_node_state: HashMap<CalcId, NodeState> = HashMap::new();
-        let mut merged_detected_at = detected_at;
-        let mut merged_min_stack_depth = usize::MAX;
-
-        for scc in sccs {
-            // Union break_at sets
-            for b in scc.break_at {
-                merged_break_at.insert(b);
-            }
-            // Union node_state maps (keep the more advanced state)
-            for (k, v) in scc.node_state {
-                merged_node_state
-                    .entry(k)
-                    .and_modify(|existing| *existing = (*existing).max(v))
-                    .or_insert(v);
-            }
-            // Keep the smallest detected_at for consistency/determinism.
-            // The detected_at is used for debugging and for determining when
-            // an SCC is complete, so we use a canonical choice.
-            if scc.detected_at < merged_detected_at {
-                merged_detected_at = scc.detected_at;
-            }
-            // Keep the minimum stack depth (the earliest anchor position)
-            if scc.min_stack_depth < merged_min_stack_depth {
-                merged_min_stack_depth = scc.min_stack_depth;
-            }
+        let (first, rest) = sccs.split_off_first();
+        let mut result = rest.into_iter().fold(first, Scc::merge);
+        if detected_at < result.detected_at {
+            result.detected_at = detected_at;
         }
-
-        Scc {
-            break_at: merged_break_at,
-            node_state: merged_node_state,
-            detected_at: merged_detected_at,
-            min_stack_depth: merged_min_stack_depth,
-        }
+        result
     }
 }
 
