@@ -74,7 +74,6 @@ impl VarianceMap {
 }
 
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
 pub struct VarianceViolation {
     pub range: TextRange,
     pub var_name: Name,
@@ -82,7 +81,6 @@ pub struct VarianceViolation {
     pub declared_variance: PreInferenceVariance,
 }
 
-#[allow(dead_code)]
 impl VarianceViolation {
     pub fn format_message(&self) -> String {
         format!(
@@ -93,7 +91,6 @@ impl VarianceViolation {
 }
 
 #[derive(Debug, Clone, Default)]
-#[allow(dead_code)]
 pub struct VarianceResult {
     pub variance_map: VarianceMap,
     pub violations: Vec<VarianceViolation>,
@@ -306,6 +303,146 @@ fn on_class(
             on_type(variance, true, ty, on_edge, on_var);
         }
     }
+}
+
+/// Check a type variable for variance violations.
+#[allow(dead_code)]
+fn check_typevar(
+    name: &Name,
+    position_variance: Variance,
+    declared_variance: PreInferenceVariance,
+    range: TextRange,
+    violations: &mut Vec<VarianceViolation>,
+) {
+    let is_valid = match declared_variance {
+        PreInferenceVariance::Covariant => position_variance == Variance::Covariant,
+        PreInferenceVariance::Contravariant => position_variance == Variance::Contravariant,
+        // Invariant type variables can be used in any position (covariant, contravariant, or both)
+        PreInferenceVariance::Invariant => true,
+        // PEP695: variance will be inferred, no check needed
+        PreInferenceVariance::Undefined => true,
+    };
+    if !is_valid {
+        violations.push(VarianceViolation {
+            range,
+            var_name: name.clone(),
+            position_variance,
+            declared_variance,
+        });
+    }
+}
+
+/// Check method for variance violations (shallow - only direct TypeVars in params/return).
+#[allow(dead_code)]
+fn check_method_shallow(typ: &Type, range: TextRange, violations: &mut Vec<VarianceViolation>) {
+    match typ {
+        Type::Forall(forall) => {
+            check_method_shallow(&forall.body.clone().as_type(), range, violations);
+        }
+        Type::Function(t) => {
+            // Check return type (covariant position)
+            if let Type::Quantified(q) = &t.signature.ret {
+                check_typevar(
+                    q.name(),
+                    Variance::Covariant,
+                    q.variance(),
+                    range,
+                    violations,
+                );
+            }
+            // Check parameters (contravariant position)
+            if let Params::List(param_list) = &t.signature.params {
+                for param in param_list.items().iter() {
+                    if let Type::Quantified(q) = param.as_type() {
+                        check_typevar(
+                            q.name(),
+                            Variance::Contravariant,
+                            q.variance(),
+                            range,
+                            violations,
+                        );
+                    }
+                }
+            }
+        }
+        Type::Callable(t) => {
+            // Check return type (covariant position)
+            if let Type::Quantified(q) = &t.ret {
+                check_typevar(
+                    q.name(),
+                    Variance::Covariant,
+                    q.variance(),
+                    range,
+                    violations,
+                );
+            }
+            // Check parameters (contravariant position)
+            if let Params::List(param_list) = &t.params {
+                for param in param_list.items().iter() {
+                    if let Type::Quantified(q) = param.as_type() {
+                        check_typevar(
+                            q.name(),
+                            Variance::Contravariant,
+                            q.variance(),
+                            range,
+                            violations,
+                        );
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Check a class for variance violations.
+///
+/// Checking behavior:
+/// - Base classes: DEEP checking (recurse into all nested generics)
+/// - Methods: SHALLOW checking (only direct TypeVar usage, not nested Callables)
+/// - Fields: NO checking (mutable fields constrain variance during inference only)
+#[allow(dead_code)]
+fn check_class_violations(
+    class: &Class,
+    get_class_bases: &impl Fn(&Class) -> Arc<ClassBases>,
+    get_fields: &impl Fn(&Class) -> SmallMap<Name, Arc<ClassField>>,
+    get_tparams: &impl Fn(&Class) -> Arc<TParams>,
+) -> Vec<VarianceViolation> {
+    let mut violations = Vec::new();
+
+    // Check base classes deeply using on_type for traversal
+    for (base_type, range) in get_class_bases(class).iter_with_ranges() {
+        let mut on_var =
+            |name: &Name, variance: Variance, _inj: bool, declared: PreInferenceVariance| {
+                check_typevar(name, variance, declared, range, &mut violations);
+            };
+        let mut on_edge = |c: &Class| initial_inference_map(get_tparams(c).as_vec());
+        on_type(
+            Variance::Covariant,
+            true,
+            &base_type.clone().to_type(),
+            &mut on_edge,
+            &mut on_var,
+        );
+    }
+
+    // Check methods shallowly
+    let fields = get_fields(class);
+    for (name, field) in fields.iter() {
+        if name == &dunder::INIT || name == &dunder::NEW {
+            continue;
+        }
+        if let Some((ty, _, _)) = field.for_variance_inference()
+            && ty.is_toplevel_callable()
+        {
+            let range = class
+                .field_decl_range(name)
+                .unwrap_or_else(|| class.range());
+            check_method_shallow(ty, range, &mut violations);
+        }
+    }
+
+    violations
 }
 
 fn initial_inference_status(gp: &TParam) -> InferenceStatus {
