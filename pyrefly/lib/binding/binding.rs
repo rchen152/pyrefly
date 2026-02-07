@@ -1209,7 +1209,7 @@ impl DisplayWith<ModuleInfo> for KeyVariance {
     }
 }
 
-/// A key for checking variance violations (separate from KeyVariance to avoid cycles)
+// A key for checking variance violations (separate from KeyVariance to avoid cycles)
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct KeyVarianceCheck(pub ClassDefIndex);
 

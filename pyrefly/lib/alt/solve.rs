@@ -80,6 +80,7 @@ use crate::binding::binding::BindingTParams;
 use crate::binding::binding::BindingTypeAlias;
 use crate::binding::binding::BindingUndecoratedFunction;
 use crate::binding::binding::BindingVariance;
+use crate::binding::binding::BindingVarianceCheck;
 use crate::binding::binding::BindingYield;
 use crate::binding::binding::BindingYieldFrom;
 use crate::binding::binding::BranchInfo;
@@ -2260,17 +2261,66 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         Arc::new(fields)
     }
 
-    // TODO zeina: After doing the full implementation, look into extracting fields and
-    // base types from existing bindings
-    pub fn solve_variance_binding(&self, variance_info: &BindingVariance) -> Arc<VarianceMap> {
+    pub fn solve_variance_binding(
+        &self,
+        variance_info: &BindingVariance,
+        _errors: &ErrorCollector,
+    ) -> Arc<VarianceMap> {
         let class_idx = variance_info.class_key;
         let class = self.get_idx(class_idx);
 
         if let Some(class) = &class.0 {
-            self.variance_map(class)
+            // Only compute variance map, don't check violations here.
+            // Violations are checked separately in solve_variance_check to avoid
+            // cycles from calling get_class_field_map during variance computation.
+            let result = self.compute_variance(class, false);
+            Arc::new(result.variance_map)
         } else {
             Arc::new(VarianceMap::default())
         }
+    }
+
+    /// Check variance violations for a class.
+    ///
+    /// This is separate from solve_variance_binding to avoid cycles when
+    /// calling get_class_field_map during variance computation.
+    ///
+    /// Checking behavior:
+    /// - Base classes: DEEP checking (recurse into all nested generics)
+    /// - Methods: SHALLOW checking (only direct TypeVar usage, not nested Callables)
+    /// - Fields: NO checking (mutable fields constrain variance during inference only)
+    pub fn solve_variance_check(
+        &self,
+        binding: &BindingVarianceCheck,
+        errors: &ErrorCollector,
+    ) -> Arc<EmptyAnswer> {
+        let class = self.get_idx(binding.class_idx);
+
+        if let Some(class) = &class.0 {
+            // Get type parameters and their declared variances
+            let tparams = self.get_class_tparams(class);
+
+            // Only check violations for type parameters that have declared variance
+            let has_declared_variance = tparams
+                .as_vec()
+                .iter()
+                .any(|p| p.variance() != PreInferenceVariance::Undefined);
+
+            if has_declared_variance {
+                let result = self.compute_variance(class, true);
+
+                for violation in &result.violations {
+                    let message = violation.format_message();
+                    self.error(
+                        errors,
+                        violation.range,
+                        ErrorInfo::Kind(ErrorKind::InvalidVariance),
+                        message,
+                    );
+                }
+            }
+        }
+        Arc::new(EmptyAnswer)
     }
 
     /// Get the class that attribute lookup on `super(cls, obj)` should be done on.

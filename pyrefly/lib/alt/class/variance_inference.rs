@@ -306,7 +306,6 @@ fn on_class(
 }
 
 /// Check a type variable for variance violations.
-#[allow(dead_code)]
 fn check_typevar(
     name: &Name,
     position_variance: Variance,
@@ -333,7 +332,6 @@ fn check_typevar(
 }
 
 /// Check method for variance violations (shallow - only direct TypeVars in params/return).
-#[allow(dead_code)]
 fn check_method_shallow(typ: &Type, range: TextRange, violations: &mut Vec<VarianceViolation>) {
     match typ {
         Type::Forall(forall) => {
@@ -401,7 +399,6 @@ fn check_method_shallow(typ: &Type, range: TextRange, violations: &mut Vec<Varia
 /// - Base classes: DEEP checking (recurse into all nested generics)
 /// - Methods: SHALLOW checking (only direct TypeVar usage, not nested Callables)
 /// - Fields: NO checking (mutable fields constrain variance during inference only)
-#[allow(dead_code)]
 fn check_class_violations(
     class: &Class,
     get_class_bases: &impl Fn(&Class) -> Arc<ClassBases>,
@@ -603,9 +600,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
-    pub fn variance_map(&self, class: &Class) -> Arc<VarianceMap> {
-        let class_variances = self
-            .compute_variance_env(class)
+    /// Compute variance for a class, optionally checking for violations.
+    ///
+    /// When `check_violations` is true, also checks that type variables with
+    /// declared variance are used in compatible positions.
+    pub fn compute_variance(&self, class: &Class, check_violations: bool) -> VarianceResult {
+        let env = self.compute_variance_env(class);
+        let class_variances = env
             .get(class)
             .expect("class name must be present in environment")
             .iter()
@@ -617,12 +618,27 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     } else if status.has_variance_inferred {
                         status.inferred_variance
                     } else {
-                        // Rare case where the variance does not appear to be constrained in any way
                         Variance::Bivariant
                     },
                 )
             })
             .collect::<SmallMap<_, _>>();
-        Arc::new(VarianceMap(class_variances))
+        let variance_map = VarianceMap(class_variances);
+
+        let violations = if check_violations {
+            check_class_violations(
+                class,
+                &|c| self.get_base_types_for_class(c),
+                &|c| self.get_class_field_map(c),
+                &|c| self.get_class_tparams(c),
+            )
+        } else {
+            Vec::new()
+        };
+
+        VarianceResult {
+            variance_map,
+            violations,
+        }
     }
 }
