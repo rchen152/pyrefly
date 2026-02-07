@@ -89,7 +89,6 @@ use crate::types::types::Var;
 ///
 /// The extracted index is passed to the method, and the method is called with
 /// the variant's type as the type parameter.
-#[allow(unused_macros)]
 macro_rules! dispatch_anyidx {
     // Pattern for methods that take only the dereferenced idx (*idx)
     ($any_idx:expr, $self:ident, $method:ident) => {
