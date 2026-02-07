@@ -233,6 +233,24 @@ enum NodeState {
     Done,
 }
 
+/// The state of a target node when revisiting a previous SCC.
+///
+/// When we read back into a previous (non-top) SCC, we need to know the
+/// target node's state to determine how to handle it after merging.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[expect(dead_code)] // Used in later commit when RevisitingPreviousScc is handled
+enum RevisitingTargetState {
+    /// Node completed within the SCC, has preliminary answer.
+    /// No new break_at needed - just merge and return the answer.
+    Done,
+    /// Node is still being computed (on the Rust call stack).
+    /// May need new break_at via normal cycle detection after merge.
+    InProgress,
+    /// Node is a break point for that SCC.
+    /// No new break_at needed - merge and break here.
+    BreakAt,
+}
+
 /// Represent an SCC (Strongly Connected Component) we are currently solving.
 ///
 /// This simplified model tracks SCC participants with explicit state rather than
@@ -312,11 +330,11 @@ impl Scc {
     /// Returns the appropriate SccState:
     /// - BreakAt if this is the anchor where we produce a placeholder
     /// - Participant if this is a Fresh node (marks it as InProgress)
-    /// - NoDetectedCycle if this idx is InProgress or Done (or not in SCC)
+    /// - RevisitingInProgress if this idx is InProgress (back-edge through in-progress node)
+    /// - RevisitingDone if this idx is Done (preliminary answer should exist)
+    /// - NotInScc if this idx is not in the SCC
     ///
     /// When a Fresh node is encountered, it transitions to InProgress.
-    /// If an InProgress node is hit again (via a different path like A→X→C),
-    /// we return NoDetectedCycle which triggers proper new SCC detection.
     fn pre_calculate_state(&mut self, current: &CalcId) -> SccState {
         if self.break_at.contains(current) {
             SccState::BreakAt
@@ -326,14 +344,18 @@ impl Scc {
                     *state = NodeState::InProgress;
                     SccState::Participant
                 }
-                NodeState::InProgress | NodeState::Done => {
-                    // Already being processed or finished - treat as if not in SCC.
-                    // If InProgress, a back edge through this node will trigger new SCC detection.
-                    SccState::NoDetectedCycle
+                NodeState::InProgress => {
+                    // Back-edge: we're hitting a node currently on the call stack
+                    // via a different path. This will trigger new cycle detection.
+                    SccState::RevisitingInProgress
+                }
+                NodeState::Done => {
+                    // Node completed within this SCC - preliminary answer should exist.
+                    SccState::RevisitingDone
                 }
             }
         } else {
-            SccState::NoDetectedCycle
+            SccState::NotInScc
         }
     }
 
@@ -360,6 +382,12 @@ impl Scc {
         participants.sort();
         participants.dedup();
         participants
+    }
+
+    /// Get the detection point of this SCC (stable identifier for merging).
+    #[expect(dead_code)] // Used in later commit for merge_into_previous_scc
+    fn detected_at(&self) -> CalcId {
+        self.detected_at.dupe()
     }
 
     /// Merge multiple SCCs into one, preserving all break points and taking the
@@ -417,7 +445,27 @@ enum SccState {
     /// graph solve will frequently branch out from an SCC into other parts of
     /// the dependency graph, and in those cases we are not in a currently-known
     /// SCC.
-    NoDetectedCycle,
+    NotInScc,
+    /// The current idx is in an active SCC but is already being processed
+    /// (NodeState::InProgress). This represents a back-edge through an in-progress
+    /// calculation - we've hit this node via a different path while it's still computing.
+    ///
+    /// This will trigger new cycle detection via propose_calculation().
+    RevisitingInProgress,
+    /// The current idx is in an active SCC but its calculation has already completed
+    /// (NodeState::Done). A preliminary answer should be available.
+    RevisitingDone,
+    /// Read back into a PREVIOUS SCC (not the top of the stack).
+    /// This occurs when the current computation reads a node that belongs to
+    /// an SCC lower in the SCC stack. Requires merging all intervening nodes
+    /// and SCCs before proceeding.
+    #[expect(dead_code)] // Constructed in later commit by Sccs::pre_calculate_state
+    RevisitingPreviousScc {
+        /// Stable identifier for the target SCC (the detected_at field of that SCC).
+        detected_at_of_scc: CalcId,
+        /// The state of the target node within that SCC.
+        target_state: RevisitingTargetState,
+    },
     /// This idx is part of the active SCC, and we are either (if this is a pre-calculation
     /// check) recursing out toward `break_at` or unwinding back toward `break_at`.
     Participant,
@@ -581,11 +629,11 @@ impl Sccs {
         // Check from top to bottom - return the first meaningful state
         for scc in stack.iter_mut().rev() {
             let state = scc.pre_calculate_state(current);
-            if !matches!(state, SccState::NoDetectedCycle) {
+            if !matches!(state, SccState::NotInScc) {
                 return state;
             }
         }
-        SccState::NoDetectedCycle
+        SccState::NotInScc
     }
 
     /// Handle the completion of a calculation. This might involve progress on
@@ -761,7 +809,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
 
         let result = match self.sccs().pre_calculate_state(&current) {
-            SccState::NoDetectedCycle => match calculation.propose_calculation() {
+            SccState::NotInScc
+            | SccState::RevisitingInProgress
+            | SccState::RevisitingDone
+            | SccState::RevisitingPreviousScc { .. } => match calculation.propose_calculation() {
                 ProposalResult::Calculated(v) => v,
                 ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
                 ProposalResult::CycleDetected => {
