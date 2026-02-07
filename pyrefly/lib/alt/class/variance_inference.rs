@@ -14,6 +14,7 @@ use dupe::Dupe;
 use pyrefly_derive::TypeEq;
 use pyrefly_derive::VisitMut;
 use pyrefly_python::dunder;
+use pyrefly_types::heap::TypeHeap;
 use pyrefly_types::types::Union;
 use ruff_python_ast::name::Name;
 use ruff_text_size::TextRange;
@@ -257,6 +258,7 @@ fn on_type(
 
 fn on_class(
     class: &Class,
+    heap: &TypeHeap,
     on_edge: &mut impl FnMut(&Class) -> InferenceMap,
     on_var: &mut impl FnMut(&Name, Variance, bool, PreInferenceVariance),
     get_class_bases: &impl Fn(&Class) -> Arc<ClassBases>,
@@ -273,7 +275,7 @@ fn on_class(
         on_type(
             Variance::Covariant,
             true,
-            &base_type.clone().to_type(),
+            &heap.mk_class_type(base_type.clone()),
             on_edge,
             on_var,
         );
@@ -473,6 +475,7 @@ fn pre_to_post_variance(pre_variance: PreInferenceVariance) -> Variance {
 
 fn initialize_environment_impl<'a>(
     class: &'a Class,
+    heap: &TypeHeap,
     environment: &mut VarianceEnv,
     get_class_bases: &impl Fn(&Class) -> Arc<ClassBases>,
     get_fields: &impl Fn(&Class) -> SmallMap<Name, Arc<ClassField>>,
@@ -489,11 +492,19 @@ fn initialize_environment_impl<'a>(
 
     // get the variance results of a given class c
     let mut on_edge = |c: &Class| {
-        initialize_environment_impl(c, environment, get_class_bases, get_fields, get_tparams)
+        initialize_environment_impl(
+            c,
+            heap,
+            environment,
+            get_class_bases,
+            get_fields,
+            get_tparams,
+        )
     };
 
     on_class(
         class,
+        heap,
         &mut on_edge,
         &mut on_var,
         get_class_bases,
@@ -505,6 +516,7 @@ fn initialize_environment_impl<'a>(
 
 fn initialize_environment<'a>(
     class: &'a Class,
+    heap: &TypeHeap,
     environment: &mut VarianceEnv,
     get_class_bases: &impl Fn(&Class) -> Arc<ClassBases>,
     get_fields: &impl Fn(&Class) -> SmallMap<Name, Arc<ClassField>>,
@@ -512,10 +524,18 @@ fn initialize_environment<'a>(
 ) {
     let mut on_var = |_name: &Name, _variance: Variance, _inj: bool, _: PreInferenceVariance| {};
     let mut on_edge = |c: &Class| {
-        initialize_environment_impl(c, environment, get_class_bases, get_fields, get_tparams)
+        initialize_environment_impl(
+            c,
+            heap,
+            environment,
+            get_class_bases,
+            get_fields,
+            get_tparams,
+        )
     };
     on_class(
         class,
+        heap,
         &mut on_edge,
         &mut on_var,
         get_class_bases,
@@ -567,6 +587,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     let mut on_edge = |c: &Class| env.get(c).cloned().unwrap_or_default();
                     on_class(
                         my_class,
+                        solver.heap,
                         &mut on_edge,
                         &mut on_var,
                         &|c| solver.get_base_types_for_class(c),
@@ -591,6 +612,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             initialize_environment(
                 class,
+                self.heap,
                 &mut environment,
                 &|c| self.get_base_types_for_class(c),
                 &|c| self.get_class_field_map(c),
