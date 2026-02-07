@@ -395,7 +395,7 @@ impl Scc {
     /// independently of cycle detection.
     #[cfg_attr(test, allow(dead_code))]
     #[allow(clippy::mutable_key_type)]
-    fn merge_many(sccs: Vec<Scc>, detected_at: CalcId) -> Self {
+    fn merge_many(sccs: Vec1<Scc>, detected_at: CalcId) -> Self {
         let mut merged_break_at: BTreeSet<CalcId> = BTreeSet::new();
         let mut merged_node_state: HashMap<CalcId, NodeState> = HashMap::new();
         let mut merged_detected_at = detected_at;
@@ -586,8 +586,8 @@ impl Sccs {
 
         if let Some(first_idx) = first_merge_idx {
             // Merge all SCCs from first_idx to end, plus the new SCC
-            let mut sccs_to_merge: Vec<Scc> = scc_stack.drain(first_idx..).collect();
-            sccs_to_merge.push(new_scc);
+            let sccs_from_stack: Vec<Scc> = scc_stack.drain(first_idx..).collect();
+            let sccs_to_merge = Vec1::from_vec_push(sccs_from_stack, new_scc);
 
             // Use the helper method to merge SCCs
             let merged_scc = Scc::merge_many(sccs_to_merge, detected_at.dupe());
@@ -717,6 +717,8 @@ impl Sccs {
             }
         }
         let min_depth = target_min_stack_depth
+            .expect("Target SCC not found during merge - this indicates a bug in SCC tracking");
+        let sccs_to_merge = Vec1::try_from_vec(sccs_to_merge)
             .expect("Target SCC not found during merge - this indicates a bug in SCC tracking");
 
         // Perform the merge, then add any free-floating bindings that weren't previously part
@@ -1903,7 +1905,7 @@ mod scc_tests {
             2, // min_stack_depth
         );
 
-        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+        let merged = Scc::merge_many(vec1![scc1, scc2], a.dupe());
 
         // Both break points should be preserved
         assert!(merged.break_at.contains(&a));
@@ -1935,7 +1937,7 @@ mod scc_tests {
         scc2_state.insert(b.dupe(), NodeState::InProgress);
         let scc2 = make_test_scc(vec![a.dupe()], scc2_state, a.dupe(), 0);
 
-        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+        let merged = Scc::merge_many(vec1![scc1, scc2], a.dupe());
 
         // Should take the most advanced state for each node
         assert_eq!(merged.node_state.get(&a), Some(&NodeState::Done));
@@ -1962,7 +1964,7 @@ mod scc_tests {
             0,
         );
         // When merging with M0 as the new detected_at, should keep M0 (smallest)
-        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+        let merged = Scc::merge_many(vec1![scc1, scc2], a.dupe());
         assert_eq!(merged.detected_at, a);
     }
 
@@ -1982,7 +1984,7 @@ mod scc_tests {
         // SCC2 with min_stack_depth = 2
         let scc2 = make_test_scc(vec![c.dupe()], fresh_nodes(&[c.dupe()]), c.dupe(), 2);
 
-        let merged = Scc::merge_many(vec![scc1, scc2], a.dupe());
+        let merged = Scc::merge_many(vec1![scc1, scc2], a.dupe());
 
         // Should keep the minimum stack depth
         assert_eq!(merged.min_stack_depth, 2);
