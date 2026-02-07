@@ -514,7 +514,7 @@ impl ClassBase {
 
     pub fn to_self_type(self, heap: &TypeHeap) -> Type {
         match self {
-            ClassBase::ClassDef(c) => c.to_type(),
+            ClassBase::ClassDef(c) => heap.mk_class_type(c),
             ClassBase::ClassType(c) => heap.mk_class_type(c),
             ClassBase::Quantified(q, _) => q.to_type(heap),
             ClassBase::SelfType(c) => heap.mk_self_type(c),
