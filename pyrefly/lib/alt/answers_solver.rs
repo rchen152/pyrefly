@@ -459,10 +459,8 @@ enum SccState {
     /// and SCCs before proceeding.
     RevisitingPreviousScc {
         /// Stable identifier for the target SCC (the detected_at field of that SCC).
-        #[expect(dead_code)] // Read in later commit when handling RevisitingPreviousScc
         detected_at_of_scc: CalcId,
         /// The state of the target node within that SCC.
-        #[expect(dead_code)] // Read in later commit when handling RevisitingPreviousScc
         target_state: RevisitingTargetState,
     },
     /// This idx is part of the active SCC, and we are either (if this is a pre-calculation
@@ -696,7 +694,6 @@ impl Sccs {
     /// `detected_at`; this has the potentially-useful property of being a valid
     /// identifier of the merged Scc *after* the merge, since we always use the
     /// very first cycle detected for `detected_at`.
-    #[expect(dead_code)] // Used in later commit when handling RevisitingPreviousScc in get_idx
     #[allow(clippy::mutable_key_type)]
     fn merge_sccs(&self, detected_at_of_scc: &CalcId, calc_stack: &CalcStack) {
         let calc_stack_vec = calc_stack.into_vec();
@@ -887,42 +884,117 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
 
         let result = match self.sccs().pre_calculate_state(&current) {
-            SccState::NotInScc
-            | SccState::RevisitingInProgress
-            | SccState::RevisitingDone
-            | SccState::RevisitingPreviousScc { .. } => match calculation.propose_calculation() {
-                ProposalResult::Calculated(v) => v,
-                ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
-                ProposalResult::CycleDetected => {
-                    let current_cycle = self.stack().current_cycle().unwrap();
-                    match self.sccs().on_scc_detected(current_cycle, self.stack()) {
-                        SccDetectedResult::BreakHere => self
-                            .attempt_to_unwind_cycle_from_here(idx, calculation)
-                            .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r))),
-                        SccDetectedResult::Continue => {
-                            self.calculate_and_record_answer(current, idx, calculation)
-                        }
-                        SccDetectedResult::DuplicateSccDetected => {
-                            let range = self.bindings().idx_to_key(idx).range();
-                            self.base_errors.internal_error(
-                                range,
-                                vec1![format!(
-                                    "Duplicate cycle detected at {current}; likely infinite recursion in type resolution"
-                                )],
-                            );
-                            self.attempt_to_unwind_cycle_from_here(idx, calculation)
-                                .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
+            SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
+                match calculation.propose_calculation() {
+                    ProposalResult::Calculated(v) => v,
+                    ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
+                    ProposalResult::CycleDetected => {
+                        let current_cycle = self.stack().current_cycle().unwrap();
+                        match self.sccs().on_scc_detected(current_cycle, self.stack()) {
+                            SccDetectedResult::BreakHere => self
+                                .attempt_to_unwind_cycle_from_here(idx, calculation)
+                                .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r))),
+                            SccDetectedResult::Continue => {
+                                self.calculate_and_record_answer(current, idx, calculation)
+                            }
+                            SccDetectedResult::DuplicateSccDetected => {
+                                let range = self.bindings().idx_to_key(idx).range();
+                                self.base_errors.internal_error(
+                                    range,
+                                    vec1![format!(
+                                        "Duplicate cycle detected at {current}; likely infinite recursion in type resolution"
+                                    )],
+                                );
+                                self.attempt_to_unwind_cycle_from_here(idx, calculation)
+                                    .unwrap_or_else(|r| {
+                                        Arc::new(K::promote_recursive(self.heap, r))
+                                    })
+                            }
                         }
                     }
+                    ProposalResult::Calculatable => {
+                        self.calculate_and_record_answer(current, idx, calculation)
+                    }
                 }
-                ProposalResult::Calculatable => {
-                    self.calculate_and_record_answer(current, idx, calculation)
-                }
-            },
+            }
             SccState::BreakAt => {
                 // Begin unwinding the cycle using a recursive placeholder
                 self.attempt_to_unwind_cycle_from_here(idx, calculation)
                     .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
+            }
+            SccState::RevisitingPreviousScc {
+                detected_at_of_scc,
+                target_state,
+            } => {
+                // Current node was found in a previous (non-top) SCC.
+                // Handle based on the target node's state in that SCC.
+                match target_state {
+                    // Node was already a break-at index. Merge SCCs without any new break_at, and break here
+                    RevisitingTargetState::BreakAt => {
+                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                        self.attempt_to_unwind_cycle_from_here(idx, calculation)
+                            .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
+                    }
+                    // Node already completed within the SCC. Merge SCCs without new break_at, and get preliminary answer.
+                    RevisitingTargetState::Done => {
+                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                        match calculation.propose_calculation() {
+                            ProposalResult::Calculated(v) => v,
+                            ProposalResult::CycleBroken(r) => {
+                                Arc::new(K::promote_recursive(self.heap, r))
+                            }
+                            ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                                unreachable!(
+                                    "Done node in previous SCC must have Calculated or CycleBroken result"
+                                )
+                            }
+                        }
+                    }
+                    // This binding has an in-flight computation. This case should be handled the same as SccState::NotInScc;
+                    // in most cases we're going to wind up detecting a cycle although because of races between threads
+                    // we have to handle the possibility of Calculated or CycleBroken.
+                    RevisitingTargetState::InProgress => match calculation.propose_calculation() {
+                        ProposalResult::CycleDetected => {
+                            let current_cycle = self.stack().current_cycle().unwrap();
+                            match self.sccs().on_scc_detected(current_cycle, self.stack()) {
+                                SccDetectedResult::BreakHere => self
+                                    .attempt_to_unwind_cycle_from_here(idx, calculation)
+                                    .unwrap_or_else(|r| {
+                                        Arc::new(K::promote_recursive(self.heap, r))
+                                    }),
+                                SccDetectedResult::Continue => {
+                                    self.calculate_and_record_answer(current, idx, calculation)
+                                }
+                                SccDetectedResult::DuplicateSccDetected => {
+                                    let range = self.bindings().idx_to_key(idx).range();
+                                    self.base_errors.internal_error(
+                                            range,
+                                            vec1![format!(
+                                                "Duplicate cycle detected at {current}; likely infinite recursion in type resolution"
+                                            )],
+                                        );
+                                    self.attempt_to_unwind_cycle_from_here(idx, calculation)
+                                        .unwrap_or_else(|r| {
+                                            Arc::new(K::promote_recursive(self.heap, r))
+                                        })
+                                }
+                            }
+                        }
+                        ProposalResult::Calculated(v) => {
+                            self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                            v
+                        }
+                        ProposalResult::CycleBroken(r) => {
+                            self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                            Arc::new(K::promote_recursive(self.heap, r))
+                        }
+                        ProposalResult::Calculatable => {
+                            unreachable!(
+                                "InProgress node in previous SCC must be Calculating, not NotCalculated"
+                            )
+                        }
+                    },
+                }
             }
             SccState::Participant => {
                 match calculation.propose_calculation() {
