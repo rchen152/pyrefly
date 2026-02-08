@@ -249,6 +249,55 @@ enum RevisitingTargetState {
     BreakAt,
 }
 
+/// Represents the current SCC state prior to attempting a particular calculation.
+enum SccState {
+    /// The current idx is not participating in any currently detected SCC (though it
+    /// remains possible we will detect one here).
+    ///
+    /// Note that this does not necessarily mean there is no active SCC: the
+    /// graph solve will frequently branch out from an SCC into other parts of
+    /// the dependency graph, and in those cases we are not in a currently-known
+    /// SCC.
+    NotInScc,
+    /// The current idx is in an active SCC but is already being processed
+    /// (NodeState::InProgress). This represents a back-edge through an in-progress
+    /// calculation - we've hit this node via a different path while it's still computing.
+    ///
+    /// This will trigger new cycle detection via propose_calculation().
+    RevisitingInProgress,
+    /// The current idx is in an active SCC but its calculation has already completed
+    /// (NodeState::Done). A preliminary answer should be available.
+    RevisitingDone,
+    /// Read back into a PREVIOUS SCC (not the top of the stack).
+    /// This occurs when the current computation reads a node that belongs to
+    /// an SCC lower in the SCC stack. Requires merging all intervening nodes
+    /// and SCCs before proceeding.
+    RevisitingPreviousScc {
+        /// Stable identifier for the target SCC (the detected_at field of that SCC).
+        detected_at_of_scc: CalcId,
+        /// The state of the target node within that SCC.
+        target_state: RevisitingTargetState,
+    },
+    /// This idx is part of the active SCC, and we are either (if this is a pre-calculation
+    /// check) recursing out toward `break_at` or unwinding back toward `break_at`.
+    Participant,
+    /// This idx has already recorded a placeholder but hasn't computed the real
+    /// answer yet. We should return the placeholder value.
+    HasPlaceholder,
+    /// This idx is the `break_at` for the active SCC (in the break_at set but
+    /// hasn't recorded a placeholder yet), which means we have reached the end
+    /// of the recursion and should return a placeholder to our parent frame.
+    BreakAt,
+}
+
+enum SccDetectedResult {
+    /// Break immediately at the idx where we detected the SCC, so that we
+    /// unwind back to the same idx.
+    BreakHere,
+    /// Continue recursing until we hit some other idx that is the minimal `break_at` idx.
+    Continue,
+}
+
 /// Represent an SCC (Strongly Connected Component) we are currently solving.
 ///
 /// This simplified model tracks SCC participants with explicit state rather than
@@ -420,55 +469,6 @@ impl Scc {
         }
         result
     }
-}
-
-/// Represents the current SCC state prior to attempting a particular calculation.
-enum SccState {
-    /// The current idx is not participating in any currently detected SCC (though it
-    /// remains possible we will detect one here).
-    ///
-    /// Note that this does not necessarily mean there is no active SCC: the
-    /// graph solve will frequently branch out from an SCC into other parts of
-    /// the dependency graph, and in those cases we are not in a currently-known
-    /// SCC.
-    NotInScc,
-    /// The current idx is in an active SCC but is already being processed
-    /// (NodeState::InProgress). This represents a back-edge through an in-progress
-    /// calculation - we've hit this node via a different path while it's still computing.
-    ///
-    /// This will trigger new cycle detection via propose_calculation().
-    RevisitingInProgress,
-    /// The current idx is in an active SCC but its calculation has already completed
-    /// (NodeState::Done). A preliminary answer should be available.
-    RevisitingDone,
-    /// Read back into a PREVIOUS SCC (not the top of the stack).
-    /// This occurs when the current computation reads a node that belongs to
-    /// an SCC lower in the SCC stack. Requires merging all intervening nodes
-    /// and SCCs before proceeding.
-    RevisitingPreviousScc {
-        /// Stable identifier for the target SCC (the detected_at field of that SCC).
-        detected_at_of_scc: CalcId,
-        /// The state of the target node within that SCC.
-        target_state: RevisitingTargetState,
-    },
-    /// This idx is part of the active SCC, and we are either (if this is a pre-calculation
-    /// check) recursing out toward `break_at` or unwinding back toward `break_at`.
-    Participant,
-    /// This idx has already recorded a placeholder but hasn't computed the real
-    /// answer yet. We should return the placeholder value.
-    HasPlaceholder,
-    /// This idx is the `break_at` for the active SCC (in the break_at set but
-    /// hasn't recorded a placeholder yet), which means we have reached the end
-    /// of the recursion and should return a placeholder to our parent frame.
-    BreakAt,
-}
-
-enum SccDetectedResult {
-    /// Break immediately at the idx where we detected the SCC, so that we
-    /// unwind back to the same idx.
-    BreakHere,
-    /// Continue recursing until we hit some other idx that is the minimal `break_at` idx.
-    Continue,
 }
 
 /// Represent the current thread's SCCs, which form a stack
