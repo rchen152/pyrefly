@@ -240,7 +240,11 @@ enum RevisitingTargetState {
     /// Node is still being computed (on the Rust call stack).
     /// May need new break_at via normal cycle detection after merge.
     InProgress,
-    /// Node is a break point for that SCC.
+    /// Node has recorded a placeholder but hasn't computed the real answer yet.
+    /// No new break_at needed - merge and break here.
+    HasPlaceholder,
+    /// Node is a break point for that SCC (in the break_at set but hasn't
+    /// recorded a placeholder yet).
     /// No new break_at needed - merge and break here.
     BreakAt,
 }
@@ -343,8 +347,8 @@ impl Scc {
                     SccState::RevisitingInProgress
                 }
                 NodeState::HasPlaceholder => {
-                    // Already has placeholder, treat as break point
-                    SccState::BreakAt
+                    // Already has placeholder, return it
+                    SccState::HasPlaceholder
                 }
                 NodeState::Done => {
                     // Node completed within this SCC - preliminary answer should exist.
@@ -450,9 +454,12 @@ enum SccState {
     /// This idx is part of the active SCC, and we are either (if this is a pre-calculation
     /// check) recursing out toward `break_at` or unwinding back toward `break_at`.
     Participant,
-    /// This idx is the `break_at` for the active SCC, which means we have
-    /// reached the end of the recursion and should return a placeholder to our
-    /// parent frame.
+    /// This idx has already recorded a placeholder but hasn't computed the real
+    /// answer yet. We should return the placeholder value.
+    HasPlaceholder,
+    /// This idx is the `break_at` for the active SCC (in the break_at set but
+    /// hasn't recorded a placeholder yet), which means we have reached the end
+    /// of the recursion and should return a placeholder to our parent frame.
     BreakAt,
 }
 
@@ -611,6 +618,12 @@ impl Sccs {
                     return SccState::RevisitingPreviousScc {
                         detected_at_of_scc: scc.detected_at(),
                         target_state: RevisitingTargetState::Done,
+                    };
+                }
+                SccState::HasPlaceholder => {
+                    return SccState::RevisitingPreviousScc {
+                        detected_at_of_scc: scc.detected_at(),
+                        target_state: RevisitingTargetState::HasPlaceholder,
                     };
                 }
                 SccState::BreakAt => {
@@ -885,6 +898,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.attempt_to_unwind_cycle_from_here(&current, idx, calculation)
                     .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
             }
+            SccState::HasPlaceholder => {
+                // We already recorded a placeholder for this node; return it.
+                // The Calculation should have a CycleBroken result.
+                match calculation.propose_calculation() {
+                    ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
+                    ProposalResult::Calculated(v) => v,
+                    ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                        unreachable!(
+                            "HasPlaceholder node must have CycleBroken or Calculated result"
+                        )
+                    }
+                }
+            }
             SccState::RevisitingPreviousScc {
                 detected_at_of_scc,
                 target_state,
@@ -897,6 +923,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
                         self.attempt_to_unwind_cycle_from_here(&current, idx, calculation)
                             .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
+                    }
+                    // Node already has a placeholder. Merge SCCs and return it.
+                    RevisitingTargetState::HasPlaceholder => {
+                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                        match calculation.propose_calculation() {
+                            ProposalResult::CycleBroken(r) => {
+                                Arc::new(K::promote_recursive(self.heap, r))
+                            }
+                            ProposalResult::Calculated(v) => v,
+                            ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                                unreachable!(
+                                    "HasPlaceholder node in previous SCC must have CycleBroken or Calculated result"
+                                )
+                            }
+                        }
                     }
                     // Node already completed within the SCC. Merge SCCs without new break_at, and get preliminary answer.
                     RevisitingTargetState::Done => {
