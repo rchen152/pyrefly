@@ -3397,6 +3397,9 @@ impl Server {
         if let Some(refactors) = transaction.extract_variable_code_actions(&handle, range) {
             push_refactor_actions(refactors);
         }
+        if let Some(refactors) = transaction.invert_boolean_code_actions(&handle, range) {
+            push_refactor_actions(refactors);
+        }
         if let Some(refactors) = transaction.extract_function_code_actions(&handle, range) {
             push_refactor_actions(refactors);
         }
