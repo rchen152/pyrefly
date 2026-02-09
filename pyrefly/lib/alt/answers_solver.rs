@@ -209,6 +209,32 @@ impl CalcStack {
         }
         None
     }
+
+    // Forwarding methods for Sccs - these delegate to self.sccs
+
+    fn sccs_is_empty(&self) -> bool {
+        self.sccs.is_empty()
+    }
+
+    fn on_scc_detected(&self, raw: Vec1<CalcId>) -> SccDetectedResult {
+        self.sccs.on_scc_detected(raw, self)
+    }
+
+    fn pre_calculate_state(&self, current: &CalcId) -> SccState {
+        self.sccs.pre_calculate_state(current)
+    }
+
+    fn on_calculation_finished(&self, current: &CalcId) -> bool {
+        self.sccs.on_calculation_finished(current)
+    }
+
+    fn on_placeholder_recorded(&self, current: &CalcId) {
+        self.sccs.on_placeholder_recorded(current)
+    }
+
+    fn merge_sccs(&self, detected_at_of_scc: &CalcId) {
+        self.sccs.merge_sccs(detected_at_of_scc, self)
+    }
 }
 
 /// Tracks the state of a node within an active SCC.
@@ -852,10 +878,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         &self.thread_state.stack
     }
 
-    fn sccs(&self) -> &Sccs {
-        &self.thread_state.stack.sccs
-    }
-
     fn recursion_limit_config(&self) -> Option<RecursionLimitConfig> {
         self.thread_state.recursion_limit_config
     }
@@ -894,14 +916,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
     {
-        match self.sccs().pre_calculate_state(current) {
+        match self.stack().pre_calculate_state(current) {
             SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
                 match calculation.propose_calculation() {
                     ProposalResult::Calculated(v) => BindingAction::Calculated(v),
                     ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
                     ProposalResult::CycleDetected => {
                         let current_cycle = self.stack().current_cycle().unwrap();
-                        match self.sccs().on_scc_detected(current_cycle, self.stack()) {
+                        match self.stack().on_scc_detected(current_cycle) {
                             SccDetectedResult::BreakHere => BindingAction::Unwind,
                             SccDetectedResult::Continue => BindingAction::Calculate,
                         }
@@ -922,11 +944,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 target_state,
             } => match target_state {
                 RevisitingTargetState::BreakAt => {
-                    self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                    self.stack().merge_sccs(&detected_at_of_scc);
                     BindingAction::Unwind
                 }
                 RevisitingTargetState::HasPlaceholder => {
-                    self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                    self.stack().merge_sccs(&detected_at_of_scc);
                     match calculation.propose_calculation() {
                         ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
                         ProposalResult::Calculated(v) => BindingAction::Calculated(v),
@@ -938,7 +960,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                 }
                 RevisitingTargetState::Done => {
-                    self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                    self.stack().merge_sccs(&detected_at_of_scc);
                     match calculation.propose_calculation() {
                         ProposalResult::Calculated(v) => BindingAction::Calculated(v),
                         ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
@@ -952,17 +974,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 RevisitingTargetState::InProgress => match calculation.propose_calculation() {
                     ProposalResult::CycleDetected => {
                         let current_cycle = self.stack().current_cycle().unwrap();
-                        match self.sccs().on_scc_detected(current_cycle, self.stack()) {
+                        match self.stack().on_scc_detected(current_cycle) {
                             SccDetectedResult::BreakHere => BindingAction::Unwind,
                             SccDetectedResult::Continue => BindingAction::Calculate,
                         }
                     }
                     ProposalResult::Calculated(v) => {
-                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                        self.stack().merge_sccs(&detected_at_of_scc);
                         BindingAction::Calculated(v)
                     }
                     ProposalResult::CycleBroken(r) => {
-                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                        self.stack().merge_sccs(&detected_at_of_scc);
                         BindingAction::CycleBroken(r)
                     }
                     ProposalResult::Calculatable => {
@@ -978,11 +1000,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 ProposalResult::CycleDetected => BindingAction::Calculate,
                 ProposalResult::Calculated(v) => {
-                    self.sccs().on_calculation_finished(current);
+                    self.stack().on_calculation_finished(current);
                     BindingAction::Calculated(v)
                 }
                 ProposalResult::CycleBroken(r) => {
-                    self.sccs().on_calculation_finished(current);
+                    self.stack().on_calculation_finished(current);
                     BindingAction::CycleBroken(r)
                 }
             },
@@ -1060,7 +1082,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         //
         // TODO(stroxler): we eventually need to use is-a-cycle-active information to isolate
         // placeholder values.
-        self.sccs().on_calculation_finished(&current);
+        self.stack().on_calculation_finished(&current);
         answer
     }
 
@@ -1117,7 +1139,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Either::Right(rec) => {
                 // No final answer is available, so we'll unwind the cycle using `rec`.
                 // Track that we've recorded a placeholder for this break_at node.
-                self.sccs().on_placeholder_recorded(current);
+                self.stack().on_placeholder_recorded(current);
                 Err(rec)
             }
             Either::Left(v) => {
@@ -1199,10 +1221,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
 
         eprintln!("\n--- Scc Stack ---");
-        if self.sccs().is_empty() {
+        if self.stack().sccs_is_empty() {
             eprintln!("  None");
         } else {
-            for scc in self.sccs().0.borrow().iter().rev() {
+            for scc in self.stack().sccs.0.borrow().iter().rev() {
                 eprintln!("  {}", scc);
             }
         }
