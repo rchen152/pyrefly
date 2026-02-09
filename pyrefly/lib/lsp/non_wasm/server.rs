@@ -58,6 +58,7 @@ use lsp_types::DocumentHighlightParams;
 use lsp_types::DocumentSymbol;
 use lsp_types::DocumentSymbolParams;
 use lsp_types::DocumentSymbolResponse;
+use lsp_types::FileEvent;
 use lsp_types::FileSystemWatcher;
 use lsp_types::FoldingRange;
 use lsp_types::FoldingRangeKind;
@@ -345,6 +346,8 @@ pub trait TspInterface: Send + Sync {
 
     fn uris_pending_close(&self) -> &Mutex<HashMap<String, usize>>;
 
+    fn pending_watched_file_changes(&self) -> &Mutex<Vec<FileEvent>>;
+
     /// Get access to the recheck queue for async task processing
     fn run_recheck_queue(&self, telemetry: &impl Telemetry);
 
@@ -568,6 +571,8 @@ pub struct Server {
     awaiting_initial_workspace_config: AtomicBool,
     /// Optional callback for remapping paths before converting to URIs.
     path_remapper: Option<PathRemapper>,
+    /// Accumulated file watcher events waiting to be processed as a batch.
+    pending_watched_file_changes: Mutex<Vec<FileEvent>>,
 }
 
 pub fn shutdown_finish(connection: &Connection, id: RequestId) {
@@ -739,6 +744,7 @@ pub fn dispatch_lsp_events(
     connection: &Connection,
     lsp_queue: &LspQueue,
     close_pending_uris: &Mutex<HashMap<String, usize>>,
+    pending_watched_file_changes: &Mutex<Vec<FileEvent>>,
 ) {
     for msg in &connection.receiver {
         match msg {
@@ -786,7 +792,10 @@ pub fn dispatch_lsp_events(
                 } else if let Some(Ok(params)) = as_notification::<DidSaveNotebookDocument>(&x) {
                     lsp_queue.send(LspEvent::DidSaveNotebookDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidChangeWatchedFiles>(&x) {
-                    lsp_queue.send(LspEvent::DidChangeWatchedFiles(params))
+                    pending_watched_file_changes.lock().extend(params.changes);
+                    // In order to avoid sequential invalidations, we insert changes in the dispatch thread,
+                    // but drain these in the LSP thread. This coalesces changes on duplicates.
+                    lsp_queue.send(LspEvent::DrainWatchedFileChanges)
                 } else if let Some(Ok(params)) = as_notification::<DidChangeWorkspaceFolders>(&x) {
                     lsp_queue.send(LspEvent::DidChangeWorkspaceFolders(params))
                 } else if let Some(Ok(params)) = as_notification::<DidChangeConfiguration>(&x) {
@@ -997,6 +1006,7 @@ pub fn lsp_loop(
                 &server.connection.0,
                 &server.lsp_queue,
                 &server.uris_pending_close,
+                &server.pending_watched_file_changes,
             );
         });
         scope.spawn(|| {
@@ -1249,8 +1259,15 @@ impl Server {
                 self.set_file_stats(params.notebook_document.uri.clone(), telemetry_event);
                 self.did_save(params.notebook_document.uri);
             }
-            LspEvent::DidChangeWatchedFiles(params) => {
-                self.did_change_watched_files(params, telemetry, telemetry_event);
+            LspEvent::DrainWatchedFileChanges => {
+                let changes = std::mem::take(&mut *self.pending_watched_file_changes.lock());
+                if !changes.is_empty() {
+                    self.did_change_watched_files(
+                        DidChangeWatchedFilesParams { changes },
+                        telemetry,
+                        telemetry_event,
+                    );
+                }
             }
             LspEvent::DidChangeWorkspaceFolders(params) => {
                 self.workspace_folders_changed(params, telemetry_event);
@@ -1883,6 +1900,7 @@ impl Server {
             // Will be set to true if we send a workspace/configuration request
             awaiting_initial_workspace_config: AtomicBool::new(should_request_workspace_settings),
             path_remapper,
+            pending_watched_file_changes: Mutex::new(Vec::new()),
         };
 
         if let Some(init_options) = &s.initialize_params.initialization_options {
@@ -4770,6 +4788,10 @@ impl TspInterface for Server {
 
     fn uris_pending_close(&self) -> &Mutex<HashMap<String, usize>> {
         &self.uris_pending_close
+    }
+
+    fn pending_watched_file_changes(&self) -> &Mutex<Vec<FileEvent>> {
+        &self.pending_watched_file_changes
     }
 
     fn run_recheck_queue(&self, telemetry: &impl Telemetry) {
