@@ -240,10 +240,12 @@ impl CalcStack {
                     }
                     ProposalResult::Calculated(v) => {
                         self.merge_sccs(&detected_at_of_scc);
+                        self.on_calculation_finished(&current);
                         BindingAction::Calculated(v)
                     }
                     ProposalResult::CycleBroken(r) => {
                         self.merge_sccs(&detected_at_of_scc);
+                        self.on_calculation_finished(&current);
                         BindingAction::CycleBroken(r)
                     }
                     ProposalResult::Calculatable => {
