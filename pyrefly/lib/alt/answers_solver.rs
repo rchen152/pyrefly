@@ -304,7 +304,6 @@ enum SccDetectedResult {
 /// discriminated union. The helper function `compute_binding_action` performs all
 /// state checks and SCC mutations (like `merge_sccs`, `on_scc_detected`,
 /// `on_calculation_finished`), returning the action that `get_idx` should take.
-#[expect(dead_code)] // Will be used when get_idx is refactored
 enum BindingAction<T, R> {
     /// Calculate the binding and record the answer.
     /// Action: call `calculate_and_record_answer`
@@ -874,6 +873,117 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.thread_state.sccs.is_empty(),
             "The SCC stack should be empty in the final thread state"
         );
+    }
+
+    /// Compute the binding action by checking SCC state and calculation proposal.
+    ///
+    /// This helper performs all state checks and SCC mutations (like `merge_sccs`,
+    /// `on_scc_detected`, `on_calculation_finished`), returning the action that
+    /// `get_idx` should take. This flattens the nested match on `SccState` and
+    /// `ProposalResult` into a single return value.
+    #[expect(dead_code)] // Will be used when get_idx is refactored
+    fn compute_binding_action<K: Solve<Ans>>(
+        &self,
+        current: &CalcId,
+        calculation: &Calculation<Arc<K::Answer>, Var>,
+    ) -> BindingAction<Arc<K::Answer>, Var>
+    where
+        AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
+        BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
+    {
+        match self.sccs().pre_calculate_state(current) {
+            SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
+                match calculation.propose_calculation() {
+                    ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                    ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                    ProposalResult::CycleDetected => {
+                        let current_cycle = self.stack().current_cycle().unwrap();
+                        match self.sccs().on_scc_detected(current_cycle, self.stack()) {
+                            SccDetectedResult::BreakHere => BindingAction::Unwind,
+                            SccDetectedResult::Continue => BindingAction::Calculate,
+                        }
+                    }
+                    ProposalResult::Calculatable => BindingAction::Calculate,
+                }
+            }
+            SccState::BreakAt => BindingAction::Unwind,
+            SccState::HasPlaceholder => match calculation.propose_calculation() {
+                ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                    unreachable!("HasPlaceholder node must have CycleBroken or Calculated result")
+                }
+            },
+            SccState::RevisitingPreviousScc {
+                detected_at_of_scc,
+                target_state,
+            } => match target_state {
+                RevisitingTargetState::BreakAt => {
+                    self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                    BindingAction::Unwind
+                }
+                RevisitingTargetState::HasPlaceholder => {
+                    self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                    match calculation.propose_calculation() {
+                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                            unreachable!(
+                                "HasPlaceholder node in previous SCC must have CycleBroken or Calculated result"
+                            )
+                        }
+                    }
+                }
+                RevisitingTargetState::Done => {
+                    self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                    match calculation.propose_calculation() {
+                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                            unreachable!(
+                                "Done node in previous SCC must have Calculated or CycleBroken result"
+                            )
+                        }
+                    }
+                }
+                RevisitingTargetState::InProgress => match calculation.propose_calculation() {
+                    ProposalResult::CycleDetected => {
+                        let current_cycle = self.stack().current_cycle().unwrap();
+                        match self.sccs().on_scc_detected(current_cycle, self.stack()) {
+                            SccDetectedResult::BreakHere => BindingAction::Unwind,
+                            SccDetectedResult::Continue => BindingAction::Calculate,
+                        }
+                    }
+                    ProposalResult::Calculated(v) => {
+                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                        BindingAction::Calculated(v)
+                    }
+                    ProposalResult::CycleBroken(r) => {
+                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
+                        BindingAction::CycleBroken(r)
+                    }
+                    ProposalResult::Calculatable => {
+                        unreachable!(
+                            "InProgress node in previous SCC must be Calculating, not NotCalculated"
+                        )
+                    }
+                },
+            },
+            SccState::Participant => match calculation.propose_calculation() {
+                ProposalResult::Calculatable => {
+                    unreachable!("Participant nodes must have Calculating state, not NotCalculated")
+                }
+                ProposalResult::CycleDetected => BindingAction::Calculate,
+                ProposalResult::Calculated(v) => {
+                    self.sccs().on_calculation_finished(current);
+                    BindingAction::Calculated(v)
+                }
+                ProposalResult::CycleBroken(r) => {
+                    self.sccs().on_calculation_finished(current);
+                    BindingAction::CycleBroken(r)
+                }
+            },
+        }
     }
 
     pub fn get_idx<K: Solve<Ans>>(&self, idx: Idx<K>) -> Arc<K::Answer>
