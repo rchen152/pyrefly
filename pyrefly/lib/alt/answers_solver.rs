@@ -164,12 +164,121 @@ impl CalcStack {
         }
     }
 
-    fn push(&self, current: CalcId) {
-        self.stack.borrow_mut().push(current);
+    /// Push a CalcId onto the stack and compute the binding action.
+    ///
+    /// This combines the push operation with computing what action to take,
+    /// performing all SCC state checks and mutations (like `merge_sccs`,
+    /// `on_scc_detected`, `on_calculation_finished`).
+    fn push<T, R>(&self, current: CalcId, calculation: &Calculation<T, R>) -> BindingAction<T, R>
+    where
+        T: Dupe,
+        R: Dupe,
+    {
+        self.stack.borrow_mut().push(current.dupe());
+        match self.pre_calculate_state(&current) {
+            SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
+                match calculation.propose_calculation() {
+                    ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                    ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                    ProposalResult::CycleDetected => {
+                        let current_cycle = self.current_cycle().unwrap();
+                        match self.on_scc_detected(current_cycle) {
+                            SccDetectedResult::BreakHere => BindingAction::Unwind,
+                            SccDetectedResult::Continue => BindingAction::Calculate,
+                        }
+                    }
+                    ProposalResult::Calculatable => BindingAction::Calculate,
+                }
+            }
+            SccState::BreakAt => BindingAction::Unwind,
+            SccState::HasPlaceholder => match calculation.propose_calculation() {
+                ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                    unreachable!("HasPlaceholder node must have CycleBroken or Calculated result")
+                }
+            },
+            SccState::RevisitingPreviousScc {
+                detected_at_of_scc,
+                target_state,
+            } => match target_state {
+                RevisitingTargetState::BreakAt => {
+                    self.merge_sccs(&detected_at_of_scc);
+                    BindingAction::Unwind
+                }
+                RevisitingTargetState::HasPlaceholder => {
+                    self.merge_sccs(&detected_at_of_scc);
+                    match calculation.propose_calculation() {
+                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                            unreachable!(
+                                "HasPlaceholder node in previous SCC must have CycleBroken or Calculated result"
+                            )
+                        }
+                    }
+                }
+                RevisitingTargetState::Done => {
+                    self.merge_sccs(&detected_at_of_scc);
+                    match calculation.propose_calculation() {
+                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                            unreachable!(
+                                "Done node in previous SCC must have Calculated or CycleBroken result"
+                            )
+                        }
+                    }
+                }
+                RevisitingTargetState::InProgress => match calculation.propose_calculation() {
+                    ProposalResult::CycleDetected => {
+                        let current_cycle = self.current_cycle().unwrap();
+                        match self.on_scc_detected(current_cycle) {
+                            SccDetectedResult::BreakHere => BindingAction::Unwind,
+                            SccDetectedResult::Continue => BindingAction::Calculate,
+                        }
+                    }
+                    ProposalResult::Calculated(v) => {
+                        self.merge_sccs(&detected_at_of_scc);
+                        BindingAction::Calculated(v)
+                    }
+                    ProposalResult::CycleBroken(r) => {
+                        self.merge_sccs(&detected_at_of_scc);
+                        BindingAction::CycleBroken(r)
+                    }
+                    ProposalResult::Calculatable => {
+                        unreachable!(
+                            "InProgress node in previous SCC must be Calculating, not NotCalculated"
+                        )
+                    }
+                },
+            },
+            SccState::Participant => match calculation.propose_calculation() {
+                ProposalResult::Calculatable => {
+                    unreachable!("Participant nodes must have Calculating state, not NotCalculated")
+                }
+                ProposalResult::CycleDetected => BindingAction::Calculate,
+                ProposalResult::Calculated(v) => {
+                    self.on_calculation_finished(&current);
+                    BindingAction::Calculated(v)
+                }
+                ProposalResult::CycleBroken(r) => {
+                    self.on_calculation_finished(&current);
+                    BindingAction::CycleBroken(r)
+                }
+            },
+        }
     }
 
     fn pop(&self) -> Option<CalcId> {
         self.stack.borrow_mut().pop()
+    }
+
+    /// Push a CalcId onto the stack without computing the binding action.
+    /// This is only used in tests to set up the CalcStack state.
+    #[cfg(test)]
+    fn push_for_test(&self, current: CalcId) {
+        self.stack.borrow_mut().push(current);
     }
 
     pub fn peek(&self) -> Option<CalcId> {
@@ -457,116 +566,6 @@ impl CalcStack {
 
         scc_stack.push(merged);
     }
-
-    /// Compute the binding action by checking SCC state and calculation proposal.
-    ///
-    /// This helper performs all state checks and SCC mutations (like `merge_sccs`,
-    /// `on_scc_detected`, `on_calculation_finished`), returning the action that
-    /// `get_idx` should take. This flattens the nested match on `SccState` and
-    /// `ProposalResult` into a single return value.
-    fn compute_binding_action<T, R>(
-        &self,
-        current: &CalcId,
-        calculation: &Calculation<T, R>,
-    ) -> BindingAction<T, R>
-    where
-        T: Dupe,
-        R: Dupe,
-    {
-        match self.pre_calculate_state(current) {
-            SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
-                match calculation.propose_calculation() {
-                    ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                    ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                    ProposalResult::CycleDetected => {
-                        let current_cycle = self.current_cycle().unwrap();
-                        match self.on_scc_detected(current_cycle) {
-                            SccDetectedResult::BreakHere => BindingAction::Unwind,
-                            SccDetectedResult::Continue => BindingAction::Calculate,
-                        }
-                    }
-                    ProposalResult::Calculatable => BindingAction::Calculate,
-                }
-            }
-            SccState::BreakAt => BindingAction::Unwind,
-            SccState::HasPlaceholder => match calculation.propose_calculation() {
-                ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                    unreachable!("HasPlaceholder node must have CycleBroken or Calculated result")
-                }
-            },
-            SccState::RevisitingPreviousScc {
-                detected_at_of_scc,
-                target_state,
-            } => match target_state {
-                RevisitingTargetState::BreakAt => {
-                    self.merge_sccs(&detected_at_of_scc);
-                    BindingAction::Unwind
-                }
-                RevisitingTargetState::HasPlaceholder => {
-                    self.merge_sccs(&detected_at_of_scc);
-                    match calculation.propose_calculation() {
-                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                            unreachable!(
-                                "HasPlaceholder node in previous SCC must have CycleBroken or Calculated result"
-                            )
-                        }
-                    }
-                }
-                RevisitingTargetState::Done => {
-                    self.merge_sccs(&detected_at_of_scc);
-                    match calculation.propose_calculation() {
-                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                            unreachable!(
-                                "Done node in previous SCC must have Calculated or CycleBroken result"
-                            )
-                        }
-                    }
-                }
-                RevisitingTargetState::InProgress => match calculation.propose_calculation() {
-                    ProposalResult::CycleDetected => {
-                        let current_cycle = self.current_cycle().unwrap();
-                        match self.on_scc_detected(current_cycle) {
-                            SccDetectedResult::BreakHere => BindingAction::Unwind,
-                            SccDetectedResult::Continue => BindingAction::Calculate,
-                        }
-                    }
-                    ProposalResult::Calculated(v) => {
-                        self.merge_sccs(&detected_at_of_scc);
-                        BindingAction::Calculated(v)
-                    }
-                    ProposalResult::CycleBroken(r) => {
-                        self.merge_sccs(&detected_at_of_scc);
-                        BindingAction::CycleBroken(r)
-                    }
-                    ProposalResult::Calculatable => {
-                        unreachable!(
-                            "InProgress node in previous SCC must be Calculating, not NotCalculated"
-                        )
-                    }
-                },
-            },
-            SccState::Participant => match calculation.propose_calculation() {
-                ProposalResult::Calculatable => {
-                    unreachable!("Participant nodes must have Calculating state, not NotCalculated")
-                }
-                ProposalResult::CycleDetected => BindingAction::Calculate,
-                ProposalResult::Calculated(v) => {
-                    self.on_calculation_finished(current);
-                    BindingAction::Calculated(v)
-                }
-                ProposalResult::CycleBroken(r) => {
-                    self.on_calculation_finished(current);
-                    BindingAction::CycleBroken(r)
-                }
-            },
-        }
-    }
 }
 
 /// Tracks the state of a node within an active SCC.
@@ -665,9 +664,9 @@ enum SccDetectedResult {
 /// The action to take for a binding after checking SCC state and calculation proposal.
 ///
 /// This flattens the nested match on `SccState` and `ProposalResult` into a single
-/// discriminated union. The helper function `compute_binding_action` performs all
-/// state checks and SCC mutations (like `merge_sccs`, `on_scc_detected`,
-/// `on_calculation_finished`), returning the action that `get_idx` should take.
+/// discriminated union. The `CalcStack::push` method performs all state checks and
+/// SCC mutations (like `merge_sccs`, `on_scc_detected`, `on_calculation_finished`),
+/// returning the action that `get_idx` should take.
 enum BindingAction<T, R> {
     /// Calculate the binding and record the answer.
     /// Action: call `calculate_and_record_answer`
@@ -998,8 +997,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             return result;
         }
 
-        self.stack().push(current.dupe());
-        let result = match self.stack().compute_binding_action(&current, calculation) {
+        let result = match self.stack().push(current.dupe(), calculation) {
             BindingAction::Calculate => self.calculate_and_record_answer(current, idx, calculation),
             BindingAction::Unwind => self
                 .attempt_to_unwind_cycle_from_here(&current, idx, calculation)
@@ -1528,7 +1526,7 @@ mod scc_tests {
     fn make_calc_stack(entries: &[CalcId]) -> CalcStack {
         let stack = CalcStack::new();
         for entry in entries {
-            stack.push(entry.dupe());
+            stack.push_for_test(entry.dupe());
         }
         stack
     }
