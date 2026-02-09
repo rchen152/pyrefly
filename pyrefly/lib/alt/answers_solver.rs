@@ -992,17 +992,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     {
         let current = CalcId(self.bindings().dupe(), K::to_anyidx(idx));
         let calculation = self.get_calculation(idx);
-        self.stack().push(current.dupe());
 
         // Check depth limit before any calculation
         if let Some(config) = self.recursion_limit_config()
             && self.stack().len() > config.limit as usize
         {
             let result = self.handle_depth_overflow(&current, idx, calculation, config);
-            self.stack().pop();
             return result;
         }
 
+        self.stack().push(current.dupe());
         let result = match self.compute_binding_action::<K>(&current, calculation) {
             BindingAction::Calculate => self.calculate_and_record_answer(current, idx, calculation),
             BindingAction::Unwind => self
