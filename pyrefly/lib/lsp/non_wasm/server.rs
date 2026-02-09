@@ -2298,6 +2298,27 @@ impl Server {
         }
     }
 
+    /// Populate project files for multiple configs
+    ///
+    /// Deduplication is handled by `indexed_configs`
+    /// Unlike `populate_project_files_if_necessary`, this performs the work directly
+    /// instead of creating a new task on the recheck queue, so it should only be
+    /// called from the recheck queue.
+    fn populate_project_files_for_configs(
+        &self,
+        configs: Vec<ArcId<ConfigFile>>,
+        telemetry: &mut TelemetryEvent,
+    ) {
+        for config in configs {
+            if config.skip_lsp_config_indexing {
+                continue;
+            }
+            if self.indexed_configs.lock().insert(config.dupe()) {
+                self.populate_all_project_files_in_config(config, telemetry);
+            }
+        }
+    }
+
     fn populate_workspace_files_if_necessary(&self, telemetry: &mut TelemetryEvent) {
         let mut indexed_workspaces = self.indexed_workspaces.lock();
         let roots_to_populate_files = self
@@ -3013,23 +3034,22 @@ impl Server {
         if modified {
             self.invalidate_config_and_validate_in_memory();
         }
-        if was_awaiting_initial_config {
-            // This is the initial config response, so we can trigger background indexing.
-            // Find unique configs for all currently open files and populate them.
-            if self.indexing_mode != IndexingMode::None {
-                // ArcId<> does hashing and equality based on the pointer address
-                #[allow(clippy::mutable_key_type)]
-                let configs: HashSet<_> = self
-                    .open_files
-                    .read()
-                    .keys()
-                    .filter_map(|path| path.parent())
-                    .filter_map(|dir| self.state.config_finder().directory(dir))
-                    .collect();
-                for config in configs {
-                    self.populate_project_files_if_necessary(Some(config), telemetry_event);
-                }
-            }
+        if was_awaiting_initial_config && self.indexing_mode != IndexingMode::None {
+            // We need to resolve configs after invalidation completes, so enqueue that
+            // calculation in the recheck queue to ensure ordering.
+            self.recheck_queue.queue_task(
+                TelemetryEventKind::PopulateProjectFiles,
+                Box::new(move |server, _telemetry, telemetry_event, _task_stats| {
+                    let configs: Vec<_> = server
+                        .open_files
+                        .read()
+                        .keys()
+                        .filter_map(|path| path.parent())
+                        .filter_map(|dir| server.state.config_finder().directory(dir))
+                        .collect();
+                    server.populate_project_files_for_configs(configs, telemetry_event);
+                }),
+            );
             self.populate_workspace_files_if_necessary(telemetry_event);
         }
     }
