@@ -1332,7 +1332,7 @@ pub mod tests {
 
     #[test]
     fn test_display_typevar() {
-        let heap = TypeHeap::default();
+        let heap = TypeHeap::new();
         let t1 = fake_tyvar("foo", "bar", 1);
         let t2 = fake_tyvar("foo", "bar", 2);
         let t3 = fake_tyvar("qux", "bar", 2);
