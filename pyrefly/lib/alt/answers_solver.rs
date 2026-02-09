@@ -151,36 +151,42 @@ impl CalcId {
 /// The stack is per-thread; we create a new `AnswersSolver` every time
 /// we change modules when resolving exports, but the stack is passed
 /// down because sccs can cross module boundaries.
-pub struct CalcStack(RefCell<Vec<CalcId>>);
+pub struct CalcStack {
+    stack: RefCell<Vec<CalcId>>,
+    pub sccs: Sccs,
+}
 
 impl CalcStack {
     pub fn new() -> Self {
-        Self(RefCell::new(Vec::new()))
+        Self {
+            stack: RefCell::new(Vec::new()),
+            sccs: Sccs::new(),
+        }
     }
 
     fn push(&self, current: CalcId) {
-        self.0.borrow_mut().push(current);
+        self.stack.borrow_mut().push(current);
     }
 
     fn pop(&self) -> Option<CalcId> {
-        self.0.borrow_mut().pop()
+        self.stack.borrow_mut().pop()
     }
 
     pub fn peek(&self) -> Option<CalcId> {
-        self.0.borrow().last().cloned()
+        self.stack.borrow().last().cloned()
     }
 
     pub fn into_vec(&self) -> Vec<CalcId> {
-        self.0.borrow().clone()
+        self.stack.borrow().clone()
     }
 
     pub fn is_empty(&self) -> bool {
-        self.0.borrow().is_empty()
+        self.stack.borrow().is_empty()
     }
 
     /// Return the current stack depth (number of entries on the stack).
     pub fn len(&self) -> usize {
-        self.0.borrow().len()
+        self.stack.borrow().len()
     }
 
     /// Return the current cycle, if we are at a (module, idx) that we've already seen in this thread.
@@ -191,7 +197,7 @@ impl CalcStack {
     ///   where the order of (module, idx) pairs is recency (so starting with current
     ///   module and idx, and ending with the oldest).
     pub fn current_cycle(&self) -> Option<Vec1<CalcId>> {
-        let stack = self.0.borrow();
+        let stack = self.stack.borrow();
         let mut rev_stack = stack.iter().rev();
         let current = rev_stack.next()?;
         let mut cycle = Vec1::with_capacity(current.dupe(), rev_stack.len());
@@ -755,7 +761,6 @@ impl Sccs {
 /// which happens as we resolve types of imported names, but when this happens
 /// we always pass the current `ThreadState`.
 pub struct ThreadState {
-    sccs: Sccs,
     stack: CalcStack,
     /// For debugging only: thread-global that allows us to control debug logging across components.
     debug: RefCell<bool>,
@@ -766,7 +771,6 @@ pub struct ThreadState {
 impl ThreadState {
     pub fn new(recursion_limit_config: Option<RecursionLimitConfig>) -> Self {
         Self {
-            sccs: Sccs::new(),
             stack: CalcStack::new(),
             debug: RefCell::new(false),
             recursion_limit_config,
@@ -849,7 +853,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     fn sccs(&self) -> &Sccs {
-        &self.thread_state.sccs
+        &self.thread_state.stack.sccs
     }
 
     fn recursion_limit_config(&self) -> Option<RecursionLimitConfig> {
@@ -870,7 +874,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             "The calculation stack should be empty in the final thread state"
         );
         assert!(
-            self.thread_state.sccs.is_empty(),
+            self.thread_state.stack.sccs.is_empty(),
             "The SCC stack should be empty in the final thread state"
         );
     }
