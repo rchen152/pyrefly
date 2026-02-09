@@ -315,7 +315,7 @@ enum BindingAction<T, R> {
     /// Action: return `v`
     Calculated(T),
     /// A recursive placeholder exists and we should return it.
-    /// Action: return `Arc::new(K::promote_recursive(r))`
+    /// Action: return `Arc::new(K::promote_recursive(heap, r))`
     CycleBroken(R),
 }
 
@@ -881,7 +881,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// `on_scc_detected`, `on_calculation_finished`), returning the action that
     /// `get_idx` should take. This flattens the nested match on `SccState` and
     /// `ProposalResult` into a single return value.
-    #[expect(dead_code)] // Will be used when get_idx is refactored
     fn compute_binding_action<K: Solve<Ans>>(
         &self,
         current: &CalcId,
@@ -1004,146 +1003,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             return result;
         }
 
-        let result = match self.sccs().pre_calculate_state(&current) {
-            SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
-                match calculation.propose_calculation() {
-                    ProposalResult::Calculated(v) => v,
-                    ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
-                    ProposalResult::CycleDetected => {
-                        let current_cycle = self.stack().current_cycle().unwrap();
-                        match self.sccs().on_scc_detected(current_cycle, self.stack()) {
-                            SccDetectedResult::BreakHere => self
-                                .attempt_to_unwind_cycle_from_here(&current, idx, calculation)
-                                .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r))),
-                            SccDetectedResult::Continue => {
-                                self.calculate_and_record_answer(current, idx, calculation)
-                            }
-                        }
-                    }
-                    ProposalResult::Calculatable => {
-                        self.calculate_and_record_answer(current, idx, calculation)
-                    }
-                }
-            }
-            SccState::BreakAt => {
-                // Begin unwinding the cycle using a recursive placeholder
-                self.attempt_to_unwind_cycle_from_here(&current, idx, calculation)
-                    .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
-            }
-            SccState::HasPlaceholder => {
-                // We already recorded a placeholder for this node; return it.
-                // The Calculation should have a CycleBroken result.
-                match calculation.propose_calculation() {
-                    ProposalResult::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
-                    ProposalResult::Calculated(v) => v,
-                    ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                        unreachable!(
-                            "HasPlaceholder node must have CycleBroken or Calculated result"
-                        )
-                    }
-                }
-            }
-            SccState::RevisitingPreviousScc {
-                detected_at_of_scc,
-                target_state,
-            } => {
-                // Current node was found in a previous (non-top) SCC.
-                // Handle based on the target node's state in that SCC.
-                match target_state {
-                    // Node was already a break-at index. Merge SCCs without any new break_at, and break here
-                    RevisitingTargetState::BreakAt => {
-                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
-                        self.attempt_to_unwind_cycle_from_here(&current, idx, calculation)
-                            .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r)))
-                    }
-                    // Node already has a placeholder. Merge SCCs and return it.
-                    RevisitingTargetState::HasPlaceholder => {
-                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
-                        match calculation.propose_calculation() {
-                            ProposalResult::CycleBroken(r) => {
-                                Arc::new(K::promote_recursive(self.heap, r))
-                            }
-                            ProposalResult::Calculated(v) => v,
-                            ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                                unreachable!(
-                                    "HasPlaceholder node in previous SCC must have CycleBroken or Calculated result"
-                                )
-                            }
-                        }
-                    }
-                    // Node already completed within the SCC. Merge SCCs without new break_at, and get preliminary answer.
-                    RevisitingTargetState::Done => {
-                        self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
-                        match calculation.propose_calculation() {
-                            ProposalResult::Calculated(v) => v,
-                            ProposalResult::CycleBroken(r) => {
-                                Arc::new(K::promote_recursive(self.heap, r))
-                            }
-                            ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                                unreachable!(
-                                    "Done node in previous SCC must have Calculated or CycleBroken result"
-                                )
-                            }
-                        }
-                    }
-                    // This binding has an in-flight computation. This case should be handled the same as SccState::NotInScc;
-                    // in most cases we're going to wind up detecting a cycle although because of races between threads
-                    // we have to handle the possibility of Calculated or CycleBroken.
-                    RevisitingTargetState::InProgress => match calculation.propose_calculation() {
-                        ProposalResult::CycleDetected => {
-                            let current_cycle = self.stack().current_cycle().unwrap();
-                            match self.sccs().on_scc_detected(current_cycle, self.stack()) {
-                                SccDetectedResult::BreakHere => self
-                                    .attempt_to_unwind_cycle_from_here(&current, idx, calculation)
-                                    .unwrap_or_else(|r| {
-                                        Arc::new(K::promote_recursive(self.heap, r))
-                                    }),
-                                SccDetectedResult::Continue => {
-                                    self.calculate_and_record_answer(current, idx, calculation)
-                                }
-                            }
-                        }
-                        ProposalResult::Calculated(v) => {
-                            self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
-                            v
-                        }
-                        ProposalResult::CycleBroken(r) => {
-                            self.sccs().merge_sccs(&detected_at_of_scc, self.stack());
-                            Arc::new(K::promote_recursive(self.heap, r))
-                        }
-                        ProposalResult::Calculatable => {
-                            unreachable!(
-                                "InProgress node in previous SCC must be Calculating, not NotCalculated"
-                            )
-                        }
-                    },
-                }
-            }
-            SccState::Participant => {
-                match calculation.propose_calculation() {
-                    // Participant nodes were on the CalcStack when the cycle was detected,
-                    // so their Calculation must be Calculating, not NotCalculated.
-                    ProposalResult::Calculatable => unreachable!(
-                        "Participant nodes must have Calculating state, not NotCalculated"
-                    ),
-                    ProposalResult::CycleDetected => {
-                        self.calculate_and_record_answer(current, idx, calculation)
-                    }
-                    // Short circuit if another thread has already written an answer or recursive placeholder.
-                    //
-                    // In either case, we need to call `on_calculation_finished` to make sure that
-                    // we accurately reflect that this idx is no longer a remaining participant in
-                    // active components.
-                    ProposalResult::Calculated(v) => {
-                        self.sccs().on_calculation_finished(&current);
-                        v
-                    }
-                    ProposalResult::CycleBroken(r) => {
-                        self.sccs().on_calculation_finished(&current);
-                        Arc::new(K::promote_recursive(self.heap, r))
-                    }
-                }
-            }
+        let result = match self.compute_binding_action::<K>(&current, calculation) {
+            BindingAction::Calculate => self.calculate_and_record_answer(current, idx, calculation),
+            BindingAction::Unwind => self
+                .attempt_to_unwind_cycle_from_here(&current, idx, calculation)
+                .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r))),
+            BindingAction::Calculated(v) => v,
+            BindingAction::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
         };
         self.stack().pop();
         result
