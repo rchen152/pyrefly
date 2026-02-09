@@ -298,6 +298,28 @@ enum SccDetectedResult {
     Continue,
 }
 
+/// The action to take for a binding after checking SCC state and calculation proposal.
+///
+/// This flattens the nested match on `SccState` and `ProposalResult` into a single
+/// discriminated union. The helper function `compute_binding_action` performs all
+/// state checks and SCC mutations (like `merge_sccs`, `on_scc_detected`,
+/// `on_calculation_finished`), returning the action that `get_idx` should take.
+#[expect(dead_code)] // Will be used when get_idx is refactored
+enum BindingAction<T, R> {
+    /// Calculate the binding and record the answer.
+    /// Action: call `calculate_and_record_answer`
+    Calculate,
+    /// We are at a break point and need to unwind the cycle with a placeholder.
+    /// Action: call `attempt_to_unwind_cycle_from_here`
+    Unwind,
+    /// A final answer is already available.
+    /// Action: return `v`
+    Calculated(T),
+    /// A recursive placeholder exists and we should return it.
+    /// Action: return `Arc::new(K::promote_recursive(r))`
+    CycleBroken(R),
+}
+
 /// Represent an SCC (Strongly Connected Component) we are currently solving.
 ///
 /// This simplified model tracks SCC participants with explicit state rather than
