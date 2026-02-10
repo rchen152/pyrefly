@@ -1124,3 +1124,19 @@ class C:
     type T = int # E: Cannot redefine existing name `T` as a type alias
 "#,
 );
+
+testcase!(
+    test_display_instance_vs_type,
+    r#"
+from typing import reveal_type, TypeVar
+
+X = int | str
+reveal_type([X])  # E: list[type[X]]
+def f(x: X):
+    reveal_type([x])  # E: list[X]
+
+T = TypeVar("T")
+X = list[T]
+reveal_type([X])  # E: list[type[X[T]]]
+    "#,
+);

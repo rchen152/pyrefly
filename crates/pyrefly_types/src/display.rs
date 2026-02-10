@@ -773,7 +773,7 @@ impl<'a> TypeDisplayContext<'a> {
                         Some(tparams),
                     )
                 } else {
-                    output.write_str(ta.name().as_str())
+                    write!(output, "type[{}{}]", ta.name(), tparams)
                 }
             }
             Type::Type(box Type::Any(_)) => output.write_str("type[Any]"),
@@ -853,7 +853,7 @@ impl<'a> TypeDisplayContext<'a> {
                 if is_toplevel && let TypeAliasData::Value(ta) = &**ta {
                     ta.fmt_with_type(output, &|t, o| self.fmt_helper_generic(t, false, o), None)
                 } else {
-                    output.write_str(ta.name().as_str())
+                    write!(output, "type[{}]", ta.name())
                 }
             }
             Type::SuperInstance(box (cls, obj)) => {
@@ -1517,17 +1517,14 @@ pub mod tests {
             Vec::new(),
         ))));
         let wrapped = Type::concrete_tuple(vec![alias.clone()]);
-        let type_of = Type::type_form(alias.clone());
         let mut ctx = TypeDisplayContext::new(&[]);
         // regular display
         assert_eq!(ctx.display(&alias).to_string(), "None");
-        assert_eq!(ctx.display(&wrapped).to_string(), "tuple[MyAlias]");
-        assert_eq!(ctx.display(&type_of).to_string(), "type[MyAlias]");
+        assert_eq!(ctx.display(&wrapped).to_string(), "tuple[type[MyAlias]]");
         // hover display
         ctx.set_lsp_display_mode(LspDisplayMode::Hover);
         assert_eq!(ctx.display(&alias).to_string(), "None");
-        assert_eq!(ctx.display(&wrapped).to_string(), "tuple[MyAlias]");
-        assert_eq!(ctx.display(&type_of).to_string(), "type[MyAlias]");
+        assert_eq!(ctx.display(&wrapped).to_string(), "tuple[type[MyAlias]]");
     }
 
     #[test]
