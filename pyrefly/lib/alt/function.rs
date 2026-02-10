@@ -519,9 +519,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 format!("`{}` is missing a return annotation", stmt.name),
             );
         }
-        for p in stmt.parameters.iter() {
-            let name = p.name().as_str();
-            if p.annotation().is_none() && name != "cls" && name != "self" {
+        // The first parameter of a non-static method is the implicit self/cls
+        // parameter and does not require an annotation, regardless of its name.
+        // __new__ is an implicit staticmethod but still takes cls as its first parameter.
+        // If the first parameter is variadic (e.g. *args), self is passed inside it,
+        // so there is no separate implicit parameter to skip.
+        let is_dunder_new = def.defining_cls.is_some() && stmt.name.id == dunder::NEW;
+        let has_implicit_self_or_cls_param =
+            def.defining_cls.is_some() && (!def.metadata.flags.is_staticmethod || is_dunder_new);
+        for (i, p) in stmt.parameters.iter().enumerate() {
+            // Skip first param if it's implicit self/cls and not variadic
+            if i == 0 && has_implicit_self_or_cls_param && !p.is_variadic() {
+                continue;
+            }
+            if p.annotation().is_none() {
+                let name = p.name().as_str();
                 self.error(
                     errors,
                     p.name().range(),
