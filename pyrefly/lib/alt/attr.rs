@@ -1806,6 +1806,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::TypeAlias(ta) => {
                 self.as_attribute_base1(self.get_type_alias(&ta).as_value(self.stdlib), acc)
             }
+            Type::UntypedAlias(ta) => self.as_attribute_base1(self.untype_alias(&ta), acc),
             Type::Type(box Type::Tuple(tuple)) => self.as_attribute_base1(
                 self.heap
                     .mk_type_form(self.heap.mk_class_type(self.erase_tuple_type(tuple))),

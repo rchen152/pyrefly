@@ -856,6 +856,7 @@ impl<'a> TypeDisplayContext<'a> {
                     write!(output, "type[{}]", ta.name())
                 }
             }
+            Type::UntypedAlias(ta) => output.write_str(ta.name().as_str()),
             Type::SuperInstance(box (cls, obj)) => {
                 output.write_str("super[")?;
                 output.write_qname(cls.qname())?;
