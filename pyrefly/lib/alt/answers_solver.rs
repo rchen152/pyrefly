@@ -351,16 +351,20 @@ impl CalcStack {
     ///   module and idx, and ending with the oldest).
     pub fn current_cycle(&self) -> Option<Vec1<CalcId>> {
         let stack = self.stack.borrow();
-        let mut rev_stack = stack.iter().rev();
-        let current = rev_stack.next()?;
-        let mut cycle = Vec1::with_capacity(current.dupe(), rev_stack.len());
-        for c in rev_stack {
-            if c == current {
-                return Some(cycle);
-            }
-            cycle.push(c.dupe());
+        let current = stack.last()?;
+        let positions = self.position_of.borrow();
+        let target_positions = positions.get(current)?;
+        // If there are is now more than one position,we have encountered a cycle.
+        if target_positions.len() == 1 {
+            None
+        } else {
+            // The actual cycle is the set of nodes between the occurrence we just pushed
+            // and the most recent *previous* occurrence of this CaclId (i.e. the second-to-last)
+            let cycle_start = target_positions[target_positions.len() - 2];
+            let cycle_entries: Vec<CalcId> =
+                stack[cycle_start + 1..].iter().rev().duped().collect();
+            Vec1::try_from_vec(cycle_entries).ok()
         }
-        None
     }
 
     // SCC methods - these manage the scc_stack
@@ -1591,6 +1595,63 @@ mod scc_tests {
     #[allow(clippy::mutable_key_type)]
     fn fresh_nodes(ids: &[CalcId]) -> HashMap<CalcId, NodeState> {
         ids.iter().map(|id| (id.dupe(), NodeState::Fresh)).collect()
+    }
+
+    #[test]
+    fn test_current_cycle_no_cycle() {
+        // Stack with unique entries: no cycle
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+
+        let calc_stack = make_calc_stack(&[a.dupe(), b.dupe(), c.dupe()]);
+        assert!(calc_stack.current_cycle().is_none());
+    }
+
+    #[test]
+    fn test_current_cycle_simple_cycle() {
+        // Stack [A, B, C, A] - A appears twice, creating a cycle
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+
+        let calc_stack = make_calc_stack(&[a.dupe(), b.dupe(), c.dupe(), a.dupe()]);
+        let cycle = calc_stack.current_cycle().expect("Should detect cycle");
+
+        // Cycle should be in recency order: [A(newest), C, B]
+        // (excludes the duplicate A at position 0)
+        assert_eq!(cycle.len(), 3);
+        assert_eq!(cycle[0], a); // Newest A
+        assert_eq!(cycle[1], c);
+        assert_eq!(cycle[2], b);
+    }
+
+    #[test]
+    fn test_current_cycle_longer_cycle() {
+        // Stack [A, B, C, D, E, A] - cycle from position 1 to 5
+        let a = CalcId::for_test("m", 0);
+        let b = CalcId::for_test("m", 1);
+        let c = CalcId::for_test("m", 2);
+        let d = CalcId::for_test("m", 3);
+        let e = CalcId::for_test("m", 4);
+
+        let calc_stack =
+            make_calc_stack(&[a.dupe(), b.dupe(), c.dupe(), d.dupe(), e.dupe(), a.dupe()]);
+        let cycle = calc_stack.current_cycle().expect("Should detect cycle");
+
+        // Cycle should be [A(newest), E, D, C, B] in recency order
+        assert_eq!(cycle.len(), 5);
+        assert_eq!(cycle[0], a); // Newest A
+        assert_eq!(cycle[1], e);
+        assert_eq!(cycle[2], d);
+        assert_eq!(cycle[3], c);
+        assert_eq!(cycle[4], b);
+    }
+
+    #[test]
+    fn test_current_cycle_empty_stack() {
+        let calc_stack = CalcStack::new();
+        assert!(calc_stack.current_cycle().is_none());
     }
 
     #[test]
