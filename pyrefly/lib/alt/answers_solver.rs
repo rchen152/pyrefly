@@ -760,6 +760,10 @@ pub struct Scc {
     /// Used as a fast filter to skip SCCs that can't possibly overlap with
     /// a newly detected cycle.
     min_stack_depth: usize,
+    /// Stack position of the SCC anchor (the position of the break_at CalcId).
+    /// When the stack length drops to anchor_pos, the SCC is complete.
+    /// This enables O(1) completion checking instead of iterating all participants.
+    anchor_pos: usize,
 }
 
 impl Display for Scc {
@@ -790,7 +794,7 @@ impl Scc {
 
         // Find the anchor's position on the CalcStack.
         // The anchor (minimal CalcId) is where the cycle will complete during unwinding.
-        let min_stack_depth = calc_stack_vec
+        let anchor_pos = calc_stack_vec
             .iter()
             .position(|c| c == break_at)
             .unwrap_or(0);
@@ -799,7 +803,8 @@ impl Scc {
             break_at: break_at_set,
             node_state,
             detected_at,
-            min_stack_depth,
+            min_stack_depth: anchor_pos,
+            anchor_pos,
         }
     }
 
@@ -884,6 +889,8 @@ impl Scc {
         self.detected_at = self.detected_at.min(other.detected_at);
         // Keep the minimum stack depth (the earliest anchor position)
         self.min_stack_depth = self.min_stack_depth.min(other.min_stack_depth);
+        // Keep the minimum anchor position
+        self.anchor_pos = self.anchor_pos.min(other.anchor_pos);
         self
     }
 
@@ -1579,6 +1586,7 @@ mod scc_tests {
             node_state,
             detected_at,
             min_stack_depth,
+            anchor_pos: min_stack_depth,
         }
     }
 
