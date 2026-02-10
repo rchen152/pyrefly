@@ -1307,6 +1307,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.uniques,
                 TypeAliasRef {
                     name: name.clone(),
+                    args: None,
                     module: self.module().name(),
                     index: self.bindings().idx_to_key(*key_type_alias).0,
                 },
