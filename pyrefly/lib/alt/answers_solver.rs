@@ -408,12 +408,7 @@ impl CalcStack {
     /// This works because segments are contiguous - all frames between anchor_pos
     /// and anchor_pos + segment_size belong to this SCC.
     #[cfg_attr(test, allow(dead_code))]
-    fn check_overlap(
-        existing: &Scc,
-        cycle_start_pos: usize,
-        _stack_depth: usize,
-        _calc_stack_vec: &[CalcId],
-    ) -> bool {
+    fn check_overlap(existing: &Scc, cycle_start_pos: usize) -> bool {
         // O(1) overlap check using segment bounds.
         // If the existing SCC's upper bound <= cycle start, there's no overlap.
         // Upper bound = anchor_pos + segment_size (exact count of live frames in segment)
@@ -437,7 +432,6 @@ impl CalcStack {
     /// overlap (due to LIFO ordering of the SCC stack).
     #[allow(clippy::mutable_key_type)] // CalcId's Hash impl doesn't depend on mutable parts
     fn on_scc_detected(&self, raw: Vec1<CalcId>) -> SccDetectedResult {
-        let stack_depth = self.len();
         let calc_stack_vec = self.into_vec();
 
         // Create the new SCC - this computes min_stack_depth as the anchor's position
@@ -449,14 +443,14 @@ impl CalcStack {
         let mut scc_stack = self.scc_stack.borrow_mut();
 
         // Find the first (oldest) SCC that overlaps with the new cycle.
-        // Use min_stack_depth + cardinality as a bound for the SCC's max position.
-        // If this bound < cycle_start_pos, the SCC is entirely below the new cycle.
+        // Overlap is determined by O(1) segment arithmetic: if the existing SCC's
+        // upper bound (anchor_pos + segment_size) exceeds cycle_start_pos, they overlap.
         // Due to LIFO ordering, once we find one overlapping SCC, all subsequent ones
         // on the stack must also overlap.
         let mut first_merge_idx: Option<usize> = None;
 
         for (i, existing) in scc_stack.iter().enumerate() {
-            if Self::check_overlap(existing, cycle_start_pos, stack_depth, &calc_stack_vec) {
+            if Self::check_overlap(existing, cycle_start_pos) {
                 first_merge_idx = Some(i);
                 break; // All subsequent SCCs will also overlap
             }
