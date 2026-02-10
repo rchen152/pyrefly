@@ -690,7 +690,7 @@ impl ClassField {
         if values.is_empty() {
             heap.mk_any_implicit()
         } else {
-            unions(values)
+            unions(values, heap)
         }
     }
 
@@ -1248,7 +1248,7 @@ fn make_bound_method_helper(
                     Err(_) => return Err(attr),
                 }
             }
-            return Ok(unions(bound_methods));
+            return Ok(unions(bound_methods, heap));
         }
         _ => return Err(attr),
     };

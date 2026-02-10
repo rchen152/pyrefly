@@ -199,7 +199,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Option<DecoratorParamHints> {
         decorators.iter().rev().find_map(|(decorator_ty, _)| {
             decorator_ty
-                .callable_first_param()
+                .callable_first_param(self.heap)
                 .and_then(|param_ty| param_ty.callable_signatures().into_iter().next().cloned())
                 .and_then(DecoratorParamHints::from_callable)
         })
@@ -1449,9 +1449,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     }
 
     fn subst_function(&self, tparams: &TParams, func: Function) -> Function {
-        let mp = tparams
-            .as_vec()
-            .map(|p| (&p.quantified, p.restriction().as_type(self.stdlib)));
+        let mp = tparams.as_vec().map(|p| {
+            (
+                &p.quantified,
+                p.restriction().as_type(self.stdlib, self.heap),
+            )
+        });
         match self
             .heap
             .mk_function(func)

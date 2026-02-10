@@ -513,7 +513,7 @@ impl Solver {
                 display_name: original_name,
             }) = x
             {
-                let mut merged = unions(mem::take(xs));
+                let mut merged = unions(mem::take(xs), &self.heap);
                 // Preserve union display names during simplification
                 if let Type::Union(box Union { display_name, .. }) = &mut merged {
                     *display_name = original_name.clone();
@@ -1118,7 +1118,7 @@ impl Solver {
                 expand(ty, &lock, &VarRecurser::new(), &self.heap, &mut res);
                 // Then remove any reference to self, before unioning it back together
                 res.retain(|x| x != &Type::Var(var));
-                let ty = unions(res);
+                let ty = unions(res, &self.heap);
                 match bounds_to_check {
                     Some(bounds) => {
                         lock.update(var, Variable::Answer(ty.clone()));
@@ -1536,8 +1536,8 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                             }
                             (true, true) => {
                                 // Both have restrictions, need to compare bounds
-                                let b1 = r1.as_type(self.type_order.stdlib());
-                                let b2 = r2.as_type(self.type_order.stdlib());
+                                let b1 = r1.as_type(self.type_order.stdlib(), &self.solver.heap);
+                                let b2 = r2.as_type(self.type_order.stdlib(), &self.solver.heap);
                                 drop(variables);
 
                                 let b1_subtype_of_b2 = self.is_subset_eq(&b1, &b2).is_ok();
@@ -1597,7 +1597,9 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                     }
                     Variable::Quantified(q) | Variable::PartialQuantified(q) => {
                         let name = q.name.clone();
-                        let bound = q.restriction().as_type(self.type_order.stdlib());
+                        let bound = q
+                            .restriction()
+                            .as_type(self.type_order.stdlib(), &self.solver.heap);
                         drop(v1_ref);
                         variables.update(*v1, Variable::Answer(t2.clone()));
                         drop(variables);
@@ -1696,7 +1698,9 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                             .clone()
                             .promote_implicit_literals(self.type_order.stdlib());
                         let name = q.name.clone();
-                        let bound = q.restriction().as_type(self.type_order.stdlib());
+                        let bound = q
+                            .restriction()
+                            .as_type(self.type_order.stdlib(), &self.solver.heap);
                         drop(v2_ref);
                         variables.update(*v2, Variable::Answer(t1_p.clone()));
                         drop(variables);

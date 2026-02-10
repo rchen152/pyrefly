@@ -10,6 +10,7 @@ use starlark_map::small_set::SmallSet;
 
 use crate::class::Class;
 use crate::class::ClassType;
+use crate::heap::TypeHeap;
 use crate::literal::Lit;
 use crate::stdlib::Stdlib;
 use crate::tuple::Tuple;
@@ -89,7 +90,7 @@ fn unions_internal(
 }
 
 /// Union a set of types together, simplifying as much as you can.
-pub fn unions(xs: Vec<Type>) -> Type {
+pub fn unions(xs: Vec<Type>, _heap: &TypeHeap) -> Type {
     unions_internal(xs, None, None)
 }
 
@@ -359,6 +360,7 @@ pub fn simplify_tuples(tuple: Tuple) -> Tuple {
 
 #[cfg(test)]
 mod tests {
+    use crate::heap::TypeHeap;
     use crate::simplify::intersect;
     use crate::simplify::unions;
     use crate::tuple::Tuple;
@@ -367,11 +369,12 @@ mod tests {
 
     #[test]
     fn test_flatten_never() {
+        let heap = TypeHeap::new();
         let xs = vec![
             Type::Never(NeverStyle::Never),
             Type::Never(NeverStyle::NoReturn),
         ];
-        let res = unions(xs);
+        let res = unions(xs, &heap);
         assert_eq!(res, Type::never());
     }
 
@@ -404,15 +407,17 @@ mod tests {
 
     #[test]
     fn test_simplify_union_with_intersect() {
+        let heap = TypeHeap::new();
         let xs = vec![
             Type::any_implicit(),
             intersect(vec![Type::any_implicit(), Type::any_tuple()], Type::never()),
         ];
-        assert_eq!(unions(xs), Type::any_implicit());
+        assert_eq!(unions(xs, &heap), Type::any_implicit());
     }
 
     #[test]
     fn test_union_empty_with_prefix_variadic_tuple() {
+        let heap = TypeHeap::new();
         let xs = vec![
             Type::concrete_tuple(vec![]),
             Type::Tuple(Tuple::unpacked(
@@ -421,11 +426,12 @@ mod tests {
                 Vec::new(),
             )),
         ];
-        assert_eq!(unions(xs), Type::unbounded_tuple(Type::None));
+        assert_eq!(unions(xs, &heap), Type::unbounded_tuple(Type::None));
     }
 
     #[test]
     fn test_union_empty_with_suffix_variadic_tuple() {
+        let heap = TypeHeap::new();
         let xs = vec![
             Type::concrete_tuple(vec![]),
             Type::Tuple(Tuple::unpacked(
@@ -434,6 +440,6 @@ mod tests {
                 vec![Type::None],
             )),
         ];
-        assert_eq!(unions(xs), Type::unbounded_tuple(Type::None));
+        assert_eq!(unions(xs, &heap), Type::unbounded_tuple(Type::None));
     }
 }

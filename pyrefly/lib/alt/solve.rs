@@ -2525,8 +2525,10 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // Per PEP 696: when default is a TypeVar, "T1's bound must be a subtype of T2's bound"
             Restriction::Bound(bound_ty) => {
                 let default_for_check = match default {
-                    Type::TypeVar(tv) => tv.restriction().as_type(self.stdlib),
-                    Type::Quantified(q) if q.is_type_var() => q.restriction().as_type(self.stdlib),
+                    Type::TypeVar(tv) => tv.restriction().as_type(self.stdlib, self.heap),
+                    Type::Quantified(q) if q.is_type_var() => {
+                        q.restriction().as_type(self.stdlib, self.heap)
+                    }
                     _ => default.clone(),
                 };
                 if !self.is_subset_eq(&default_for_check, bound_ty) {
@@ -4446,7 +4448,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     .get_from_export(*m, None, &KeyExport(dunder::GETATTR.clone()))
                     .arc_clone();
                 getattr_ty
-                    .callable_return_type()
+                    .callable_return_type(self.heap)
                     .unwrap_or_else(|| self.heap.mk_any_implicit())
             }
             Binding::ClassDef(x, _decorators) => match &self.get_idx(*x).0 {

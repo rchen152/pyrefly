@@ -1411,7 +1411,7 @@ impl Type {
     }
 
     // This doesn't handle generics currently
-    pub fn callable_return_type(&self) -> Option<Type> {
+    pub fn callable_return_type(&self, heap: &TypeHeap) -> Option<Type> {
         let mut rets = Vec::new();
         let mut get_ret = |callable: &Callable| {
             rets.push(callable.ret.clone());
@@ -1420,7 +1420,7 @@ impl Type {
         if rets.is_empty() {
             None
         } else {
-            Some(unions(rets))
+            Some(unions(rets, heap))
         }
     }
 
@@ -1447,7 +1447,7 @@ impl Type {
         self.transform_toplevel_callable(&mut set_ret);
     }
 
-    pub fn callable_first_param(&self) -> Option<Type> {
+    pub fn callable_first_param(&self, heap: &TypeHeap) -> Option<Type> {
         let mut params = Vec::new();
         let mut get_param = |callable: &Callable| {
             if let Some(p) = callable.get_first_param() {
@@ -1458,7 +1458,7 @@ impl Type {
         if params.is_empty() {
             None
         } else {
-            Some(unions(params))
+            Some(unions(params, heap))
         }
     }
 
@@ -1530,10 +1530,10 @@ impl Type {
     }
 
     /// type[a | b] -> type[a] | type[b]
-    pub fn distribute_type_over_union(self) -> Self {
+    pub fn distribute_type_over_union(self, heap: &TypeHeap) -> Self {
         self.transform(&mut |ty| {
             if let Type::Type(box Type::Union(box Union { members, .. })) = ty {
-                *ty = unions(members.drain(..).map(Type::type_form).collect());
+                *ty = unions(members.drain(..).map(Type::type_form).collect(), heap);
             }
         })
     }

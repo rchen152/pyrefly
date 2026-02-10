@@ -396,7 +396,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 for q in quantifieds {
                     // The only time it's safe to simplify a quantified away is when the entire intersection is Never.
                     let intersection = narrow(
-                        &q.restriction().as_type(self.stdlib),
+                        &q.restriction().as_type(self.stdlib, self.heap),
                         right_unwrapped.clone(),
                     );
                     res.push(if matches!(&intersection, Type::Type(t) if t.is_never()) {

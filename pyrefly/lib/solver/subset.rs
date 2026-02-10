@@ -1388,10 +1388,11 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             (Type::SelfType(got), _) => self.is_subset_eq(&Type::ClassType(got.clone()), want),
             (Type::Tuple(l), Type::Tuple(u)) => self.is_subset_tuple(l, u),
             (Type::Tuple(Tuple::Concrete(left_elts)), _) => {
-                let tuple_type = self
-                    .solver
-                    .heap
-                    .mk_class_type(self.type_order.stdlib().tuple(unions(left_elts.clone())));
+                let tuple_type = self.solver.heap.mk_class_type(
+                    self.type_order
+                        .stdlib()
+                        .tuple(unions(left_elts.clone(), &self.solver.heap)),
+                );
                 self.is_subset_eq(&tuple_type, want)
             }
             (Type::Tuple(Tuple::Unbounded(left_elt)), _) => {
@@ -1415,18 +1416,20 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                     .chain(suffix)
                     .cloned()
                     .collect::<Vec<_>>();
-                let tuple_type = self
-                    .solver
-                    .heap
-                    .mk_class_type(self.type_order.stdlib().tuple(unions(elts)));
+                let tuple_type = self.solver.heap.mk_class_type(
+                    self.type_order
+                        .stdlib()
+                        .tuple(unions(elts, &self.solver.heap)),
+                );
                 self.is_subset_eq(&tuple_type, want)
             }
             (Type::Tuple(Tuple::Unpacked(box (prefix, middle, suffix))), _) => {
                 let elts = prefix.iter().chain(suffix).cloned().collect::<Vec<_>>();
-                let tuple_type = self
-                    .solver
-                    .heap
-                    .mk_class_type(self.type_order.stdlib().tuple(unions(elts)));
+                let tuple_type = self.solver.heap.mk_class_type(
+                    self.type_order
+                        .stdlib()
+                        .tuple(unions(elts, &self.solver.heap)),
+                );
                 self.is_subset_eq(&tuple_type, want)?;
                 self.is_subset_eq(middle, want)?;
                 Ok(())

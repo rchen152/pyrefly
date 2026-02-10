@@ -605,13 +605,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             let arg = arg.clone();
                             arg.transform(&mut |x| {
                                 if let Type::TypeVar(tv) = x {
-                                    *x = tv.restriction().as_type(self.stdlib);
+                                    *x = tv.restriction().as_type(self.stdlib, self.heap);
                                 }
                             })
                         };
                         self.check_type(
                             &arg_for_check,
-                            &restriction.as_type(self.stdlib),
+                            &restriction.as_type(self.stdlib, self.heap),
                             range,
                             errors,
                             tcc,
