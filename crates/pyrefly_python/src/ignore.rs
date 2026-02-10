@@ -257,15 +257,22 @@ impl Ignore {
         let mut pending = Vec::new();
         let mut line = LineNumber::default();
         for (idx, line_str) in code.lines().enumerate() {
+            let comment_start = find_comment_start_in_line(line_str);
+            let comments = if let Some(comment_start) = comment_start {
+                &line_str[comment_start..]
+            } else {
+                ""
+            };
+            let is_comment_only_line = comment_start
+                .is_some_and(|comment_start| line_str[..comment_start].trim_start().is_empty());
             line = LineNumber::from_zero_indexed(idx as u32);
-            let mut xs = line_str.split('#');
-            let first = xs.next().unwrap_or("");
-            if !pending.is_empty() && (line_str.is_empty() || !first.trim_start().is_empty()) {
+            if !pending.is_empty() && (line_str.is_empty() || !is_comment_only_line) {
                 ignores.entry(line).or_default().append(&mut pending);
             }
-            for x in xs {
+            // We know `#` is at the beginning, so the first split is an empty string
+            for x in comments.split('#').skip(1) {
                 if let Some(supp) = Self::parse_ignore_comment(x, line) {
-                    if first.trim_start().is_empty() {
+                    if is_comment_only_line {
                         pending.push(supp);
                     } else {
                         ignores.entry(line).or_default().push(supp);
@@ -442,6 +449,9 @@ mod tests {
             "# type: ignore\n# pyright: ignore\n# bad\n\ncode",
             &[(Tool::Type, 4), (Tool::Pyright, 4)],
         );
+
+        // Ignore `# pyrefly: ignore` inside a string
+        f("x = 1 + '# pyrefly: ignore'", &[]);
     }
 
     #[test]
