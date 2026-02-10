@@ -290,20 +290,17 @@ fn on_class(
             continue;
         }
 
-        if let Some((ty, _, read_only)) = field.for_variance_inference() {
-            // TODO: We need a much better way to distinguish between fields and methods than this
-            // currently, class field representation isn't good enough but we need to fix that soon
-            let variance = if ty.is_toplevel_callable()
-                || is_private_field(name)
-                || read_only
-                || field.is_final()
+        let (ty, _, read_only) = field.for_variance_inference();
+        // TODO: We need a much better way to distinguish between fields and methods than this
+        // currently, class field representation isn't good enough but we need to fix that soon
+        let variance =
+            if ty.is_toplevel_callable() || is_private_field(name) || read_only || field.is_final()
             {
                 Variance::Covariant
             } else {
                 Variance::Invariant
             };
-            on_type(variance, true, ty, on_edge, on_var);
-        }
+        on_type(variance, true, ty, on_edge, on_var);
     }
 }
 
@@ -641,9 +638,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             if name == &dunder::INIT || name == &dunder::NEW {
                 continue;
             }
-            if let Some((ty, _, _)) = field.for_variance_inference()
-                && ty.is_toplevel_callable()
-            {
+            let (ty, _, _) = field.for_variance_inference();
+            if ty.is_toplevel_callable() {
                 let range = class
                     .field_decl_range(name)
                     .unwrap_or_else(|| class.range());
