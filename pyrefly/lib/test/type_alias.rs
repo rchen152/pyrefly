@@ -1110,6 +1110,19 @@ f(0)  # E: not assignable
 );
 
 testcase!(
+    test_unused_and_out_of_order_tparams_in_typealiastype,
+    r#"
+from typing import TypeAliasType, TypeVar, assert_type
+T1 = TypeVar("T1")
+T2 = TypeVar("T2")
+T3 = TypeVar("T3")
+X = TypeAliasType("X", dict[T2, T1], type_params=(T1, T2, T3))
+def f(x: X[int, str, bytes]):
+    assert_type(x, dict[str, int])
+    "#,
+);
+
+testcase!(
     test_type_statement_circular_conformance,
     r#"
 from typing import Callable

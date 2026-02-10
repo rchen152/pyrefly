@@ -137,20 +137,19 @@ def f[T](x: X[T]):
 );
 
 testcase!(
-    bug = "False positives caused by failure to replace `TypeVar[T]` with Quantified",
     test_generic_typealiastype,
     r#"
 from typing import reveal_type, TypeAliasType, TypeVar, Union
 
 T = TypeVar("T")
 
-X = TypeAliasType("X", T | list[X[T]], type_params=(T,))  # false positive!  # E: conflicting types while breaking a dependency cycle
+X = TypeAliasType("X", T | list[X[T]], type_params=(T,))
 
-x1: X[int] = [[1]]  # false positive!  # E: not assignable
+x1: X[int] = [[1]]
 x2: X[str] = [[1]]  # E: not assignable
 
 def f[T](x: X[T]):
-    reveal_type(x)  # E: list[X[TypeVar[T]]] | T
+    reveal_type(x)  # E: list[X[T]] | T
     "#,
 );
 

@@ -1047,28 +1047,6 @@
   "aliases_typealiastype.py": [
     {
       "code": -2,
-      "column": 1,
-      "concise_description": "Pyrefly detected conflicting types while breaking a dependency cycle: `TypeAlias[GoodAlias4[T], type[list[GoodAlias4[TypeVar[T]]] | T]]` is not assignable to `type[GoodAlias4[T]]`. Adding explicit type annotations might possibly help.",
-      "description": "Pyrefly detected conflicting types while breaking a dependency cycle: `TypeAlias[GoodAlias4[T], type[list[GoodAlias4[TypeVar[T]]] | T]]` is not assignable to `type[GoodAlias4[T]]`. Adding explicit type annotations might possibly help.",
-      "line": 19,
-      "name": "bad-assignment",
-      "severity": "error",
-      "stop_column": 11,
-      "stop_line": 19
-    },
-    {
-      "code": -2,
-      "column": 1,
-      "concise_description": "Pyrefly detected conflicting types while breaking a dependency cycle: `TypeAlias[GoodAlias5[S, TStr: str, P, Ts], type[((ParamSpec(P)) -> TStr) | list[S] | list[GoodAlias5[TypeVar[S], TypeVar[TStr], ParamSpec[P], tuple[Unknown, ...]]] | tuple[*Ts]]]` is not assignable to `type[GoodAlias5[S, TStr: str, P, Ts]]`. Adding explicit type annotations might possibly help.",
-      "description": "Pyrefly detected conflicting types while breaking a dependency cycle: `TypeAlias[GoodAlias5[S, TStr: str, P, Ts], type[((ParamSpec(P)) -> TStr) | list[S] | list[GoodAlias5[TypeVar[S], TypeVar[TStr], ParamSpec[P], tuple[Unknown, ...]]] | tuple[*Ts]]]` is not assignable to `type[GoodAlias5[S, TStr: str, P, Ts]]`. Adding explicit type annotations might possibly help.",
-      "line": 20,
-      "name": "bad-assignment",
-      "severity": "error",
-      "stop_column": 11,
-      "stop_line": 20
-    },
-    {
-      "code": -2,
       "column": 7,
       "concise_description": "Object of class `TypeAliasType` has no attribute `other_attrib`",
       "description": "Object of class `TypeAliasType` has no attribute `other_attrib`",
@@ -1077,17 +1055,6 @@
       "severity": "error",
       "stop_column": 30,
       "stop_line": 32
-    },
-    {
-      "code": -2,
-      "column": 23,
-      "concise_description": "`list[int]` is not assignable to `int | list[GoodAlias4[TypeVar[T]]]`",
-      "description": "`list[int]` is not assignable to `int | list[GoodAlias4[TypeVar[T]]]`",
-      "line": 36,
-      "name": "bad-assignment",
-      "severity": "error",
-      "stop_column": 26,
-      "stop_line": 36
     },
     {
       "code": -2,
