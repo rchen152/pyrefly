@@ -324,7 +324,7 @@ fn flatten_unpacked_concrete_tuples(elts: Vec<Type>) -> Vec<Type> {
 }
 
 // After a TypeVarTuple gets substituted with a tuple type, try to simplify the type
-pub fn simplify_tuples(tuple: Tuple) -> Tuple {
+pub fn simplify_tuples(tuple: Tuple, _heap: &TypeHeap) -> Tuple {
     match tuple {
         Tuple::Concrete(elts) => Tuple::Concrete(flatten_unpacked_concrete_tuples(elts)),
         Tuple::Unpacked(box (prefix, Type::Tuple(middle), suffix))

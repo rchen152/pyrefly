@@ -634,7 +634,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let forced_middle = self.force_for_narrowing(middle_var, range, errors);
                 let new_tuple =
                     Tuple::Unpacked(Box::new((prefix.clone(), forced_middle, suffix.clone())));
-                self.tuple_len_eq(&simplify_tuples(new_tuple), len, range, errors)
+                self.tuple_len_eq(&simplify_tuples(new_tuple, self.heap), len, range, errors)
             }
             Tuple::Unbounded(elements) => {
                 self.heap.mk_concrete_tuple(vec![(**elements).clone(); len])
@@ -656,7 +656,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 let forced_middle = self.force_for_narrowing(middle_var, range, errors);
                 let new_tuple =
                     Tuple::Unpacked(Box::new((prefix.clone(), forced_middle, suffix.clone())));
-                self.tuple_len_not_eq(&simplify_tuples(new_tuple), len, range, errors)
+                self.tuple_len_not_eq(&simplify_tuples(new_tuple, self.heap), len, range, errors)
             }
             _ => self.heap.mk_tuple(tuple.clone()),
         }

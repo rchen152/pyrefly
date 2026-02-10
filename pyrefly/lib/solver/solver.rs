@@ -524,7 +524,9 @@ impl Solver {
                 *x = intersect(mem::take(&mut y.0), y.1.clone(), &self.heap);
             }
             if let Type::Tuple(tuple) = x {
-                *x = self.heap.mk_tuple(simplify_tuples(mem::take(tuple)));
+                *x = self
+                    .heap
+                    .mk_tuple(simplify_tuples(mem::take(tuple), &self.heap));
             }
             // When a param spec is resolved, collapse any Concatenate and Callable types that use it
             if let Type::Concatenate(ts, box Type::ParamSpecValue(paramlist)) = x {
