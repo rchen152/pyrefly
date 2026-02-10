@@ -417,9 +417,31 @@ impl CalcStack {
         // Fast filter: if existing SCC's upper bound < new cycle's min, definitely no overlap
         // Upper bound = anchor_pos + segment_size (exact count of live frames in segment)
         let existing_max_bound = existing.anchor_pos + existing.segment_size;
-        if existing_max_bound <= cycle_start_pos {
+
+        // Position-based check: overlap is possible only if existing_max_bound > cycle_start_pos
+        let position_overlap_possible = existing_max_bound > cycle_start_pos;
+
+        if !position_overlap_possible {
+            // Debug assertion: verify position-based check matches membership-based check.
+            // If this assertion fails, it means segments are not contiguous - there's a
+            // CalcId in the cycle range that belongs to an SCC but is outside the segment.
+            debug_assert!(
+                !(cycle_start_pos..stack_depth).any(|pos| {
+                    calc_stack_vec
+                        .get(pos)
+                        .map(|calc_id| existing.node_state.contains_key(calc_id))
+                        .unwrap_or(false)
+                }),
+                "Position-based check said no overlap (max_bound={} <= cycle_start={}), \
+                 but membership check found overlap. anchor_pos={}, segment_size={}",
+                existing_max_bound,
+                cycle_start_pos,
+                existing.anchor_pos,
+                existing.segment_size,
+            );
             return false;
         }
+
         // Must check in detail - iterate through positions
         (cycle_start_pos..stack_depth).any(|pos| {
             calc_stack_vec
