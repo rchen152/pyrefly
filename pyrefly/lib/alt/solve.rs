@@ -4726,6 +4726,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         }
     }
 
+    pub fn untype_alias(&self, ta: &TypeAliasData) -> Type {
+        let ty = self.get_type_alias(ta).as_type();
+        // We already validated the type when creating the type alias.
+        self.untype(ty, TextRange::default(), &self.error_swallower())
+    }
+
     // Approximate the result of calling `type()` on something of type T
     // In many cases the result is just type[T] with generics erased, but sometimes
     // we'll fall back to builtins.type. We can add more cases here as-needed.
