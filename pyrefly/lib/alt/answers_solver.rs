@@ -1259,9 +1259,19 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     pub fn get_type_alias(&self, data: &TypeAliasData) -> Arc<TypeAlias> {
         match data {
-            TypeAliasData::Ref(r) => self
-                .get_from_module(r.module, None, &KeyTypeAlias(r.index))
-                .unwrap_or_else(|| Arc::new(TypeAlias::unknown(r.name.clone()))),
+            TypeAliasData::Ref(r) => {
+                let ta = self.get_from_module(r.module, None, &KeyTypeAlias(r.index));
+                let Some(ta) = ta else {
+                    return Arc::new(TypeAlias::unknown(r.name.clone()));
+                };
+                if let Some(args) = &r.args {
+                    let mut ta = (*ta).clone();
+                    args.substitute_into_mut(ta.as_type_mut());
+                    Arc::new(ta)
+                } else {
+                    ta
+                }
+            }
             TypeAliasData::Value(ta) => Arc::new(ta.clone()),
         }
     }

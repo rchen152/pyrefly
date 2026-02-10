@@ -17,7 +17,6 @@ use pyrefly_types::literal::Lit;
 use pyrefly_types::literal::Literal;
 use pyrefly_types::read_only::ReadOnlyReason;
 use pyrefly_types::special_form::SpecialForm;
-use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::typed_dict::ExtraItem;
 use pyrefly_types::typed_dict::ExtraItems;
 use pyrefly_types::typed_dict::TypedDict;
@@ -1003,28 +1002,17 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
                 Ok(()) // everything is an instance of `object`
             }
             (
-                Type::Forall(box Forall {
-                    body: Forallable::TypeAlias(TypeAliasData::Value(got)),
+                Type::TypeAlias(box got)
+                | Type::Forall(box Forall {
+                    body: Forallable::TypeAlias(got),
                     ..
                 }),
-                Type::Forall(box Forall {
-                    body: Forallable::TypeAlias(TypeAliasData::Ref(want)),
+                Type::TypeAlias(box want)
+                | Type::Forall(box Forall {
+                    body: Forallable::TypeAlias(want),
                     ..
                 }),
-            ) if *got.name == want.name => {
-                // TODO(rechen): support is_subset_eq on generic recursive aliases. Right now,
-                // comparisons fail because we do not substitute targs into a Ref.
-                Ok(())
-            }
-            (Type::UntypedAlias(box TypeAliasData::Ref(r)), _)
-            | (_, Type::UntypedAlias(box TypeAliasData::Ref(r)))
-                if r.args.is_some() =>
-            {
-                // TODO(rechen): support is_subset_eq on generic recursive aliases. Right now,
-                // comparisons fail because we do not substitute targs into a Ref.
-                Ok(())
-            }
-            (Type::TypeAlias(box got), Type::TypeAlias(box want)) => {
+            ) => {
                 // We're comparing two type aliases structurally, so we need their static, not
                 // runtime, types.
                 self.is_subset_eq(

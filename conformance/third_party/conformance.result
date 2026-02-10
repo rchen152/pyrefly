@@ -9,14 +9,14 @@
     "Line 117: Expected 1 errors"
   ],
   "aliases_newtype.py": [],
-  "aliases_recursive.py": [
-    "Line 63: Expected 1 errors",
-    "Line 69: Expected 1 errors"
-  ],
+  "aliases_recursive.py": [],
   "aliases_type_statement.py": [],
   "aliases_typealiastype.py": [
     "Line 48: Expected 1 errors",
-    "Line 66: Expected 1 errors"
+    "Line 66: Expected 1 errors",
+    "Line 19: Unexpected errors ['Pyrefly detected conflicting types while breaking a dependency cycle: `TypeAlias[GoodAlias4[T], type[list[GoodAlias4[TypeVar[T]]] | T]]` is not assignable to `type[GoodAlias4[T]]`. Adding explicit type annotations might possibly help.']",
+    "Line 20: Unexpected errors ['Pyrefly detected conflicting types while breaking a dependency cycle: `TypeAlias[GoodAlias5[S, TStr: str, P, Ts], type[((ParamSpec(P)) -> TStr) | list[S] | list[GoodAlias5[TypeVar[S], TypeVar[TStr], ParamSpec[P], tuple[Unknown, ...]]] | tuple[*Ts]]]` is not assignable to `type[GoodAlias5[S, TStr: str, P, Ts]]`. Adding explicit type annotations might possibly help.']",
+    "Line 36: Unexpected errors ['`list[int]` is not assignable to `int | list[GoodAlias4[TypeVar[T]]]`']"
   ],
   "aliases_variance.py": [],
   "annotations_coroutines.py": [],
