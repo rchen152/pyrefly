@@ -802,7 +802,10 @@ pub struct Scc {
     /// Used as a fast filter to skip SCCs that can't possibly overlap with
     /// a newly detected cycle.
     min_stack_depth: usize,
-    /// Stack position of the SCC anchor (the position of the break_at CalcId).
+    /// Stack position of the SCC anchor (the position of the detected_at CalcId).
+    /// The detected_at CalcId is the one that was pushed twice, triggering cycle
+    /// detection; its first occurrence is at the deepest position in the cycle
+    /// (cycle_start), making it a robust anchor.
     /// When the stack length drops to anchor_pos, the SCC is complete.
     /// This enables O(1) completion checking instead of iterating all participants.
     anchor_pos: usize,
@@ -838,16 +841,14 @@ impl Scc {
         let mut break_at_set = BTreeSet::new();
         break_at_set.insert(break_at.dupe());
 
-        // The anchor (minimal CalcId) is where the cycle will complete during unwinding.
+        // The anchor is the detected_at CalcId (the one pushed twice, triggering cycle
+        // detection). Its first occurrence is at the deepest position in the cycle
+        // (cycle_start), making it a more robust anchor than break_at.
         //
         // The initial segment size is the number of frames from anchor to top of stack.
-        //
-        // Note that raw.len() would be incorrect, because unless the anchor (the break at)
-        // is the same as detected_at, there are typically some extraneous stack frames
-        // *below* the anchor - we want only the frames involved in completing the cycle.
         let anchor_pos = calc_stack_vec
             .iter()
-            .position(|c| c == break_at)
+            .position(|c| c == &detected_at)
             .unwrap_or(0);
         let segment_size = calc_stack_vec.len() - anchor_pos;
 
