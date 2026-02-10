@@ -18,11 +18,13 @@ use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 
 use super::extract_shared::code_at_range;
+use super::extract_shared::is_member_stmt;
 use super::extract_shared::line_end_position;
 use super::extract_shared::line_indent_and_start;
 use super::extract_shared::prepare_insertion_text;
 use super::extract_shared::reindent_block;
 use super::extract_shared::selection_anchor;
+use super::extract_shared::unique_name;
 use super::types::LocalRefactorCodeAction;
 use crate::state::lsp::Transaction;
 
@@ -101,13 +103,6 @@ fn ranges_overlap(a: TextRange, b: TextRange) -> bool {
     a.start() < b.end() && b.start() < a.end()
 }
 
-fn is_member_stmt(stmt: &Stmt) -> bool {
-    matches!(
-        stmt,
-        Stmt::FunctionDef(_) | Stmt::ClassDef(_) | Stmt::Assign(_) | Stmt::AnnAssign(_)
-    )
-}
-
 fn class_insertion_point(class_def: &StmtClassDef, source: &str) -> Option<(String, TextSize)> {
     let anchor = class_def
         .decorator_list
@@ -120,19 +115,7 @@ fn class_insertion_point(class_def: &StmtClassDef, source: &str) -> Option<(Stri
 
 fn generate_superclass_name(source: &str, class_name: &str) -> String {
     let base = format!("{DEFAULT_SUPERCLASS_PREFIX}{class_name}");
-    let mut counter = 1;
-    loop {
-        let candidate = if counter == 1 {
-            base.clone()
-        } else {
-            format!("{base}_{counter}")
-        };
-        let needle = format!("class {candidate}");
-        if !source.contains(&needle) {
-            return candidate;
-        }
-        counter += 1;
-    }
+    unique_name(&base, |name| source.contains(&format!("class {name}")))
 }
 
 fn build_superclass_text(
