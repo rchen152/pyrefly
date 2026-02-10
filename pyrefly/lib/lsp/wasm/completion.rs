@@ -227,7 +227,6 @@ impl Transaction<'_> {
             handle,
             &attr_info.name,
             definition,
-            attr_info.docstring_range,
             FindPreference::default(),
         );
 

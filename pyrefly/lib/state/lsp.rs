@@ -1091,15 +1091,20 @@ impl<'a> Transaction<'a> {
         handle: &Handle,
         attr_name: &Name,
         definition: AttrDefinition,
-        docstring_range: Option<TextRange>,
         preference: FindPreference,
     ) -> Option<(TextRangeWithModule, Option<TextRange>)> {
         match definition {
-            AttrDefinition::FullyResolved(text_range_with_module_info) => {
+            AttrDefinition::FullyResolved {
+                cls,
+                range,
+                docstring_range,
+            } => {
                 // If prefer_pyi is false and the current module is a .pyi file,
                 // try to find the corresponding .py file
+                let text_range_with_module_info =
+                    TextRangeWithModule::new(cls.module().dupe(), range);
                 if !preference.prefer_pyi
-                    && text_range_with_module_info.module.path().is_interface()
+                    && cls.module_path().is_interface()
                     && let Some((exec_module, exec_range, exec_docstring)) = self
                         .search_corresponding_py_module_for_attribute(
                             handle,
@@ -1289,13 +1294,8 @@ impl<'a> Transaction<'a> {
     ) -> Option<FindDefinitionItemWithDocstring> {
         completions.into_iter().find_map(|x| {
             if &x.name == name {
-                let (definition, docstring_range) = self.resolve_attribute_definition(
-                    handle,
-                    &x.name,
-                    x.definition,
-                    x.docstring_range,
-                    preference,
-                )?;
+                let (definition, docstring_range) =
+                    self.resolve_attribute_definition(handle, &x.name, x.definition, preference)?;
                 Some(FindDefinitionItemWithDocstring {
                     metadata: DefinitionMetadata::Attribute,
                     definition_range: definition.range,
@@ -2461,7 +2461,6 @@ impl<'a> Transaction<'a> {
                         ty: _,
                         is_deprecated: _,
                         definition,
-                        docstring_range,
                         is_reexport: _,
                     } in solver.completions(base_type, Some(expected_name), false)
                     {
@@ -2470,7 +2469,6 @@ impl<'a> Transaction<'a> {
                                 handle,
                                 &name,
                                 definition,
-                                docstring_range,
                                 FindPreference::default(),
                             )
                             && module.path() == module.path()
