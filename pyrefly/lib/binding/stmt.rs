@@ -279,6 +279,10 @@ impl<'a> BindingsBuilder<'a> {
                 for type_param in type_params.elts.iter_mut() {
                     self.ensure_type(type_param, &mut None);
                 }
+            } else if let Some(id) = &kw.arg
+                && id.id == "value"
+            {
+                self.ensure_type(&mut kw.value, &mut None);
             } else {
                 self.ensure_expr(&mut kw.value, static_type_usage);
             }

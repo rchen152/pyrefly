@@ -1098,6 +1098,18 @@ BadAlias21 = TypeAliasType("BadAlias21", list[BadAlias21])  # should error: circ
 );
 
 testcase!(
+    test_forward_ref_in_typealiastype_value_by_kw,
+    r#"
+from typing import TypeAliasType
+X = TypeAliasType("X", value="C")
+class C: ...
+def f(x: X): ...
+f(C())
+f(0)  # E: not assignable
+    "#,
+);
+
+testcase!(
     test_type_statement_circular_conformance,
     r#"
 from typing import Callable
