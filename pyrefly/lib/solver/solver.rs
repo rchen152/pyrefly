@@ -521,7 +521,7 @@ impl Solver {
                 *x = merged;
             }
             if let Type::Intersect(y) = x {
-                *x = intersect(mem::take(&mut y.0), y.1.clone());
+                *x = intersect(mem::take(&mut y.0), y.1.clone(), &self.heap);
             }
             if let Type::Tuple(tuple) = x {
                 *x = self.heap.mk_tuple(simplify_tuples(mem::take(tuple)));

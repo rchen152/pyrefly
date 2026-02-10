@@ -157,7 +157,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 if self.has_superclass(left_base, right_base)
                     || self.has_superclass(right_base, left_base)
                 {
-                    intersect(vec![left.clone(), right.clone()], fallback)
+                    intersect(vec![left.clone(), right.clone()], fallback, self.heap)
                 } else {
                     // A common subclass of these two classes cannot exist.
                     self.heap.mk_never()
@@ -402,7 +402,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     res.push(if matches!(&intersection, Type::Type(t) if t.is_never()) {
                         intersection
                     } else {
-                        intersect(vec![q.to_type(self.heap), right.clone()], right.clone())
+                        intersect(
+                            vec![q.to_type(self.heap), right.clone()],
+                            right.clone(),
+                            self.heap,
+                        )
                     })
                 }
                 if !nonquantifieds.is_empty() {

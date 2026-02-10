@@ -104,7 +104,7 @@ pub fn unions_with_literals(
     unions_internal(xs, Some(stdlib), Some(enum_members))
 }
 
-pub fn intersect(ts: Vec<Type>, fallback: Type) -> Type {
+pub fn intersect(ts: Vec<Type>, fallback: Type, _heap: &TypeHeap) -> Type {
     let mut flattened = Vec::new();
     for t in ts {
         match t {
@@ -380,29 +380,33 @@ mod tests {
 
     #[test]
     fn test_intersect_simple() {
+        let heap = TypeHeap::new();
         let xs = vec![Type::any_tuple(), Type::any_implicit()];
         assert_eq!(
-            intersect(xs.clone(), Type::never()),
+            intersect(xs.clone(), Type::never(), &heap),
             Type::Intersect(Box::new((xs, Type::never())))
         );
     }
 
     #[test]
     fn test_intersect_empty() {
+        let heap = TypeHeap::new();
         let xs = Vec::new();
-        assert_eq!(intersect(xs, Type::any_implicit()), Type::never())
+        assert_eq!(intersect(xs, Type::any_implicit(), &heap), Type::never())
     }
 
     #[test]
     fn test_intersect_never() {
+        let heap = TypeHeap::new();
         let xs = vec![Type::any_implicit(), Type::never()];
-        assert_eq!(intersect(xs, Type::any_implicit()), Type::never());
+        assert_eq!(intersect(xs, Type::any_implicit(), &heap), Type::never());
     }
 
     #[test]
     fn test_intersect_one() {
+        let heap = TypeHeap::new();
         let xs = vec![Type::None];
-        assert_eq!(intersect(xs, Type::never()), Type::None);
+        assert_eq!(intersect(xs, Type::never(), &heap), Type::None);
     }
 
     #[test]
@@ -410,7 +414,11 @@ mod tests {
         let heap = TypeHeap::new();
         let xs = vec![
             Type::any_implicit(),
-            intersect(vec![Type::any_implicit(), Type::any_tuple()], Type::never()),
+            intersect(
+                vec![Type::any_implicit(), Type::any_tuple()],
+                Type::never(),
+                &heap,
+            ),
         ];
         assert_eq!(unions(xs, &heap), Type::any_implicit());
     }
