@@ -1307,20 +1307,20 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) -> Type {
         ty.transform(&mut |ty| match ty {
             Type::SpecialForm(SpecialForm::Tuple) => {
-                Self::add_implicit_any_error(errors, range, "tuple", None);
+                Self::add_implicit_any_error(errors, range, "class `tuple`".to_owned(), None);
                 *ty = self.heap.mk_unbounded_tuple(self.heap.mk_any_implicit());
             }
             Type::SpecialForm(SpecialForm::Callable) => {
-                Self::add_implicit_any_error(errors, range, "Callable", None);
+                Self::add_implicit_any_error(errors, range, "class `Callable`".to_owned(), None);
                 *ty = self.heap.mk_callable_ellipsis(self.heap.mk_any_implicit())
             }
             Type::SpecialForm(SpecialForm::Type) => {
-                Self::add_implicit_any_error(errors, range, "type", None);
+                Self::add_implicit_any_error(errors, range, "class `type`".to_owned(), None);
                 *ty = self.heap.mk_type_form(self.heap.mk_any_implicit())
             }
             Type::ClassDef(cls) => {
                 if cls.is_builtin("tuple") {
-                    Self::add_implicit_any_error(errors, range, "tuple", None);
+                    Self::add_implicit_any_error(errors, range, "class `tuple`".to_owned(), None);
                     *ty = self
                         .heap
                         .mk_type_form(self.heap.mk_unbounded_tuple(self.heap.mk_any_implicit()));

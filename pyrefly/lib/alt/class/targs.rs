@@ -173,7 +173,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 Self::add_implicit_any_error(
                     errors,
                     range,
-                    cls.name().as_str(),
+                    format!("class `{}`", cls.name()),
                     Some(tparam.name().as_str()),
                 );
             }),
