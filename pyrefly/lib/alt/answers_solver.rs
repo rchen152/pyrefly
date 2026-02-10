@@ -245,6 +245,9 @@ impl CalcStack {
                 }
                 RevisitingTargetState::InProgress => match calculation.propose_calculation() {
                     ProposalResult::CycleDetected => {
+                        // Must merge first to ensure segment_size is up to date before
+                        // on_scc_detected checks for overlap
+                        self.merge_sccs(&detected_at_of_scc);
                         let current_cycle = self.current_cycle().unwrap();
                         match self.on_scc_detected(current_cycle) {
                             SccDetectedResult::BreakHere => BindingAction::Unwind,
