@@ -1358,6 +1358,109 @@ class Foo(Base, BaseFoo, metaclass=Meta):
 }
 
 #[test]
+fn extract_superclass_with_decorator() {
+    let code = r#"
+class Foo:
+    # SUPER-START
+    @property
+    def bar(self) -> int:
+        return 1
+    # SUPER-END
+"#;
+    let (module_info, actions, titles) = compute_extract_superclass_actions(code);
+    assert_eq!(vec!["Extract superclass `BaseFoo`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class BaseFoo:
+    @property
+    def bar(self) -> int:
+        return 1
+
+class Foo(BaseFoo):
+    # SUPER-START
+    pass
+    # SUPER-END
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn extract_superclass_multiline_method() {
+    let code = r#"
+class Foo:
+    # SUPER-START
+    def complex(self):
+        x = 1
+        y = 2
+        if x > 0:
+            return x + y
+        else:
+            return y
+    # SUPER-END
+"#;
+    let (module_info, actions, titles) = compute_extract_superclass_actions(code);
+    assert_eq!(vec!["Extract superclass `BaseFoo`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class BaseFoo:
+    def complex(self):
+        x = 1
+        y = 2
+        if x > 0:
+            return x + y
+        else:
+            return y
+
+class Foo(BaseFoo):
+    # SUPER-START
+    pass
+    # SUPER-END
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
+fn extract_superclass_docstring_only_no_action() {
+    let code = r#"
+class Foo:
+    # SUPER-START
+    """This class has only a docstring."""
+    # SUPER-END
+"#;
+    let (_, actions, titles) = compute_extract_superclass_actions(code);
+    // No action should be offered when there are no extractable members
+    assert!(actions.is_empty());
+    assert!(titles.is_empty());
+}
+
+#[test]
+fn extract_superclass_preserves_docstring() {
+    let code = r#"
+class Foo:
+    """Foo's docstring."""
+    # SUPER-START
+    def method(self):
+        pass
+    # SUPER-END
+"#;
+    let (module_info, actions, titles) = compute_extract_superclass_actions(code);
+    assert_eq!(vec!["Extract superclass `BaseFoo`"], titles);
+    let updated = apply_refactor_edits_for_module(&module_info, &actions[0]);
+    let expected = r#"
+class BaseFoo:
+    def method(self):
+        pass
+
+class Foo(BaseFoo):
+    """Foo's docstring."""
+    # SUPER-START
+    pass
+    # SUPER-END
+"#;
+    assert_eq!(expected.trim(), updated.trim());
+}
+
+#[test]
 fn push_member_down_all_subclasses() {
     let code = r#"
 class Base:
