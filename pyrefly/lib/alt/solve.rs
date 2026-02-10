@@ -886,9 +886,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         seen_type_vars: &mut SmallMap<TypeVar, Quantified>,
         seen_type_var_tuples: &mut SmallMap<TypeVarTuple, Quantified>,
         seen_param_specs: &mut SmallMap<ParamSpec, Quantified>,
-        tparams: &mut Vec<TParam>,
         errors: &ErrorCollector,
-    ) {
+    ) -> Vec<TParam> {
+        let mut tparams = Vec::new();
         for expr in exprs {
             let ty = self.expr_infer(expr, errors);
             let ty = self.untype(ty, expr.range(), errors);
@@ -971,6 +971,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
             }
         }
+        tparams
     }
 
     fn tvars_to_tparams_for_type_alias(
@@ -1218,7 +1219,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut seen_type_vars = SmallMap::new();
         let mut seen_type_var_tuples = SmallMap::new();
         let mut seen_param_specs = SmallMap::new();
-        let mut tparams = Vec::new();
 
         let tvars_to_tparams_for_type_alias =
             |ty, seen_type_vars, seen_type_var_tuples, seen_param_specs| {
@@ -1237,17 +1237,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 tparams_with_ranges
             };
 
-        match params {
+        let tparams = match params {
             TypeAliasParams::TypeAliasType {
                 declared_params: type_params,
             } => {
                 // Handle type params from `TypeAliasType(type_params=...)`.
-                self.tvars_to_tparams_for_type_alias_type(
+                let tparams = self.tvars_to_tparams_for_type_alias_type(
                     type_params,
                     &mut seen_type_vars,
                     &mut seen_type_var_tuples,
                     &mut seen_param_specs,
-                    &mut tparams,
                     errors,
                 );
                 let extra_tparams = tvars_to_tparams_for_type_alias(
@@ -1258,35 +1257,36 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 );
                 for (_, extra_tparam) in extra_tparams {
                     errors.add(
-                    range,
-                    ErrorInfo::Kind(ErrorKind::InvalidTypeAlias),
-                    vec1![
-                        format!(
-                            "Type variable `{}` is out of scope for this `TypeAliasType`",
-                            extra_tparam.name()
-                        ),
-                        format!(
-                            "Type parameters must be passed as a tuple literal to the `type_params` argument",
-                        )
-                    ],
-                );
+                        range,
+                        ErrorInfo::Kind(ErrorKind::InvalidTypeAlias),
+                        vec1![
+                            format!(
+                                "Type variable `{}` is out of scope for this `TypeAliasType`",
+                                extra_tparam.name()
+                            ),
+                            format!(
+                                "Type parameters must be passed as a tuple literal to the `type_params` argument",
+                            )
+                        ],
+                    );
                 }
+                tparams
             }
             TypeAliasParams::Legacy(Some(legacy_tparams)) => {
                 // Collect type params that appear in a legacy type alias that we were able to detect
                 // syntactically in the bindings phase.
-                tparams = self.create_legacy_type_params(legacy_tparams);
+                self.create_legacy_type_params(legacy_tparams)
             }
             TypeAliasParams::Legacy(None) => {
                 // Collect type params that appear in a legacy type alias that we needed type
                 // information to detect.
-                tparams = tvars_to_tparams_for_type_alias(
+                tvars_to_tparams_for_type_alias(
                     ta.as_type_mut(),
                     &mut seen_type_vars,
                     &mut seen_type_var_tuples,
                     &mut seen_param_specs,
                 )
-                .into_map(|(_, tp)| tp);
+                .into_map(|(_, tp)| tp)
             }
             TypeAliasParams::Scoped(scoped_tparams) => {
                 // Scoped type alias: error on undeclared type params and collect declared ones.
@@ -1304,9 +1304,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         format!("Type parameters used in `{name}` but not declared"),
                     );
                 }
-                tparams = self.scoped_type_params(scoped_tparams.as_ref(), errors);
+                self.scoped_type_params(scoped_tparams.as_ref(), errors)
             }
-        }
+        };
         Forallable::TypeAlias(TypeAliasData::Value(ta)).forall(self.validated_tparams(
             range,
             tparams,
@@ -1322,9 +1322,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut seen_type_vars = SmallMap::new();
         let mut seen_type_var_tuples = SmallMap::new();
         let mut seen_param_specs = SmallMap::new();
-        let mut params = Vec::new();
         let errors = self.error_swallower();
-        match tparams {
+        let params = match tparams {
             TypeAliasParams::TypeAliasType {
                 declared_params: tparams,
             } => self.tvars_to_tparams_for_type_alias_type(
@@ -1332,17 +1331,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 &mut seen_type_vars,
                 &mut seen_type_var_tuples,
                 &mut seen_param_specs,
-                &mut params,
                 &errors,
             ),
-            TypeAliasParams::Legacy(Some(tparams)) => {
-                params = self.create_legacy_type_params(tparams);
-            }
-            TypeAliasParams::Legacy(None) => {}
-            TypeAliasParams::Scoped(tparams) => {
-                params = self.scoped_type_params(tparams.as_ref(), &errors);
-            }
-        }
+            TypeAliasParams::Legacy(Some(tparams)) => self.create_legacy_type_params(tparams),
+            TypeAliasParams::Legacy(None) => Vec::new(),
+            TypeAliasParams::Scoped(tparams) => self.scoped_type_params(tparams.as_ref(), &errors),
+        };
         self.validated_tparams(
             TextRange::default(),
             params,
