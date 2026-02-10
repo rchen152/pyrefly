@@ -475,7 +475,11 @@ impl CalcStack {
             let sccs_to_merge = Vec1::from_vec_push(sccs_from_stack, new_scc);
 
             // Use the helper method to merge SCCs
-            let merged_scc = Scc::merge_many(sccs_to_merge, detected_at.dupe());
+            let mut merged_scc = Scc::merge_many(sccs_to_merge, detected_at.dupe());
+
+            // After a merge, everything from the merged anchor to the current stack top
+            // is part of this single SCC. Recompute segment_size from scratch.
+            merged_scc.segment_size = calc_stack_vec.len() - merged_scc.anchor_pos;
 
             let result = if merged_scc.break_at.contains(&detected_at) {
                 SccDetectedResult::BreakHere
@@ -629,6 +633,10 @@ impl CalcStack {
                 .entry(calc_id.dupe())
                 .or_insert(NodeState::Fresh);
         }
+
+        // After a merge, everything from the merged anchor to the current stack top
+        // is part of this single SCC. Recompute segment_size from scratch.
+        merged.segment_size = calc_stack_vec.len() - merged.anchor_pos;
 
         scc_stack.push(merged);
     }
@@ -920,8 +928,9 @@ impl Scc {
         self.min_stack_depth = self.min_stack_depth.min(other.min_stack_depth);
         // Keep the minimum anchor position
         self.anchor_pos = self.anchor_pos.min(other.anchor_pos);
-        // Sum segment sizes (combined stack frames from both SCCs)
-        self.segment_size += other.segment_size;
+        // Note: segment_size is NOT updated here. After a merge, everything from
+        // the merged anchor to the current stack top is part of this single SCC.
+        // The caller must recompute segment_size = stack.len() - anchor_pos.
         self
     }
 
