@@ -926,7 +926,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.heap.mk_class_type(self.stdlib.dict(key_ty, value_ty))
         } else {
             let mut typed_dict_fields = Vec::new();
-            let mut can_create_anonymous_typed_dict = hint.is_none();
+            let can_create_anonymous_typed_dict = hint.is_none()
+                && items.len() <= ANONYMOUS_TYPED_DICT_MAX_ITEMS
+                && items.iter().all(|item| {
+                    item.key
+                        .as_ref()
+                        .is_some_and(|k| k.as_string_literal_expr().is_some())
+                });
             let mut key_tys = Vec::new();
             let mut value_tys = Vec::new();
             items.iter().for_each(|x| match &x.key {
@@ -944,13 +950,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     if !key_t.is_error() {
                         key_tys.push(key_t);
                     }
-                    let maybe_string_lit_key = key.as_string_literal_expr();
-                    if maybe_string_lit_key.is_none() {
-                        can_create_anonymous_typed_dict = false;
-                    }
                     if !value_t.is_error() {
-                        if let Some(string_lit) = maybe_string_lit_key
-                            && can_create_anonymous_typed_dict
+                        if can_create_anonymous_typed_dict
+                            && let Some(string_lit) = key.as_string_literal_expr()
                         {
                             let key_name = Name::new(string_lit.value.to_str());
                             typed_dict_fields.push((
@@ -978,7 +980,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                 }
                 None => {
-                    can_create_anonymous_typed_dict = false;
                     let ty = self.expr_infer(&x.value, errors);
                     if let Some((key_t, value_t)) = self.unwrap_mapping(&ty) {
                         if !key_t.is_error() {
@@ -1009,10 +1010,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     }
                 }
             });
-            if can_create_anonymous_typed_dict
-                && typed_dict_fields.len() <= ANONYMOUS_TYPED_DICT_MAX_ITEMS
-                && !typed_dict_fields.is_empty()
-            {
+            if can_create_anonymous_typed_dict && !typed_dict_fields.is_empty() {
                 return self.heap.mk_typed_dict(TypedDict::Anonymous(Box::new(
                     AnonymousTypedDictInner {
                         fields: typed_dict_fields,
