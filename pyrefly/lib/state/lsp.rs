@@ -2058,6 +2058,14 @@ impl<'a> Transaction<'a> {
         quick_fixes::invert_boolean::invert_boolean_code_actions(self, handle, selection)
     }
 
+    pub fn extract_superclass_code_actions(
+        &self,
+        handle: &Handle,
+        selection: TextRange,
+    ) -> Option<Vec<LocalRefactorCodeAction>> {
+        quick_fixes::extract_superclass::extract_superclass_code_actions(self, handle, selection)
+    }
+
     pub fn pull_members_up_code_actions(
         &self,
         handle: &Handle,
