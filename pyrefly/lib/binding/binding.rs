@@ -1871,7 +1871,7 @@ pub struct BranchInfo {
 pub enum TypeAliasParams {
     Legacy(Option<Box<[Idx<KeyLegacyTypeParam>]>>),
     Scoped(Option<TypeParams>),
-    TypeAliasType(Vec<Expr>),
+    TypeAliasType { declared_params: Vec<Expr> },
 }
 
 #[derive(Clone, Debug)]

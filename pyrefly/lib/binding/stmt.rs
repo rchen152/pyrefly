@@ -415,7 +415,9 @@ impl<'a> BindingsBuilder<'a> {
         let idx_type_alias = self.insert_binding(key_type_alias, binding_type_alias);
         let binding = Binding::TypeAlias {
             name: name.id.clone(),
-            tparams: TypeAliasParams::TypeAliasType(type_params),
+            tparams: TypeAliasParams::TypeAliasType {
+                declared_params: type_params,
+            },
             key_type_alias: idx_type_alias,
             range: call.range(),
         };

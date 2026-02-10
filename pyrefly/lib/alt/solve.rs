@@ -1238,7 +1238,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             };
 
         match params {
-            TypeAliasParams::TypeAliasType(type_params) => {
+            TypeAliasParams::TypeAliasType {
+                declared_params: type_params,
+            } => {
                 // Handle type params from `TypeAliasType(type_params=...)`.
                 self.tvars_to_tparams_for_type_alias_type(
                     type_params,
@@ -1326,7 +1328,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut params = Vec::new();
         let errors = self.error_swallower();
         match tparams {
-            TypeAliasParams::TypeAliasType(tparams) => self.tvars_to_tparams_for_type_alias_type(
+            TypeAliasParams::TypeAliasType {
+                declared_params: tparams,
+            } => self.tvars_to_tparams_for_type_alias_type(
                 tparams,
                 &mut seen_type_vars,
                 &mut seen_type_var_tuples,
