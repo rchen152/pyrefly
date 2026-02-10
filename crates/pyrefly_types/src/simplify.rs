@@ -19,7 +19,7 @@ use crate::types::Type;
 use crate::types::Union;
 
 /// Turn unions of unions into a flattened list for one union, and return the deduped list.
-fn flatten_and_dedup(xs: Vec<Type>) -> Vec<Type> {
+fn flatten_and_dedup(xs: Vec<Type>, heap: &TypeHeap) -> Vec<Type> {
     fn flatten(xs: Vec<Type>, res: &mut Vec<Type>) {
         for x in xs {
             match x {
@@ -31,7 +31,7 @@ fn flatten_and_dedup(xs: Vec<Type>) -> Vec<Type> {
     }
     let mut flattened = Vec::with_capacity(xs.len());
     flatten(xs, &mut flattened);
-    simplify_intersections(&mut flattened);
+    simplify_intersections(&mut flattened, heap);
     let mut res = Vec::with_capacity(flattened.len());
     flatten(flattened, &mut res);
 
@@ -44,9 +44,9 @@ fn flatten_and_dedup(xs: Vec<Type>) -> Vec<Type> {
 /// - If there's 0 element in the list, return `Ok` with `Type::never()`.
 /// - If there's 1 element in the list, return `Ok` with that element.
 /// - Otherwise, return `Err` along with `xs`.
-fn try_collapse(mut xs: Vec<Type>) -> Result<Type, Vec<Type>> {
+fn try_collapse(mut xs: Vec<Type>, heap: &TypeHeap) -> Result<Type, Vec<Type>> {
     if xs.is_empty() {
-        Ok(Type::never())
+        Ok(heap.mk_never())
     } else if xs.len() == 1 {
         Ok(xs.pop().unwrap())
     } else {
@@ -54,7 +54,7 @@ fn try_collapse(mut xs: Vec<Type>) -> Result<Type, Vec<Type>> {
     }
 }
 
-fn simplify_intersections(xs: &mut [Type]) {
+fn simplify_intersections(xs: &mut [Type], heap: &TypeHeap) {
     // Simplify `A | (A & B)` to `A`
     let (mut intersects, non_intersects): (Vec<_>, Vec<_>) =
         xs.iter_mut().partition(|x| matches!(x, Type::Intersect(_)));
@@ -62,7 +62,7 @@ fn simplify_intersections(xs: &mut [Type]) {
         if let Type::Intersect(y) = x
             && y.0.iter_mut().any(|t| non_intersects.contains(&t))
         {
-            **x = Type::never();
+            **x = heap.mk_never();
         }
     }
 }
@@ -71,27 +71,23 @@ fn unions_internal(
     xs: Vec<Type>,
     stdlib: Option<&Stdlib>,
     enum_members: Option<&dyn Fn(&Class) -> Option<usize>>,
+    heap: &TypeHeap,
 ) -> Type {
-    try_collapse(xs).unwrap_or_else(|xs| {
-        let mut res = flatten_and_dedup(xs);
+    try_collapse(xs, heap).unwrap_or_else(|xs| {
+        let mut res = flatten_and_dedup(xs, heap);
         if let Some(stdlib) = stdlib {
-            collapse_literals(&mut res, stdlib, enum_members.unwrap_or(&|_| None));
-            promote_anonymous_typed_dicts(&mut res, stdlib);
+            collapse_literals(&mut res, stdlib, enum_members.unwrap_or(&|_| None), heap);
+            promote_anonymous_typed_dicts(&mut res, stdlib, heap);
         }
-        collapse_tuple_unions_with_empty(&mut res);
+        collapse_tuple_unions_with_empty(&mut res, heap);
         // `res` is collapsible again if `flatten_and_dedup` drops `xs` to 0 or 1 elements
-        try_collapse(res).unwrap_or_else(|members| {
-            Type::Union(Box::new(Union {
-                members,
-                display_name: None,
-            }))
-        })
+        try_collapse(res, heap).unwrap_or_else(|members| heap.mk_union(members))
     })
 }
 
 /// Union a set of types together, simplifying as much as you can.
-pub fn unions(xs: Vec<Type>, _heap: &TypeHeap) -> Type {
-    unions_internal(xs, None, None)
+pub fn unions(xs: Vec<Type>, heap: &TypeHeap) -> Type {
+    unions_internal(xs, None, None, heap)
 }
 
 /// Like `unions`, but also simplify away things regarding literals if you can,
@@ -100,12 +96,12 @@ pub fn unions_with_literals(
     xs: Vec<Type>,
     stdlib: &Stdlib,
     enum_members: &dyn Fn(&Class) -> Option<usize>,
-    _heap: &TypeHeap,
+    heap: &TypeHeap,
 ) -> Type {
-    unions_internal(xs, Some(stdlib), Some(enum_members))
+    unions_internal(xs, Some(stdlib), Some(enum_members), heap)
 }
 
-pub fn intersect(ts: Vec<Type>, fallback: Type, _heap: &TypeHeap) -> Type {
+pub fn intersect(ts: Vec<Type>, fallback: Type, heap: &TypeHeap) -> Type {
     let mut flattened = Vec::new();
     for t in ts {
         match t {
@@ -120,11 +116,11 @@ pub fn intersect(ts: Vec<Type>, fallback: Type, _heap: &TypeHeap) -> Type {
     flattened.sort();
     flattened.dedup();
     if flattened.is_empty() || flattened.iter().any(|t| t.is_never()) {
-        Type::never()
+        heap.mk_never()
     } else if flattened.len() == 1 {
         flattened.into_iter().next().unwrap()
     } else {
-        Type::Intersect(Box::new((flattened, fallback)))
+        heap.mk_intersect(flattened, fallback)
     }
 }
 
@@ -152,6 +148,7 @@ fn collapse_literals(
     types: &mut Vec<Type>,
     stdlib: &Stdlib,
     enum_members: &dyn Fn(&Class) -> Option<usize>,
+    heap: &TypeHeap,
 ) {
     // All literal types we see, plus `true` to indicate they are found
     let mut literal_types = SmallMap::new();
@@ -214,7 +211,7 @@ fn collapse_literals(
         .map(|x| x.0)
         .collect();
     for e in &enums_to_delete {
-        types.push(Type::ClassType(e.clone()));
+        types.push(heap.mk_class_type(e.clone()));
     }
     remove_maximum(&mut any_styles);
     remove_maximum(&mut never_styles);
@@ -259,17 +256,17 @@ fn collapse_literals(
 }
 
 /// Promote anonymous typed dicts to `dict[str, value_type]`
-fn promote_anonymous_typed_dicts(types: &mut [Type], stdlib: &Stdlib) {
+fn promote_anonymous_typed_dicts(types: &mut [Type], stdlib: &Stdlib, heap: &TypeHeap) {
     for ty in types.iter_mut() {
         if let Type::TypedDict(TypedDict::Anonymous(inner)) = ty {
-            *ty = stdlib
-                .dict(stdlib.str().clone().to_type(), inner.value_type.clone())
-                .to_type();
+            *ty = heap.mk_class_type(
+                stdlib.dict(stdlib.str().clone().to_type(), inner.value_type.clone()),
+            );
         }
     }
 }
 
-fn collapse_tuple_unions_with_empty(types: &mut Vec<Type>) {
+fn collapse_tuple_unions_with_empty(types: &mut Vec<Type>, heap: &TypeHeap) {
     let Some(empty_idx) = types.iter().position(|t| match t {
         Type::Tuple(Tuple::Concrete(elts)) => elts.is_empty(),
         _ => false,
@@ -295,7 +292,7 @@ fn collapse_tuple_unions_with_empty(types: &mut Vec<Type>) {
                         .chain(suffix.iter())
                         .all(|fixed| fixed == elem.as_ref())
                 {
-                    *ty = Type::unbounded_tuple(elem.as_ref().clone());
+                    *ty = heap.mk_unbounded_tuple(elem.as_ref().clone());
                     empty_is_redundant = true;
                 }
             }
