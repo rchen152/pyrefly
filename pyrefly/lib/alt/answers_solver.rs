@@ -1300,7 +1300,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             ),
             Binding::TypeAlias {
                 name,
-                tparams: _,
+                tparams,
                 key_type_alias,
                 range: _,
             } => self.solver().fresh_alias_recursive(
@@ -1311,6 +1311,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     module: self.module().name(),
                     index: self.bindings().idx_to_key(*key_type_alias).0,
                 },
+                self.create_type_alias_params_recursive(tparams),
             ),
             _ => self.solver().fresh_recursive(self.uniques),
         }
