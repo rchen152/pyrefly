@@ -1181,8 +1181,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let mut contains_cyclic_ref = false;
         // We only check for the name of the current alias to avoid reporting duplicate errors
         // for a cycle involving multiple aliases.
-        let is_self_ref =
-            |ty: &Type| matches!(ty, Type::TypeAlias(box TypeAliasData::Ref(r)) if r.name == *name);
+        let is_self_ref = |ty: &Type| matches!(ty, Type::UntypedAlias(ta) if ta.name() == name);
         self.map_over_union(ty, |ty| {
             contains_cyclic_ref |= is_self_ref(ty);
         });
@@ -4706,13 +4705,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 Some(aliased_type)
             }
+            // `as_type_alias` untypes a type alias in order to validate that it is a legal type.
+            // If we hit a recursive reference to the alias while untyping it, delay the untyping
+            // to avoid a cycle.
+            Type::TypeAlias(ta @ box TypeAliasData::Ref(_)) => Some(Type::UntypedAlias(ta)),
             t @ Type::Unpack(
                 box Type::Tuple(_) | box Type::TypeVarTuple(_) | box Type::Quantified(_),
             ) => Some(t),
-            // `as_type_alias` untypes a type alias in order to validate that it is a legal type.
-            // If we hit a recursive reference to the alias while untyping it, return the ref
-            // unchanged to avoid a cycle.
-            t @ Type::TypeAlias(box TypeAliasData::Ref(_)) => Some(t),
             Type::Unpack(box Type::Var(v)) if let Some(_guard) = self.recurse(v) => self
                 .untype_opt(
                     self.heap.mk_unpack(self.solver().force_var(v)),

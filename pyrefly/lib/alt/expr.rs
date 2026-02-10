@@ -2180,6 +2180,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 }
                 // TODO(rechen): handle generic recursive aliases
                 Type::TypeAlias(box TypeAliasData::Ref(_)) => self.heap.mk_any_implicit(),
+                Type::UntypedAlias(ta) => self.subscript_infer_for_type(&self.untype_alias(&ta), slice, range, errors),
                 t => self.error(
                     errors,
                     range,

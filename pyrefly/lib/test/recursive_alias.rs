@@ -23,7 +23,6 @@ x4: X = ["oops"]  # E: not assignable
 );
 
 testcase!(
-    bug = "Unwanted `type[...]` around alias names",
     test_display,
     r#"
 from typing import reveal_type, TypeAlias, Union
@@ -36,11 +35,11 @@ Y1 = Union[int, list["Y2"]]
 Y2 = Union[int, list["Y1"]]
 
 def f(x1: X1, x2: X2, x3: X3, y1: Y1, y2: Y2):
-    reveal_type(x1)  # E: int | list[type[X1]]
-    reveal_type(x2)  # E: int | list[type[X2]]
-    reveal_type(x3)  # E: int | list[type[X3]]
+    reveal_type(x1)  # E: int | list[X1]
+    reveal_type(x2)  # E: int | list[X2]
+    reveal_type(x3)  # E: int | list[X3]
     reveal_type(y1)  # E: int | list[Y2]
-    reveal_type(y2)  # E: int | list[type[Y1]]
+    reveal_type(y2)  # E: int | list[Y1]
     "#,
 );
 
@@ -169,6 +168,17 @@ x7: X[int, int] = [{'no': 3.14}]  # should error!
 def f[K, V](x1: X[K, V], x2: X[int, int]):
     reveal_type(x1)  # E: dict[K, V] | list[Unknown]
     reveal_type(x2)  # E: dict[int, int] | list[Unknown]
+    "#,
+);
+
+testcase!(
+    test_nongeneric_subscriptable,
+    r#"
+from typing import reveal_type
+type X = list[list[int]] | list[X]
+def f(x: X):
+    for y in x:
+        reveal_type(y[0])  # E: int | list[int] | X
     "#,
 );
 

@@ -950,7 +950,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
     fn can_be_recursive(&self, ty: &Type) -> bool {
         match ty {
             Type::ClassType(cls) => self.type_order.is_protocol(cls.class_object()),
-            Type::TypeAlias(_) => true,
+            Type::UntypedAlias(_) => true,
             _ => false,
         }
     }
@@ -1015,20 +1015,28 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
 
                 Ok(())
             }
-            (Type::TypeAlias(box got), Type::TypeAlias(box want)) => self.is_subset_eq(
-                &self.type_order.untype_alias(got),
-                &self.type_order.untype_alias(want),
-            ),
-            (Type::TypeAlias(box TypeAliasData::Value(got)), _) => {
-                // We use `as_value` to get the alias's runtime type.
-                self.is_subset_eq(&got.as_value(self.type_order.stdlib()), want)
+            (Type::TypeAlias(box got), Type::TypeAlias(box want)) => {
+                // We're comparing two type aliases structurally, so we need their static, not
+                // runtime, types.
+                self.is_subset_eq(
+                    &self.type_order.get_type_alias(got).as_type(),
+                    &self.type_order.get_type_alias(want).as_type(),
+                )
             }
-            (Type::TypeAlias(box got @ TypeAliasData::Ref(_)), _) => {
-                // A TypeAliasData::Ref appears on the lhs when we're comparing it structurally
-                // against a TypeAliasData::Value, so we need its static, not runtime, type.
+            (Type::TypeAlias(got), _) => {
+                // We use `as_value` to get the alias's runtime type.
+                self.is_subset_eq(
+                    &self
+                        .type_order
+                        .get_type_alias(got)
+                        .as_value(self.type_order.stdlib()),
+                    want,
+                )
+            }
+            (Type::UntypedAlias(box got), _) => {
                 self.is_subset_eq(&self.type_order.untype_alias(got), want)
             }
-            (_, Type::TypeAlias(box want)) => {
+            (_, Type::UntypedAlias(box want)) => {
                 self.is_subset_eq(got, &self.type_order.untype_alias(want))
             }
             (Type::Quantified(q), Type::Ellipsis) | (Type::Ellipsis, Type::Quantified(q))
