@@ -1316,6 +1316,62 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         ))
     }
 
+    /// Create TParams for a recursive reference to a type alias. This is essentially a
+    /// slimmed-down version of `wrap_type_alias` that skips most validation (because the
+    /// validation will be done by `wrap_type_alias`) and filters legacy params to avoid cycles.
+    pub fn create_type_alias_params_recursive(&self, tparams: &TypeAliasParams) -> Arc<TParams> {
+        let mut seen_type_vars = SmallMap::new();
+        let mut seen_type_var_tuples = SmallMap::new();
+        let mut seen_param_specs = SmallMap::new();
+        let mut params = Vec::new();
+        let errors = self.error_swallower();
+        match tparams {
+            TypeAliasParams::TypeAliasType(tparams) => self.tvars_to_tparams_for_type_alias_type(
+                tparams,
+                &mut seen_type_vars,
+                &mut seen_type_var_tuples,
+                &mut seen_param_specs,
+                &mut params,
+                &errors,
+            ),
+            TypeAliasParams::Legacy(Some(tparams)) => {
+                params = tparams
+                    .iter()
+                    .filter_map(|key| {
+                        if let BindingLegacyTypeParam::ParamKeyed(def_key) =
+                            self.bindings().get(*key)
+                            && matches!(self.bindings().get(*def_key), Binding::TypeAlias { .. })
+                        {
+                            // In the bindings phase, we were unable to determine whether this key
+                            // pointed to a legacy type parameter, so we created a
+                            // BindingLegacyTypeParam to defer the decision until the answers
+                            // phase. We now know that this is a type alias, so we can immediately
+                            // return None to indicate that this isn't a type param. Importantly,
+                            // we skip solving the binding to avoid a cycle in a recursive alias:
+                            //     Json = <blah> | list["Json"]
+                            //                           ^^^^
+                            //                           skip solving this binding so we don't try
+                            //                           to solve for Json while solving for Json
+                            None
+                        } else {
+                            self.get_idx(*key).deref().parameter().cloned()
+                        }
+                    })
+                    .collect();
+            }
+            TypeAliasParams::Legacy(None) => {}
+            TypeAliasParams::Scoped(tparams) => {
+                params = self.scoped_type_params(tparams.as_ref(), &errors);
+            }
+        }
+        self.validated_tparams(
+            TextRange::default(),
+            params,
+            TParamsSource::TypeAlias,
+            &errors,
+        )
+    }
+
     fn context_value_enter(
         &self,
         context_manager_type: &Type,
