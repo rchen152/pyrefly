@@ -13,11 +13,8 @@
     "Line 63: Expected 1 errors",
     "Line 69: Expected 1 errors"
   ],
-  "aliases_type_statement.py": [
-    "Line 84: Expected 1 errors"
-  ],
+  "aliases_type_statement.py": [],
   "aliases_typealiastype.py": [
-    "Line 47: Expected 1 errors",
     "Line 48: Expected 1 errors",
     "Line 66: Expected 1 errors"
   ],

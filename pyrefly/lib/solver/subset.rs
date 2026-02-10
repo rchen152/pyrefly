@@ -1004,15 +1004,24 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             }
             (
                 Type::Forall(box Forall {
-                    body: Forallable::TypeAlias(got),
+                    body: Forallable::TypeAlias(TypeAliasData::Value(got)),
                     ..
                 }),
-                Type::TypeAlias(box TypeAliasData::Ref(want)),
-            ) if *got.name() == want.name => {
-                // TODO(rechen): remove this once we support generic recursive aliases. Right now,
-                // we replace TypeAliasData::Ref with Any when subscripting, which messes up
-                // is_subset_eq comparisons between the Ref and the equivalent Value.
-
+                Type::Forall(box Forall {
+                    body: Forallable::TypeAlias(TypeAliasData::Ref(want)),
+                    ..
+                }),
+            ) if *got.name == want.name => {
+                // TODO(rechen): support is_subset_eq on generic recursive aliases. Right now,
+                // comparisons fail because we do not substitute targs into a Ref.
+                Ok(())
+            }
+            (Type::UntypedAlias(box TypeAliasData::Ref(r)), _)
+            | (_, Type::UntypedAlias(box TypeAliasData::Ref(r)))
+                if r.args.is_some() =>
+            {
+                // TODO(rechen): support is_subset_eq on generic recursive aliases. Right now,
+                // comparisons fail because we do not substitute targs into a Ref.
                 Ok(())
             }
             (Type::TypeAlias(box got), Type::TypeAlias(box want)) => {

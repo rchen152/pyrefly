@@ -288,7 +288,13 @@ impl TArgs {
     }
 
     pub fn substitute_into_mut(&self, ty: &mut Type) {
-        self.substitution().substitute_into_mut(ty)
+        if let Type::TypeAlias(box TypeAliasData::Ref(r)) = ty {
+            // We don't have the value of the type alias available to do the substitution, so store
+            // the targs so that we can apply them when the value is looked up.
+            r.args = Some(self.clone())
+        } else {
+            self.substitution().substitute_into_mut(ty)
+        }
     }
 
     pub fn substitute_into(&self, mut ty: Type) -> Type {

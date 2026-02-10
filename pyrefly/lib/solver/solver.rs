@@ -20,6 +20,7 @@ use pyrefly_types::simplify::intersect;
 use pyrefly_types::special_form::SpecialForm;
 use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::type_alias::TypeAliasRef;
+use pyrefly_types::types::Forallable;
 use pyrefly_types::types::TArgs;
 use pyrefly_types::types::Union;
 use pyrefly_util::gas::Gas;
@@ -103,7 +104,6 @@ enum Variable {
     /// we encounter the name of the same alias. Unlike most other variables, AliasRecursive
     /// represents a known, fixed type and exists so that we can reference the type before we've
     /// finished computing it.
-    #[expect(dead_code)]
     AliasRecursive(TypeAliasRef, Arc<TParams>),
     /// A variable that used to decompose a type, e.g. getting T from Awaitable[T]
     Unwrap,
@@ -394,8 +394,8 @@ impl Solver {
                 *variable = Variable::Answer(self.heap.mk_any_implicit());
                 None
             }
-            Variable::AliasRecursive(r, _) => {
-                *variable = Variable::Answer(Self::finish_alias_recursive(r));
+            Variable::AliasRecursive(r, tparams) => {
+                *variable = Variable::Answer(Self::finish_alias_recursive(r, tparams));
                 None
             }
             Variable::Parameter => {
@@ -474,7 +474,9 @@ impl Solver {
                 let ty = match &mut *e {
                     Variable::Quantified(q) => q.as_gradual_type(),
                     Variable::PartialQuantified(q) => q.as_gradual_type(),
-                    Variable::AliasRecursive(r, _) => Self::finish_alias_recursive(r),
+                    Variable::AliasRecursive(r, tparams) => {
+                        Self::finish_alias_recursive(r, tparams)
+                    }
                     _ => self.heap.mk_any_implicit(),
                 };
                 *e = Variable::Answer(ty.clone());
@@ -929,8 +931,8 @@ impl Solver {
             })
     }
 
-    fn finish_alias_recursive(r: &TypeAliasRef) -> Type {
-        Type::TypeAlias(Box::new(TypeAliasData::Ref(r.clone())))
+    fn finish_alias_recursive(r: &TypeAliasRef, tparams: &Arc<TParams>) -> Type {
+        Forallable::TypeAlias(TypeAliasData::Ref(r.clone())).forall(tparams.clone())
     }
 
     /// Generate a fresh variable used to tie recursive bindings.

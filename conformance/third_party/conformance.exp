@@ -1001,6 +1001,17 @@
     },
     {
       "code": -2,
+      "column": 31,
+      "concise_description": "Found cyclic self-reference in `RecursiveTypeAlias4`",
+      "description": "Found cyclic self-reference in `RecursiveTypeAlias4`",
+      "line": 84,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 59,
+      "stop_line": 84
+    },
+    {
+      "code": -2,
       "column": 28,
       "concise_description": "Found cyclic self-reference in `RecursiveTypeAlias7`",
       "description": "Found cyclic self-reference in `RecursiveTypeAlias7`",
@@ -1077,6 +1088,17 @@
       "severity": "error",
       "stop_column": 50,
       "stop_line": 46
+    },
+    {
+      "code": -2,
+      "column": 40,
+      "concise_description": "Found cyclic self-reference in `BadAlias5`",
+      "description": "Found cyclic self-reference in `BadAlias5`",
+      "line": 47,
+      "name": "invalid-type-alias",
+      "severity": "error",
+      "stop_column": 60,
+      "stop_line": 47
     },
     {
       "code": -2,
