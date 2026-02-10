@@ -149,12 +149,7 @@ pub fn tsp_loop(
         scope.spawn(|| server.inner.run_recheck_queue(telemetry));
 
         scope.spawn(|| {
-            dispatch_lsp_events(
-                server.inner.connection(),
-                server.inner.lsp_queue(),
-                server.inner.uris_pending_close(),
-                server.inner.pending_watched_file_changes(),
-            );
+            dispatch_lsp_events(&server.inner);
         });
 
         let mut ide_transaction_manager = TransactionManager::default();

@@ -740,25 +740,20 @@ pub fn initialize_finish<C: Serialize>(
 /// - priority_events includes those that should be handled as soon as possible (e.g. know that a
 ///   request is cancelled)
 /// - queued_events includes most of the other events.
-pub fn dispatch_lsp_events(
-    connection: &Connection,
-    lsp_queue: &LspQueue,
-    close_pending_uris: &Mutex<HashMap<String, usize>>,
-    pending_watched_file_changes: &Mutex<Vec<FileEvent>>,
-) {
-    for msg in &connection.receiver {
+pub fn dispatch_lsp_events(server: &(impl TspInterface)) {
+    for msg in &server.connection().receiver {
         match msg {
             Message::Request(x) => {
                 if x.method == Shutdown::METHOD {
-                    shutdown_finish(connection, x.id);
+                    shutdown_finish(server.connection(), x.id);
                     break;
                 }
-                if lsp_queue.send(LspEvent::LspRequest(x)).is_err() {
+                if server.lsp_queue().send(LspEvent::LspRequest(x)).is_err() {
                     return;
                 }
             }
             Message::Response(x) => {
-                if lsp_queue.send(LspEvent::LspResponse(x)).is_err() {
+                if server.lsp_queue().send(LspEvent::LspResponse(x)).is_err() {
                     return;
                 }
             }
@@ -766,46 +761,71 @@ pub fn dispatch_lsp_events(
                 let send_result = if let Some(Ok(params)) =
                     as_notification::<DidOpenTextDocument>(&x)
                 {
-                    lsp_queue.send(LspEvent::DidOpenTextDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidOpenTextDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidChangeTextDocument>(&x) {
-                    lsp_queue.send(LspEvent::DidChangeTextDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidChangeTextDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidCloseTextDocument>(&x) {
-                    close_pending_uris
+                    server
+                        .uris_pending_close()
                         .lock()
                         .entry(params.text_document.uri.path().to_owned())
                         .and_modify(|pending| *pending += 1)
                         .or_insert(1);
-                    lsp_queue.send(LspEvent::DidCloseTextDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidCloseTextDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidSaveTextDocument>(&x) {
-                    lsp_queue.send(LspEvent::DidSaveTextDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidSaveTextDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidOpenNotebookDocument>(&x) {
-                    lsp_queue.send(LspEvent::DidOpenNotebookDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidOpenNotebookDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidChangeNotebookDocument>(&x) {
-                    lsp_queue.send(LspEvent::DidChangeNotebookDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidChangeNotebookDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidCloseNotebookDocument>(&x) {
-                    close_pending_uris
+                    server
+                        .uris_pending_close()
                         .lock()
                         .entry(params.notebook_document.uri.path().to_owned())
                         .and_modify(|pending| *pending += 1)
                         .or_insert(1);
-                    lsp_queue.send(LspEvent::DidCloseNotebookDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidCloseNotebookDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidSaveNotebookDocument>(&x) {
-                    lsp_queue.send(LspEvent::DidSaveNotebookDocument(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidSaveNotebookDocument(params))
                 } else if let Some(Ok(params)) = as_notification::<DidChangeWatchedFiles>(&x) {
-                    pending_watched_file_changes.lock().extend(params.changes);
+                    server
+                        .pending_watched_file_changes()
+                        .lock()
+                        .extend(params.changes);
                     // In order to avoid sequential invalidations, we insert changes in the dispatch thread,
                     // but drain these in the LSP thread. This coalesces changes on duplicates.
-                    lsp_queue.send(LspEvent::DrainWatchedFileChanges)
+                    server.lsp_queue().send(LspEvent::DrainWatchedFileChanges)
                 } else if let Some(Ok(params)) = as_notification::<DidChangeWorkspaceFolders>(&x) {
-                    lsp_queue.send(LspEvent::DidChangeWorkspaceFolders(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidChangeWorkspaceFolders(params))
                 } else if let Some(Ok(params)) = as_notification::<DidChangeConfiguration>(&x) {
-                    lsp_queue.send(LspEvent::DidChangeConfiguration(params))
+                    server
+                        .lsp_queue()
+                        .send(LspEvent::DidChangeConfiguration(params))
                 } else if let Some(Ok(params)) = as_notification::<Cancel>(&x) {
                     let id = match params.id {
                         NumberOrString::Number(i) => RequestId::from(i),
                         NumberOrString::String(s) => RequestId::from(s),
                     };
-                    lsp_queue.send(LspEvent::CancelRequest(id))
+                    server.lsp_queue().send(LspEvent::CancelRequest(id))
                 } else if as_notification::<Exit>(&x).is_some() {
                     // Send LspEvent::Exit and stop listening
                     break;
@@ -820,7 +840,7 @@ pub fn dispatch_lsp_events(
         }
     }
     // when the connection closes, make sure we send an exit to the other thread
-    let _ = lsp_queue.send(LspEvent::Exit);
+    let _ = server.lsp_queue().send(LspEvent::Exit);
 }
 
 pub fn capabilities(
@@ -1002,12 +1022,7 @@ pub fn lsp_loop(
     );
     std::thread::scope(|scope| {
         scope.spawn(|| {
-            dispatch_lsp_events(
-                &server.connection.0,
-                &server.lsp_queue,
-                &server.uris_pending_close,
-                &server.pending_watched_file_changes,
-            );
+            dispatch_lsp_events(&server);
         });
         scope.spawn(|| {
             server.recheck_queue.run_until_stopped(&server, telemetry);
