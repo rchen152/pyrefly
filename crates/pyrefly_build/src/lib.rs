@@ -32,6 +32,7 @@ use std::sync::Arc;
 use std::sync::LazyLock;
 
 use dupe::Dupe as _;
+use pyrefly_util::absolutize::Absolutize as _;
 use pyrefly_util::arc_id::ArcId;
 use pyrefly_util::arc_id::WeakArcId;
 use pyrefly_util::lock::Mutex;
@@ -152,7 +153,7 @@ impl BuildSystem {
         };
 
         for path in &mut self.search_path_prefix {
-            *path = config_root.join(&path);
+            *path = config_root.join(&path).absolutize();
         }
 
         let mut cache = BUILD_SYSTEM_CACHE.lock();
