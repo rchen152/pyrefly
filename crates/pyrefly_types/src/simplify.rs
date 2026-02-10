@@ -100,6 +100,7 @@ pub fn unions_with_literals(
     xs: Vec<Type>,
     stdlib: &Stdlib,
     enum_members: &dyn Fn(&Class) -> Option<usize>,
+    _heap: &TypeHeap,
 ) -> Type {
     unions_internal(xs, Some(stdlib), Some(enum_members))
 }

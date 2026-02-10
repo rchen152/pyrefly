@@ -1025,9 +1025,12 @@ impl Solver {
             })
             .collect::<Vec<_>>();
         branches.extend(modules.into_values().map(Type::Module));
-        unions_with_literals(branches, type_order.stdlib(), &|cls| {
-            type_order.get_enum_member_count(cls)
-        })
+        unions_with_literals(
+            branches,
+            type_order.stdlib(),
+            &|cls| type_order.get_enum_member_count(cls),
+            &self.heap,
+        )
     }
 
     /// Record a variable that is used recursively.
