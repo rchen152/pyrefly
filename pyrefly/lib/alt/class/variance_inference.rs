@@ -395,55 +395,6 @@ fn check_method_shallow(typ: &Type, range: TextRange, violations: &mut Vec<Varia
     }
 }
 
-/// Check a class for variance violations.
-///
-/// Checking behavior:
-/// - Base classes: DEEP checking (recurse into all nested generics)
-/// - Methods: SHALLOW checking (only direct TypeVar usage, not nested Callables)
-/// - Fields: NO checking (mutable fields constrain variance during inference only)
-fn check_class_violations(
-    class: &Class,
-    get_class_bases: &impl Fn(&Class) -> Arc<ClassBases>,
-    get_fields: &impl Fn(&Class) -> SmallMap<Name, Arc<ClassField>>,
-    get_tparams: &impl Fn(&Class) -> Arc<TParams>,
-) -> Vec<VarianceViolation> {
-    let mut violations = Vec::new();
-
-    // Check base classes deeply using on_type for traversal
-    for (base_type, range) in get_class_bases(class).iter_with_ranges() {
-        let mut on_var =
-            |name: &Name, variance: Variance, _inj: bool, declared: PreInferenceVariance| {
-                check_typevar(name, variance, declared, range, &mut violations);
-            };
-        let mut on_edge = |c: &Class| initial_inference_map(get_tparams(c).as_vec());
-        on_type(
-            Variance::Covariant,
-            true,
-            &base_type.clone().to_type(),
-            &mut on_edge,
-            &mut on_var,
-        );
-    }
-
-    // Check methods shallowly
-    let fields = get_fields(class);
-    for (name, field) in fields.iter() {
-        if name == &dunder::INIT || name == &dunder::NEW {
-            continue;
-        }
-        if let Some((ty, _, _)) = field.for_variance_inference()
-            && ty.is_toplevel_callable()
-        {
-            let range = class
-                .field_decl_range(name)
-                .unwrap_or_else(|| class.range());
-            check_method_shallow(ty, range, &mut violations);
-        }
-    }
-
-    violations
-}
-
 fn initial_inference_status(gp: &TParam) -> InferenceStatus {
     let variance = pre_to_post_variance(gp.variance());
     let (specified_variance, has_variance_inferred) = match variance {
@@ -648,12 +599,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let variance_map = VarianceMap(class_variances);
 
         let violations = if check_violations {
-            check_class_violations(
-                class,
-                &|c| self.get_base_types_for_class(c),
-                &|c| self.get_class_field_map(c),
-                &|c| self.get_class_tparams(c),
-            )
+            self.check_class_violations(class)
         } else {
             Vec::new()
         };
@@ -662,5 +608,49 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             variance_map,
             violations,
         }
+    }
+
+    /// Check a class for variance violations.
+    ///
+    /// Checking behavior:
+    /// - Base classes: DEEP checking (recurse into all nested generics)
+    /// - Methods: SHALLOW checking (only direct TypeVar usage, not nested Callables)
+    /// - Fields: NO checking (mutable fields constrain variance during inference only)
+    fn check_class_violations(&self, class: &Class) -> Vec<VarianceViolation> {
+        let mut violations = Vec::new();
+
+        // Check base classes deeply using on_type for traversal
+        for (base_type, range) in self.get_base_types_for_class(class).iter_with_ranges() {
+            let mut on_var =
+                |name: &Name, variance: Variance, _inj: bool, declared: PreInferenceVariance| {
+                    check_typevar(name, variance, declared, range, &mut violations);
+                };
+            let mut on_edge = |c: &Class| initial_inference_map(self.get_class_tparams(c).as_vec());
+            on_type(
+                Variance::Covariant,
+                true,
+                &base_type.clone().to_type(),
+                &mut on_edge,
+                &mut on_var,
+            );
+        }
+
+        // Check methods shallowly
+        let fields = self.get_class_field_map(class);
+        for (name, field) in fields.iter() {
+            if name == &dunder::INIT || name == &dunder::NEW {
+                continue;
+            }
+            if let Some((ty, _, _)) = field.for_variance_inference()
+                && ty.is_toplevel_callable()
+            {
+                let range = class
+                    .field_decl_range(name)
+                    .unwrap_or_else(|| class.range());
+                check_method_shallow(ty, range, &mut violations);
+            }
+        }
+
+        violations
     }
 }
