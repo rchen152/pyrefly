@@ -740,7 +740,7 @@ pub fn initialize_finish<C: Serialize>(
 /// - priority_events includes those that should be handled as soon as possible (e.g. know that a
 ///   request is cancelled)
 /// - queued_events includes most of the other events.
-pub fn dispatch_lsp_events(server: &(impl TspInterface)) {
+pub fn dispatch_lsp_events(server: &impl TspInterface) {
     for msg in &server.connection().receiver {
         match msg {
             Message::Request(x) => {
