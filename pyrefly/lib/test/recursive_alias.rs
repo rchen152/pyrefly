@@ -227,11 +227,10 @@ def f(x: X[str]) -> X[int]:
 );
 
 testcase!(
-    bug = "We should report implicit-any when a generic alias isn't parameterized",
     test_error_implicit_any,
     TestEnv::new().enable_implicit_any_error(),
     r#"
-type X[T] = int | list[X]  # should error!
+type X[T] = int | list[X]  # E: Cannot determine the type parameter `T` for generic type alias `X`
 def f(x: X[str]) -> X[int]:
     return [x]
     "#,

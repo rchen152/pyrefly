@@ -181,9 +181,23 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.type_of_instance(cls, targs)
     }
 
-    pub fn promote_forall(&self, forall: Forall<Forallable>, _range: TextRange) -> Type {
-        // TODO(grievejia): We probably want to error here as well
-        let targs = self.create_default_targs(forall.tparams.dupe(), None);
+    pub fn promote_forall(
+        &self,
+        forall: Forall<Forallable>,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Type {
+        let targs = self.create_default_targs(
+            forall.tparams.dupe(),
+            Some(&|tparam: &TParam| {
+                Self::add_implicit_any_error(
+                    errors,
+                    range,
+                    format!("type alias `{}`", forall.body.name()),
+                    Some(tparam.name().as_str()),
+                );
+            }),
+        );
         forall.apply_targs(targs)
     }
 
