@@ -1292,7 +1292,7 @@ impl<'a> Transaction<'a> {
                 let (definition, docstring_range) = self.resolve_attribute_definition(
                     handle,
                     &x.name,
-                    x.definition?,
+                    x.definition,
                     x.docstring_range,
                     preference,
                 )?;
@@ -2460,21 +2460,19 @@ impl<'a> Transaction<'a> {
                         name,
                         ty: _,
                         is_deprecated: _,
-                        definition: attribute_definition,
+                        definition,
                         docstring_range,
                         is_reexport: _,
                     } in solver.completions(base_type, Some(expected_name), false)
                     {
-                        if let Some((TextRangeWithModule { module, range }, _)) =
-                            attribute_definition.and_then(|definition| {
-                                self.resolve_attribute_definition(
-                                    handle,
-                                    &name,
-                                    definition,
-                                    docstring_range,
-                                    FindPreference::default(),
-                                )
-                            })
+                        if let Some((TextRangeWithModule { module, range }, _)) = self
+                            .resolve_attribute_definition(
+                                handle,
+                                &name,
+                                definition,
+                                docstring_range,
+                                FindPreference::default(),
+                            )
                             && module.path() == module.path()
                             && range == definition_range
                         {
