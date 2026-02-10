@@ -24,6 +24,7 @@ use pyrefly_types::types::TParam;
 use pyrefly_types::types::TParams;
 use pyrefly_types::types::TParamsSource;
 use pyrefly_types::types::Union;
+use pyrefly_util::display::pluralize;
 use pyrefly_util::owner::Owner;
 use pyrefly_util::prelude::SliceExt;
 use pyrefly_util::visit::Visit;
@@ -587,6 +588,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         } else {
             Callable::list(ParamList::new(def.params.clone()), ret)
         };
+        if let Some(cls) = &def.defining_cls
+            && stmt.name.id == dunder::INIT
+        {
+            self.validate_init_self_annotation(cls.name(), &callable, def.id_range(), errors);
+        }
         let mut ty = Forallable::Function(Function {
             signature: callable,
             metadata: def.metadata.clone(),
@@ -1806,5 +1812,49 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.uniques,
             is_subset,
         )
+    }
+
+    /// Ensure that self annotation does not contain class-scoped type variables.
+    /// Per spec: https://typing.python.org/en/latest/spec/constructors.html#init-method
+    /// "Class-scoped type variables should not be used in the self annotation"
+    fn validate_init_self_annotation(
+        &self,
+        cls_name: &Name,
+        callable: &Callable,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) {
+        if let Params::List(param_list) = &callable.params
+            && let Some(Param::Pos(_, self_ty, _)) = param_list.items().first()
+            && let Type::ClassType(cls_ty) = self_ty
+            && cls_ty.name() == cls_name
+        {
+            let tparams_names = cls_ty
+                .tparams()
+                .as_vec()
+                .iter()
+                .map(|tp| &tp.quantified)
+                .collect::<SmallSet<_>>();
+            let mut class_scoped_tvars = SmallSet::new();
+            for (_, ty) in cls_ty.targs().iter_paired() {
+                ty.collect_quantifieds(&mut class_scoped_tvars);
+            }
+            class_scoped_tvars.retain(|q| tparams_names.contains(q));
+            if !class_scoped_tvars.is_empty() {
+                let targs = class_scoped_tvars
+                    .iter()
+                    .map(|q| format!("`{}`", q.name()))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                errors.add(
+                    range,
+                    ErrorInfo::Kind(ErrorKind::InvalidAnnotation),
+                    vec1![format!(
+                        "`__init__` method self type cannot reference class {} {targs}",
+                        pluralize(class_scoped_tvars.len(), "type parameter")
+                    )],
+                );
+            }
+        }
     }
 }
