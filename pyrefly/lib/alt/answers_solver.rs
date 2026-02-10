@@ -268,23 +268,35 @@ impl CalcStack {
                     }
                 },
             },
-            SccState::Participant => match calculation.propose_calculation() {
-                ProposalResult::Calculatable => {
-                    unreachable!("Participant nodes must have Calculating state, not NotCalculated")
+            SccState::Participant => {
+                if let Some(top_scc) = self.scc_stack.borrow_mut().last_mut() {
+                    top_scc.segment_size += 1;
                 }
-                ProposalResult::CycleDetected => BindingAction::Calculate,
-                ProposalResult::Calculated(v) => {
-                    self.on_calculation_finished(&current);
-                    BindingAction::Calculated(v)
+                match calculation.propose_calculation() {
+                    ProposalResult::Calculatable => {
+                        unreachable!(
+                            "Participant nodes must have Calculating state, not NotCalculated"
+                        )
+                    }
+                    ProposalResult::CycleDetected => BindingAction::Calculate,
+                    ProposalResult::Calculated(v) => {
+                        self.on_calculation_finished(&current);
+                        BindingAction::Calculated(v)
+                    }
+                    ProposalResult::CycleBroken(r) => {
+                        self.on_calculation_finished(&current);
+                        BindingAction::CycleBroken(r)
+                    }
                 }
-                ProposalResult::CycleBroken(r) => {
-                    self.on_calculation_finished(&current);
-                    BindingAction::CycleBroken(r)
-                }
-            },
+            }
         }
     }
 
+    /// Pop a binding frame from the raw binding-level CalcId stack.
+    /// - Update both the direct stack and the `position_of` reverse index.
+    /// - Also check whether the popped frame was part of the top Scc in the
+    ///   Scc stack; if so, decrement the segment_size to account for the fact
+    ///   that this frame has completed.
     fn pop(&self) -> Option<CalcId> {
         let popped = self.stack.borrow_mut().pop();
         if let Some(ref calc_id) = popped {
@@ -295,6 +307,12 @@ impl CalcStack {
                     // Vec1 only has one element, so remove the entire entry
                     position_of.remove(calc_id);
                 }
+            }
+            let mut scc_stack = self.scc_stack.borrow_mut();
+            if let Some(top_scc) = scc_stack.last_mut()
+                && top_scc.node_state.contains_key(calc_id)
+            {
+                top_scc.segment_size = top_scc.segment_size.saturating_sub(1);
             }
         }
         popped
@@ -764,6 +782,10 @@ pub struct Scc {
     /// When the stack length drops to anchor_pos, the SCC is complete.
     /// This enables O(1) completion checking instead of iterating all participants.
     anchor_pos: usize,
+    /// Number of CalcIds in this SCC segment.
+    /// This is the count of stack frames that belong to this SCC.
+    /// Initially the cycle size; grows on merge.
+    segment_size: usize,
 }
 
 impl Display for Scc {
@@ -792,12 +814,18 @@ impl Scc {
         let mut break_at_set = BTreeSet::new();
         break_at_set.insert(break_at.dupe());
 
-        // Find the anchor's position on the CalcStack.
         // The anchor (minimal CalcId) is where the cycle will complete during unwinding.
+        //
+        // The initial segment size is the number of frames from anchor to top of stack.
+        //
+        // Note that raw.len() would be incorrect, because unless the anchor (the break at)
+        // is the same as detected_at, there are typically some extraneous stack frames
+        // *below* the anchor - we want only the frames involved in completing the cycle.
         let anchor_pos = calc_stack_vec
             .iter()
             .position(|c| c == break_at)
             .unwrap_or(0);
+        let segment_size = calc_stack_vec.len() - anchor_pos;
 
         Scc {
             break_at: break_at_set,
@@ -805,6 +833,7 @@ impl Scc {
             detected_at,
             min_stack_depth: anchor_pos,
             anchor_pos,
+            segment_size,
         }
     }
 
@@ -891,6 +920,8 @@ impl Scc {
         self.min_stack_depth = self.min_stack_depth.min(other.min_stack_depth);
         // Keep the minimum anchor position
         self.anchor_pos = self.anchor_pos.min(other.anchor_pos);
+        // Sum segment sizes (combined stack frames from both SCCs)
+        self.segment_size += other.segment_size;
         self
     }
 
@@ -1574,6 +1605,10 @@ mod scc_tests {
     ///
     /// This bypasses the normal Scc::new constructor to allow direct construction
     /// for testing merge logic.
+    ///
+    /// Note: segment_size is set to node_state.len() which approximates the number
+    /// of live frames. In production, segment_size may differ from participant count
+    /// due to duplicate CalcIds during cycle breaking.
     #[allow(clippy::mutable_key_type)]
     fn make_test_scc(
         break_at: Vec<CalcId>,
@@ -1581,12 +1616,14 @@ mod scc_tests {
         detected_at: CalcId,
         min_stack_depth: usize,
     ) -> Scc {
+        let segment_size = node_state.len();
         Scc {
             break_at: break_at.into_iter().collect(),
             node_state,
             detected_at,
             min_stack_depth,
             anchor_pos: min_stack_depth,
+            segment_size,
         }
     }
 
