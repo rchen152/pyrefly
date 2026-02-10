@@ -154,6 +154,8 @@ impl CalcId {
 pub struct CalcStack {
     stack: RefCell<Vec<CalcId>>,
     scc_stack: RefCell<Vec<Scc>>,
+    /// Reverse lookup of `stack`, to enable O(1) access for a given CalcId.
+    position_of: RefCell<HashMap<CalcId, Vec1<usize>>>,
 }
 
 impl CalcStack {
@@ -161,6 +163,7 @@ impl CalcStack {
         Self {
             stack: RefCell::new(Vec::new()),
             scc_stack: RefCell::new(Vec::new()),
+            position_of: RefCell::new(HashMap::new()),
         }
     }
 
@@ -174,7 +177,17 @@ impl CalcStack {
         T: Dupe,
         R: Dupe,
     {
-        self.stack.borrow_mut().push(current.dupe());
+        let position = {
+            let mut stack = self.stack.borrow_mut();
+            let pos = stack.len();
+            stack.push(current.dupe());
+            pos
+        };
+        self.position_of
+            .borrow_mut()
+            .entry(current.dupe())
+            .and_modify(|positions| positions.push(position))
+            .or_insert_with(|| Vec1::new(position));
         match self.pre_calculate_state(&current) {
             SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
                 match calculation.propose_calculation() {
@@ -273,14 +286,43 @@ impl CalcStack {
     }
 
     fn pop(&self) -> Option<CalcId> {
-        self.stack.borrow_mut().pop()
+        let popped = self.stack.borrow_mut().pop();
+        if let Some(ref calc_id) = popped {
+            let mut position_of = self.position_of.borrow_mut();
+            if let Some(positions) = position_of.get_mut(calc_id) {
+                // Try to pop from Vec1 - if it fails (Size0Error), this was the last position
+                if positions.pop().is_err() {
+                    // Vec1 only has one element, so remove the entire entry
+                    position_of.remove(calc_id);
+                }
+            }
+        }
+        popped
     }
 
-    /// Push a CalcId onto the stack without computing the binding action.
-    /// This is only used in tests to set up the CalcStack state.
+    /// Check if a CalcId is on the stack and return its first (earliest) position if so.
+    #[allow(dead_code)]
+    fn find_on_stack(&self, calc_id: &CalcId) -> Option<usize> {
+        self.position_of
+            .borrow()
+            .get(calc_id)
+            .map(|positions| *positions.first())
+    }
+
+    /// Push a CalcId onto the stack without computing the binding action, for tests
     #[cfg(test)]
     fn push_for_test(&self, current: CalcId) {
-        self.stack.borrow_mut().push(current);
+        let position = {
+            let mut stack = self.stack.borrow_mut();
+            let pos = stack.len();
+            stack.push(current.dupe());
+            pos
+        };
+        self.position_of
+            .borrow_mut()
+            .entry(current)
+            .and_modify(|positions| positions.push(position))
+            .or_insert_with(|| Vec1::new(position));
     }
 
     pub fn peek(&self) -> Option<CalcId> {
