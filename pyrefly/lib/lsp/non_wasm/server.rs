@@ -353,6 +353,8 @@ pub trait TspInterface: Send + Sync {
 
     fn stop_recheck_queue(&self);
 
+    fn dispatch_lsp_events(&self);
+
     /// Process an LSP event and return the next step
     fn process_event<'a>(
         &'a self,
@@ -740,7 +742,7 @@ pub fn initialize_finish<C: Serialize>(
 /// - priority_events includes those that should be handled as soon as possible (e.g. know that a
 ///   request is cancelled)
 /// - queued_events includes most of the other events.
-pub fn dispatch_lsp_events(server: &impl TspInterface) {
+pub fn dispatch_lsp_events(server: &Server) {
     for msg in &server.connection().receiver {
         match msg {
             Message::Request(x) => {
@@ -4810,6 +4812,10 @@ impl TspInterface for Server {
 
     fn pending_watched_file_changes(&self) -> &Mutex<Vec<FileEvent>> {
         &self.pending_watched_file_changes
+    }
+
+    fn dispatch_lsp_events(&self) {
+        dispatch_lsp_events(self);
     }
 
     fn run_recheck_queue(&self, telemetry: &impl Telemetry) {
