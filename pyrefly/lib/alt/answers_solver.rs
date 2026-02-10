@@ -398,9 +398,9 @@ impl CalcStack {
 
     /// Check if an existing SCC overlaps with a newly detected cycle.
     ///
-    /// Uses a fast filter based on min_stack_depth + cardinality, then verifies
-    /// by checking if any CalcStack entry in the cycle range is a participant
-    /// in the existing SCC.
+    /// Uses O(1) position arithmetic as a fast filter: if the existing SCC's upper bound
+    /// is less than the cycle start, there's definitely no overlap. Otherwise we must
+    /// do an O(n) membership check to verify.
     ///
     /// This is extracted for testability - overlap detection can be tested
     /// independently of the full merge logic.
@@ -412,13 +412,12 @@ impl CalcStack {
         calc_stack_vec: &[CalcId],
     ) -> bool {
         // Fast filter: if existing SCC's upper bound < new cycle's min, definitely no overlap
-        // Upper bound = min_stack_depth + cardinality (number of participants)
-        let existing_max_bound = existing.min_stack_depth + existing.node_state.len();
+        // Upper bound = anchor_pos + segment_size (exact count of live frames in segment)
+        let existing_max_bound = existing.anchor_pos + existing.segment_size;
         if existing_max_bound <= cycle_start_pos {
             return false;
         }
-
-        // Check if any CalcStack entry in the cycle range is in this SCC
+        // Must check in detail - iterate through positions
         (cycle_start_pos..stack_depth).any(|pos| {
             calc_stack_vec
                 .get(pos)
@@ -510,7 +509,13 @@ impl CalcStack {
     /// Invariant: After merging, each node appears in at most one SCC on the
     /// stack. We return the first non-NotInScc result when scanning
     /// top-to-bottom, which will be the unique SCC containing this node (if any).
+    ///
+    /// Special case: If we find a node in the top SCC but we've pushed frames
+    /// above the SCC's segment (i.e., we exited and are now re-entering), we
+    /// treat it like a previous SCC to trigger a merge. This ensures segments
+    /// remain contiguous.
     fn pre_calculate_state(&self, current: &CalcId) -> SccState {
+        let stack_len = self.stack.borrow().len();
         let mut scc_stack = self.scc_stack.borrow_mut();
 
         // Check from top to bottom (rev gives us index 0 = top)
@@ -520,10 +525,23 @@ impl CalcStack {
 
             match state {
                 SccState::NotInScc => continue,
-                // Only return the raw scc state when this is the top SCC
-                _ if is_top_scc => return state,
-                // Otherwise, remap it to a suitable RevisitingPreviousScc value, because
-                // we are going to need to merge SCCs when this happens.
+                // For the top SCC, check if we're still within its segment.
+                // If stack_len >= anchor_pos + segment_size, we've pushed frames
+                // above the segment and are re-entering - treat like a previous SCC.
+                _ if is_top_scc => {
+                    let in_segment = is_within_scc_segment(stack_len, scc);
+                    if in_segment {
+                        // Normal case: still within the top SCC's segment
+                        return state;
+                    }
+                    // Fall through to remap to RevisitingPreviousScc
+                }
+                _ => {}
+            }
+            // Remap to RevisitingPreviousScc for non-top SCCs, or for top SCC
+            // when we've exited and re-entered (not in segment).
+            match state {
+                SccState::NotInScc => continue, // Already handled above
                 SccState::RevisitingInProgress | SccState::Participant => {
                     return SccState::RevisitingPreviousScc {
                         detected_at_of_scc: scc.detected_at(),
@@ -725,6 +743,16 @@ enum SccState {
     /// hasn't recorded a placeholder yet), which means we have reached the end
     /// of the recursion and should return a placeholder to our parent frame.
     BreakAt,
+}
+
+/// Check if the given stack length is within an SCC's segment.
+///
+/// Returns true if stack_len < anchor_pos + segment_size, meaning
+/// we're currently inside the SCC's segment (haven't exited).
+/// The segment covers positions [anchor_pos, anchor_pos + segment_size),
+/// so at exactly anchor_pos + segment_size we've exited.
+fn is_within_scc_segment(stack_len: usize, scc: &Scc) -> bool {
+    stack_len < scc.anchor_pos + scc.segment_size
 }
 
 enum SccDetectedResult {
