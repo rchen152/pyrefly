@@ -731,6 +731,130 @@ my_export
 }
 
 #[test]
+fn redundant_cast_quickfix() {
+    let report = get_batched_lsp_operations_report_allow_error(
+        &[(
+            "main",
+            "from typing import cast\nx: int = 0\nx = cast(int, x)\n#   ^",
+        )],
+        get_test_report,
+    );
+    assert_eq!(
+        r#"
+# main.py
+3 | x = cast(int, x)
+        ^
+Code Actions Results:
+# Title: Remove redundant cast
+
+## Before:
+from typing import cast
+x: int = 0
+x = cast(int, x)
+#   ^
+## After:
+from typing import cast
+x: int = 0
+x = x
+#   ^
+"#
+        .trim(),
+        report.trim()
+    );
+}
+
+#[test]
+fn redundant_cast_fix_all() {
+    let (handles, state) = mk_multi_file_state(
+        &[(
+            "main",
+            "from typing import cast\nx: int = 0\nx = cast(int, x)\ny = cast(int, x)\n",
+        )],
+        Require::Exports,
+        false,
+    );
+    let handle = handles.get("main").unwrap();
+    let transaction = state.transaction();
+    let module_info = transaction.get_module_info(handle).unwrap();
+    let edits = transaction
+        .redundant_cast_fix_all_edits(handle)
+        .unwrap_or_default();
+    let updated = apply_refactor_edits_for_module(&module_info, &edits);
+    assert_eq!(
+        "from typing import cast\nx: int = 0\nx = x\ny = x\n",
+        updated
+    );
+}
+
+fn redundant_cast_action_after(code: &str, cursor_offset: usize) -> Option<String> {
+    let (handles, state) = mk_multi_file_state(&[("main", code)], Require::Exports, false);
+    let handle = handles.get("main")?;
+    let transaction = state.transaction();
+    let module_info = transaction.get_module_info(handle)?;
+    let position = TextSize::try_from(cursor_offset).ok()?;
+    let actions = transaction
+        .local_quickfix_code_actions_sorted(
+            handle,
+            TextRange::new(position, position),
+            ImportFormat::Absolute,
+        )
+        .unwrap_or_default();
+    let (_, module, range, patch) = actions
+        .into_iter()
+        .find(|(title, _, _, _)| title == "Remove redundant cast")?;
+    if module.path() != module_info.path() {
+        return None;
+    }
+    let (_before, after) = apply_patch(&module_info, range, patch);
+    Some(after)
+}
+
+#[test]
+fn redundant_cast_parenthesized_expr() {
+    let code = "from typing import cast\na: int = 1\nb: int = 2\ncast(int, a + b)\n";
+    let cursor_offset = code.find("cast(").unwrap();
+    let after = redundant_cast_action_after(code, cursor_offset).unwrap();
+    assert_eq!(
+        "from typing import cast\na: int = 1\nb: int = 2\n(a + b)\n",
+        after
+    );
+}
+
+#[test]
+fn redundant_cast_nested_call() {
+    let code = "from typing import cast\na: int = 1\nb: int = 2\nprint(cast(int, a + b))\n";
+    let cursor_offset = code.find("cast(").unwrap();
+    let after = redundant_cast_action_after(code, cursor_offset).unwrap();
+    assert_eq!(
+        "from typing import cast\na: int = 1\nb: int = 2\nprint((a + b))\n",
+        after
+    );
+}
+
+#[test]
+fn redundant_cast_cursor_inside_args() {
+    let code = "from typing import cast\na: int = 1\nb: int = 2\ncast(int, a + b)\n";
+    let cursor_offset = code.find("a + b").unwrap();
+    let after = redundant_cast_action_after(code, cursor_offset).unwrap();
+    assert_eq!(
+        "from typing import cast\na: int = 1\nb: int = 2\n(a + b)\n",
+        after
+    );
+}
+
+#[test]
+fn redundant_cast_preserves_multiplication_precedence() {
+    let code =
+        "from typing import cast\nx: int = 1\ny: int = 2\nz: int = 3\nx * cast(int, y + z)\n";
+    let cursor_offset = code.find("cast(").unwrap();
+    let after = redundant_cast_action_after(code, cursor_offset).unwrap();
+    assert_eq!(
+        "from typing import cast\nx: int = 1\ny: int = 2\nz: int = 3\nx * (y + z)\n",
+        after
+    );
+}
+
+#[test]
 fn test_import_from_stdlib() {
     let report = get_batched_lsp_operations_report_allow_error(
         &[("a", "TypeVar('T')\n# ^")],

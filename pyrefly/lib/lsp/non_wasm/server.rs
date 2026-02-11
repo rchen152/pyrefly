@@ -887,6 +887,7 @@ pub fn capabilities(
                 CodeActionKind::REFACTOR_REWRITE,
                 CodeActionKind::new("refactor.move"),
                 CodeActionKind::REFACTOR_INLINE,
+                CodeActionKind::SOURCE_FIX_ALL,
             ]),
             ..Default::default()
         })),
@@ -3341,9 +3342,18 @@ impl Server {
         let import_format = lsp_config.and_then(|c| c.import_format).unwrap_or_default();
         let module_info = transaction.get_module_info(&handle)?;
         let range = self.from_lsp_range(uri, &module_info, params.range);
+        let only_kinds = params.context.only.as_ref();
+        let allow_quickfix = only_kinds
+            .is_none_or(|kinds| kinds.iter().any(|kind| kind == &CodeActionKind::QUICKFIX));
+        let allow_fix_all = only_kinds.is_none_or(|kinds| {
+            kinds
+                .iter()
+                .any(|kind| kind == &CodeActionKind::SOURCE_FIX_ALL)
+        });
         let mut actions = Vec::new();
-        if let Some(quickfixes) =
-            transaction.local_quickfix_code_actions_sorted(&handle, range, import_format)
+        if allow_quickfix
+            && let Some(quickfixes) =
+                transaction.local_quickfix_code_actions_sorted(&handle, range, import_format)
         {
             actions.extend(quickfixes.into_iter().filter_map(
                 |(title, info, range, insert_text)| {
@@ -3368,6 +3378,32 @@ impl Server {
                     }))
                 },
             ));
+        }
+        if allow_fix_all && let Some(edits) = transaction.redundant_cast_fix_all_edits(&handle) {
+            let mut changes: HashMap<Url, Vec<TextEdit>> = HashMap::new();
+            for (module, edit_range, new_text) in edits {
+                let Some(lsp_location) = self.to_lsp_location(&TextRangeWithModule {
+                    module,
+                    range: edit_range,
+                }) else {
+                    continue;
+                };
+                changes.entry(lsp_location.uri).or_default().push(TextEdit {
+                    range: lsp_location.range,
+                    new_text,
+                });
+            }
+            if !changes.is_empty() {
+                actions.push(CodeActionOrCommand::CodeAction(CodeAction {
+                    title: "Remove all redundant casts".to_owned(),
+                    kind: Some(CodeActionKind::SOURCE_FIX_ALL),
+                    edit: Some(WorkspaceEdit {
+                        changes: Some(changes),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }));
+            }
         }
         // Optimization: do not calculate refactors for automated codeactions since they're expensive
         // If we had lazy code actions, we could keep them.
