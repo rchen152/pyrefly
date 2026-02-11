@@ -576,7 +576,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Infer variance from structural usage, ignoring declared variance.
     /// All type params are treated as having undefined variance, and the
     /// fixpoint algorithm discovers what the structure implies.
-    #[allow(dead_code)]
     pub fn infer_variance_ignoring_declared(&self, class: &Class) -> VarianceMap {
         let tparams = self.get_class_tparams(class);
         let inference_map = tparams

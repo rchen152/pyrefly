@@ -9632,6 +9632,39 @@
   "protocols_variance.py": [
     {
       "code": -2,
+      "column": 7,
+      "concise_description": "Type variable `T1` in class `AnotherBox` is declared as invariant, but could be covariant based on its usage",
+      "description": "Type variable `T1` in class `AnotherBox` is declared as invariant, but could be covariant based on its usage",
+      "line": 21,
+      "name": "variance-mismatch",
+      "severity": "warn",
+      "stop_column": 17,
+      "stop_line": 21
+    },
+    {
+      "code": -2,
+      "column": 7,
+      "concise_description": "Type variable `T3` in class `Protocol2` is declared as invariant, but could be contravariant based on its usage",
+      "description": "Type variable `T3` in class `Protocol2` is declared as invariant, but could be contravariant based on its usage",
+      "line": 40,
+      "name": "variance-mismatch",
+      "severity": "warn",
+      "stop_column": 16,
+      "stop_line": 40
+    },
+    {
+      "code": -2,
+      "column": 7,
+      "concise_description": "Type variable `T1` in class `Protocol4` is declared as invariant, but could be contravariant based on its usage",
+      "description": "Type variable `T1` in class `Protocol4` is declared as invariant, but could be contravariant based on its usage",
+      "line": 56,
+      "name": "variance-mismatch",
+      "severity": "warn",
+      "stop_column": 16,
+      "stop_line": 56
+    },
+    {
+      "code": -2,
       "column": 9,
       "concise_description": "Type variable `T1_co` is Covariant but is used in contravariant position",
       "description": "Type variable `T1_co` is Covariant but is used in contravariant position",
@@ -9643,6 +9676,17 @@
     },
     {
       "code": -2,
+      "column": 7,
+      "concise_description": "Type variable `T1` in class `Protocol6` is declared as invariant, but could be covariant based on its usage",
+      "description": "Type variable `T1` in class `Protocol6` is declared as invariant, but could be covariant based on its usage",
+      "line": 66,
+      "name": "variance-mismatch",
+      "severity": "warn",
+      "stop_column": 16,
+      "stop_line": 66
+    },
+    {
+      "code": -2,
       "column": 9,
       "concise_description": "Type variable `T1_contra` is Contravariant but is used in covariant position",
       "description": "Type variable `T1_contra` is Contravariant but is used in covariant position",
@@ -9651,6 +9695,17 @@
       "severity": "error",
       "stop_column": 11,
       "stop_line": 72
+    },
+    {
+      "code": -2,
+      "column": 7,
+      "concise_description": "Type variable `T1` in class `Protocol12` is declared as invariant, but could be covariant based on its usage",
+      "description": "Type variable `T1` in class `Protocol12` is declared as invariant, but could be covariant based on its usage",
+      "line": 104,
+      "name": "variance-mismatch",
+      "severity": "warn",
+      "stop_column": 17,
+      "stop_line": 104
     }
   ],
   "qualifiers_annotated.py": [

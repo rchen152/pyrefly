@@ -149,6 +149,7 @@ use crate::types::type_info::TypeInfo;
 use crate::types::type_var::PreInferenceVariance;
 use crate::types::type_var::Restriction;
 use crate::types::type_var::TypeVar;
+use crate::types::type_var::Variance;
 use crate::types::type_var_tuple::TypeVarTuple;
 use crate::types::types::AnyStyle;
 use crate::types::types::CalleeKind;
@@ -2361,13 +2362,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             // Get type parameters and their declared variances
             let tparams = self.get_class_tparams(class);
 
-            // Only check violations for type parameters that have declared variance
-            let has_declared_variance = tparams
-                .as_vec()
-                .iter()
-                .any(|p| p.variance() != PreInferenceVariance::Undefined);
+            // Only check violations when there are covariant/contravariant
+            // TypeVars — invariant TypeVars are valid in any position.
+            let has_non_invariant_variance = tparams.as_vec().iter().any(|p| {
+                matches!(
+                    p.variance(),
+                    PreInferenceVariance::Covariant | PreInferenceVariance::Contravariant
+                )
+            });
 
-            if has_declared_variance {
+            if has_non_invariant_variance {
                 let result = self.compute_variance(class, true);
 
                 for violation in &result.violations {
@@ -2378,6 +2382,48 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         ErrorInfo::Kind(ErrorKind::InvalidVariance),
                         message,
                     );
+                }
+            }
+
+            // For protocols: warn when an invariant TypeVar could be declared
+            // with a narrower variance. We only check invariant TypeVars here
+            // because wrong variance on covariant/contravariant TypeVars is
+            // already caught by InvalidVariance at the usage site.
+            let metadata = self.get_metadata_for_class(class);
+            if metadata.is_protocol()
+                && tparams.as_vec().iter().any(|p| {
+                    p.quantified.kind() == QuantifiedKind::TypeVar
+                        && p.variance() == PreInferenceVariance::Invariant
+                })
+            {
+                let inferred = self.infer_variance_ignoring_declared(class);
+                for tparam in tparams.as_vec() {
+                    if tparam.quantified.kind() != QuantifiedKind::TypeVar
+                        || tparam.variance() != PreInferenceVariance::Invariant
+                    {
+                        continue;
+                    }
+                    let inferred_v = inferred.get(tparam.name());
+                    let effective_v = if inferred_v == Variance::Bivariant {
+                        Variance::Covariant
+                    } else {
+                        inferred_v
+                    };
+                    if effective_v != Variance::Invariant {
+                        self.error(
+                            errors,
+                            // TODO: ideally this would point to where the TypeVar
+                            // is bound in the class header rather than the class name.
+                            class.range(),
+                            ErrorInfo::Kind(ErrorKind::VarianceMismatch),
+                            format!(
+                                "Type variable `{}` in class `{}` is declared as invariant, but could be {} based on its usage",
+                                tparam.name(),
+                                class.name(),
+                                effective_v,
+                            ),
+                        );
+                    }
                 }
             }
         }
