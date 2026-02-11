@@ -172,12 +172,7 @@ impl CalcStack {
     /// This combines the push operation with computing what action to take,
     /// performing all SCC state checks and mutations (like `merge_sccs`,
     /// `on_scc_detected`, `on_calculation_finished`).
-    fn push<T, R>(
-        &self,
-        current: CalcId,
-        calculation: &Calculation<T, R>,
-        is_calculation_finished: impl Fn(&CalcId) -> bool,
-    ) -> BindingAction<T, R>
+    fn push<T, R>(&self, current: CalcId, calculation: &Calculation<T, R>) -> BindingAction<T, R>
     where
         T: Dupe,
         R: Dupe,
@@ -261,12 +256,12 @@ impl CalcStack {
                     }
                     ProposalResult::Calculated(v) => {
                         self.merge_sccs(&detected_at_of_scc);
-                        self.on_calculation_finished(&current, &is_calculation_finished);
+                        self.on_calculation_finished(&current);
                         BindingAction::Calculated(v)
                     }
                     ProposalResult::CycleBroken(r) => {
                         self.merge_sccs(&detected_at_of_scc);
-                        self.on_calculation_finished(&current, &is_calculation_finished);
+                        self.on_calculation_finished(&current);
                         BindingAction::CycleBroken(r)
                     }
                     ProposalResult::Calculatable => {
@@ -288,11 +283,11 @@ impl CalcStack {
                     }
                     ProposalResult::CycleDetected => BindingAction::Calculate,
                     ProposalResult::Calculated(v) => {
-                        self.on_calculation_finished(&current, &is_calculation_finished);
+                        self.on_calculation_finished(&current);
                         BindingAction::Calculated(v)
                     }
                     ProposalResult::CycleBroken(r) => {
-                        self.on_calculation_finished(&current, &is_calculation_finished);
+                        self.on_calculation_finished(&current);
                         BindingAction::CycleBroken(r)
                     }
                 }
@@ -571,33 +566,18 @@ impl CalcStack {
     ///
     /// Return `true` if there are active SCCs after finishing this calculation,
     /// `false` if there are not.
-    fn on_calculation_finished(
-        &self,
-        current: &CalcId,
-        is_calculation_finished: impl Fn(&CalcId) -> bool,
-    ) -> bool {
+    fn on_calculation_finished(&self, current: &CalcId) -> bool {
         let stack_len = self.stack.borrow().len();
         let mut scc_stack = self.scc_stack.borrow_mut();
         for scc in scc_stack.iter_mut() {
             scc.on_calculation_finished(current);
         }
+        // Pop all SCCs whose anchor position indicates completion.
+        // An SCC is complete when the stack has unwound to (or past) its
+        // anchor: at that point all participants' frames have been popped
+        // and their answers recorded.
         while let Some(scc) = scc_stack.last() {
-            let node_state_complete = scc.is_complete(&is_calculation_finished);
-            let position_complete = stack_len <= scc.anchor_pos + 1;
-            // We only assert one direction: if the stack position says this SCC
-            // is complete (we've popped back to the anchor), then node_state
-            // must agree. The reverse is allowed: node_state may report complete
-            // before the stack unwinds to the anchor (e.g. because another thread
-            // finished a calculation whose NodeState we track).
-            if position_complete {
-                assert!(
-                    node_state_complete,
-                    "Position says SCC is complete but node_state disagrees. \
-                     stack_len={}, anchor_pos={}, segment_size={}, node_state={:?}",
-                    stack_len, scc.anchor_pos, scc.segment_size, scc.node_state,
-                );
-            }
-            if node_state_complete {
+            if stack_len <= scc.anchor_pos + 1 {
                 scc_stack.pop();
             } else {
                 break;
@@ -939,19 +919,6 @@ impl Scc {
         }
     }
 
-    /// Check if the SCC is complete (all participants are Done or their Calculation is finished).
-    ///
-    /// This accepts a callback to check if a Calculation has finished globally. This is
-    /// important because Calculations are global to Pyrefly - any thread might finish a
-    /// calculation. When threads race to compute the same SCC, one thread's NodeState
-    /// tracking might be incomplete (not all nodes marked as Done) even though another
-    /// thread has already finished all the calculations.
-    fn is_complete(&self, is_calculation_finished: impl Fn(&CalcId) -> bool) -> bool {
-        self.node_state
-            .iter()
-            .all(|(calc_id, state)| *state == NodeState::Done || is_calculation_finished(calc_id))
-    }
-
     /// Get the detection point of this SCC (stable identifier for merging).
     fn detected_at(&self) -> CalcId {
         self.detected_at.dupe()
@@ -1131,8 +1098,6 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     {
         let current = CalcId(self.bindings().dupe(), K::to_anyidx(idx));
         let calculation = self.get_calculation(idx);
-        let is_calculation_finished =
-            |calc_id: &CalcId| self.answers.is_calculation_finished(calc_id);
 
         // Check depth limit before any calculation
         if let Some(config) = self.recursion_limit_config()
@@ -1142,10 +1107,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             return result;
         }
 
-        let result = match self
-            .stack()
-            .push(current.dupe(), calculation, is_calculation_finished)
-        {
+        let result = match self.stack().push(current.dupe(), calculation) {
             BindingAction::Calculate => self.calculate_and_record_answer(current, idx, calculation),
             BindingAction::Unwind => self
                 .attempt_to_unwind_cycle_from_here(&current, idx, calculation)
@@ -1199,10 +1161,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         //
         // TODO(stroxler): we eventually need to use is-a-cycle-active information to isolate
         // placeholder values.
-        let is_calculation_finished =
-            |calc_id: &CalcId| self.answers.is_calculation_finished(calc_id);
-        self.stack()
-            .on_calculation_finished(&current, is_calculation_finished);
+        self.stack().on_calculation_finished(&current);
         answer
     }
 

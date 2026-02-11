@@ -29,12 +29,10 @@ use starlark_map::Hashed;
 use starlark_map::small_map::SmallMap;
 
 use crate::alt::answers_solver::AnswersSolver;
-use crate::alt::answers_solver::CalcId;
 use crate::alt::answers_solver::ThreadState;
 use crate::alt::attr::AttrDefinition;
 use crate::alt::attr::AttrInfo;
 use crate::alt::traits::Solve;
-use crate::binding::binding::AnyIdx;
 use crate::binding::binding::ChangedExport;
 use crate::binding::binding::Exported;
 use crate::binding::binding::Key;
@@ -439,17 +437,6 @@ pub trait LookupAnswer: Sized {
         AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
         SolutionsTable: TableKeyed<K, Value = SolutionsEntry<K>>;
-
-    /// Check if a calculation is finished, given a CalcId.
-    ///
-    /// This supports cross-module lookups by using the module info embedded in
-    /// the CalcId. It returns `true` if the Calculation has completed (possibly
-    /// by another thread), `false` otherwise.
-    ///
-    /// The default implementation conservatively returns `false`, which is safe
-    /// but may cause us to miss some early-exit opportunities when another thread
-    /// has finished a component.
-    fn is_calculation_finished(&self, _calc_id: &CalcId) -> bool;
 }
 
 impl Answers {
@@ -661,28 +648,6 @@ impl Answers {
         AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
     {
         self.table.get::<K>().get(k)?.get()
-    }
-
-    /// Check if a calculation is finished for a given typed index.
-    /// Returns `true` if the calculation has completed, `false` otherwise.
-    /// Uses `try_get` to avoid blocking on the Calculation mutex; on
-    /// contention we optimistically return `true` to avoid false panics
-    /// in invariant checks.
-    fn is_calculation_finished_typed<K: Keyed>(&self, idx: Idx<K>) -> bool
-    where
-        AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
-    {
-        self.table
-            .get::<K>()
-            .get(idx)
-            .map(|calc| calc.try_get().map(|v| v.is_some()).unwrap_or(true))
-            .unwrap_or(false)
-    }
-
-    /// Check if a calculation is finished for a given AnyIdx.
-    /// This dispatches to the appropriate typed check based on the AnyIdx variant.
-    pub fn is_calculation_finished_anyidx(&self, any_idx: &AnyIdx) -> bool {
-        crate::dispatch_anyidx!(any_idx, self, is_calculation_finished_typed)
     }
 
     fn deep_force(&self, t: Type) -> Type {

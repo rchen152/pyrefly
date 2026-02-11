@@ -69,7 +69,6 @@ use crate::alt::answers::Solutions;
 use crate::alt::answers::SolutionsEntry;
 use crate::alt::answers::SolutionsTable;
 use crate::alt::answers_solver::AnswersSolver;
-use crate::alt::answers_solver::CalcId;
 use crate::alt::answers_solver::ThreadState;
 use crate::alt::traits::Solve;
 use crate::binding::binding::AnyExportedKey;
@@ -2420,26 +2419,6 @@ impl<'a> LookupAnswer for TransactionHandle<'a> {
             }
         }
         res
-    }
-
-    fn is_calculation_finished(&self, calc_id: &CalcId) -> bool {
-        let bindings = &calc_id.0;
-        let module_info = bindings.module();
-        let any_idx = &calc_id.1;
-
-        let handle = Handle::new(
-            module_info.name(),
-            module_info.path().dupe(),
-            SysInfo::default(),
-        );
-
-        if let Some(module_data) = self.transaction.data.updated_modules.get(&handle) {
-            let lock = module_data.state.read();
-            if let Some(answers_arc) = &lock.steps.answers {
-                return answers_arc.1.is_calculation_finished_anyidx(any_idx);
-            }
-        }
-        false
     }
 }
 
