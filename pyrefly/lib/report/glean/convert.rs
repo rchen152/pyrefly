@@ -210,7 +210,7 @@ struct GleanState<'a> {
     facts: Facts,
     names: HashSet<Arc<String>>,
     locations_fqnames: HashMap<TextSize, Arc<String>>,
-    import_names: HashMap<Arc<String>, Arc<String>>,
+    import_names: HashMap<Arc<String>, (Arc<String>, Option<Arc<String>>)>,
 }
 
 struct AssignInfo<'a> {
@@ -430,10 +430,18 @@ impl GleanState<'_> {
         python::Name::new(name)
     }
 
-    fn record_name_for_import(&mut self, name: String, import_name: &str) {
-        let arc_name = self.record_name(name);
-        let arc_import_name = Arc::new(import_name.to_owned());
-        self.import_names.insert(arc_name.dupe(), arc_import_name);
+    fn record_name_for_import(&mut self, as_name: String, resolved_name: &str, from_name: &str) {
+        let arc_name = self.record_name(as_name);
+        let arc_resolved_name = self.record_name(resolved_name.to_owned());
+        let arc_from_name = if from_name != resolved_name {
+            Some(self.record_name(from_name.to_owned()))
+        } else {
+            None
+        };
+        self.import_names.insert(
+            arc_name.dupe(),
+            (arc_resolved_name.dupe(), arc_from_name.dupe()),
+        );
     }
 
     fn make_fq_name_for_declaration(
@@ -473,37 +481,51 @@ impl GleanState<'_> {
         &self,
         def_range: TextRange,
         module: &ModuleInfo,
-        alias: Option<&DefinitionLocation>,
+        base_type: Option<&Type>,
+        additional_definitions: Vec<DefinitionLocation>,
     ) -> Vec<DefinitionLocation> {
         let file = Some(file_fact(module));
+        let type_name = base_type.and_then(|ty| ty.qname());
         let local_name = module.code_at(def_range);
         let module_name = module.name();
 
-        if module_name == ModuleName::builtins() {
-            vec![DefinitionLocation {
-                name: local_name.to_owned(),
-                file,
-            }]
-        } else if module_name == self.module_name {
-            self.locations_fqnames
-                .get(&def_range.start())
-                .map_or(vec![], |x| {
-                    vec![DefinitionLocation {
-                        name: (**x).clone(),
-                        file,
-                    }]
-                })
-        } else {
-            let original_name = join_names(module_name.as_str(), local_name);
-            let mut definitions = vec![DefinitionLocation {
-                name: original_name,
-                file,
-            }];
-            if let Some(alias_def) = alias {
-                definitions.push(alias_def.clone());
-            }
+        if module_name == self.module_name {
+            let fqname_type =
+                type_name.and_then(|qname| self.locations_fqnames.get(&qname.range().start()));
 
-            definitions
+            let fqname = if let Some(ty) = fqname_type {
+                Some(join_names(ty, local_name))
+            } else {
+                self.locations_fqnames
+                    .get(&def_range.start())
+                    .map(|name| (**name).clone())
+            };
+
+            if let Some(name) = fqname {
+                vec![DefinitionLocation { name, file }]
+            } else {
+                additional_definitions
+            }
+        } else {
+            let fqname_type = type_name.map(|name| name.id().as_str()).unwrap_or_default();
+            let fqname = join_names(fqname_type, local_name);
+            if module_name == ModuleName::builtins() {
+                vec![DefinitionLocation { name: fqname, file }]
+            } else {
+                let name = join_names(module_name.as_str(), &fqname);
+                let mut definitions = vec![DefinitionLocation {
+                    name: name.clone(),
+                    file,
+                }];
+
+                definitions.extend(
+                    additional_definitions
+                        .into_iter()
+                        .filter(|def| def.name != name),
+                );
+
+                definitions
+            }
         }
     }
 
@@ -521,6 +543,30 @@ impl GleanState<'_> {
         self.find_definition_for_name_use(identifier)
     }
 
+    fn get_additional_definitions(&self, range: TextRange) -> Vec<DefinitionLocation> {
+        let as_name = join_names(self.module_name.as_str(), self.module.code_at(range));
+
+        let mut definitions = vec![DefinitionLocation {
+            name: as_name.clone(),
+            file: Some(self.file_fact()),
+        }];
+
+        if let Some((resolved_name, from_name)) = self.import_names.get(&as_name) {
+            definitions.push(DefinitionLocation {
+                name: resolved_name.to_string(),
+                file: None,
+            });
+            if let Some(name) = from_name.as_ref() {
+                definitions.push(DefinitionLocation {
+                    name: name.to_string(),
+                    file: None,
+                })
+            }
+        };
+
+        definitions
+    }
+
     fn find_definition_for_name_use(&self, identifier: Identifier) -> Vec<DefinitionLocation> {
         let definition = self.transaction.find_definition_for_name_use(
             self.handle,
@@ -528,13 +574,15 @@ impl GleanState<'_> {
             FindPreference::default(),
         );
 
-        let alias = DefinitionLocation {
-            name: join_names(self.module_name.as_str(), identifier.as_str()),
-            file: Some(self.file_fact()),
-        };
+        let additional_definitions = self.get_additional_definitions(identifier.range());
 
-        definition.map_or(vec![alias.clone()], |def| {
-            self.get_definition_location(def.definition_range, &def.module, Some(&alias))
+        definition.map_or(additional_definitions.clone(), |def| {
+            self.get_definition_location(
+                def.definition_range,
+                &def.module,
+                None,
+                additional_definitions,
+            )
         })
     }
 
@@ -570,6 +618,7 @@ impl GleanState<'_> {
                     qname.range(),
                     qname.module(),
                     None,
+                    vec![],
                 ));
 
                 definitions
@@ -990,7 +1039,9 @@ impl GleanState<'_> {
         for (local_name, source) in exports {
             let name = join_names(self.module_name.as_str(), local_name);
             if self.names.contains(&name) {
-                if let Some(original_name) = self.import_names.get(&name).map(|n| (**n).clone()) {
+                if let Some(original_name) =
+                    self.import_names.get(&name).map(|(n, _)| (**n).clone())
+                {
                     self.add_xref(
                         DefinitionLocation {
                             name: original_name,
@@ -1057,7 +1108,9 @@ impl GleanState<'_> {
 
         definitions
             .into_iter()
-            .flat_map(|def| self.get_definition_location(def.definition_range, &def.module, None))
+            .flat_map(|def| {
+                self.get_definition_location(def.definition_range, &def.module, None, vec![])
+            })
             .collect()
     }
 
@@ -1072,8 +1125,11 @@ impl GleanState<'_> {
         let from_name_fact = python::Name::new(from_name.id().to_string());
         let as_name_fact = python::Name::new(as_name_fqname.clone());
 
-        self.record_name_with_position(from_name.id().to_string(), as_name.range.start());
-        self.record_name_for_import(as_name_fqname, resolved_name.unwrap_or(from_name));
+        self.record_name_for_import(
+            as_name_fqname,
+            resolved_name.unwrap_or(from_name),
+            from_name,
+        );
         let import_fact = python::ImportStatement::new(from_name_fact, as_name_fact);
 
         DeclarationInfo {
@@ -1207,7 +1263,7 @@ impl GleanState<'_> {
                     .first()
                     .cloned()
                     .unwrap_or(DefinitionLocation {
-                        name: from_name.to_string(),
+                        name: from_name_string.clone(),
                         file: None,
                     });
 
