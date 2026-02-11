@@ -375,10 +375,10 @@ impl CalcStack {
     fn on_scc_detected(&self, raw: Vec1<CalcId>) -> SccDetectedResult {
         let calc_stack_vec = self.into_vec();
 
-        // Create the new SCC - this computes min_stack_depth as the anchor's position
+        // Create the new SCC
         let new_scc = Scc::new(raw, &calc_stack_vec);
         let detected_at = new_scc.detected_at.dupe();
-        let cycle_start_pos = new_scc.min_stack_depth;
+        let cycle_start_pos = new_scc.anchor_pos;
 
         // Check for overlapping SCCs and merge if needed
         let mut scc_stack = self.scc_stack.borrow_mut();
@@ -552,18 +552,18 @@ impl CalcStack {
         // use it to determine how much of the CalcStack needs to be merged in order
         // to ensure bindings that weren't yet part of a known SCC are included.
         let mut sccs_to_merge: Vec<Scc> = Vec::new();
-        let mut target_min_stack_depth: Option<usize> = None;
+        let mut target_anchor_pos: Option<usize> = None;
         while let Some(scc) = scc_stack.pop() {
             let is_target = scc.detected_at() == *detected_at_of_scc;
             if is_target {
-                target_min_stack_depth = Some(scc.min_stack_depth);
+                target_anchor_pos = Some(scc.anchor_pos);
             }
             sccs_to_merge.push(scc);
             if is_target {
                 break;
             }
         }
-        let min_depth = target_min_stack_depth
+        let min_depth = target_anchor_pos
             .expect("Target SCC not found during merge - this indicates a bug in SCC tracking");
         let sccs_to_merge = Vec1::try_from_vec(sccs_to_merge)
             .expect("Target SCC not found during merge - this indicates a bug in SCC tracking");
@@ -702,13 +702,6 @@ pub struct Scc {
     node_state: HashMap<CalcId, NodeState>,
     /// Where we detected the SCC (for debugging only)
     detected_at: CalcId,
-    /// The minimum CalcStack depth of any participant - specifically, the
-    /// position of the anchor (minimal CalcId) on the CalcStack when the SCC
-    /// was created. This is well-defined because the anchor is the last
-    /// participant to finish during unwinding.
-    /// Used as a fast filter to skip SCCs that can't possibly overlap with
-    /// a newly detected cycle.
-    min_stack_depth: usize,
     /// Stack position of the SCC anchor (the position of the detected_at CalcId).
     /// The detected_at CalcId is the one that was pushed twice, triggering cycle
     /// detection; its first occurrence is at the deepest position in the cycle
@@ -763,7 +756,6 @@ impl Scc {
             break_at: break_at_set,
             node_state,
             detected_at,
-            min_stack_depth: anchor_pos,
             anchor_pos,
             segment_size,
         }
@@ -841,8 +833,6 @@ impl Scc {
         }
         // Keep the smallest detected_at for consistency/determinism
         self.detected_at = self.detected_at.min(other.detected_at);
-        // Keep the minimum stack depth (the earliest anchor position)
-        self.min_stack_depth = self.min_stack_depth.min(other.min_stack_depth);
         // Keep the minimum anchor position
         self.anchor_pos = self.anchor_pos.min(other.anchor_pos);
         // Note: segment_size is NOT updated here. After a merge, everything from
@@ -1540,15 +1530,14 @@ mod scc_tests {
         break_at: Vec<CalcId>,
         node_state: HashMap<CalcId, NodeState>,
         detected_at: CalcId,
-        min_stack_depth: usize,
+        anchor_pos: usize,
     ) -> Scc {
         let segment_size = node_state.len();
         Scc {
             break_at: break_at.into_iter().collect(),
             node_state,
             detected_at,
-            min_stack_depth,
-            anchor_pos: min_stack_depth,
+            anchor_pos,
             segment_size,
         }
     }
@@ -1784,13 +1773,13 @@ mod scc_tests {
             vec![a.dupe()],
             fresh_nodes(&[a.dupe(), b.dupe()]),
             a.dupe(),
-            0, // min_stack_depth
+            0, // anchor_pos
         );
         let scc2 = make_test_scc(
             vec![c.dupe()],
             fresh_nodes(&[c.dupe(), d.dupe()]),
             c.dupe(),
-            2, // min_stack_depth
+            2, // anchor_pos
         );
 
         let merged = Scc::merge_many(vec1![scc1, scc2], a.dupe());
@@ -1803,8 +1792,8 @@ mod scc_tests {
         // All nodes should be present
         assert_eq!(merged.node_state.len(), 4);
 
-        // min_stack_depth should be the minimum (0)
-        assert_eq!(merged.min_stack_depth, 0);
+        // anchor_pos should be the minimum (0)
+        assert_eq!(merged.anchor_pos, 0);
     }
 
     #[test]
@@ -1857,24 +1846,24 @@ mod scc_tests {
     }
 
     #[test]
-    fn test_merge_many_keeps_minimum_stack_depth() {
+    fn test_merge_many_keeps_minimum_anchor_pos() {
         let a = CalcId::for_test("m", 0);
         let b = CalcId::for_test("m", 1);
         let c = CalcId::for_test("m", 2);
 
-        // SCC1 with min_stack_depth = 5
+        // SCC1 with anchor_pos = 5
         let scc1 = make_test_scc(
             vec![a.dupe()],
             fresh_nodes(&[a.dupe(), b.dupe()]),
             a.dupe(),
             5,
         );
-        // SCC2 with min_stack_depth = 2
+        // SCC2 with anchor_pos = 2
         let scc2 = make_test_scc(vec![c.dupe()], fresh_nodes(&[c.dupe()]), c.dupe(), 2);
 
         let merged = Scc::merge_many(vec1![scc1, scc2], a.dupe());
 
-        // Should keep the minimum stack depth
-        assert_eq!(merged.min_stack_depth, 2);
+        // Should keep the minimum anchor_pos
+        assert_eq!(merged.anchor_pos, 2);
     }
 }
