@@ -2128,12 +2128,6 @@ impl<'a> TransactionHandle<'a> {
         path: Option<&ModulePath>,
         dep: ModuleDep,
     ) -> FindingOrError<ArcId<ModuleDataMut>> {
-        if module == self.module_data.handle.module()
-            && path.is_none_or(|path| path == self.module_data.handle.path())
-        {
-            return FindingOrError::new_finding(self.module_data.dupe());
-        }
-
         let cached = {
             let deps_read = self.module_data.deps.read();
             if let Some(ImportResolution::Resolved(handles)) = deps_read.get(&module)
