@@ -718,6 +718,14 @@ impl<'a> BindingsBuilder<'a> {
         self.table.get::<K>().1.get(idx)
     }
 
+    fn idx_to_binding_mut<K>(&mut self, idx: Idx<K>) -> Option<&mut K::Value>
+    where
+        K: Keyed,
+        BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
+    {
+        self.table.get_mut::<K>().1.get_mut(idx)
+    }
+
     /// Declare a `Key` as a usage, which can be used for name lookups. Like `idx_for_promise`,
     /// this is a promise to later provide a `Binding` corresponding this key.
     pub fn declare_current_idx(&mut self, key: Key) -> CurrentIdx {
@@ -1112,7 +1120,7 @@ impl<'a> BindingsBuilder<'a> {
             return;
         }
         if let Some(Binding::PartialTypeWithUpstreamsCompleted(_, first_uses)) =
-            self.table.types.1.get_mut(partial_type_idx)
+            self.idx_to_binding_mut(partial_type_idx)
         {
             let mut vec: Vec<_> = std::mem::take(first_uses).into_vec();
             vec.extend(additional_first_uses);
@@ -1258,7 +1266,7 @@ impl<'a> BindingsBuilder<'a> {
     /// Mark a CompletedPartialType as used by a specific binding.
     fn mark_first_use(&mut self, partial_type_idx: Idx<Key>, user_idx: Idx<Key>) {
         if let Some(Binding::CompletedPartialType(_, first_use)) =
-            self.table.types.1.get_mut(partial_type_idx)
+            self.idx_to_binding_mut(partial_type_idx)
         {
             *first_use = FirstUse::UsedBy(user_idx);
         }
@@ -1270,7 +1278,7 @@ impl<'a> BindingsBuilder<'a> {
     /// where we don't want to pin partial types. Should be called after `lookup_name`.
     pub fn mark_does_not_pin_if_first_use(&mut self, partial_type_idx: Idx<Key>) {
         if let Some(Binding::CompletedPartialType(_, first_use)) =
-            self.table.types.1.get_mut(partial_type_idx)
+            self.idx_to_binding_mut(partial_type_idx)
             && matches!(first_use, FirstUse::Undetermined)
         {
             *first_use = FirstUse::DoesNotPin;
