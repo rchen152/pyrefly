@@ -5322,6 +5322,17 @@
       "severity": "error",
       "stop_column": 29,
       "stop_line": 68
+    },
+    {
+      "code": -2,
+      "column": 7,
+      "concise_description": "Class `BadChild` has inconsistent type arguments for base class `Grandparent`: `Grandparent[T1, T2]` and `Grandparent[T2, T1]`",
+      "description": "Class `BadChild` has inconsistent type arguments for base class `Grandparent`: `Grandparent[T1, T2]` and `Grandparent[T2, T1]`",
+      "line": 98,
+      "name": "invalid-inheritance",
+      "severity": "error",
+      "stop_column": 15,
+      "stop_line": 98
     }
   ],
   "generics_basic.py": [

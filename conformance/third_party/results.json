@@ -1,9 +1,9 @@
 {
   "total": 138,
-  "pass": 114,
-  "fail": 24,
+  "pass": 115,
+  "fail": 23,
   "pass_rate": 0.83,
-  "differences": 89,
+  "differences": 88,
   "passing": [
     "aliases_explicit.py",
     "aliases_newtype.py",
@@ -54,6 +54,7 @@
     "enums_member_names.py",
     "enums_member_values.py",
     "enums_members.py",
+    "generics_base_class.py",
     "generics_defaults_referential.py",
     "generics_defaults_specialization.py",
     "generics_paramspec_basic.py",
@@ -129,7 +130,6 @@
     "dataclasses_descriptors.py": 6,
     "dataclasses_slots.py": 2,
     "exceptions_context_managers.py": 2,
-    "generics_base_class.py": 1,
     "generics_basic.py": 3,
     "generics_defaults.py": 1,
     "generics_paramspec_components.py": 1,
