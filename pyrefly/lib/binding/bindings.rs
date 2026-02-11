@@ -803,7 +803,7 @@ impl<'a> BindingsBuilder<'a> {
     /// - we bind the function body (note that this isn't true for, e.g. a `@no_type_check` function!)
     /// - our scan of the function body is consistent with our traversal when binding
     pub fn last_statement_idx_for_implicit_return(&mut self, last: LastStmt, x: &Expr) -> Idx<Key> {
-        self.table.types.0.insert(match last {
+        self.idx_for_promise(match last {
             LastStmt::Expr => Key::StmtExpr(x.range()),
             LastStmt::With(_) => Key::ContextExpr(x.range()),
             LastStmt::Exhaustive(kind, range) => Key::Exhaustive(kind, range),
@@ -874,7 +874,7 @@ impl<'a> BindingsBuilder<'a> {
     fn inject_globals(&mut self) {
         for global in ImplicitGlobal::implicit_globals(self.has_docstring) {
             let key = Key::ImplicitGlobal(global.name().clone());
-            let idx = self.table.insert(key, Binding::Global(global.clone()));
+            let idx = self.insert_binding(key, Binding::Global(global.clone()));
             self.bind_name(global.name(), idx, FlowStyle::Other);
         }
     }
@@ -1004,7 +1004,7 @@ impl<'a> BindingsBuilder<'a> {
             .scopes
             .validate_mutable_capture_and_get_key(Hashed::new(&name.id), kind)
         {
-            Ok(key) => Binding::Forward(self.table.types.0.insert(key)),
+            Ok(key) => Binding::Forward(self.idx_for_promise(key)),
             Err(error) => {
                 let should_suppress = matches!(kind, MutableCaptureKind::Nonlocal)
                     && self.scopes.in_module_or_class_top_level()
@@ -1044,7 +1044,7 @@ impl<'a> BindingsBuilder<'a> {
                 self.scopes.mark_import_used(name.key());
                 self.scopes.mark_variable_used(name.key());
                 NameLookupResult::Found {
-                    idx: self.table.types.0.insert(key),
+                    idx: self.idx_for_promise(key),
                     initialized,
                 }
             }
