@@ -1260,7 +1260,11 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     pub fn get_type_alias(&self, data: &TypeAliasData) -> Arc<TypeAlias> {
         match data {
             TypeAliasData::Ref(r) => {
-                let ta = self.get_from_module(r.module, None, &KeyTypeAlias(r.index));
+                let ta = self.get_from_module(
+                    r.module_name,
+                    Some(&r.module_path),
+                    &KeyTypeAlias(r.index),
+                );
                 let Some(ta) = ta else {
                     return Arc::new(TypeAlias::unknown(r.name.clone()));
                 };
@@ -1318,7 +1322,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 TypeAliasRef {
                     name: name.clone(),
                     args: None,
-                    module: self.module().name(),
+                    module_name: self.module().name(),
+                    module_path: self.module().path().clone(),
                     index: self.bindings().idx_to_key(*key_type_alias).0,
                 },
                 self.create_type_alias_params_recursive(tparams),

@@ -1570,7 +1570,8 @@ pub mod tests {
         let alias1 = Type::UntypedAlias(Box::new(TypeAliasData::Ref(TypeAliasRef {
             name: Name::new_static("X"),
             args: Some(TArgs::new(tparams1, vec![Type::any_implicit()])),
-            module: ModuleName::from_str("test"),
+            module_name: ModuleName::from_str("test"),
+            module_path: ModulePath::memory(PathBuf::from("test.py")),
             index: TypeAliasIndex(0),
         })));
 
@@ -1581,7 +1582,8 @@ pub mod tests {
         let alias2 = Type::UntypedAlias(Box::new(TypeAliasData::Ref(TypeAliasRef {
             name: Name::new_static("Y"),
             args: Some(TArgs::new(tparams2, vec![Type::any_implicit(), Type::None])),
-            module: ModuleName::from_str("test"),
+            module_name: ModuleName::from_str("test"),
+            module_path: ModulePath::memory(PathBuf::from("test.py")),
             index: TypeAliasIndex(1),
         })));
 

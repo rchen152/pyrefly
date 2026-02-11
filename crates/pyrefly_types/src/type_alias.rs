@@ -14,6 +14,7 @@ use pyrefly_derive::TypeEq;
 use pyrefly_derive::Visit;
 use pyrefly_derive::VisitMut;
 use pyrefly_python::module_name::ModuleName;
+use pyrefly_python::module_path::ModulePath;
 use pyrefly_util::display::commas_iter;
 use ruff_python_ast::name::Name;
 
@@ -175,6 +176,7 @@ pub struct TypeAliasRef {
     /// specialize this `Forall` with `[str, V]`, we end up with
     /// `Type::TypeAlias(TypeAliasData::Ref(name=X, args=[str, V]))`.
     pub args: Option<TArgs>,
-    pub module: ModuleName,
+    pub module_name: ModuleName,
+    pub module_path: ModulePath,
     pub index: TypeAliasIndex,
 }
