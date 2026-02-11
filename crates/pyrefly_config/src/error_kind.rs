@@ -281,6 +281,9 @@ pub enum ErrorKind {
     UnusedCoroutine,
     /// A suppression comment is unused (no error to suppress, or specific codes are unused)
     UnusedIgnore,
+    /// The inferred variance of a type variable does not match its declared variance.
+    /// For example, a type variable used only in covariant positions in a protocol should be declared covariant.
+    VarianceMismatch,
 }
 
 impl std::str::FromStr for ErrorKind {
@@ -336,6 +339,7 @@ impl ErrorKind {
             ErrorKind::OpenUnpacking => Severity::Ignore,
             ErrorKind::NonExhaustiveMatch => Severity::Warn,
             ErrorKind::UnusedIgnore => Severity::Ignore,
+            ErrorKind::VarianceMismatch => Severity::Warn,
             _ => Severity::Error,
         }
     }
