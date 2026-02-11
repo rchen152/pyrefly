@@ -170,8 +170,9 @@ impl CalcStack {
     /// Push a CalcId onto the stack and compute the binding action.
     ///
     /// This combines the push operation with computing what action to take,
-    /// performing all SCC state checks and mutations (like `merge_sccs`,
-    /// `on_scc_detected`, `on_calculation_finished`).
+    /// performing all SCC state checks and mutations (like `on_scc_detected`,
+    /// `on_calculation_finished`). SCC merging (`merge_sccs`) is handled
+    /// inside `pre_calculate_state` when a node is found in a previous SCC.
     fn push<T, R>(&self, current: CalcId, calculation: &Calculation<T, R>) -> BindingAction<T, R>
     where
         T: Dupe,
@@ -210,66 +211,6 @@ impl CalcStack {
                 ProposalResult::CycleDetected | ProposalResult::Calculatable => {
                     unreachable!("HasPlaceholder node must have CycleBroken or Calculated result")
                 }
-            },
-            SccState::RevisitingPreviousScc {
-                detected_at_of_scc,
-                target_state,
-            } => match target_state {
-                RevisitingTargetState::BreakAt => {
-                    self.merge_sccs(&detected_at_of_scc);
-                    BindingAction::Unwind
-                }
-                RevisitingTargetState::HasPlaceholder => {
-                    self.merge_sccs(&detected_at_of_scc);
-                    match calculation.propose_calculation() {
-                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                            unreachable!(
-                                "HasPlaceholder node in previous SCC must have CycleBroken or Calculated result"
-                            )
-                        }
-                    }
-                }
-                RevisitingTargetState::Done => {
-                    self.merge_sccs(&detected_at_of_scc);
-                    match calculation.propose_calculation() {
-                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                            unreachable!(
-                                "Done node in previous SCC must have Calculated or CycleBroken result"
-                            )
-                        }
-                    }
-                }
-                RevisitingTargetState::InProgress => match calculation.propose_calculation() {
-                    ProposalResult::CycleDetected => {
-                        // Must merge first to ensure segment_size is up to date before
-                        // on_scc_detected checks for overlap
-                        self.merge_sccs(&detected_at_of_scc);
-                        let current_cycle = self.current_cycle().unwrap();
-                        match self.on_scc_detected(current_cycle) {
-                            SccDetectedResult::BreakHere => BindingAction::Unwind,
-                            SccDetectedResult::Continue => BindingAction::Calculate,
-                        }
-                    }
-                    ProposalResult::Calculated(v) => {
-                        self.merge_sccs(&detected_at_of_scc);
-                        self.on_calculation_finished(&current);
-                        BindingAction::Calculated(v)
-                    }
-                    ProposalResult::CycleBroken(r) => {
-                        self.merge_sccs(&detected_at_of_scc);
-                        self.on_calculation_finished(&current);
-                        BindingAction::CycleBroken(r)
-                    }
-                    ProposalResult::Calculatable => {
-                        unreachable!(
-                            "InProgress node in previous SCC must be Calculating, not NotCalculated"
-                        )
-                    }
-                },
             },
             SccState::Participant => {
                 if let Some(top_scc) = self.scc_stack.borrow_mut().last_mut() {
@@ -499,66 +440,57 @@ impl CalcStack {
     /// top-to-bottom, which will be the unique SCC containing this node (if any).
     ///
     /// Special case: If we find a node in the top SCC but we've pushed frames
-    /// above the SCC's segment (i.e., we exited and are now re-entering), we
-    /// treat it like a previous SCC to trigger a merge. This ensures segments
-    /// remain contiguous.
+    /// above the SCC's segment (i.e., we exited and are now re-entering), or
+    /// in a non-top SCC, we call `merge_sccs` immediately to merge all
+    /// intervening SCCs and return the underlying state. `Participant` is
+    /// converted to `RevisitingInProgress` after merge since segment_size
+    /// is already correct (merge recalculates it).
     fn pre_calculate_state(&self, current: &CalcId) -> SccState {
         let stack_len = self.stack.borrow().len();
-        let mut scc_stack = self.scc_stack.borrow_mut();
 
-        // Check from top to bottom (rev gives us index 0 = top)
-        for (rev_idx, scc) in scc_stack.iter_mut().rev().enumerate() {
-            let is_top_scc = rev_idx == 0;
-            let state = scc.pre_calculate_state(current);
+        // Scan SCCs top-to-bottom to find one containing this node.
+        // If found in the top SCC within its segment, return directly.
+        // Otherwise, save the info needed for merge and break out.
+        let merge_info: Option<(CalcId, SccState)> = {
+            let mut scc_stack = self.scc_stack.borrow_mut();
+            let mut result = None;
+            for (rev_idx, scc) in scc_stack.iter_mut().rev().enumerate() {
+                let is_top_scc = rev_idx == 0;
+                let state = scc.pre_calculate_state(current);
 
-            match state {
-                SccState::NotInScc => continue,
-                // For the top SCC, check if we're still within its segment.
-                // If stack_len >= anchor_pos + segment_size, we've pushed frames
-                // above the segment and are re-entering - treat like a previous SCC.
-                _ if is_top_scc => {
-                    let in_segment = is_within_scc_segment(stack_len, scc);
-                    if in_segment {
+                match state {
+                    SccState::NotInScc => continue,
+                    // For the top SCC, check if we're still within its segment.
+                    _ if is_top_scc && is_within_scc_segment(stack_len, scc) => {
                         // Normal case: still within the top SCC's segment
                         return state;
                     }
-                    // Fall through to remap to RevisitingPreviousScc
+                    _ => {}
                 }
-                _ => {}
+                // Node is in a non-top SCC, or in the top SCC but outside its
+                // segment. Save the detected_at and state, then break so we can
+                // drop the borrow and call merge_sccs.
+                result = Some((scc.detected_at(), state));
+                break;
             }
-            // Remap to RevisitingPreviousScc for non-top SCCs, or for top SCC
-            // when we've exited and re-entered (not in segment).
+            result
+        };
+        // scc_stack borrow is now dropped
+
+        if let Some((detected_at, state)) = merge_info {
+            self.merge_sccs(&detected_at);
+            // After merge, segment_size is recalculated. Participant would
+            // increment segment_size again in push(), so convert it to
+            // RevisitingInProgress to avoid double-counting.
             match state {
-                SccState::NotInScc => continue, // Already handled above
-                SccState::RevisitingInProgress | SccState::Participant => {
-                    return SccState::RevisitingPreviousScc {
-                        detected_at_of_scc: scc.detected_at(),
-                        target_state: RevisitingTargetState::InProgress,
-                    };
+                SccState::Participant | SccState::RevisitingInProgress => {
+                    SccState::RevisitingInProgress
                 }
-                SccState::RevisitingDone => {
-                    return SccState::RevisitingPreviousScc {
-                        detected_at_of_scc: scc.detected_at(),
-                        target_state: RevisitingTargetState::Done,
-                    };
-                }
-                SccState::HasPlaceholder => {
-                    return SccState::RevisitingPreviousScc {
-                        detected_at_of_scc: scc.detected_at(),
-                        target_state: RevisitingTargetState::HasPlaceholder,
-                    };
-                }
-                SccState::BreakAt => {
-                    return SccState::RevisitingPreviousScc {
-                        detected_at_of_scc: scc.detected_at(),
-                        target_state: RevisitingTargetState::BreakAt,
-                    };
-                }
-                // RevisitingPreviousScc shouldn't be returned by Scc::pre_calculate_state
-                SccState::RevisitingPreviousScc { .. } => unreachable!(),
+                other => other,
             }
+        } else {
+            SccState::NotInScc
         }
-        SccState::NotInScc
     }
 
     /// Handle the completion of a calculation. This might involve progress on
@@ -599,10 +531,11 @@ impl CalcStack {
     /// any free-floating CalcStack nodes between the target SCC's min_stack_depth
     /// and the current stack position.
     ///
-    /// This is called when we detect a read into a previous (non-top) SCC via
-    /// `RevisitingPreviousScc`. After this call, the SCC stack will have one
-    /// merged SCC at the top containing all participants from the merged SCCs
-    /// plus any free-floating nodes from the CalcStack.
+    /// This is called from `pre_calculate_state` when a node is found in a
+    /// non-top SCC, or in the top SCC but outside its segment. After this call,
+    /// the SCC stack will have one merged SCC at the top containing all
+    /// participants from the merged SCCs plus any free-floating nodes from the
+    /// CalcStack.
     ///
     /// The oldest previously-known Scc we should merge is identified based on its
     /// `detected_at`; this has the potentially-useful property of being a valid
@@ -676,27 +609,6 @@ enum NodeState {
     Done,
 }
 
-/// The state of a target node when revisiting a previous SCC.
-///
-/// When we read back into a previous (non-top) SCC, we need to know the
-/// target node's state to determine how to handle it after merging.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RevisitingTargetState {
-    /// Node completed within the SCC, has preliminary answer.
-    /// No new break_at needed - just merge and return the answer.
-    Done,
-    /// Node is still being computed (on the Rust call stack).
-    /// May need new break_at via normal cycle detection after merge.
-    InProgress,
-    /// Node has recorded a placeholder but hasn't computed the real answer yet.
-    /// No new break_at needed - merge and break here.
-    HasPlaceholder,
-    /// Node is a break point for that SCC (in the break_at set but hasn't
-    /// recorded a placeholder yet).
-    /// No new break_at needed - merge and break here.
-    BreakAt,
-}
-
 /// Represents the current SCC state prior to attempting a particular calculation.
 enum SccState {
     /// The current idx is not participating in any currently detected SCC (though it
@@ -716,16 +628,6 @@ enum SccState {
     /// The current idx is in an active SCC but its calculation has already completed
     /// (NodeState::Done). A preliminary answer should be available.
     RevisitingDone,
-    /// Read back into a PREVIOUS SCC (not the top of the stack).
-    /// This occurs when the current computation reads a node that belongs to
-    /// an SCC lower in the SCC stack. Requires merging all intervening nodes
-    /// and SCCs before proceeding.
-    RevisitingPreviousScc {
-        /// Stable identifier for the target SCC (the detected_at field of that SCC).
-        detected_at_of_scc: CalcId,
-        /// The state of the target node within that SCC.
-        target_state: RevisitingTargetState,
-    },
     /// This idx is part of the active SCC, and we are either (if this is a pre-calculation
     /// check) recursing out toward `break_at` or unwinding back toward `break_at`.
     Participant,
