@@ -573,6 +573,36 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         env
     }
 
+    /// Infer variance from structural usage, ignoring declared variance.
+    /// All type params are treated as having undefined variance, and the
+    /// fixpoint algorithm discovers what the structure implies.
+    #[allow(dead_code)]
+    pub fn infer_variance_ignoring_declared(&self, class: &Class) -> VarianceMap {
+        let tparams = self.get_class_tparams(class);
+        let inference_map = tparams
+            .as_vec()
+            .iter()
+            .map(|p| {
+                (
+                    p.name().clone(),
+                    InferenceStatus {
+                        inferred_variance: Variance::Bivariant,
+                        has_variance_inferred: false,
+                        specified_variance: None,
+                    },
+                )
+            })
+            .collect::<InferenceMap>();
+        let environment = self.infer_variance_env(class, inference_map);
+        let class_variances = environment
+            .get(class)
+            .expect("class must be present in environment")
+            .iter()
+            .map(|(name, status)| (name.clone(), status.inferred_variance))
+            .collect::<SmallMap<_, _>>();
+        VarianceMap(class_variances)
+    }
+
     /// Compute variance for a class, optionally checking for violations.
     ///
     /// When `check_violations` is true, also checks that type variables with
