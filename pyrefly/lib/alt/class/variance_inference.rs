@@ -493,26 +493,34 @@ fn initialize_environment<'a>(
 
 impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn compute_variance_env(&self, class: &Class) -> VarianceEnv {
-        let mut environment = VarianceEnv::new();
         let initial_inference_map_for_class =
             initial_inference_map(self.get_class_tparams(class).as_vec());
         let need_inference = initial_inference_map_for_class
             .iter()
             .any(|(_, status)| status.specified_variance.is_none());
-        environment.insert(class.dupe(), initial_inference_map_for_class);
         if !need_inference {
+            let mut environment = VarianceEnv::new();
+            environment.insert(class.dupe(), initial_inference_map_for_class);
             environment
         } else {
-            initialize_environment(
-                class,
-                self.heap,
-                &mut environment,
-                &|c| self.get_base_types_for_class(c),
-                &|c| self.get_class_field_map(c),
-                &|c| self.get_class_tparams(c),
-            );
-            self.fixpoint(environment)
+            self.infer_variance_env(class, initial_inference_map_for_class)
         }
+    }
+
+    /// Initialize the variance environment for `class` and its related classes,
+    /// then run the fixpoint algorithm to infer variances from structural usage.
+    fn infer_variance_env(&self, class: &Class, inference_map: InferenceMap) -> VarianceEnv {
+        let mut environment = VarianceEnv::new();
+        environment.insert(class.dupe(), inference_map);
+        initialize_environment(
+            class,
+            self.heap,
+            &mut environment,
+            &|c| self.get_base_types_for_class(c),
+            &|c| self.get_class_field_map(c),
+            &|c| self.get_class_tparams(c),
+        );
+        self.fixpoint(environment)
     }
 
     fn fixpoint(&self, mut env: VarianceEnv) -> VarianceEnv {
