@@ -1334,6 +1334,7 @@ impl<'a> BindingsBuilder<'a> {
         idx: Idx<Key>,
         style: FlowStyle,
     ) -> Option<Idx<KeyAnnotation>> {
+        self.check_for_type_alias_redefinition(name, idx);
         let name = Hashed::new(name);
         let write_info = self
             .scopes
@@ -1349,6 +1350,28 @@ impl<'a> BindingsBuilder<'a> {
                 .record_bind_in_anywhere(name.into_key().clone(), range, idx);
         }
         write_info.annotation
+    }
+
+    fn check_for_type_alias_redefinition(&self, name: &Name, idx: Idx<Key>) {
+        let prev_idx = self.scopes.current_flow_idx(name);
+        if let Some(prev_idx) = prev_idx {
+            if matches!(
+                self.idx_to_binding(prev_idx),
+                Some(Binding::TypeAlias { .. })
+            ) {
+                self.error(
+                    self.idx_to_key(idx).range(),
+                    ErrorInfo::Kind(ErrorKind::Redefinition),
+                    format!("Cannot redefine existing type alias `{name}`",),
+                )
+            } else if matches!(self.idx_to_binding(idx), Some(Binding::TypeAlias { .. })) {
+                self.error(
+                    self.idx_to_key(idx).range(),
+                    ErrorInfo::Kind(ErrorKind::Redefinition),
+                    format!("Cannot redefine existing name `{name}` as a type alias",),
+                );
+            }
+        }
     }
 
     pub fn type_params(&mut self, x: &mut TypeParams) -> SmallSet<Name> {

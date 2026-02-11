@@ -947,8 +947,8 @@
     {
       "code": -2,
       "column": 6,
-      "concise_description": "Cannot redefine existing name `BadTypeAlias14` as a type alias",
-      "description": "Cannot redefine existing name `BadTypeAlias14` as a type alias",
+      "concise_description": "Cannot redefine existing type alias `BadTypeAlias14`",
+      "description": "Cannot redefine existing type alias `BadTypeAlias14`",
       "line": 52,
       "name": "redefinition",
       "severity": "error",

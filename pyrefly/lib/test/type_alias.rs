@@ -1141,12 +1141,59 @@ testcase!(
     test_type_statement_redeclaration_conformance,
     r#"
 type BadTypeAlias14 = int
-type BadTypeAlias14 = int # E: Cannot redefine existing name `BadTypeAlias14` as a type alias
+type BadTypeAlias14 = int # E: Cannot redefine existing type alias `BadTypeAlias14`
 
 class C:
     type T = int
-    type T = int # E: Cannot redefine existing name `T` as a type alias
+    type T = int # E: Cannot redefine existing type alias `T`
 "#,
+);
+
+testcase!(
+    test_redeclare_type_alias_as_non_type_alias,
+    r#"
+type BadTypeAlias14 = int
+BadTypeAlias14 = 0  # E: Cannot redefine existing type alias `BadTypeAlias14`
+"#,
+);
+
+testcase!(
+    test_redeclare_non_type_alias_as_type_alias,
+    r#"
+BadTypeAlias14 = 0
+type BadTypeAlias14 = int  # E: Cannot redefine existing name `BadTypeAlias14` as a type alias
+"#,
+);
+
+testcase!(
+    test_redeclare_legacy_type_alias,
+    r#"
+from typing import TypeAlias, Union
+
+X1: TypeAlias = int
+X1 = 0  # E: Cannot redefine existing type alias `X1`
+
+X2 = Union[int, str]
+X2 = 0  # E: Cannot redefine existing type alias `X2`
+    "#,
+);
+
+testcase!(
+    test_redeclare_typealiastype,
+    r#"
+from typing import TypeAliasType
+X = TypeAliasType("X", int)
+X = 0  # E: Cannot redefine existing type alias `X`
+    "#,
+);
+
+testcase!(
+    test_redeclare_type_alias_in_nested_scope_ok,
+    r#"
+type X = int
+class C:
+    type X = str
+    "#,
 );
 
 testcase!(
