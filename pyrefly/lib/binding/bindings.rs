@@ -710,6 +710,14 @@ impl<'a> BindingsBuilder<'a> {
         self.table.get::<K>().0.idx_to_key(idx)
     }
 
+    fn idx_to_binding<K>(&self, idx: Idx<K>) -> Option<&K::Value>
+    where
+        K: Keyed,
+        BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
+    {
+        self.table.get::<K>().1.get(idx)
+    }
+
     /// Declare a `Key` as a usage, which can be used for name lookups. Like `idx_for_promise`,
     /// this is a promise to later provide a `Binding` corresponding this key.
     pub fn declare_current_idx(&mut self, key: Key) -> CurrentIdx {
@@ -953,7 +961,7 @@ impl<'a> BindingsBuilder<'a> {
             if !visited_keys.insert(idx) {
                 return None;
             }
-            let binding = self.table.types.1.get(idx)?;
+            let binding = self.idx_to_binding(idx)?;
             match binding {
                 Binding::CompletedPartialType(inner_idx, _) => {
                     idx = *inner_idx;
@@ -1086,7 +1094,7 @@ impl<'a> BindingsBuilder<'a> {
         let mut index = SmallMap::new();
         for (idx, _) in self.table.types.0.items() {
             if let Some(Binding::PartialTypeWithUpstreamsCompleted(def_idx, _)) =
-                self.table.types.1.get(idx)
+                self.idx_to_binding(idx)
             {
                 index.insert(*def_idx, idx);
             }
@@ -1233,7 +1241,7 @@ impl<'a> BindingsBuilder<'a> {
             }
             seen.insert(current);
 
-            match self.table.types.1.get(current) {
+            match self.idx_to_binding(current) {
                 Some(Binding::Forward(target)) => {
                     current = *target;
                 }
@@ -1658,7 +1666,7 @@ impl<'a> BindingsBuilder<'a> {
     ) -> Option<(Idx<Key>, Option<&'a Binding>)> {
         // Follow Forwards to get to the actual original binding.
         // Short circuit if there are too many forwards - it may mean there's a cycle.
-        let mut original_binding = self.table.types.1.get(original_idx);
+        let mut original_binding = self.idx_to_binding(original_idx);
         let mut gas = Gas::new(100);
         while let Some(
             Binding::Forward(fwd_idx)
@@ -1671,7 +1679,7 @@ impl<'a> BindingsBuilder<'a> {
                 return None;
             } else {
                 original_idx = *fwd_idx;
-                original_binding = self.table.types.1.get(original_idx);
+                original_binding = self.idx_to_binding(original_idx);
             }
         }
         Some((original_idx, original_binding))
