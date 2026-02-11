@@ -11,18 +11,34 @@ use crate::test::util::TestEnv;
 use crate::testcase;
 
 testcase!(
-    bug = "conformance: Should use bounds/constraints of type var to determine callable input type for type[T] constructors",
     test_tyvar_constructor,
     r#"
 def test[T](cls: type[T]) -> T:
-    cls(1)  # should error: no args for object constructor
+    cls(1)  # E: Expected 0 positional arguments, got 1
     return cls()
 class A:
     def __init__(self, x: int) -> None: pass
 def test2[T: A](cls: type[T]) -> T:
-    a1: A = cls()  # should error: missing required arg x
+    a1: A = cls()  # E: Missing argument `x` in function `A.__init__`
     a2: A = cls(1)
-    return cls()
+    return cls(1)
+"#,
+);
+
+testcase!(
+    bug = "When determining callable for type[T] where T is a constrained TypeVar, we should take intersection of constructor of all constraints",
+    test_constrained_typevar_constructor,
+    r#"
+from typing import TypeVar
+class A:
+    def __init__(self, x: int) -> None: pass
+class B:
+    def __init__(self, x: int, y: str = "default") -> None: pass
+T = TypeVar("T", A, B)
+def test(cls: type[T]) -> None:
+    cls(1)
+    cls("hello")  # should error: incorrect type of x
+    cls(1, "hello")  # should error: too many arguments
 "#,
 );
 
