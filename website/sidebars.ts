@@ -110,9 +110,21 @@ let docsSidebar = [
         label: 'Import Resolution',
     },
     {
-        type: 'doc' as const,
-        id: 'autotype',
-        label: 'Automating Type Annotations',
+        type: 'category' as const,
+        label: 'Tools',
+        collapsed: false,
+        items: [
+            {
+                type: 'doc' as const,
+                id: 'autotype',
+                label: 'Automating Type Annotations',
+            },
+            {
+                type: 'doc' as const,
+                id: 'report',
+                label: 'Measuring Type Coverage',
+            },
+        ],
     },
     {
         type: 'doc' as const,
