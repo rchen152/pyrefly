@@ -8,6 +8,7 @@
 use std::any::Any;
 use std::cell::RefCell;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashMap;
 use std::fmt;
@@ -820,7 +821,7 @@ pub struct Scc {
     break_at: BTreeSet<CalcId>,
     /// State of each participant in this SCC.
     /// Keys are all participants; values track their computation state.
-    node_state: HashMap<CalcId, NodeState>,
+    node_state: BTreeMap<CalcId, NodeState>,
     /// Where we detected the SCC (for debugging only)
     detected_at: CalcId,
     /// Stack position of the SCC anchor (the position of the detected_at CalcId).
@@ -856,7 +857,7 @@ impl Scc {
         let (_, break_at) = raw.iter().enumerate().min_by_key(|(_, c)| *c).unwrap();
 
         // Initialize all nodes as Fresh
-        let node_state: HashMap<CalcId, NodeState> =
+        let node_state: BTreeMap<CalcId, NodeState> =
             raw.iter().duped().map(|c| (c, NodeState::Fresh)).collect();
 
         let mut break_at_set = BTreeSet::new();
@@ -1809,7 +1810,7 @@ mod scc_tests {
     #[allow(clippy::mutable_key_type)]
     fn make_test_scc(
         break_at: Vec<CalcId>,
-        node_state: HashMap<CalcId, NodeState>,
+        node_state: BTreeMap<CalcId, NodeState>,
         detected_at: CalcId,
         anchor_pos: usize,
     ) -> Scc {
@@ -1834,7 +1835,7 @@ mod scc_tests {
 
     /// Helper to create node_state map with all nodes Fresh.
     #[allow(clippy::mutable_key_type)]
-    fn fresh_nodes(ids: &[CalcId]) -> HashMap<CalcId, NodeState> {
+    fn fresh_nodes(ids: &[CalcId]) -> BTreeMap<CalcId, NodeState> {
         ids.iter().map(|id| (id.dupe(), NodeState::Fresh)).collect()
     }
 
@@ -2084,13 +2085,13 @@ mod scc_tests {
         let b = CalcId::for_test("m", 1);
 
         // SCC1 has M0 as Done, M1 as Fresh
-        let mut scc1_state = HashMap::new();
+        let mut scc1_state = BTreeMap::new();
         scc1_state.insert(a.dupe(), done_for_test());
         scc1_state.insert(b.dupe(), NodeState::Fresh);
         let scc1 = make_test_scc(vec![a.dupe()], scc1_state, a.dupe(), 0);
 
         // SCC2 has M0 as Fresh, M1 as InProgress
-        let mut scc2_state = HashMap::new();
+        let mut scc2_state = BTreeMap::new();
         scc2_state.insert(a.dupe(), NodeState::Fresh);
         scc2_state.insert(b.dupe(), NodeState::InProgress);
         let scc2 = make_test_scc(vec![a.dupe()], scc2_state, a.dupe(), 0);
