@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::any::Any;
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
@@ -29,6 +30,7 @@ use starlark_map::Hashed;
 use starlark_map::small_map::SmallMap;
 
 use crate::alt::answers_solver::AnswersSolver;
+use crate::alt::answers_solver::CalcId;
 use crate::alt::answers_solver::ThreadState;
 use crate::alt::attr::AttrDefinition;
 use crate::alt::attr::AttrInfo;
@@ -437,6 +439,22 @@ pub trait LookupAnswer: Sized {
         AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
         SolutionsTable: TableKeyed<K, Value = SolutionsEntry<K>>;
+
+    /// Commit a preliminary answer to a specific module's Calculation cell.
+    /// Used for cross-module batch commit when an SCC spans module boundaries.
+    ///
+    /// Returns true if the commit was performed, false if the implementation
+    /// does not support cross-module commits.
+    ///
+    /// Default implementation returns false (not supported).
+    fn commit_to_module(
+        &self,
+        _calc_id: CalcId,
+        _answer: Arc<dyn Any + Send + Sync>,
+        _errors: Option<Arc<ErrorCollector>>,
+    ) -> bool {
+        false
+    }
 }
 
 impl Answers {

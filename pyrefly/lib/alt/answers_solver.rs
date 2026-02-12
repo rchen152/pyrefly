@@ -1208,6 +1208,41 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         answer
     }
 
+    /// Commit a type-erased answer to the Calculation cell for a same-module binding.
+    /// Used during batch commit when an SCC completes.
+    ///
+    /// The answer was already finalized (force_var called) during calculate_and_record_answer,
+    /// so we use a no-op finalizer here. Errors are only extended into base_errors if
+    /// this thread's write wins (did_write = true).
+    #[allow(dead_code)]
+    fn commit_typed<K: Solve<Ans>>(
+        &self,
+        idx: Idx<K>,
+        answer: Arc<dyn Any + Send + Sync>,
+        errors: Option<Arc<ErrorCollector>>,
+    ) where
+        AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
+        BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
+    {
+        let typed_answer: Arc<K::Answer> = Arc::unwrap_or_clone(
+            answer
+                .downcast::<Arc<K::Answer>>()
+                .expect("commit_typed: type mismatch in batch commit"),
+        );
+        let calculation = self.get_calculation(idx);
+        let (_answer, did_write) = calculation.record_value(typed_answer, |_var, ans| ans);
+        if did_write && let Some(errors) = errors {
+            // TODO: ErrorCollector::extend takes `other: ErrorCollector` by value,
+            // but we have Arc<ErrorCollector>. We can use Arc::try_unwrap to
+            // consume the Arc if we hold the only reference, which should be the
+            // case during batch commit. This will be resolved when we wire up the
+            // full batch commit path.
+            if let Ok(errors) = Arc::try_unwrap(errors) {
+                self.base_errors.extend(errors);
+            }
+        }
+    }
+
     /// Finalize a recursive answer. This takes the raw value produced by `K::solve` and calls
     /// `K::record_recursive` in order to:
     /// - ensure that the `Variables` map in `solver.rs` is updated
