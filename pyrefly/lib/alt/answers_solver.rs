@@ -917,6 +917,11 @@ impl Scc {
     /// future SCC-local isolation. Currently dual-write: data is also
     /// written to Calculation by the caller.
     ///
+    /// This method implements first-answer-wins semantics: once a node is marked
+    /// as Done, subsequent calculations (from duplicate stack frames within an SCC)
+    /// do not overwrite the state. This ensures that the first computed answer is
+    /// the one that persists, consistent with Calculation::record_value semantics.
+    ///
     /// The data is `None` when the node was already computed by another
     /// path and only the state transition matters.
     fn on_calculation_finished(
@@ -925,7 +930,9 @@ impl Scc {
         answer: Option<Arc<dyn Any + Send + Sync>>,
         errors: Option<Arc<ErrorCollector>>,
     ) {
-        if let Some(state) = self.node_state.get_mut(current) {
+        if let Some(state) = self.node_state.get_mut(current)
+            && !matches!(state, NodeState::Done { .. })
+        {
             *state = NodeState::Done { answer, errors };
         }
     }
