@@ -672,23 +672,16 @@ impl Answers {
 
     /// Commit a type-erased answer to this module's Calculation cell.
     /// Target-side entry point for cross-module batch commit.
-    pub fn commit_preliminary(
-        &self,
-        any_idx: &AnyIdx,
-        answer: Arc<dyn Any + Send + Sync>,
-        errors: Option<Arc<ErrorCollector>>,
-    ) {
-        dispatch_anyidx!(any_idx, self, commit_typed, answer, errors)
+    /// Returns true if the write won the first-write-wins race.
+    pub fn commit_preliminary(&self, any_idx: &AnyIdx, answer: Arc<dyn Any + Send + Sync>) -> bool {
+        dispatch_anyidx!(any_idx, self, commit_typed, answer)
     }
 
     /// Typed commit for a specific key type. Downcasts the answer and writes
-    /// to the Calculation cell.
-    fn commit_typed<K: Keyed>(
-        &self,
-        idx: Idx<K>,
-        answer: Arc<dyn Any + Send + Sync>,
-        errors: Option<Arc<ErrorCollector>>,
-    ) where
+    /// to the Calculation cell. Returns true if this write won the first-write-wins
+    /// race (i.e., the answer was actually stored).
+    fn commit_typed<K: Keyed>(&self, idx: Idx<K>, answer: Arc<dyn Any + Send + Sync>) -> bool
+    where
         AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
     {
         let typed_answer: Arc<K::Answer> = Arc::unwrap_or_clone(
@@ -698,12 +691,11 @@ impl Answers {
         );
         // Get the calculation cell from the answer table
         if let Some(calculation) = self.table.get::<K>().get(idx) {
-            let _ = calculation.record_value(typed_answer, |_var, ans| ans);
-            // Note: errors are not extended here since we don't have access to
-            // the target module's base_errors. Error propagation for cross-module
-            // commits will be handled separately.
+            let (_answer, did_write) = calculation.record_value(typed_answer, |_var, ans| ans);
+            did_write
+        } else {
+            false
         }
-        let _ = errors; // Suppress unused variable warning
     }
 
     fn deep_force(&self, t: Type) -> Type {

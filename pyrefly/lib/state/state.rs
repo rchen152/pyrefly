@@ -2437,12 +2437,28 @@ impl<'a> LookupAnswer for TransactionHandle<'a> {
             None => return false,
         };
 
-        // Access the target module's Answers and call commit_preliminary.
+        // Access the target module's Answers and commit the answer.
         let lock = module_data.state.read();
         if let Some(answers_pair) = &lock.steps.answers {
             let answers = answers_pair.1.dupe();
+            // Get the target module's error collector for error propagation.
+            let target_load = lock.steps.load.as_ref().map(|load| load.dupe());
             drop(lock);
-            answers.commit_preliminary(any_idx, answer, errors);
+            let did_write = answers.commit_preliminary(any_idx, answer);
+            // Only extend errors if this write won the first-write-wins race.
+            if did_write && let (Some(errors), Some(target_load)) = (errors, target_load) {
+                // The errors Arc should have refcount 1 here: batch_commit_scc
+                // consumes the Scc (moved into the method), and each NodeState::Done
+                // is destructured by the for loop, so no other references remain.
+                // If this invariant is violated, something is holding an unexpected
+                // reference to the error collector, which could cause silent error
+                // loss and nondeterministic output.
+                let errors = Arc::try_unwrap(errors).expect(
+                    "cross-module batch commit: errors Arc has unexpected extra references; \
+                         the SCC should have been consumed, giving us sole ownership",
+                );
+                target_load.errors.extend(errors);
+            }
             true
         } else {
             false
