@@ -895,6 +895,22 @@ impl Scc {
     /// When a Fresh node is encountered, it transitions to InProgress.
     fn pre_calculate_state(&mut self, current: &CalcId) -> SccState {
         if self.break_at.contains(current) {
+            // For break_at nodes that already have a placeholder or are Done,
+            // return the state-appropriate response. BreakAt (which triggers
+            // Unwind -> attempt_to_unwind_cycle_from_here -> on_placeholder_recorded)
+            // should only fire when the node is Fresh or InProgress, i.e. the
+            // break has not happened yet.
+            //
+            // Without this guard, revisiting a Done break_at node would cause
+            // on_placeholder_recorded to overwrite Done back to HasPlaceholder,
+            // losing the stored answer needed for batch commit.
+            if let Some(state) = self.node_state.get(current) {
+                match state {
+                    NodeState::HasPlaceholder(_) => return SccState::HasPlaceholder,
+                    NodeState::Done { .. } => return SccState::RevisitingDone,
+                    NodeState::Fresh | NodeState::InProgress => {}
+                }
+            }
             SccState::BreakAt
         } else if let Some(state) = self.node_state.get_mut(current) {
             match state {
@@ -969,7 +985,12 @@ impl Scc {
     /// Track that a placeholder has been recorded for a break_at node.
     fn on_placeholder_recorded(&mut self, current: &CalcId, var: Var) {
         if let Some(state) = self.node_state.get_mut(current) {
-            *state = NodeState::HasPlaceholder(var);
+            // Only upgrade: do not overwrite Done back to HasPlaceholder.
+            // This is defense-in-depth; pre_calculate_state should prevent
+            // this path from being reached for Done nodes.
+            if state.advancement_rank() < NodeState::HasPlaceholder(var).advancement_rank() {
+                *state = NodeState::HasPlaceholder(var);
+            }
         }
     }
 
