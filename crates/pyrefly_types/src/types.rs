@@ -60,8 +60,6 @@ use crate::special_form::SpecialForm;
 use crate::stdlib::Stdlib;
 use crate::tuple::Tuple;
 use crate::type_alias::TypeAliasData;
-use crate::type_var::PreInferenceVariance;
-use crate::type_var::Restriction;
 use crate::type_var::TypeVar;
 use crate::type_var_tuple::TypeVarTuple;
 use crate::typed_dict::TypedDict;
@@ -106,62 +104,10 @@ impl Display for TParamsSource {
     }
 }
 
-// TODO: Consider removing TParam since it would be no longer needed
-// now that variance is pushed in quantified.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-#[derive(Visit, VisitMut, TypeEq)]
-pub struct TParam {
-    pub quantified: Quantified,
-}
-
-impl Display for TParam {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.name())?;
-        // Display bounds/constraints
-        match self.restriction() {
-            Restriction::Bound(t) => write!(f, ": {}", t)?,
-            Restriction::Constraints(ts) => {
-                write!(f, ": (")?;
-                for (i, t) in ts.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{}", t)?;
-                }
-                write!(f, ")")?;
-            }
-            Restriction::Unrestricted => {}
-        }
-        // Display default
-        if let Some(default) = self.default() {
-            write!(f, " = {}", default)?;
-        }
-        Ok(())
-    }
-}
-
-impl TParam {
-    pub fn name(&self) -> &Name {
-        self.quantified.name()
-    }
-
-    pub fn default(&self) -> Option<&Type> {
-        self.quantified.default()
-    }
-
-    pub fn restriction(&self) -> &Restriction {
-        self.quantified.restriction()
-    }
-
-    pub fn variance(&self) -> PreInferenceVariance {
-        self.quantified.variance()
-    }
-}
-
 /// Wraps a vector of type parameters.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[derive(Visit, VisitMut, TypeEq)]
-pub struct TParams(Vec<TParam>);
+pub struct TParams(Vec<Quantified>);
 
 /// Implement `VisitMut` for `Arc<TParams>` as a no-op.
 ///
@@ -183,12 +129,16 @@ impl Visit<Type> for Arc<TParams> {
 
 impl Display for TParams {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "[{}]", commas_iter(|| self.0.iter()))
+        write!(
+            f,
+            "[{}]",
+            commas_iter(|| self.0.iter().map(|q| q.display_with_bounds()))
+        )
     }
 }
 
 impl TParams {
-    pub fn new(tparams: Vec<TParam>) -> TParams {
+    pub fn new(tparams: Vec<Quantified>) -> TParams {
         Self(tparams)
     }
 
@@ -204,15 +154,11 @@ impl TParams {
         self.0.is_empty()
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &TParam> {
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &Quantified> {
         self.0.iter()
     }
 
-    pub fn quantifieds(&self) -> impl ExactSizeIterator<Item = &Quantified> + '_ {
-        self.0.iter().map(|x| &x.quantified)
-    }
-
-    pub fn as_vec(&self) -> &[TParam] {
+    pub fn as_vec(&self) -> &[Quantified] {
         &self.0
     }
 
@@ -237,11 +183,11 @@ impl TArgs {
         &self.0.0
     }
 
-    pub fn iter_paired(&self) -> impl ExactSizeIterator<Item = (&TParam, &Type)> {
+    pub fn iter_paired(&self) -> impl ExactSizeIterator<Item = (&Quantified, &Type)> {
         self.0.0.iter().zip(self.0.1.iter())
     }
 
-    pub fn iter_paired_mut(&mut self) -> impl ExactSizeIterator<Item = (&TParam, &mut Type)> {
+    pub fn iter_paired_mut(&mut self) -> impl ExactSizeIterator<Item = (&Quantified, &mut Type)> {
         self.0.0.iter().zip(self.0.1.iter_mut())
     }
 
@@ -282,7 +228,7 @@ impl TArgs {
     pub fn substitution_map(&self) -> SmallMap<&Quantified, &Type> {
         let tparams = self.tparams();
         let tys = self.as_slice();
-        tparams.quantifieds().zip(tys.iter()).collect()
+        tparams.iter().zip(tys.iter()).collect()
     }
 
     pub fn substitution<'a>(&'a self) -> Substitution<'a> {

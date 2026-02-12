@@ -1696,7 +1696,7 @@ impl<'a, Ans: LookupAnswer> Subset<'a, Ans> {
             .get_variance_from_class(got_class.class_object());
 
         for (got_arg, want_arg, param) in izip!(got, want, params.iter()) {
-            if param.quantified.kind() == QuantifiedKind::TypeVarTuple {
+            if param.kind() == QuantifiedKind::TypeVarTuple {
                 self.is_equal(got_arg, want_arg)?;
             } else {
                 match variances.get(param.name()) {

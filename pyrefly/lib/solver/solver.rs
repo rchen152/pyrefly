@@ -749,7 +749,7 @@ impl Solver {
             return (QuantifiedHandle::empty(), t);
         }
 
-        let qs = params.iter().map(|p| &p.quantified).collect::<Vec<_>>();
+        let qs = params.iter().collect::<Vec<_>>();
         let vs = self.fresh_quantified_vars(&qs, uniques);
         let ts = vs.0.map(|v| v.to_type(&self.heap));
         let t = t.subst(&qs.into_iter().zip(&ts).collect());
@@ -777,7 +777,7 @@ impl Solver {
         // Collect tparams that appear in the first parameter.
         let mut qs = Vec::new();
         self_param.for_each_quantified(&mut |q| {
-            if tparams.iter().any(|tparam| tparam.quantified == *q) {
+            if tparams.iter().any(|tparam| *tparam == *q) {
                 qs.push(q);
             }
         });
@@ -865,12 +865,12 @@ impl Solver {
         let mut lock = self.variables.lock();
         targs.iter_paired_mut().for_each(|(param, t)| {
             if let Type::Quantified(q) = t
-                && **q == param.quantified
+                && **q == *param
             {
                 let v = Var::new(uniques);
                 vs.push(v);
                 *t = v.to_type(&self.heap);
-                lock.insert_fresh(v, Variable::Quantified(param.quantified.clone()));
+                lock.insert_fresh(v, Variable::Quantified(param.clone()));
             }
         });
         QuantifiedHandle(vs)
@@ -889,9 +889,9 @@ impl Solver {
         targs.iter_paired_mut().for_each(|(param, t)| {
             if let Type::Var(v) = t
                 && let Variable::Quantified(q) = &*lock.get(*v)
-                && *q == param.quantified
+                && *q == *param
             {
-                *t = param.quantified.clone().to_type(&self.heap);
+                *t = param.clone().to_type(&self.heap);
             }
         })
     }
@@ -906,7 +906,7 @@ impl Solver {
         let mut new_targs: Vec<Option<Type>> = Vec::with_capacity(targs.len());
         targs.iter_paired().enumerate().for_each(|(i, (param, t))| {
             let new_targ = if let Type::Quantified(q) = t
-                && **q == param.quantified
+                && **q == *param
             {
                 if let Some(default) = param.default() {
                     // Note that TypeVars are stored in Type::TypeVar form, and have not yet been
@@ -929,7 +929,7 @@ impl Solver {
                                     .unwrap_or_else(|| &targs.as_slice()[*i])
                                     .clone()
                             } else {
-                                param.quantified.as_gradual_type()
+                                param.as_gradual_type()
                             }
                         }
                     });

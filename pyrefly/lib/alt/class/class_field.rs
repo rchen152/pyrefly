@@ -29,7 +29,6 @@ use pyrefly_types::simplify::unions;
 use pyrefly_types::type_var::PreInferenceVariance;
 use pyrefly_types::type_var::Restriction;
 use pyrefly_types::typed_dict::TypedDictInner;
-use pyrefly_types::types::TParam;
 use pyrefly_types::types::TParams;
 use pyrefly_types::types::Union;
 use pyrefly_util::owner::Owner;
@@ -594,7 +593,7 @@ impl ClassField {
                 _ => {
                     let mut qs: SmallSet<&Quantified> = SmallSet::new();
                     ty.collect_quantifieds(&mut qs);
-                    *ambiguous = targs.tparams().iter().any(|x| qs.contains(&x.quantified));
+                    *ambiguous = targs.tparams().iter().any(|x| qs.contains(x));
                 }
             }
         })
@@ -613,7 +612,7 @@ impl ClassField {
             }
             let mut qs = SmallSet::new();
             f.visit(&mut |ty| ty.collect_quantifieds(&mut qs));
-            if cls_tparams.iter().any(|tp| qs.contains(&tp.quantified)) {
+            if cls_tparams.iter().any(|tp| qs.contains(tp)) {
                 match tparams_opt {
                     None => Some(cls_tparams.dupe()),
                     Some(tparams) => {
@@ -669,7 +668,7 @@ impl ClassField {
                     if !cls_tparams.is_empty() {
                         let mut qs: SmallSet<&Quantified> = SmallSet::new();
                         ty.collect_quantifieds(&mut qs);
-                        *ambiguous = cls_tparams.iter().any(|x| qs.contains(&x.quantified));
+                        *ambiguous = cls_tparams.iter().any(|x| qs.contains(x));
                     }
                 }
             }
@@ -2364,7 +2363,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         let qs_owner = Owner::new();
         let ts = Owner::new();
         let gradual_fallbacks = qs
-            .difference(&class_tparams.quantifieds().collect())
+            .difference(&class_tparams.iter().collect())
             .map(|q| {
                 self.error(
                     errors,
@@ -2410,9 +2409,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             if !uses_quantified {
                 return None;
             }
-            let new_tparams = TParams::new(vec![TParam {
-                quantified: quantified.clone(),
-            }]);
+            let new_tparams = TParams::new(vec![quantified.clone()]);
             let tparams = if let Some(mut tparams) = existing_tparams.cloned() {
                 tparams.extend(&new_tparams);
                 tparams

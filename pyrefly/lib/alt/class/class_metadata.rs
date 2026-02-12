@@ -888,7 +888,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             && quantified.kind() == QuantifiedKind::TypeVar
                             && matches!(quantified.restriction(), Restriction::Unrestricted)
                             && let Some(tparam) = forall.tparams.as_vec().first()
-                            && *quantified == tparam.quantified
+                            && *quantified == *tparam
                             && let Some(subscript_base_expr) = BaseClassExpr::from_expr(slice) =>
                     {
                         self.base_class_expr_infer_for_metadata(&subscript_base_expr, errors)

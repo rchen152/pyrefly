@@ -156,7 +156,6 @@ use crate::types::types::AnyStyle;
 use crate::types::types::CalleeKind;
 use crate::types::types::Forallable;
 use crate::types::types::SuperObj;
-use crate::types::types::TParam;
 use crate::types::types::TParams;
 use crate::types::types::TParamsSource;
 use crate::types::types::Type;
@@ -265,9 +264,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         match maybe_parameter.ty() {
             Type::TypeVar(x) => {
                 let q = Quantified::from_type_var(x, self.uniques);
-                Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
-                    quantified: q,
-                }))
+                Arc::new(LegacyTypeParameterLookup::Parameter(q))
             }
             Type::TypeVarTuple(x) => {
                 let q = Quantified::type_var_tuple(
@@ -275,9 +272,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.uniques,
                     x.default().cloned(),
                 );
-                Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
-                    quantified: q,
-                }))
+                Arc::new(LegacyTypeParameterLookup::Parameter(q))
             }
             Type::ParamSpec(x) => {
                 let q = Quantified::param_spec(
@@ -285,9 +280,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     self.uniques,
                     x.default().cloned(),
                 );
-                Arc::new(LegacyTypeParameterLookup::Parameter(TParam {
-                    quantified: q,
-                }))
+                Arc::new(LegacyTypeParameterLookup::Parameter(q))
             }
             ty => Arc::new(LegacyTypeParameterLookup::NotParameter(ty.clone())),
         }
@@ -891,7 +884,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         seen_param_specs: &mut SmallMap<ParamSpec, Quantified>,
         range: TextRange,
         errors: &ErrorCollector,
-    ) -> Vec<TParam> {
+    ) -> Vec<Quantified> {
         let mut tparams = Vec::new();
         for expr in exprs {
             let ty = self.expr_infer(expr, errors);
@@ -913,9 +906,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         Entry::Vacant(e) => {
                             let q = Quantified::from_type_var(&ty_var, self.uniques);
                             e.insert(q.clone());
-                            tparams.push(TParam {
-                                quantified: q.clone(),
-                            });
+                            tparams.push(q.clone());
                         }
                     };
                 }
@@ -936,9 +927,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 ty_var_tuple.default().cloned(),
                             );
                             e.insert(q.clone());
-                            tparams.push(TParam {
-                                quantified: q.clone(),
-                            });
+                            tparams.push(q.clone());
                         }
                     };
                 }
@@ -959,9 +948,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                                 param_spec.default().cloned(),
                             );
                             e.insert(q.clone());
-                            tparams.push(TParam {
-                                quantified: q.clone(),
-                            });
+                            tparams.push(q.clone());
                         }
                     };
                 }
@@ -1011,7 +998,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         seen_type_vars: &mut SmallMap<TypeVar, Quantified>,
         seen_type_var_tuples: &mut SmallMap<TypeVarTuple, Quantified>,
         seen_param_specs: &mut SmallMap<ParamSpec, Quantified>,
-        tparams: &mut Vec<(TextRange, TParam)>,
+        tparams: &mut Vec<(TextRange, Quantified)>,
     ) {
         match ty {
             Type::Union(box Union { members: ts, .. }) => {
@@ -1088,12 +1075,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     Entry::Vacant(e) => {
                         let q = Quantified::from_type_var(ty_var, self.uniques);
                         e.insert(q.clone());
-                        tparams.push((
-                            ty_var.qname().range(),
-                            TParam {
-                                quantified: q.clone(),
-                            },
-                        ));
+                        tparams.push((ty_var.qname().range(), q.clone()));
                         q
                     }
                 };
@@ -1109,12 +1091,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             ty_var_tuple.default().cloned(),
                         );
                         e.insert(q.clone());
-                        tparams.push((
-                            ty_var_tuple.qname().range(),
-                            TParam {
-                                quantified: q.clone(),
-                            },
-                        ));
+                        tparams.push((ty_var_tuple.qname().range(), q.clone()));
                         q
                     }
                 };
@@ -1130,12 +1107,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             param_spec.default().cloned(),
                         );
                         e.insert(q.clone());
-                        tparams.push((
-                            param_spec.qname().range(),
-                            TParam {
-                                quantified: q.clone(),
-                            },
-                        ));
+                        tparams.push((param_spec.qname().range(), q.clone()));
                         q
                     }
                 };
@@ -1356,7 +1328,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         self.validated_tparams(range, params, TParamsSource::TypeAlias, &errors)
     }
 
-    fn create_legacy_type_params(&self, keys: &[Idx<KeyLegacyTypeParam>]) -> Vec<TParam> {
+    fn create_legacy_type_params(&self, keys: &[Idx<KeyLegacyTypeParam>]) -> Vec<Quantified> {
         keys.iter()
             .filter_map(|key| {
                 if let BindingLegacyTypeParam::ParamKeyed(def_key) = self.bindings().get(*key)
@@ -1606,7 +1578,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         &self,
         x: Option<&TypeParams>,
         errors: &ErrorCollector,
-    ) -> Vec<TParam> {
+    ) -> Vec<Quantified> {
         match x {
             Some(x) => {
                 let mut params = Vec::new();
@@ -1626,7 +1598,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                             binding
                         ),
                     };
-                    params.push(TParam { quantified });
+                    params.push(quantified);
                 }
                 params
             }
@@ -1637,33 +1609,33 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     fn validate_type_params(
         &self,
         range: TextRange,
-        tparams: &[TParam],
+        tparams: &[Quantified],
         source: TParamsSource,
         errors: &ErrorCollector,
     ) {
-        let mut last_tparam: Option<&TParam> = None;
+        let mut last_tparam: Option<&Quantified> = None;
         let mut seen = SmallSet::new();
         let mut typevartuple = None;
         let mut typevartuple_count = 0;
         for tparam in tparams {
             if let Some(p) = last_tparam
-                && p.quantified.default().is_some()
+                && p.default().is_some()
             {
                 // Check for missing default
-                if tparam.quantified.default().is_none() {
+                if tparam.default().is_none() {
                     self.error(
                         errors,
                         range,
                         ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
                         format!(
                             "Type parameter `{}` without a default cannot follow type parameter `{}` with a default",
-                            tparam.quantified.name(),
+                            tparam.name(),
                             p.name()
                         )
                     );
                 }
             }
-            if let Some(default) = tparam.quantified.default() {
+            if let Some(default) = tparam.default() {
                 let mut out_of_scope_names = Vec::new();
                 default.collect_raw_legacy_type_variables(&mut out_of_scope_names);
                 out_of_scope_names.retain(|name| !seen.contains(name));
@@ -1674,13 +1646,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
                         format!(
                             "Default of type parameter `{}` refers to out-of-scope {} {}",
-                            tparam.quantified.name(),
+                            tparam.name(),
                             pluralize(out_of_scope_names.len(), "type parameter"),
                             out_of_scope_names.map(|n| format!("`{n}`")).join(", "),
                         ),
                     );
                 }
-                if tparam.quantified.is_type_var()
+                if tparam.is_type_var()
                     && let Some(tvt) = &typevartuple
                 {
                     self.error(
@@ -1689,15 +1661,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         ErrorInfo::Kind(ErrorKind::InvalidTypeVar),
                         format!(
                             "TypeVar `{}` with a default cannot follow TypeVarTuple `{}`",
-                            tparam.quantified.name(),
+                            tparam.name(),
                             tvt
                         ),
                     );
                 }
             }
-            seen.insert(tparam.quantified.name().clone());
-            if tparam.quantified.is_type_var_tuple() {
-                typevartuple = Some(tparam.quantified.name().clone());
+            seen.insert(tparam.name().clone());
+            if tparam.is_type_var_tuple() {
+                typevartuple = Some(tparam.name().clone());
                 typevartuple_count += 1;
             }
             last_tparam = Some(tparam);
@@ -1718,7 +1690,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     pub fn validated_tparams(
         &self,
         range: TextRange,
-        tparams: Vec<TParam>,
+        tparams: Vec<Quantified>,
         source: TParamsSource,
         errors: &ErrorCollector,
     ) -> Arc<TParams> {
@@ -2393,13 +2365,13 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             let metadata = self.get_metadata_for_class(class);
             if metadata.is_protocol()
                 && tparams.as_vec().iter().any(|p| {
-                    p.quantified.kind() == QuantifiedKind::TypeVar
+                    p.kind() == QuantifiedKind::TypeVar
                         && p.variance() == PreInferenceVariance::Invariant
                 })
             {
                 let inferred = self.infer_variance_ignoring_declared(class);
                 for tparam in tparams.as_vec() {
-                    if tparam.quantified.kind() != QuantifiedKind::TypeVar
+                    if tparam.kind() != QuantifiedKind::TypeVar
                         || tparam.variance() != PreInferenceVariance::Invariant
                     {
                         continue;
@@ -3891,7 +3863,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         ),
                     );
                 }
-                p.quantified.clone().to_value()
+                p.clone().to_value()
             }
             LegacyTypeParameterLookup::NotParameter(ty) => ty.clone(),
         };
@@ -4178,7 +4150,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         })
     }
 
-    fn promote_callable_legacy_typevars(&self, callable: &mut Callable) -> Vec<TParam> {
+    fn promote_callable_legacy_typevars(&self, callable: &mut Callable) -> Vec<Quantified> {
         let mut seen_type_vars = SmallMap::new();
         let mut tparams = Vec::new();
         let heap = self.heap;
@@ -4189,9 +4161,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         .entry(tv.dupe())
                         .or_insert_with(|| {
                             let q = Quantified::from_type_var(tv, self.uniques);
-                            tparams.push(TParam {
-                                quantified: q.clone(),
-                            });
+                            tparams.push(q.clone());
                             q
                         })
                         .clone();

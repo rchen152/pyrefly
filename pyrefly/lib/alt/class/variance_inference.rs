@@ -27,10 +27,10 @@ use crate::alt::class::class_field::ClassField;
 use crate::alt::types::class_bases::ClassBases;
 use crate::types::callable::Params;
 use crate::types::class::Class;
+use crate::types::quantified::Quantified;
 use crate::types::tuple::Tuple;
 use crate::types::type_var::PreInferenceVariance;
 use crate::types::type_var::Variance;
-use crate::types::types::TParam;
 use crate::types::types::TParams;
 use crate::types::types::Type;
 
@@ -412,7 +412,7 @@ fn check_method_shallow(typ: &Type, range: TextRange, violations: &mut Vec<Varia
     }
 }
 
-fn initial_inference_status(gp: &TParam) -> InferenceStatus {
+fn initial_inference_status(gp: &Quantified) -> InferenceStatus {
     let variance = pre_to_post_variance(gp.variance());
     let (specified_variance, has_variance_inferred) = match variance {
         Variance::Bivariant => (None, false),
@@ -425,7 +425,7 @@ fn initial_inference_status(gp: &TParam) -> InferenceStatus {
     }
 }
 
-fn initial_inference_map(tparams: &[TParam]) -> InferenceMap {
+fn initial_inference_map(tparams: &[Quantified]) -> InferenceMap {
     tparams
         .iter()
         .map(|p| (p.name().clone(), initial_inference_status(p)))
