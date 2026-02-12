@@ -596,13 +596,14 @@ impl CalcStack {
             .expect("Target SCC not found during merge - this indicates a bug in SCC tracking");
 
         // Perform the merge, then add any free-floating bindings that weren't previously part
-        // of a known SCC.
+        // of a known SCC. These nodes are already on the call stack (they have active frames),
+        // so they are InProgress, not Fresh.
         let mut merged = Scc::merge_many(sccs_to_merge, detected_at_of_scc.dupe());
         for calc_id in calc_stack_vec.iter().skip(min_depth) {
             merged
                 .node_state
                 .entry(calc_id.dupe())
-                .or_insert(NodeState::Fresh);
+                .or_insert(NodeState::InProgress);
         }
 
         // After a merge, everything from the merged anchor to the current stack top
