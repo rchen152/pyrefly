@@ -15,6 +15,7 @@ use pyrefly_python::ast::Ast;
 use pyrefly_python::dunder;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::short_identifier::ShortIdentifier;
+use pyrefly_types::dimension::SizeExpr;
 use pyrefly_types::facet::FacetKind;
 use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::type_info::JoinStyle;
@@ -4804,7 +4805,17 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             | Type::TypeVarTuple(_)
             | Type::Args(_)
             | Type::Kwargs(_)) => Some(ty),
-            Type::Type(t) => Some(*t),
+            Type::Type(t) => {
+                // Canonicalize ClassType(Dim, [X]) to Type::Dim(X) for consistency
+                // This ensures bare Dim annotations produce the same representation as Dim[Any]
+                if let Type::ClassType(cls) = t.as_ref()
+                    && cls.has_qname("torch_shapes", "Dim")
+                    && cls.targs().len() == 1
+                {
+                    return Some(self.heap.mk_dim(cls.targs().as_slice()[0].clone()));
+                }
+                Some(*t)
+            }
             Type::None => Some(self.heap.mk_none()), // Both a value and a type
             Type::Ellipsis => Some(self.heap.mk_ellipsis()), // A bit weird because of tuples, so just promote it
             Type::Any(style) => Some(style.propagate()),
@@ -4831,6 +4842,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::QuantifiedValue(q) => Some(q.to_type(self.heap)),
             Type::ArgsValue(q) => Some(self.heap.mk_args(*q)),
             Type::KwargsValue(q) => Some(self.heap.mk_kwargs(*q)),
+            // Dim and Size are already type forms
+            ty @ Type::Dim(_) => Some(ty),
+            ty @ Type::Size(_) => Some(ty),
             _ => None,
         }
     }
@@ -5179,6 +5193,30 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                     })
                     .collect();
                 Type::ParamSpecValue(ParamList::new(elts))
+            }
+            // Special case: integer literals in type argument context with tensor shapes enabled
+            // These can be used for Dim-bounded parameters (e.g., LinearLayer[6, 9])
+            // We convert them directly to Type::Size to distinguish from Literal[6]
+            Expr::NumberLiteral(ruff_python_ast::ExprNumberLiteral { value, .. })
+                if matches!(type_form_context, TypeFormContext::TypeArgument)
+                    && self.solver().tensor_shapes =>
+            {
+                match value {
+                    ruff_python_ast::Number::Int(i) => {
+                        if let Some(n) = i.as_i64() {
+                            Type::Size(SizeExpr::Literal(n))
+                        } else {
+                            // Integer too large to fit in i64, fall back to error
+                            let inferred_ty = self.expr_infer(x, errors);
+                            self.untype(inferred_ty, x.range(), errors)
+                        }
+                    }
+                    _ => {
+                        // For non-integer numbers (float, complex), fall through to the generic path
+                        let inferred_ty = self.expr_infer(x, errors);
+                        self.untype(inferred_ty, x.range(), errors)
+                    }
+                }
             }
             _ => {
                 let inferred_ty = self.expr_infer(x, errors);

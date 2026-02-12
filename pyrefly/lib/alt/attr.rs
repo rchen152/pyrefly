@@ -2103,6 +2103,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Type::ElementOfTypeVarTuple(_) => {
                 acc.push(AttributeBase1::ClassInstance(self.stdlib.object().clone()))
             }
+            Type::Size(_) => {
+                // Dimension values behave like int for attribute access
+                acc.push(AttributeBase1::ClassInstance(self.stdlib.int().clone()))
+            }
+            Type::Dim(_) => {
+                // Symbolic integers behave like int for attribute access
+                acc.push(AttributeBase1::ClassInstance(self.stdlib.int().clone()))
+            }
             // TODO: check to see which ones should have class representations
             Type::SpecialForm(_)
             | Type::Type(_)

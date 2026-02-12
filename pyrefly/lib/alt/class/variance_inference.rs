@@ -14,6 +14,7 @@ use dupe::Dupe;
 use pyrefly_derive::TypeEq;
 use pyrefly_derive::VisitMut;
 use pyrefly_python::dunder;
+use pyrefly_types::dimension::SizeExpr;
 use pyrefly_types::heap::TypeHeap;
 use pyrefly_types::types::Union;
 use ruff_python_ast::name::Name;
@@ -252,6 +253,23 @@ fn on_type(
                 on_edge,
                 on_var,
             );
+        }
+        Type::Dim(inner) => {
+            // Dim wraps a dimension type - invariant
+            on_type(Variance::Invariant, inj, inner, on_edge, on_var);
+        }
+        Type::Size(dim) => {
+            // SizeExpr expressions contain types - all invariant
+            match dim {
+                SizeExpr::Literal(_) => {}
+                SizeExpr::Add(l, r)
+                | SizeExpr::Sub(l, r)
+                | SizeExpr::Mul(l, r)
+                | SizeExpr::FloorDiv(l, r) => {
+                    on_type(Variance::Invariant, inj, l, on_edge, on_var);
+                    on_type(Variance::Invariant, inj, r, on_edge, on_var);
+                }
+            }
         }
 
         _ => {}

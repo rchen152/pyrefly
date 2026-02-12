@@ -44,6 +44,8 @@ use crate::callable::Required;
 use crate::class::Class;
 use crate::class::ClassKind;
 use crate::class::ClassType;
+use crate::dimension;
+use crate::dimension::SizeExpr;
 use crate::heap::TypeHeap;
 use crate::keywords::DataclassTransformMetadata;
 use crate::keywords::KwCall;
@@ -641,6 +643,23 @@ pub enum Type {
     /// For a TypedDict type `C`, `Partial[C]` represents an object with any subset of read-write
     /// keys from `C`, where each present key has the same value type as in `C`.
     PartialTypedDict(TypedDict),
+    /// Dimension value type - represents values that satisfy Dim bound
+    /// Examples:
+    ///   - Type::Size(SizeExpr::Literal(6)) for concrete dimension 6
+    ///   - Type::Size(SizeExpr::Var(v)) for dimension variables
+    ///
+    /// This is the type-level representation of dimension values, used when
+    /// type variables with Dim bound unify with concrete dimension values.
+    Size(SizeExpr),
+    /// Symbolic integer type - wraps dimension expressions for use in type annotations
+    /// Examples:
+    ///   - Type::Dim(SizeExpr(Literal(3))) for Dim[3]
+    ///   - Type::Dim(Quantified) for Dim[N]
+    ///   - Type::Dim(SizeExpr(Add(...))) for Dim[N+1]
+    ///
+    /// This is the type annotation form of symbolic integers, distinct from
+    /// concrete integer literals which use Type::Literal(Lit::Int(...)).
+    Dim(Box<Type>),
     Tuple(Tuple),
     Module(ModuleType),
     Forall(Box<Forall<Forallable>>),
@@ -729,6 +748,8 @@ impl Visit for Type {
             Type::ClassType(x) => x.visit(f),
             Type::TypedDict(x) => x.visit(f),
             Type::PartialTypedDict(x) => x.visit(f),
+            Type::Size(x) => x.visit(f),
+            Type::Dim(x) => x.visit(f),
             Type::Tuple(x) => x.visit(f),
             Type::Module(x) => x.visit(f),
             Type::Forall(x) => x.visit(f),
@@ -778,6 +799,8 @@ impl VisitMut for Type {
             Type::ClassType(x) => x.visit_mut(f),
             Type::TypedDict(x) => x.visit_mut(f),
             Type::PartialTypedDict(x) => x.visit_mut(f),
+            Type::Size(x) => x.visit_mut(f),
+            Type::Dim(x) => x.visit_mut(f),
             Type::Tuple(x) => x.visit_mut(f),
             Type::Module(x) => x.visit_mut(f),
             Type::Forall(x) => x.visit_mut(f),
@@ -1115,6 +1138,10 @@ impl Type {
                 }
             } else {
                 ty.recurse_mut(&mut |x| f(x, mp));
+            }
+            // After substitution, simplify Size expressions (constant folding).
+            if let Type::Size(_) = ty {
+                *ty = dimension::simplify(ty.clone());
             }
         }
         f(self, mp);
@@ -1507,6 +1534,28 @@ impl Type {
 
     pub fn any_error() -> Self {
         Type::Any(AnyStyle::Error)
+    }
+
+    /// Canonicalize a dimension expression to a unique normal form.
+    ///
+    /// This transforms dimension expressions into a canonical form where:
+    /// - Like terms are combined (e.g., 4*N + 2*N = 6*N)
+    /// - Divisions are flattened (e.g., (N // M) // K = N // (M*K))
+    /// - Factors are GCD-reduced (e.g., (4*N) // (6*M) = (2*N) // (3*M))
+    /// - Expressions are ordered consistently
+    /// - Type::Any propagates through the entire expression
+    ///
+    /// This enables structural equality checking after canonicalization.
+    pub fn canonicalize(self) -> Self {
+        dimension::canonicalize(self)
+    }
+
+    /// Extract the literal value from a `SizeExpr::Literal`, if this is one.
+    pub fn as_shape_literal(&self) -> Option<i64> {
+        match self {
+            Type::Size(SizeExpr::Literal(n)) => Some(*n),
+            _ => None,
+        }
     }
 
     pub fn explicit_any(self) -> Self {

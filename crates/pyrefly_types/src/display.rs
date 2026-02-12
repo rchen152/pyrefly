@@ -353,6 +353,17 @@ impl<'a> TypeDisplayContext<'a> {
                 output.write_type(&class_type.targs().as_slice()[0])?;
                 output.write_str(", ...]")
             }
+            // Display Dim[Unknown] as just "Dim" for cleaner output
+            Type::ClassType(class_type)
+                if class_type.qname().id().as_str() == "Dim"
+                    && class_type.targs().as_slice().len() == 1
+                    && matches!(
+                        class_type.targs().as_slice()[0],
+                        Type::Any(AnyStyle::Implicit | AnyStyle::Error)
+                    ) =>
+            {
+                output.write_qname(class_type.qname())
+            }
             Type::ClassType(class_type) => {
                 output.write_qname(class_type.qname())?;
                 output.write_targs(class_type.targs())
@@ -389,6 +400,19 @@ impl<'a> TypeDisplayContext<'a> {
                     output.write_str("]")
                 }
             },
+            Type::Size(dim) => {
+                // Display dimension value directly without Literal wrapper
+                output.write_str(&format!("{}", dim))
+            }
+            Type::Dim(inner) => {
+                // Display Dim[Unknown] as just "Dim" for cleaner output
+                // (Unknown represents implicit Any from gradual typing)
+                // But keep Dim[Any] when explicitly annotated
+                match &**inner {
+                    Type::Any(AnyStyle::Implicit | AnyStyle::Error) => output.write_str("Dim"),
+                    _ => output.write_str(&format!("Dim[{}]", self.display_internal(inner))),
+                }
+            }
             Type::TypeVar(t) => {
                 let type_var_qname = self.stdlib.map(|s| s.type_var().qname());
                 output.write_builtin("TypeVar", type_var_qname)?;
