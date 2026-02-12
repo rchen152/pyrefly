@@ -20,7 +20,6 @@ use std::sync::Arc;
 
 use dupe::Dupe;
 use dupe::IterDupedExt;
-use itertools::Either;
 use itertools::Itertools;
 use pyrefly_graph::calculation::Calculation;
 use pyrefly_graph::calculation::ProposalResult;
@@ -187,11 +186,11 @@ impl CalcStack {
     /// performing all SCC state checks and mutations (like `on_scc_detected`,
     /// `on_calculation_finished`). SCC merging (`merge_sccs`) is handled
     /// inside `pre_calculate_state` when a node is found in a previous SCC.
-    fn push<T, R>(&self, current: CalcId, calculation: &Calculation<T, R>) -> BindingAction<T, R>
-    where
-        T: Dupe,
-        R: Dupe,
-    {
+    fn push<T: Dupe>(
+        &self,
+        current: CalcId,
+        calculation: &Calculation<T, Var>,
+    ) -> BindingAction<T> {
         let position = {
             let mut stack = self.stack.borrow_mut();
             let pos = stack.len();
@@ -225,26 +224,30 @@ impl CalcStack {
                     BindingAction::SccLocalAnswer(answer)
                 } else {
                     // Fallback: answer is None (another path computed it).
-                    // Read from Calculation instead.
-                    match calculation.propose_calculation() {
-                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                            unreachable!(
-                                "RevisitingDone node should have Calculated or CycleBroken result"
-                            )
-                        }
+                    // Check if another thread already committed a final answer.
+                    match calculation.get() {
+                        Some(v) => BindingAction::Calculated(v),
+                        None => unreachable!(
+                            "RevisitingDone node has no SCC-local answer and no global answer"
+                        ),
                     }
                 }
             }
             SccState::BreakAt => BindingAction::Unwind,
-            SccState::HasPlaceholder => match calculation.propose_calculation() {
-                ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
-                ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                ProposalResult::CycleDetected | ProposalResult::Calculatable => {
-                    unreachable!("HasPlaceholder node must have CycleBroken or Calculated result")
+            SccState::HasPlaceholder => {
+                // Read placeholder from SCC-local NodeState::HasPlaceholder.
+                // No need to touch the Calculation cell — placeholders are never
+                // stored there.
+                if let Some(v) = calculation.get() {
+                    // Another thread already committed a final answer.
+                    BindingAction::Calculated(v)
+                } else {
+                    let var = self
+                        .get_scc_placeholder_var(&current)
+                        .expect("HasPlaceholder state but no placeholder in NodeState");
+                    BindingAction::CycleBroken(var)
                 }
-            },
+            }
             SccState::Participant => {
                 if let Some(top_scc) = self.scc_stack.borrow_mut().last_mut() {
                     top_scc.segment_size += 1;
@@ -812,7 +815,7 @@ enum SccDetectedResult {
 /// discriminated union. The `CalcStack::push` method performs all state checks and
 /// SCC mutations (like `merge_sccs`, `on_scc_detected`, `on_calculation_finished`),
 /// returning the action that `get_idx` should take.
-enum BindingAction<T, R> {
+enum BindingAction<T> {
     /// Calculate the binding and record the answer.
     /// Action: call `calculate_and_record_answer`
     Calculate,
@@ -822,9 +825,10 @@ enum BindingAction<T, R> {
     /// A final answer is already available.
     /// Action: return `v`
     Calculated(T),
-    /// A recursive placeholder exists and we should return it.
+    /// A recursive placeholder exists (in SCC-local `NodeState::HasPlaceholder`)
+    /// and we should return it.
     /// Action: return `Arc::new(K::promote_recursive(heap, r))`
-    CycleBroken(R),
+    CycleBroken(Var),
     /// An answer is available from NodeState::Done in the top SCC.
     /// Type-erased; will be downcast to `Arc<K::Answer>` in `get_idx`.
     /// Action: downcast and return
@@ -1425,20 +1429,15 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
         BindingTable: TableKeyed<K, Value = BindingEntry<K>>,
     {
+        // Check if another thread already committed a final answer.
+        if let Some(v) = calculation.get() {
+            return Ok(v);
+        }
+        // Create a recursive placeholder and store it only in SCC-local state.
         let binding = self.bindings().get(idx);
         let rec = K::create_recursive(self, binding);
-        match calculation.record_cycle(rec) {
-            Either::Right(rec) => {
-                // No final answer is available, so we'll unwind the cycle using `rec`.
-                // Track that we've recorded a placeholder for this break_at node.
-                self.stack().on_placeholder_recorded(current, rec);
-                Err(rec)
-            }
-            Either::Left(v) => {
-                // Another thread already completed a final result, we can just use it.
-                Ok(v)
-            }
-        }
+        self.stack().on_placeholder_recorded(current, rec);
+        Err(rec)
     }
 
     /// Handle depth overflow based on the configured handler.
