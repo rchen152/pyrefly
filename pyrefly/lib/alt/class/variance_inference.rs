@@ -175,13 +175,15 @@ fn on_type(
         }
 
         Type::ClassType(class) => {
-            let params = on_edge(class.class_object());
             let targs = class.targs().as_slice();
 
-            // If targs is empty, nothing to do
+            // If targs is empty, nothing to do. Check this before calling on_edge
+            // to avoid expensive environment lookups for non-generic classes.
             if targs.is_empty() {
                 return;
             }
+
+            let params = on_edge(class.class_object());
 
             // Zip params (from on_edge) with targs
             // Note: if params.len() != targs.len(), zip will stop at the shorter one
