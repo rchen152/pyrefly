@@ -598,11 +598,11 @@ impl<'a> BindingsBuilder<'a> {
                                 if let Some((arg_name, members)) =
                                     call.arguments.args.split_first_mut()
                                 {
+                                    self.check_functional_definition_name(&name.id, arg_name);
                                     self.synthesize_typing_named_tuple_def(
                                         name,
                                         parent,
                                         &mut call.func,
-                                        arg_name,
                                         members,
                                     );
                                     return;
@@ -612,11 +612,11 @@ impl<'a> BindingsBuilder<'a> {
                                 if let Some((arg_name, members)) =
                                     call.arguments.args.split_first_mut()
                                 {
+                                    self.check_functional_definition_name(&name.id, arg_name);
                                     self.synthesize_collections_named_tuple_def(
                                         name,
                                         parent,
                                         &mut call.func,
-                                        arg_name,
                                         members,
                                         &mut call.arguments.keywords,
                                     );

@@ -958,14 +958,12 @@ impl<'a> BindingsBuilder<'a> {
         name: &ExprName,
         parent: &NestingContext,
         func: &mut Expr,
-        arg_name: &Expr,
         members: &mut [Expr],
         keywords: &mut [Keyword],
     ) {
         let class_name = Ast::expr_name_identifier(name.clone());
         let (mut class_object, class_indices) = self.class_object_and_indices(&class_name);
         self.ensure_expr(func, class_object.usage());
-        self.check_functional_definition_name(&name.id, arg_name);
         let member_definitions =
             self.parse_collections_namedtuple_fields(members, class_name.range);
         let n_members = member_definitions.len();
@@ -1040,13 +1038,11 @@ impl<'a> BindingsBuilder<'a> {
         name: &ExprName,
         parent: &NestingContext,
         func: &mut Expr,
-        arg_name: &Expr,
         members: &[Expr],
     ) {
         let class_name = Ast::expr_name_identifier(name.clone());
         let (mut class_object, class_indices) = self.class_object_and_indices(&class_name);
         self.ensure_expr(func, class_object.usage());
-        self.check_functional_definition_name(&name.id, arg_name);
         let member_definitions: Vec<(String, TextRange, Option<Expr>, Option<Expr>)> = self
             .parse_typing_namedtuple_fields(members, class_name.range)
             .into_iter()
@@ -1198,7 +1194,7 @@ impl<'a> BindingsBuilder<'a> {
     }
 
     // Check that the variable name in a functional class definition matches the first argument string
-    fn check_functional_definition_name(&mut self, name: &Name, arg: &Expr) {
+    pub fn check_functional_definition_name(&mut self, name: &Name, arg: &Expr) {
         if let Expr::StringLiteral(x) = arg {
             if x.value.to_str() != name.as_str() {
                 self.error(
