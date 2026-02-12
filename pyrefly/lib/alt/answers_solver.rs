@@ -1393,7 +1393,25 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     /// Batch-commit all preliminary answers from a completed SCC.
     /// Iterates the SCC's node_state map and commits each Done entry
     /// to the appropriate Calculation cell.
+    ///
+    /// Invariant: all SCC participants should be in `Done` state at this point.
+    /// Nodes with `answer: None` are skipped (they were already committed by
+    /// another thread via the Participant revisit path).
     fn batch_commit_scc(&self, completed_scc: Scc) {
+        // Validate invariant: no Fresh or InProgress nodes should remain.
+        debug_assert!(
+            completed_scc.node_state.values().all(|state| matches!(
+                state,
+                NodeState::Done { .. } | NodeState::HasPlaceholder(_)
+            )),
+            "batch_commit_scc: SCC has participants that are not Done or HasPlaceholder: {:?}",
+            completed_scc
+                .node_state
+                .iter()
+                .filter(|(_, s)| matches!(s, NodeState::Fresh | NodeState::InProgress))
+                .map(|(id, s)| format!("{}: {:?}", id, s))
+                .collect::<Vec<_>>(),
+        );
         for (calc_id, node_state) in completed_scc.node_state {
             if let NodeState::Done {
                 answer: Some(answer),
