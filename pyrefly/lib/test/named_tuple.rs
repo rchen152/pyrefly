@@ -411,3 +411,97 @@ from typing import NamedTuple
 N = NamedTuple('N', [('x', int, 'oops')])  # E: Expected (name, type) pair, got 3-tuple
     "#,
 );
+
+testcase!(
+    test_named_tuple_class_inheriting_collections_namedtuple,
+    r#"
+from collections import namedtuple
+from typing import Any, assert_type
+
+class Point(namedtuple("Point", ["x", "y"])):
+    pass
+
+p = Point(1, 2)
+assert_type(p.x, Any)
+assert_type(p.y, Any)
+    "#,
+);
+
+testcase!(
+    test_named_tuple_class_inheriting_typing_namedtuple,
+    r#"
+from typing import NamedTuple, assert_type
+
+class Point(NamedTuple("Point", [("x", int), ("y", str)])):
+    pass
+
+p = Point(1, "hello")
+assert_type(p.x, int)
+assert_type(p.y, str)
+    "#,
+);
+
+testcase!(
+    test_named_tuple_class_inheriting_with_extra_methods,
+    r#"
+from typing import NamedTuple, assert_type
+
+class Point(NamedTuple("Point", [("x", int), ("y", int)])):
+    def length_squared(self) -> int:
+        return self.x ** 2 + self.y ** 2
+
+p = Point(3, 4)
+assert_type(p.length_squared(), int)
+assert_type(p.x, int)
+    "#,
+);
+
+testcase!(
+    test_named_tuple_class_inheriting_string_fields,
+    r#"
+from collections import namedtuple
+from typing import Any, assert_type
+
+class Pair(namedtuple("Pair", "a b")):
+    pass
+
+p = Pair(1, 2)
+assert_type(p.a, Any)
+assert_type(p.b, Any)
+    "#,
+);
+
+testcase!(
+    test_named_tuple_class_inheriting_name_mismatch,
+    r#"
+from collections import namedtuple
+
+class Foo(namedtuple("Bar", ["x", "y"])):
+    pass
+
+f = Foo(1, 2)
+    "#,
+);
+
+testcase!(
+    test_named_tuple_class_inheriting_malformed,
+    r#"
+from collections import namedtuple
+from typing import NamedTuple
+
+class A(namedtuple()):  # E: Invalid expression form for base class
+    pass
+
+class B(namedtuple(42, ["x", "y"])):  # E: Invalid expression form for base class
+    pass
+
+class C(NamedTuple(42, [("x", int)])):  # E: Invalid expression form for base class
+    pass
+
+class D(namedtuple("D", 42)):  # E: Expected valid functional named tuple definition
+    pass
+
+class E(NamedTuple("E", 42)):  # E: Expected valid functional named tuple definition
+    pass
+    "#,
+);

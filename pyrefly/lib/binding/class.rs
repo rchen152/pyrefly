@@ -144,7 +144,83 @@ impl<'a> BindingsBuilder<'a> {
         self.class_object_and_indices_inner(class_name, Key::Anon(class_name.range))
     }
 
+    /// Pre-scan base classes for namedtuple calls and synthesize them anonymously.
+    /// Returns a list of `(call_range, class_idx)` pairs that `class_def_inner` uses
+    /// to recognize which base class expressions have already been synthesized.
+    fn prescan_synthesized_bases(
+        &mut self,
+        x: &mut StmtClassDef,
+        parent: &NestingContext,
+    ) -> Vec<(TextRange, Idx<KeyClass>)> {
+        let mut synthesized_base_classes = Vec::new();
+        if let Some(arguments) = &mut x.arguments {
+            for base in arguments.args.iter_mut() {
+                if let Expr::Call(call) = base {
+                    // Extract the name from the first argument string literal.
+                    // If the first argument is not a string literal, skip
+                    // synthesis and let the normal base class processing
+                    // handle the error.
+                    let nt_name = match call.arguments.args.first() {
+                        Some(Expr::StringLiteral(s)) => {
+                            Identifier::new(Name::new(s.value.to_str()), s.range())
+                        }
+                        _ => continue,
+                    };
+                    let call_range = call.range();
+                    let class_idx = match self.as_special_export(&call.func) {
+                        Some(SpecialExport::CollectionsNamedTuple) => {
+                            if let Some((_arg_name, members)) =
+                                call.arguments.args.split_first_mut()
+                            {
+                                Some(self.synthesize_collections_named_tuple_def(
+                                    nt_name,
+                                    parent,
+                                    &mut call.func,
+                                    members,
+                                    &mut call.arguments.keywords,
+                                    false,
+                                ))
+                            } else {
+                                None
+                            }
+                        }
+                        Some(SpecialExport::TypingNamedTuple) => {
+                            if let Some((_arg_name, members)) =
+                                call.arguments.args.split_first_mut()
+                            {
+                                Some(self.synthesize_typing_named_tuple_def(
+                                    nt_name,
+                                    parent,
+                                    &mut call.func,
+                                    members,
+                                    false,
+                                ))
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    };
+                    if let Some(class_idx) = class_idx {
+                        synthesized_base_classes.push((call_range, class_idx));
+                    }
+                }
+            }
+        }
+        synthesized_base_classes
+    }
+
     pub fn class_def(&mut self, mut x: StmtClassDef, parent: &NestingContext) {
+        let synthesized_base_classes = self.prescan_synthesized_bases(&mut x, parent);
+        self.class_def_inner(x, parent, synthesized_base_classes);
+    }
+
+    fn class_def_inner(
+        &mut self,
+        mut x: StmtClassDef,
+        parent: &NestingContext,
+        synthesized_base_classes: Vec<(TextRange, Idx<KeyClass>)>,
+    ) {
         let (mut class_object, class_indices) = self.class_object_and_indices(&x.name);
         let mut pydantic_config_dict = PydanticConfigDict::default();
         let docstring_range = Docstring::range_from_stmts(x.body.as_slice());
@@ -164,6 +240,15 @@ impl<'a> BindingsBuilder<'a> {
         let mut legacy = Some(LegacyTParamCollector::new(x.type_params.is_some()));
         let bases = x.bases().map(|base| {
             let mut base = base.clone();
+            // If this base was pre-synthesized as a namedtuple, return the synthesized base
+            // directly, skipping ensure_type and base_class_of (already processed during synthesis).
+            if let Expr::Call(call) = &base
+                && let Some((_, class_idx)) = synthesized_base_classes
+                    .iter()
+                    .find(|(r, _)| *r == call.range())
+            {
+                return BaseClass::SynthesizedBase(*class_idx, base.range());
+            }
             // Forward refs are fine *inside* of a base expression in the type arguments,
             // but outermost class cannot be a forward ref.
             match &base {

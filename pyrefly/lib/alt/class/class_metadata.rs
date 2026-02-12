@@ -980,6 +980,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.heap
                     .mk_class_type(self.stdlib.named_tuple_fallback().clone()),
             ),
+            BaseClass::SynthesizedBase(class_idx, _) => {
+                match &self.get_idx(*class_idx).as_ref().0 {
+                    Some(cls) => {
+                        // At the moment we never synthesize a typed dict, so this is safe
+                        let ct = self.promote_nontypeddict_silently_to_classtype(cls);
+                        parse_base_class_type(self.heap.mk_class_type(ct))
+                    }
+                    None => BaseClassParseResult::InvalidBase(base.range()),
+                }
+            }
             BaseClass::TypedDict(..) | BaseClass::Generic(..) => {
                 if is_new_type {
                     BaseClassParseResult::InvalidBase(base.range())

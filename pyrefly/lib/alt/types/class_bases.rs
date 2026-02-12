@@ -263,6 +263,12 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                         .mk_class_type(self.stdlib.named_tuple_fallback().clone()),
                     x.range(),
                 )),
+                BaseClass::SynthesizedBase(class_idx, _) => {
+                    self.get_idx(*class_idx).as_ref().0.as_ref().map(|cls| {
+                        let ct = self.promote_nontypeddict_silently_to_classtype(cls);
+                        (self.heap.mk_class_type(ct), x.range())
+                    })
+                }
                 BaseClass::InvalidExpr(..) | BaseClass::TypedDict(..) | BaseClass::Generic(..) => {
                     None
                 }
