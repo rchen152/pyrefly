@@ -718,7 +718,7 @@ enum NodeState {
     /// to Done matters.
     Done {
         answer: Option<Arc<dyn Any + Send + Sync>>,
-        #[allow(dead_code)] // errors will be read when batch-commit replaces base_errors.extend
+        #[allow(dead_code)] // errors read when batch-commit is wired up
         errors: Option<Arc<ErrorCollector>>,
     },
 }
@@ -1336,10 +1336,8 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 
     /// Commit a single preliminary result from a completed SCC.
     /// Uses dispatch_anyidx! to recover the concrete key type from AnyIdx,
-    /// then delegates to commit_typed<K>.
-    ///
-    /// Currently only handles same-module commits. Cross-module support
-    /// will be added in a subsequent commit.
+    /// then delegates to commit_typed<K> for same-module commits or
+    /// LookupAnswer::commit_to_module for cross-module commits.
     #[allow(dead_code)]
     fn commit_single_result(
         &self,
@@ -1349,7 +1347,9 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
     ) {
         let CalcId(ref bindings, ref any_idx) = calc_id;
         if bindings.module().name() != self.bindings().module().name() {
-            // Cross-module commit not yet supported; will be added later.
+            // Cross-module: delegate to the LookupAnswer trait to route
+            // the commit to the correct module's Answers.
+            self.answers.commit_to_module(calc_id, answer, errors);
             return;
         }
         dispatch_anyidx!(any_idx, self, commit_typed, answer, errors)
