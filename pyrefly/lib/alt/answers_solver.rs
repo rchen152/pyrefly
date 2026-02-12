@@ -537,10 +537,10 @@ impl CalcStack {
     /// Only the top SCC is checked because each node appears in at most one
     /// SCC, and placeholder recording happens during active cycle breaking
     /// in the top SCC.
-    fn on_placeholder_recorded(&self, current: &CalcId) {
+    fn on_placeholder_recorded(&self, current: &CalcId, var: Var) {
         let mut scc_stack = self.scc_stack.borrow_mut();
         if let Some(top_scc) = scc_stack.last_mut() {
-            top_scc.on_placeholder_recorded(current);
+            top_scc.on_placeholder_recorded(current, var);
             // Debug-only check: verify the node isn't in any other SCC.
             debug_assert!(
                 scc_stack
@@ -632,7 +632,8 @@ enum NodeState {
     InProgress,
     /// This is a break_at node: we've recorded a placeholder in Calculation
     /// but haven't computed the real answer yet.
-    HasPlaceholder,
+    /// The Var is the placeholder variable recorded for this break_at node.
+    HasPlaceholder(Var),
     /// Node's calculation has completed.
     Done,
 }
@@ -813,7 +814,7 @@ impl Scc {
                     // via a different path. This will trigger new cycle detection.
                     SccState::RevisitingInProgress
                 }
-                NodeState::HasPlaceholder => {
+                NodeState::HasPlaceholder(_) => {
                     // Already has placeholder, return it
                     SccState::HasPlaceholder
                 }
@@ -835,9 +836,9 @@ impl Scc {
     }
 
     /// Track that a placeholder has been recorded for a break_at node.
-    fn on_placeholder_recorded(&mut self, current: &CalcId) {
+    fn on_placeholder_recorded(&mut self, current: &CalcId, var: Var) {
         if let Some(state) = self.node_state.get_mut(current) {
-            *state = NodeState::HasPlaceholder;
+            *state = NodeState::HasPlaceholder(var);
         }
     }
 
@@ -1138,7 +1139,7 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             Either::Right(rec) => {
                 // No final answer is available, so we'll unwind the cycle using `rec`.
                 // Track that we've recorded a placeholder for this break_at node.
-                self.stack().on_placeholder_recorded(current);
+                self.stack().on_placeholder_recorded(current, rec);
                 Err(rec)
             }
             Either::Left(v) => {
