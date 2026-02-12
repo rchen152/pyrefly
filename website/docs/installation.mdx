@@ -156,8 +156,19 @@ jobs:
       - name: Install Pyrefly
         run: pip install pyrefly
 
-      - name: Run Pyrefly Type Checker
-        run: pyrefly check
+        - name: Run Pyrefly Type Checker
+          run: pyrefly check
+```
+
+### Inline PR Annotations
+
+Pyrefly can emit errors as [GitHub Actions workflow commands](https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/workflow-commands-for-github-actions) so that type errors appear inline when reviewing pull requests.
+
+To enable this, pass `--output-format=github`:
+
+```
+        - name: Run Pyrefly Type Checker
+          run: pyrefly check --output-format=github
 ```
 
 ### A few notes about this setup:
@@ -166,8 +177,8 @@ jobs:
 - Simply drop in `pyrefly check` to existing workflows that build and test your environment.
 
 ```
-      - name: Run Pyrefly Type Checker
-        run: pyrefly check
+        - name: Run Pyrefly Type Checker
+          run: pyrefly check
 ```
 
 - Your `pyrefly.toml` or Pyrefly configs in your `pyproject.toml` will be automatically detected. Learn how to [configure Pyrefly here](../configuration).
