@@ -206,7 +206,14 @@ impl CalcStack {
             SccState::NotInScc | SccState::RevisitingInProgress => {
                 match calculation.propose_calculation() {
                     ProposalResult::Calculated(v) => BindingAction::Calculated(v),
-                    ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                    ProposalResult::CycleBroken(_) => {
+                        // Recursive placeholders are never stored in Calculation cells;
+                        // they live only in SCC-local NodeState::HasPlaceholder.
+                        unreachable!(
+                            "CycleBroken should never be returned from propose_calculation \
+                             because record_cycle is never called"
+                        )
+                    }
                     ProposalResult::CycleDetected => {
                         let current_cycle = self.current_cycle().unwrap();
                         match self.on_scc_detected(current_cycle) {
@@ -264,10 +271,11 @@ impl CalcStack {
                         self.on_calculation_finished(&current, None, None);
                         BindingAction::Calculated(v)
                     }
-                    ProposalResult::CycleBroken(r) => {
-                        // Participant already computed: no data to store.
-                        self.on_calculation_finished(&current, None, None);
-                        BindingAction::CycleBroken(r)
+                    ProposalResult::CycleBroken(_) => {
+                        unreachable!(
+                            "CycleBroken should never be returned from propose_calculation \
+                             because record_cycle is never called"
+                        )
                     }
                 }
             }
@@ -1302,8 +1310,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             }
         } else {
             // Non-SCC path: write directly to Calculation as before.
-            let (answer, did_write) = calculation.record_value(raw_answer, |var, answer| {
-                self.finalize_recursive_answer::<K>(idx, var, answer, &local_errors)
+            // No recursive placeholder can exist in the Calculation cell because
+            // placeholders are stored only in SCC-local NodeState::HasPlaceholder.
+            let (answer, did_write) = calculation.record_value(raw_answer, |_var, _answer| {
+                unreachable!(
+                    "Recursive placeholder found in Calculation cell for {}; \
+                     placeholders should only exist in SCC-local NodeState",
+                    current,
+                )
             });
             if did_write {
                 self.base_errors.extend(local_errors);
@@ -1334,7 +1348,16 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .expect("commit_typed: type mismatch in batch commit"),
         );
         let calculation = self.get_calculation(idx);
-        let (_answer, did_write) = calculation.record_value(typed_answer, |_var, ans| ans);
+        // No recursive placeholder can exist in the Calculation cell because
+        // placeholders are stored only in SCC-local NodeState::HasPlaceholder.
+        // The answer was already finalized (force_var called) during
+        // calculate_and_record_answer's SCC path.
+        let (_answer, did_write) = calculation.record_value(typed_answer, |_var, _ans| {
+            unreachable!(
+                "Recursive placeholder found in Calculation cell during batch commit; \
+                 placeholders should only exist in SCC-local NodeState"
+            )
+        });
         if did_write && let Some(errors) = errors {
             // TODO: ErrorCollector::extend takes `other: ErrorCollector` by value,
             // but we have Arc<ErrorCollector>. We can use Arc::try_unwrap to

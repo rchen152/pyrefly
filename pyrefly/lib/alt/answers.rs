@@ -691,7 +691,14 @@ impl Answers {
         );
         // Get the calculation cell from the answer table
         if let Some(calculation) = self.table.get::<K>().get(idx) {
-            let (_answer, did_write) = calculation.record_value(typed_answer, |_var, ans| ans);
+            // No recursive placeholder can exist in the Calculation cell because
+            // placeholders are stored only in SCC-local NodeState::HasPlaceholder.
+            let (_answer, did_write) = calculation.record_value(typed_answer, |_var, _ans| {
+                unreachable!(
+                    "Recursive placeholder found in Calculation cell during cross-module \
+                     batch commit; placeholders should only exist in SCC-local NodeState"
+                )
+            });
             did_write
         } else {
             false
