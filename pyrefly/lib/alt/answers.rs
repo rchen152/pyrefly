@@ -35,6 +35,7 @@ use crate::alt::answers_solver::ThreadState;
 use crate::alt::attr::AttrDefinition;
 use crate::alt::attr::AttrInfo;
 use crate::alt::traits::Solve;
+use crate::binding::binding::AnyIdx;
 use crate::binding::binding::ChangedExport;
 use crate::binding::binding::Exported;
 use crate::binding::binding::Key;
@@ -44,6 +45,7 @@ use crate::binding::bindings::BindingTable;
 use crate::binding::bindings::Bindings;
 use crate::binding::table::TableKeyed;
 use crate::config::base::RecursionLimitConfig;
+use crate::dispatch_anyidx;
 use crate::error::collector::ErrorCollector;
 use crate::error::style::ErrorStyle;
 use crate::export::exports::LookupExport;
@@ -666,6 +668,42 @@ impl Answers {
         AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
     {
         self.table.get::<K>().get(k)?.get()
+    }
+
+    /// Commit a type-erased answer to this module's Calculation cell.
+    /// Target-side entry point for cross-module batch commit.
+    pub fn commit_preliminary(
+        &self,
+        any_idx: &AnyIdx,
+        answer: Arc<dyn Any + Send + Sync>,
+        errors: Option<Arc<ErrorCollector>>,
+    ) {
+        dispatch_anyidx!(any_idx, self, commit_typed, answer, errors)
+    }
+
+    /// Typed commit for a specific key type. Downcasts the answer and writes
+    /// to the Calculation cell.
+    fn commit_typed<K: Keyed>(
+        &self,
+        idx: Idx<K>,
+        answer: Arc<dyn Any + Send + Sync>,
+        errors: Option<Arc<ErrorCollector>>,
+    ) where
+        AnswerTable: TableKeyed<K, Value = AnswerEntry<K>>,
+    {
+        let typed_answer: Arc<K::Answer> = Arc::unwrap_or_clone(
+            answer
+                .downcast::<Arc<K::Answer>>()
+                .expect("Answers::commit_typed: type mismatch in cross-module batch commit"),
+        );
+        // Get the calculation cell from the answer table
+        if let Some(calculation) = self.table.get::<K>().get(idx) {
+            let _ = calculation.record_value(typed_answer, |_var, ans| ans);
+            // Note: errors are not extended here since we don't have access to
+            // the target module's base_errors. Error propagation for cross-module
+            // commits will be handled separately.
+        }
+        let _ = errors; // Suppress unused variable warning
     }
 
     fn deep_force(&self, t: Type) -> Type {

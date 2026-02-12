@@ -59,6 +59,7 @@ use crate::binding::table::TableKeyed;
 use crate::config::base::RecursionLimitConfig;
 use crate::config::base::RecursionOverflowHandler;
 use crate::config::error_kind::ErrorKind;
+use crate::dispatch_anyidx;
 use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorInfo;
 use crate::error::context::TypeCheckContext;
@@ -1241,6 +1242,27 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 self.base_errors.extend(errors);
             }
         }
+    }
+
+    /// Commit a single preliminary result from a completed SCC.
+    /// Uses dispatch_anyidx! to recover the concrete key type from AnyIdx,
+    /// then delegates to commit_typed<K>.
+    ///
+    /// Currently only handles same-module commits. Cross-module support
+    /// will be added in a subsequent commit.
+    #[allow(dead_code)]
+    fn commit_single_result(
+        &self,
+        calc_id: CalcId,
+        answer: Arc<dyn Any + Send + Sync>,
+        errors: Option<Arc<ErrorCollector>>,
+    ) {
+        let CalcId(ref bindings, ref any_idx) = calc_id;
+        if bindings.module().name() != self.bindings().module().name() {
+            // Cross-module commit not yet supported; will be added later.
+            return;
+        }
+        dispatch_anyidx!(any_idx, self, commit_typed, answer, errors)
     }
 
     /// Finalize a recursive answer. This takes the raw value produced by `K::solve` and calls
