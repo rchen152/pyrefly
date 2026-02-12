@@ -9,6 +9,7 @@ use std::mem;
 use std::sync::LazyLock;
 
 use dupe::Dupe as _;
+use pyrefly_graph::index::Idx;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::docstring::Docstring;
 use pyrefly_python::nesting_context::NestingContext;
@@ -103,7 +104,12 @@ impl<'a> BindingsBuilder<'a> {
         res
     }
 
-    fn class_object_and_indices(&mut self, class_name: &Identifier) -> (CurrentIdx, ClassIndices) {
+    /// Shared helper that allocates class indices and declares the class object with the given key.
+    fn class_object_and_indices_inner(
+        &mut self,
+        class_name: &Identifier,
+        key: Key,
+    ) -> (CurrentIdx, ClassIndices) {
         let def_index = self.def_index();
         let class_indices = ClassIndices {
             def_index,
@@ -118,11 +124,24 @@ impl<'a> BindingsBuilder<'a> {
                 .idx_for_promise(KeyConsistentOverrideCheck(def_index)),
             abstract_class_check_idx: self.idx_for_promise(KeyAbstractClassCheck(def_index)),
         };
-        // The user - used for first-usage tracking of any expressions we analyze in a class definition -
-        // is the `Idx<Key>` of the class object bound to the class name.
-        let class_object =
-            self.declare_current_idx(Key::Definition(ShortIdentifier::new(class_name)));
+        let class_object = self.declare_current_idx(key);
         (class_object, class_indices)
+    }
+
+    fn class_object_and_indices(&mut self, class_name: &Identifier) -> (CurrentIdx, ClassIndices) {
+        self.class_object_and_indices_inner(
+            class_name,
+            Key::Definition(ShortIdentifier::new(class_name)),
+        )
+    }
+
+    /// Like `class_object_and_indices`, but uses `Key::Anon` instead of `Key::Definition`,
+    /// so the synthesized class is never bound to a name in scope.
+    fn anon_class_object_and_indices(
+        &mut self,
+        class_name: &Identifier,
+    ) -> (CurrentIdx, ClassIndices) {
+        self.class_object_and_indices_inner(class_name, Key::Anon(class_name.range))
     }
 
     pub fn class_def(&mut self, mut x: StmtClassDef, parent: &NestingContext) {
@@ -745,6 +764,7 @@ impl<'a> BindingsBuilder<'a> {
         force_class_initialization: bool,
         class_kind: SynthesizedClassKind,
         special_base: Option<BaseClass>,
+        bind_to_name: bool,
     ) {
         let base_classes = base
             .into_iter()
@@ -792,12 +812,19 @@ impl<'a> BindingsBuilder<'a> {
             force_class_initialization,
             class_kind,
         );
-        self.bind_current_as(
-            &class_name,
-            class_object,
-            Binding::ClassDef(class_indices.class_idx, Box::new([])),
-            FlowStyle::ClassDef,
-        );
+        if bind_to_name {
+            self.bind_current_as(
+                &class_name,
+                class_object,
+                Binding::ClassDef(class_indices.class_idx, Box::new([])),
+                FlowStyle::ClassDef,
+            );
+        } else {
+            self.insert_binding_current(
+                class_object,
+                Binding::ClassDef(class_indices.class_idx, Box::new([])),
+            );
+        }
         self.insert_binding_idx(
             class_indices.class_idx,
             BindingClass::FunctionalClassDef(
@@ -948,6 +975,7 @@ impl<'a> BindingsBuilder<'a> {
             true,
             SynthesizedClassKind::Enum,
             None,
+            true,
         );
     }
 
@@ -955,14 +983,18 @@ impl<'a> BindingsBuilder<'a> {
     // but cannot specify the type of each element
     pub fn synthesize_collections_named_tuple_def(
         &mut self,
-        name: &ExprName,
+        class_name: Identifier,
         parent: &NestingContext,
         func: &mut Expr,
         members: &mut [Expr],
         keywords: &mut [Keyword],
-    ) {
-        let class_name = Ast::expr_name_identifier(name.clone());
-        let (mut class_object, class_indices) = self.class_object_and_indices(&class_name);
+        bind_to_name: bool,
+    ) -> Idx<KeyClass> {
+        let (mut class_object, class_indices) = if bind_to_name {
+            self.class_object_and_indices(&class_name)
+        } else {
+            self.anon_class_object_and_indices(&class_name)
+        };
         self.ensure_expr(func, class_object.usage());
         let member_definitions =
             self.parse_collections_namedtuple_fields(members, class_name.range);
@@ -1020,7 +1052,7 @@ impl<'a> BindingsBuilder<'a> {
         self.synthesize_class_def(
             class_name,
             class_object,
-            class_indices,
+            class_indices.clone(),
             parent,
             None,
             Box::new([]),
@@ -1029,19 +1061,25 @@ impl<'a> BindingsBuilder<'a> {
             false,
             SynthesizedClassKind::NamedTuple,
             Some(BaseClass::NamedTuple(range)),
+            bind_to_name,
         );
+        class_indices.class_idx
     }
 
     // This functional form allows specifying types for each element, but not default values
     pub fn synthesize_typing_named_tuple_def(
         &mut self,
-        name: &ExprName,
+        class_name: Identifier,
         parent: &NestingContext,
         func: &mut Expr,
         members: &[Expr],
-    ) {
-        let class_name = Ast::expr_name_identifier(name.clone());
-        let (mut class_object, class_indices) = self.class_object_and_indices(&class_name);
+        bind_to_name: bool,
+    ) -> Idx<KeyClass> {
+        let (mut class_object, class_indices) = if bind_to_name {
+            self.class_object_and_indices(&class_name)
+        } else {
+            self.anon_class_object_and_indices(&class_name)
+        };
         self.ensure_expr(func, class_object.usage());
         let member_definitions: Vec<(String, TextRange, Option<Expr>, Option<Expr>)> = self
             .parse_typing_namedtuple_fields(members, class_name.range)
@@ -1058,7 +1096,7 @@ impl<'a> BindingsBuilder<'a> {
         self.synthesize_class_def(
             class_name,
             class_object,
-            class_indices,
+            class_indices.clone(),
             parent,
             Some(func.clone()),
             Box::new([]),
@@ -1067,7 +1105,9 @@ impl<'a> BindingsBuilder<'a> {
             false,
             SynthesizedClassKind::NamedTuple,
             None,
+            bind_to_name,
         );
+        class_indices.class_idx
     }
 
     // Synthesize a class definition for NewType
@@ -1095,6 +1135,7 @@ impl<'a> BindingsBuilder<'a> {
             false,
             SynthesizedClassKind::NewType,
             None,
+            true,
         );
     }
 
@@ -1190,6 +1231,7 @@ impl<'a> BindingsBuilder<'a> {
             false,
             SynthesizedClassKind::TypedDict,
             None,
+            true,
         );
     }
 

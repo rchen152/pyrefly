@@ -600,10 +600,11 @@ impl<'a> BindingsBuilder<'a> {
                                 {
                                     self.check_functional_definition_name(&name.id, arg_name);
                                     self.synthesize_typing_named_tuple_def(
-                                        name,
+                                        Ast::expr_name_identifier(name.clone()),
                                         parent,
                                         &mut call.func,
                                         members,
+                                        true,
                                     );
                                     return;
                                 }
@@ -614,11 +615,12 @@ impl<'a> BindingsBuilder<'a> {
                                 {
                                     self.check_functional_definition_name(&name.id, arg_name);
                                     self.synthesize_collections_named_tuple_def(
-                                        name,
+                                        Ast::expr_name_identifier(name.clone()),
                                         parent,
                                         &mut call.func,
                                         members,
                                         &mut call.arguments.keywords,
+                                        true,
                                     );
                                     return;
                                 }
