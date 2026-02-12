@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::any::Any;
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::hash_map::Entry;
@@ -69,6 +70,7 @@ use crate::alt::answers::Solutions;
 use crate::alt::answers::SolutionsEntry;
 use crate::alt::answers::SolutionsTable;
 use crate::alt::answers_solver::AnswersSolver;
+use crate::alt::answers_solver::CalcId;
 use crate::alt::answers_solver::ThreadState;
 use crate::alt::traits::Solve;
 use crate::binding::binding::AnyExportedKey;
@@ -2413,6 +2415,38 @@ impl<'a> LookupAnswer for TransactionHandle<'a> {
             }
         }
         res
+    }
+
+    fn commit_to_module(
+        &self,
+        calc_id: CalcId,
+        answer: Arc<dyn Any + Send + Sync>,
+        errors: Option<Arc<ErrorCollector>>,
+    ) -> bool {
+        let CalcId(ref bindings, ref any_idx) = calc_id;
+        let module = bindings.module().name();
+        let path = bindings.module().path();
+
+        // Look up the target module. Use default ModuleDep since cross-module
+        // commits don't establish new dependencies.
+        let module_data = match self
+            .get_module(module, Some(path), ModuleDep::default())
+            .finding()
+        {
+            Some(data) => data,
+            None => return false,
+        };
+
+        // Access the target module's Answers and call commit_preliminary.
+        let lock = module_data.state.read();
+        if let Some(answers_pair) = &lock.steps.answers {
+            let answers = answers_pair.1.dupe();
+            drop(lock);
+            answers.commit_preliminary(any_idx, answer, errors);
+            true
+        } else {
+            false
+        }
     }
 }
 
