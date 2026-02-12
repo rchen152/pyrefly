@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::any::Any;
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
@@ -224,11 +225,13 @@ impl CalcStack {
                     }
                     ProposalResult::CycleDetected => BindingAction::Calculate,
                     ProposalResult::Calculated(v) => {
-                        self.on_calculation_finished(&current);
+                        // Participant already computed: no data to store.
+                        self.on_calculation_finished(&current, None, None);
                         BindingAction::Calculated(v)
                     }
                     ProposalResult::CycleBroken(r) => {
-                        self.on_calculation_finished(&current);
+                        // Participant already computed: no data to store.
+                        self.on_calculation_finished(&current, None, None);
                         BindingAction::CycleBroken(r)
                     }
                 }
@@ -501,11 +504,16 @@ impl CalcStack {
     ///
     /// Only the top SCC is checked because each node appears in at most one
     /// SCC, and active calculations are always in the top SCC.
-    fn on_calculation_finished(&self, current: &CalcId) -> bool {
+    fn on_calculation_finished(
+        &self,
+        current: &CalcId,
+        answer: Option<Arc<dyn Any + Send + Sync>>,
+        errors: Option<Arc<ErrorCollector>>,
+    ) -> bool {
         let stack_len = self.stack.borrow().len();
         let mut scc_stack = self.scc_stack.borrow_mut();
         if let Some(top_scc) = scc_stack.last_mut() {
-            top_scc.on_calculation_finished(current);
+            top_scc.on_calculation_finished(current, answer, errors);
             // Debug-only check: verify the node isn't in any other SCC.
             debug_assert!(
                 scc_stack
@@ -624,7 +632,8 @@ impl CalcStack {
 ///
 /// The variants are ordered by "advancement" (Fresh < InProgress < HasPlaceholder < Done).
 /// The `advancement_rank()` method encodes this ordering for use during SCC merge.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
+#[allow(dead_code)] // answer/errors in Done are dual-written but not yet read
 enum NodeState {
     /// Node hasn't been processed yet as part of SCC handling.
     Fresh,
@@ -634,8 +643,18 @@ enum NodeState {
     /// but haven't computed the real answer yet.
     /// The Var is the placeholder variable recorded for this break_at node.
     HasPlaceholder(Var),
-    /// Node's calculation has completed.
-    Done,
+    /// Node's calculation has completed. Stores the type-erased answer and
+    /// error collector for thread-local SCC isolation. During dual-write
+    /// (this commit), data is written but not yet read from NodeState;
+    /// reads still come from the shared Calculation.
+    ///
+    /// The data is `None` when the node was already computed by another
+    /// path (e.g. a Participant revisit) and only the state transition
+    /// to Done matters.
+    Done {
+        answer: Option<Arc<dyn Any + Send + Sync>>,
+        errors: Option<Arc<ErrorCollector>>,
+    },
 }
 
 impl NodeState {
@@ -647,10 +666,24 @@ impl NodeState {
             NodeState::Fresh => 0,
             NodeState::InProgress => 1,
             NodeState::HasPlaceholder(_) => 2,
-            NodeState::Done => 3,
+            NodeState::Done { .. } => 3,
         }
     }
 }
+
+impl PartialEq for NodeState {
+    fn eq(&self, other: &Self) -> bool {
+        // Compare by variant only. Done data is transient and not
+        // semantically meaningful for equality.
+        self.advancement_rank() == other.advancement_rank()
+            && match (self, other) {
+                (NodeState::HasPlaceholder(v1), NodeState::HasPlaceholder(v2)) => v1 == v2,
+                _ => true,
+            }
+    }
+}
+
+impl Eq for NodeState {}
 
 /// Represents the current SCC state prior to attempting a particular calculation.
 enum SccState {
@@ -832,7 +865,7 @@ impl Scc {
                     // Already has placeholder, return it
                     SccState::HasPlaceholder
                 }
-                NodeState::Done => {
+                NodeState::Done { .. } => {
                     // Node completed within this SCC - preliminary answer should exist.
                     SccState::RevisitingDone
                 }
@@ -843,9 +876,20 @@ impl Scc {
     }
 
     /// Track that a calculation has finished, marking it as Done.
-    fn on_calculation_finished(&mut self, current: &CalcId) {
+    /// Stores the type-erased answer and error collector in NodeState for
+    /// future SCC-local isolation. Currently dual-write: data is also
+    /// written to Calculation by the caller.
+    ///
+    /// The data is `None` when the node was already computed by another
+    /// path and only the state transition matters.
+    fn on_calculation_finished(
+        &mut self,
+        current: &CalcId,
+        answer: Option<Arc<dyn Any + Send + Sync>>,
+        errors: Option<Arc<ErrorCollector>>,
+    ) {
         if let Some(state) = self.node_state.get_mut(current) {
-            *state = NodeState::Done;
+            *state = NodeState::Done { answer, errors };
         }
     }
 
@@ -1096,11 +1140,18 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
             self.base_errors.extend(local_errors);
         }
 
-        // Handle cycle unwinding, if applicable.
-        //
-        // TODO(stroxler): we eventually need to use is-a-cycle-active information to isolate
-        // placeholder values.
-        self.stack().on_calculation_finished(&current);
+        // Dual-write: store the type-erased answer in NodeState::Done for SCC
+        // participants. The error collector is a fresh placeholder because
+        // base_errors already received the real errors above; real error
+        // storage in NodeState will be added when batch-commit replaces
+        // the direct base_errors.extend path.
+        let answer_erased: Arc<dyn Any + Send + Sync> = Arc::new(answer.dupe());
+        let placeholder_errors = Arc::new(self.error_collector());
+        self.stack().on_calculation_finished(
+            &current,
+            Some(answer_erased),
+            Some(placeholder_errors),
+        );
         answer
     }
 
@@ -1569,6 +1620,14 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
 mod scc_tests {
     use super::*;
 
+    /// Create a dummy `NodeState::Done` for testing.
+    fn done_for_test() -> NodeState {
+        NodeState::Done {
+            answer: None,
+            errors: None,
+        }
+    }
+
     /// Helper to create a test Scc with given parameters.
     ///
     /// This bypasses the normal Scc::new constructor to allow direct construction
@@ -1856,7 +1915,7 @@ mod scc_tests {
 
         // SCC1 has M0 as Done, M1 as Fresh
         let mut scc1_state = HashMap::new();
-        scc1_state.insert(a.dupe(), NodeState::Done);
+        scc1_state.insert(a.dupe(), done_for_test());
         scc1_state.insert(b.dupe(), NodeState::Fresh);
         let scc1 = make_test_scc(vec![a.dupe()], scc1_state, a.dupe(), 0);
 
@@ -1869,7 +1928,11 @@ mod scc_tests {
         let merged = Scc::merge_many(vec1![scc1, scc2], a.dupe());
 
         // Should take the most advanced state for each node
-        assert_eq!(merged.node_state.get(&a), Some(&NodeState::Done));
+        // Verify most advanced state is kept (Done has rank 3)
+        assert_eq!(
+            merged.node_state.get(&a).map(|s| s.advancement_rank()),
+            Some(3),
+        );
         assert_eq!(merged.node_state.get(&b), Some(&NodeState::InProgress));
     }
 
