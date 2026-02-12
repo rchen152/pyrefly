@@ -246,12 +246,12 @@ impl CalcStack {
                     ProposalResult::CycleDetected => BindingAction::Calculate,
                     ProposalResult::Calculated(v) => {
                         // Participant already computed: no data to store.
-                        self.on_calculation_finished(&current, None, None);
+                        let _ = self.on_calculation_finished(&current, None, None);
                         BindingAction::Calculated(v)
                     }
                     ProposalResult::CycleBroken(r) => {
                         // Participant already computed: no data to store.
-                        self.on_calculation_finished(&current, None, None);
+                        let _ = self.on_calculation_finished(&current, None, None);
                         BindingAction::CycleBroken(r)
                     }
                 }
@@ -532,8 +532,12 @@ impl CalcStack {
     /// Handle the completion of a calculation. Mark the node as Done in the
     /// top SCC (if it's a participant), then pop any SCCs that are complete.
     ///
-    /// Return `true` if there are active SCCs after finishing this calculation,
-    /// `false` if there are not.
+    /// Returns a tuple of:
+    /// - `bool`: `true` if there are active SCCs after finishing this calculation,
+    ///   `false` if there are not.
+    /// - `Option<Arc<dyn Any + Send + Sync>>`: the canonical answer from the SCC's
+    ///   first-write-wins state. If the node is not in any SCC, this is the
+    ///   provided `answer` unchanged.
     ///
     /// Only the top SCC is checked because each node appears in at most one
     /// SCC, and active calculations are always in the top SCC.
@@ -542,11 +546,11 @@ impl CalcStack {
         current: &CalcId,
         answer: Option<Arc<dyn Any + Send + Sync>>,
         errors: Option<Arc<ErrorCollector>>,
-    ) -> bool {
+    ) -> (bool, Option<Arc<dyn Any + Send + Sync>>) {
         let stack_len = self.stack.borrow().len();
         let mut scc_stack = self.scc_stack.borrow_mut();
-        if let Some(top_scc) = scc_stack.last_mut() {
-            top_scc.on_calculation_finished(current, answer, errors);
+        let canonical_answer = if let Some(top_scc) = scc_stack.last_mut() {
+            let canonical = top_scc.on_calculation_finished(current, answer, errors);
             // Debug-only check: verify the node isn't in any other SCC.
             debug_assert!(
                 scc_stack
@@ -557,7 +561,11 @@ impl CalcStack {
                 "on_calculation_finished: CalcId {} found in multiple SCCs",
                 current,
             );
-        }
+            canonical
+        } else {
+            // No active SCCs; the provided answer is canonical.
+            answer
+        };
         // Pop all SCCs whose anchor position indicates completion.
         // An SCC is complete when the stack has unwound to (or past) its
         // anchor: at that point all participants' frames have been popped
@@ -570,7 +578,7 @@ impl CalcStack {
             }
         }
         // Do we still have active SCCs?
-        !scc_stack.is_empty()
+        (!scc_stack.is_empty(), canonical_answer)
     }
 
     /// Track that a placeholder has been recorded for a break_at node.
@@ -922,6 +930,12 @@ impl Scc {
     /// do not overwrite the state. This ensures that the first computed answer is
     /// the one that persists, consistent with Calculation::record_value semantics.
     ///
+    /// Returns the canonical answer: the one that is (or was already) stored in
+    /// NodeState::Done. If the node was already Done, returns the pre-existing
+    /// answer without overwriting. If the node was not yet Done, stores the
+    /// provided answer and returns a clone of it. If the node is not tracked
+    /// by this SCC at all, returns the provided answer unchanged.
+    ///
     /// The data is `None` when the node was already computed by another
     /// path and only the state transition matters.
     fn on_calculation_finished(
@@ -929,11 +943,25 @@ impl Scc {
         current: &CalcId,
         answer: Option<Arc<dyn Any + Send + Sync>>,
         errors: Option<Arc<ErrorCollector>>,
-    ) {
-        if let Some(state) = self.node_state.get_mut(current)
-            && !matches!(state, NodeState::Done { .. })
-        {
-            *state = NodeState::Done { answer, errors };
+    ) -> Option<Arc<dyn Any + Send + Sync>> {
+        if let Some(state) = self.node_state.get_mut(current) {
+            if let NodeState::Done {
+                answer: existing_answer,
+                ..
+            } = state
+            {
+                // Already Done: return the canonical (first-written) answer.
+                existing_answer.clone()
+            } else {
+                *state = NodeState::Done {
+                    answer: answer.clone(),
+                    errors,
+                };
+                answer
+            }
+        } else {
+            // Node not tracked by this SCC; return the provided answer as-is.
+            answer
         }
     }
 
@@ -1208,12 +1236,21 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         // the direct base_errors.extend path.
         let answer_erased: Arc<dyn Any + Send + Sync> = Arc::new(answer.dupe());
         let placeholder_errors = Arc::new(self.error_collector());
-        self.stack().on_calculation_finished(
+        let (_has_active_sccs, canonical_erased) = self.stack().on_calculation_finished(
             &current,
             Some(answer_erased),
             Some(placeholder_errors),
         );
-        answer
+        // Use the canonical answer from thread-local state, mirroring how
+        // Calculation::record_value returns the first-written answer.
+        match canonical_erased {
+            Some(erased) => Arc::unwrap_or_clone(
+                erased
+                    .downcast::<Arc<K::Answer>>()
+                    .expect("on_calculation_finished canonical answer downcast failed"),
+            ),
+            None => answer,
+        }
     }
 
     /// Commit a type-erased answer to the Calculation cell for a same-module binding.
