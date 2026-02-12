@@ -493,31 +493,30 @@ impl CalcStack {
         }
     }
 
-    /// Handle the completion of a calculation. This might involve progress on
-    /// the remaining participants of one or more SCCs.
+    /// Handle the completion of a calculation. Mark the node as Done in the
+    /// top SCC (if it's a participant), then pop any SCCs that are complete.
     ///
     /// Return `true` if there are active SCCs after finishing this calculation,
     /// `false` if there are not.
     ///
-    /// Invariant: a node should appear in at most one SCC on the stack. We
-    /// iterate all SCCs defensively and assert this invariant.
+    /// Only the top SCC is checked because each node appears in at most one
+    /// SCC, and active calculations are always in the top SCC.
     fn on_calculation_finished(&self, current: &CalcId) -> bool {
         let stack_len = self.stack.borrow().len();
         let mut scc_stack = self.scc_stack.borrow_mut();
-        let mut match_count = 0usize;
-        for scc in scc_stack.iter_mut() {
-            if scc.node_state.contains_key(current) {
-                match_count += 1;
-            }
-            scc.on_calculation_finished(current);
+        if let Some(top_scc) = scc_stack.last_mut() {
+            top_scc.on_calculation_finished(current);
+            // Debug-only check: verify the node isn't in any other SCC.
+            debug_assert!(
+                scc_stack
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .all(|scc| !scc.node_state.contains_key(current)),
+                "on_calculation_finished: CalcId {} found in multiple SCCs",
+                current,
+            );
         }
-        assert!(
-            match_count <= 1,
-            "on_calculation_finished: CalcId {} found in {} SCCs (expected at most 1). \
-             This indicates a bug in SCC merging.",
-            current,
-            match_count,
-        );
         // Pop all SCCs whose anchor position indicates completion.
         // An SCC is complete when the stack has unwound to (or past) its
         // anchor: at that point all participants' frames have been popped
@@ -535,24 +534,24 @@ impl CalcStack {
 
     /// Track that a placeholder has been recorded for a break_at node.
     ///
-    /// Invariant: a node should appear in at most one SCC on the stack. We
-    /// iterate all SCCs defensively and assert this invariant.
+    /// Only the top SCC is checked because each node appears in at most one
+    /// SCC, and placeholder recording happens during active cycle breaking
+    /// in the top SCC.
     fn on_placeholder_recorded(&self, current: &CalcId) {
         let mut scc_stack = self.scc_stack.borrow_mut();
-        let mut match_count = 0usize;
-        for scc in scc_stack.iter_mut() {
-            if scc.node_state.contains_key(current) {
-                match_count += 1;
-            }
-            scc.on_placeholder_recorded(current);
+        if let Some(top_scc) = scc_stack.last_mut() {
+            top_scc.on_placeholder_recorded(current);
+            // Debug-only check: verify the node isn't in any other SCC.
+            debug_assert!(
+                scc_stack
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .all(|scc| !scc.node_state.contains_key(current)),
+                "on_placeholder_recorded: CalcId {} found in multiple SCCs",
+                current,
+            );
         }
-        assert!(
-            match_count <= 1,
-            "on_placeholder_recorded: CalcId {} found in {} SCCs (expected at most 1). \
-             This indicates a bug in SCC merging.",
-            current,
-            match_count,
-        );
     }
 
     /// Merge all SCCs from the target SCC to the top of the stack, and add
