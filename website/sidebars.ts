@@ -88,14 +88,21 @@ let docsSidebar = [
         ],
     },
     {
-        type: 'doc' as const,
-        id: 'error-suppressions',
-        label: 'Error Suppressions',
-    },
-    {
-        type: 'doc' as const,
-        id: 'error-kinds',
-        label: 'Error Kinds',
+        type: 'category' as const,
+        label: 'Errors',
+        collapsed: false,
+        items: [
+            {
+                type: 'doc' as const,
+                id: 'error-suppressions',
+                label: 'Error Suppressions',
+            },
+            {
+                type: 'doc' as const,
+                id: 'error-kinds',
+                label: 'Error Kinds',
+            },
+        ],
     },
     {
         type: 'doc' as const,
