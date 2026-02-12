@@ -498,12 +498,26 @@ impl CalcStack {
     ///
     /// Return `true` if there are active SCCs after finishing this calculation,
     /// `false` if there are not.
+    ///
+    /// Invariant: a node should appear in at most one SCC on the stack. We
+    /// iterate all SCCs defensively and assert this invariant.
     fn on_calculation_finished(&self, current: &CalcId) -> bool {
         let stack_len = self.stack.borrow().len();
         let mut scc_stack = self.scc_stack.borrow_mut();
+        let mut match_count = 0usize;
         for scc in scc_stack.iter_mut() {
+            if scc.node_state.contains_key(current) {
+                match_count += 1;
+            }
             scc.on_calculation_finished(current);
         }
+        assert!(
+            match_count <= 1,
+            "on_calculation_finished: CalcId {} found in {} SCCs (expected at most 1). \
+             This indicates a bug in SCC merging.",
+            current,
+            match_count,
+        );
         // Pop all SCCs whose anchor position indicates completion.
         // An SCC is complete when the stack has unwound to (or past) its
         // anchor: at that point all participants' frames have been popped
@@ -520,11 +534,25 @@ impl CalcStack {
     }
 
     /// Track that a placeholder has been recorded for a break_at node.
+    ///
+    /// Invariant: a node should appear in at most one SCC on the stack. We
+    /// iterate all SCCs defensively and assert this invariant.
     fn on_placeholder_recorded(&self, current: &CalcId) {
         let mut scc_stack = self.scc_stack.borrow_mut();
+        let mut match_count = 0usize;
         for scc in scc_stack.iter_mut() {
+            if scc.node_state.contains_key(current) {
+                match_count += 1;
+            }
             scc.on_placeholder_recorded(current);
         }
+        assert!(
+            match_count <= 1,
+            "on_placeholder_recorded: CalcId {} found in {} SCCs (expected at most 1). \
+             This indicates a bug in SCC merging.",
+            current,
+            match_count,
+        );
     }
 
     /// Merge all SCCs from the target SCC to the top of the stack, and add
