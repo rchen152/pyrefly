@@ -1285,7 +1285,7 @@ impl<'a> Transaction<'a> {
         })
     }
 
-    fn find_definition_for_base_type(
+    pub(crate) fn find_definition_for_base_type(
         &self,
         handle: &Handle,
         preference: FindPreference,

@@ -608,46 +608,6 @@ impl GleanState<'_> {
         })
     }
 
-    fn find_definition_for_type(&self, ty: Type, range: TextRange) -> Vec<DefinitionLocation> {
-        let as_name = join_names(self.module_name.as_str(), self.module.code_at(range));
-        let mut definitions = if self.import_names.contains_key(&as_name) {
-            vec![DefinitionLocation {
-                name: as_name,
-                file: Some(self.file_fact()),
-            }]
-        } else {
-            vec![]
-        };
-        match ty {
-            Type::Module(module) => {
-                definitions.push(DefinitionLocation {
-                    name: module.to_string(),
-                    file: None, // TODO find file for module
-                });
-                definitions
-            }
-            Type::None => vec![DefinitionLocation {
-                name: "None".to_owned(),
-                file: None,
-            }],
-            Type::Type(inner_ty) => self.find_definition_for_type(*inner_ty, range),
-            Type::SpecialForm(x) => {
-                let identifier = Identifier::new(x.to_string(), range);
-                self.find_definition_for_name_use(identifier)
-            }
-            _ => ty.qname().map_or(vec![], |qname| {
-                definitions.extend(self.get_definition_location(
-                    qname.range(),
-                    qname.module(),
-                    None,
-                    vec![],
-                ));
-
-                definitions
-            }),
-        }
-    }
-
     fn get_xrefs_for_str_lit(
         &self,
         expr: &ExprStringLiteral,
@@ -689,44 +649,75 @@ impl GleanState<'_> {
         let attr_name = &expr_attr.attr;
         let base_expr = expr_attr.value.as_ref();
 
-        let base_types = if let Some(answers) = self.transaction.get_answers(self.handle)
+        let definitions_with_type = if let Some(answers) = self.transaction.get_answers(self.handle)
             && let Some(base_type) = answers.get_type_trace(base_expr.range())
         {
             self.transaction
-                .ad_hoc_solve(self.handle, |solver| match base_type {
-                    Type::Union(box Union { members: tys, .. }) | Type::Intersect(box (tys, _)) => {
-                        tys.into_iter()
-                            .filter(|ty: &Type| {
-                                solver
-                                    .completions(ty.clone(), Some(attr_name.id()), false)
-                                    .into_iter()
-                                    .any(|attr| &attr.name == attr_name.id())
-                            })
-                            .collect()
-                    }
-                    ty => vec![ty],
+                .ad_hoc_solve(self.handle, |solver| {
+                    let name = attr_name.id();
+                    let completions = |ty| solver.completions(ty, Some(name), false);
+
+                    let tys = match base_type.clone() {
+                        Type::Union(box Union { members: tys, .. })
+                        | Type::Intersect(box (tys, _)) => tys,
+                        ty => vec![ty],
+                    };
+
+                    tys.into_iter()
+                        .filter_map(|ty| {
+                            self.transaction
+                                .find_definition_for_base_type(
+                                    self.handle,
+                                    FindPreference::default(),
+                                    completions(ty.clone()),
+                                    name,
+                                )
+                                .map(|def| (ty, def))
+                        })
+                        .collect()
                 })
                 .unwrap_or_default()
         } else {
             vec![]
         };
 
-        let base_expr_definitions = if base_types.is_empty() {
+        if definitions_with_type.is_empty() {
             self.find_definition_for_expr(base_expr)
-        } else {
-            base_types
                 .into_iter()
-                .flat_map(|ty| self.find_definition_for_type(ty, base_expr.range()))
+                .map(|base_expr| DefinitionLocation {
+                    name: join_names(&base_expr.name, attr_name),
+                    file: base_expr.file,
+                })
                 .collect()
-        };
+        } else {
+            let base_expr_name = join_names(
+                self.module_name.as_str(),
+                self.module.code_at(base_expr.range()),
+            );
+            let additional_definitions = if self.names.contains(&base_expr_name) {
+                self.get_additional_definitions(base_expr.range())
+                    .into_iter()
+                    .map(|ty| DefinitionLocation {
+                        name: join_names(&ty.name, attr_name),
+                        file: ty.file,
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
 
-        base_expr_definitions
-            .into_iter()
-            .map(|base_expr| DefinitionLocation {
-                name: join_names(&base_expr.name, attr_name),
-                file: base_expr.file,
-            })
-            .collect()
+            definitions_with_type
+                .into_iter()
+                .flat_map(|(ty, def)| {
+                    self.get_definition_location(
+                        def.definition_range,
+                        &def.module,
+                        Some(&ty),
+                        additional_definitions.clone(),
+                    )
+                })
+                .collect()
+        }
     }
 
     fn make_decorators(&self, decorators: &[Decorator]) -> Option<Vec<String>> {
