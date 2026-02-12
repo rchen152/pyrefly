@@ -191,7 +191,7 @@ impl CalcStack {
             .and_modify(|positions| positions.push(position))
             .or_insert_with(|| Vec1::new(position));
         match self.pre_calculate_state(&current) {
-            SccState::NotInScc | SccState::RevisitingInProgress | SccState::RevisitingDone => {
+            SccState::NotInScc | SccState::RevisitingInProgress => {
                 match calculation.propose_calculation() {
                     ProposalResult::Calculated(v) => BindingAction::Calculated(v),
                     ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
@@ -203,6 +203,25 @@ impl CalcStack {
                         }
                     }
                     ProposalResult::Calculatable => BindingAction::Calculate,
+                }
+            }
+            SccState::RevisitingDone => {
+                // Try to read from the SCC-local NodeState::Done first.
+                // If the answer is available, return it without touching Calculation.
+                if let Some(answer) = self.get_scc_done_answer(&current) {
+                    BindingAction::SccLocalAnswer(answer)
+                } else {
+                    // Fallback: answer is None (another path computed it).
+                    // Read from Calculation instead.
+                    match calculation.propose_calculation() {
+                        ProposalResult::Calculated(v) => BindingAction::Calculated(v),
+                        ProposalResult::CycleBroken(r) => BindingAction::CycleBroken(r),
+                        ProposalResult::CycleDetected | ProposalResult::Calculatable => {
+                            unreachable!(
+                                "RevisitingDone node should have Calculated or CycleBroken result"
+                            )
+                        }
+                    }
                 }
             }
             SccState::BreakAt => BindingAction::Unwind,
@@ -272,6 +291,19 @@ impl CalcStack {
             .borrow()
             .get(calc_id)
             .map(|positions| *positions.first())
+    }
+
+    /// Retrieve the type-erased answer from NodeState::Done in the top SCC.
+    /// Returns `Some(answer)` if the node is Done with data, `None` otherwise
+    /// (node not in SCC, not Done, or Done with answer: None).
+    fn get_scc_done_answer(&self, current: &CalcId) -> Option<Arc<dyn Any + Send + Sync>> {
+        let scc_stack = self.scc_stack.borrow();
+        scc_stack
+            .last()
+            .and_then(|top_scc| match top_scc.node_state.get(current)? {
+                NodeState::Done { answer, .. } => answer.clone(),
+                _ => None,
+            })
     }
 
     /// Push a CalcId onto the stack without computing the binding action, for tests
@@ -633,7 +665,6 @@ impl CalcStack {
 /// The variants are ordered by "advancement" (Fresh < InProgress < HasPlaceholder < Done).
 /// The `advancement_rank()` method encodes this ordering for use during SCC merge.
 #[derive(Debug, Clone)]
-#[allow(dead_code)] // answer/errors in Done are dual-written but not yet read
 enum NodeState {
     /// Node hasn't been processed yet as part of SCC handling.
     Fresh,
@@ -653,6 +684,7 @@ enum NodeState {
     /// to Done matters.
     Done {
         answer: Option<Arc<dyn Any + Send + Sync>>,
+        #[allow(dead_code)] // errors will be read when batch-commit replaces base_errors.extend
         errors: Option<Arc<ErrorCollector>>,
     },
 }
@@ -753,6 +785,10 @@ enum BindingAction<T, R> {
     /// A recursive placeholder exists and we should return it.
     /// Action: return `Arc::new(K::promote_recursive(heap, r))`
     CycleBroken(R),
+    /// An answer is available from NodeState::Done in the top SCC.
+    /// Type-erased; will be downcast to `Arc<K::Answer>` in `get_idx`.
+    /// Action: downcast and return
+    SccLocalAnswer(Arc<dyn Any + Send + Sync>),
 }
 
 /// Represent an SCC (Strongly Connected Component) we are currently solving.
@@ -1097,6 +1133,23 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
                 .unwrap_or_else(|r| Arc::new(K::promote_recursive(self.heap, r))),
             BindingAction::Calculated(v) => v,
             BindingAction::CycleBroken(r) => Arc::new(K::promote_recursive(self.heap, r)),
+            BindingAction::SccLocalAnswer(type_erased) => {
+                // Downcast the type-erased answer back to Arc<K::Answer>.
+                // The answer was stored as Arc::new(answer.dupe()) where answer: Arc<K::Answer>,
+                // so the concrete type inside Arc<dyn Any> is Arc<K::Answer>.
+                // downcast() returns Arc<Arc<K::Answer>>; unwrap_or_clone extracts the inner Arc.
+                let answer: Arc<K::Answer> = Arc::unwrap_or_clone(
+                    type_erased
+                        .downcast::<Arc<K::Answer>>()
+                        .expect("SccLocalAnswer downcast failed: type mismatch"),
+                );
+                // Debug assertion: Calculation should also have the answer (dual-write invariant)
+                debug_assert!(
+                    calculation.get().is_some(),
+                    "Dual-write invariant violated: Calculation missing answer for SCC-local node"
+                );
+                answer
+            }
         };
         self.stack().pop();
         result
