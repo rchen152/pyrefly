@@ -1265,6 +1265,22 @@ impl<'a, Ans: LookupAnswer> AnswersSolver<'a, Ans> {
         dispatch_anyidx!(any_idx, self, commit_typed, answer, errors)
     }
 
+    /// Batch-commit all preliminary answers from a completed SCC.
+    /// Iterates the SCC's node_state map and commits each Done entry
+    /// to the appropriate Calculation cell.
+    #[allow(dead_code)]
+    fn batch_commit_scc(&self, completed_scc: Scc) {
+        for (calc_id, node_state) in completed_scc.node_state {
+            if let NodeState::Done {
+                answer: Some(answer),
+                errors,
+            } = node_state
+            {
+                self.commit_single_result(calc_id, answer, errors);
+            }
+        }
+    }
+
     /// Finalize a recursive answer. This takes the raw value produced by `K::solve` and calls
     /// `K::record_recursive` in order to:
     /// - ensure that the `Variables` map in `solver.rs` is updated
