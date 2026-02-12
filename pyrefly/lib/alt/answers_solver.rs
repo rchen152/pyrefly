@@ -622,9 +622,9 @@ impl CalcStack {
 /// - InProgress → HasPlaceholder (when this is a break_at node and we record a placeholder)
 /// - InProgress/HasPlaceholder → Done (when the node's calculation completes)
 ///
-/// The variants are ordered by "advancement" (Fresh < InProgress < HasPlaceholder < Done)
-/// so that when merging SCCs we can use `max()` to keep the more advanced state.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// The variants are ordered by "advancement" (Fresh < InProgress < HasPlaceholder < Done).
+/// The `advancement_rank()` method encodes this ordering for use during SCC merge.
+#[derive(Debug, Clone, PartialEq, Eq)]
 enum NodeState {
     /// Node hasn't been processed yet as part of SCC handling.
     Fresh,
@@ -636,6 +636,20 @@ enum NodeState {
     HasPlaceholder(Var),
     /// Node's calculation has completed.
     Done,
+}
+
+impl NodeState {
+    /// Returns a numeric rank for the advancement level of this state.
+    /// Used during SCC merge to keep the more advanced state.
+    /// Fresh(0) < InProgress(1) < HasPlaceholder(2) < Done(3)
+    fn advancement_rank(&self) -> u8 {
+        match self {
+            NodeState::Fresh => 0,
+            NodeState::InProgress => 1,
+            NodeState::HasPlaceholder(_) => 2,
+            NodeState::Done => 3,
+        }
+    }
 }
 
 /// Represents the current SCC state prior to attempting a particular calculation.
@@ -857,7 +871,11 @@ impl Scc {
         for (k, v) in other.node_state {
             self.node_state
                 .entry(k)
-                .and_modify(|existing| *existing = (*existing).max(v))
+                .and_modify(|existing| {
+                    if v.advancement_rank() > existing.advancement_rank() {
+                        *existing = v.clone();
+                    }
+                })
                 .or_insert(v);
         }
         // Keep the smallest detected_at for consistency/determinism
