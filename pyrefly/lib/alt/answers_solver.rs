@@ -295,6 +295,30 @@ impl CalcStack {
             .map(|positions| *positions.first())
     }
 
+    /// Check if a CalcId is an SCC participant (exists in the top SCC's node_state).
+    #[allow(dead_code)]
+    fn is_scc_participant(&self, current: &CalcId) -> bool {
+        let scc_stack = self.scc_stack.borrow();
+        scc_stack
+            .last()
+            .is_some_and(|top_scc| top_scc.node_state.contains_key(current))
+    }
+
+    /// Retrieve the placeholder Var from NodeState::HasPlaceholder in the top SCC.
+    /// Returns `Some(var)` if the node is a break_at node with a placeholder,
+    /// `None` otherwise. Used during calculate_and_record_answer to determine
+    /// whether finalize_recursive_answer needs to be called.
+    #[allow(dead_code)]
+    fn get_scc_placeholder_var(&self, current: &CalcId) -> Option<Var> {
+        let scc_stack = self.scc_stack.borrow();
+        scc_stack
+            .last()
+            .and_then(|top_scc| match top_scc.node_state.get(current)? {
+                NodeState::HasPlaceholder(var) => Some(*var),
+                _ => None,
+            })
+    }
+
     /// Retrieve the type-erased answer from NodeState::Done in the top SCC.
     /// Returns `Some(answer)` if the node is Done with data, `None` otherwise
     /// (node not in SCC, not Done, or Done with answer: None).
