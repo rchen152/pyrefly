@@ -207,7 +207,9 @@ the smallest coherent requested model plus its transitive custom tensor modules;
 do not inventory unrelated training, data, CLI, or deployment code. State the
 boundary and proceed. Ask only if several incompatible model families are
 plausible and the request gives no way to choose. A corpus-invoking skill may
-require one complete upstream file or another explicit boundary.
+require one complete upstream file or another explicit boundary. When the
+boundary is smaller than its package, state the exclusion rule alongside it:
+which files are out and why, so coverage is visible without opening the report.
 
 Mine the source for shape evidence before inventing annotations:
 
@@ -898,7 +900,8 @@ module X can change the inferred types in module Y's forward body.
 ## Completion report
 
 For ordinary and production ports, report only: the check command and result,
-public-contract coverage, remaining bare/cast boundaries with their
+file coverage (shaped files over total package `.py` files, with the exclusion
+rule when partial), public-contract coverage, remaining bare/cast boundaries with their
 justifications, and any stub or shape-logic follow-ups. Do not dump the internal
 gates.
 
