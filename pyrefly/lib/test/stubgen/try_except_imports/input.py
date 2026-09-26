@@ -8,7 +8,7 @@ from typing import ClassVar
 try:
     from pkg._impl import obj1
 except ImportError:
-    from pkg._fallback_impl import obj2
+    from pkg._fallback_impl import obj2  # noqa: F401
 
 
 class Feature:
