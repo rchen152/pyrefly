@@ -313,7 +313,10 @@ If in doubt, make it `Int`. The cost is one more type param; the cost of
 - A dimension that enters new typed code should be `Int[X]`, not `int`. In an
   existing public API, changing `int` to `Int[X]` narrows the static contract;
   get the user's agreement first. Otherwise preserve the signature and recover
-  precision at the first boundary where the dimension is justified.
+  precision at the first boundary where the dimension is justified. When no
+  user can be asked (a headless trial, eval, or bulk migration), default to
+  preserve-and-recover: keep the signature, add a bridge dim or cast, and
+  note each site in the report. Never narrow a public contract silently.
 - `len(tensor)` returns plain `int`, while `tensor.size(dim)` can preserve a
   symbolic `Int`. In annotation-only work, keep the original expression and
   restore precision at a downstream boundary; suggest the equivalent `size`
