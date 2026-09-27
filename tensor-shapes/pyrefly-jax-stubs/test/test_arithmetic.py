@@ -18,6 +18,8 @@ def test_elementwise_operators_preserve_shape() -> None:
     assert_shape((b - a).shape, (3, 4))
     assert_shape((a * b).shape, (3, 4))
     assert_shape((b / a).shape, (3, 4))
+    assert_shape((b // a).shape, (3, 4))
+    assert_shape((b % a).shape, (3, 4))
     assert_shape((b**2).shape, (3, 4))
 
 
@@ -32,6 +34,10 @@ def test_scalar_operands_preserve_shape() -> None:
     assert_shape((a * 2.0).shape, (3, 4))
     assert_shape((2.0 * a).shape, (3, 4))
     assert_shape((a / 2.0).shape, (3, 4))
+    assert_shape((a // 2.0).shape, (3, 4))
+    assert_shape((2.0 // a).shape, (3, 4))
+    assert_shape((a % 2.0).shape, (3, 4))
+    assert_shape((2.0 % a).shape, (3, 4))
     assert_shape((v**2).shape, (5,))
 
 
@@ -186,6 +192,18 @@ def test_integer_elementwise_functions() -> None:
     assert_shape(jnp.right_shift(a, b).shape, (2, 3))
     assert_shape(jnp.gcd(a, b).shape, (2, 3))
     assert_shape(jnp.lcm(a, b).shape, (2, 3))
+
+    assert_shape((~a).shape, (2, 3))
+    assert_shape((a & b).shape, (2, 3))
+    assert_shape((a | b).shape, (2, 3))
+    assert_shape((a ^ b).shape, (2, 3))
+    assert_shape((a << b).shape, (2, 3))
+    assert_shape((a >> b).shape, (2, 3))
+    assert_shape((1 & a).shape, (2, 3))
+    assert_shape((1 | a).shape, (2, 3))
+    assert_shape((1 ^ a).shape, (2, 3))
+    assert_shape((1 << a).shape, (2, 3))
+    assert_shape((8 >> a).shape, (2, 3))
 
 
 def test_additional_binary_broadcasting_functions() -> None:
