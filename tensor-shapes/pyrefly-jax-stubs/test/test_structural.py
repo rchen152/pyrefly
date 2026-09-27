@@ -157,6 +157,12 @@ def test_shape_preserving_array_methods() -> None:
     array = jnp.ones((2, 3, 4))
     assert_shape(array.copy().shape, (2, 3, 4))
     assert_shape(array.conj().shape, (2, 3, 4))
+    assert_shape(array.conjugate().shape, (2, 3, 4))
+    assert_shape(array.astype(jnp.float16).shape, (2, 3, 4))
+    assert_shape(array.byteswap().shape, (2, 3, 4))
+    assert_shape(array.round().shape, (2, 3, 4))
+    assert_shape(array.real.shape, (2, 3, 4))
+    assert_shape(array.imag.shape, (2, 3, 4))
     assert_shape(array.to_device(jax.devices()[0]).shape, (2, 3, 4))
 
 
