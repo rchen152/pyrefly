@@ -1249,9 +1249,20 @@ def concatenate(
     axis: int | None = 0,
     dtype: DTypeLike | None = None,
 ) -> _Array[IntTuple]: ...
-
-concat = concatenate
-
+@overload
+def concat[Shapes: IntTuples, Axis: Flag[int] = 0](
+    arrays: MapIntTuples[lambda S: _Array[S], Shapes],
+    /,
+    *,
+    axis: Axis = 0,
+) -> _Array[concatenate_shape(Shapes, Axis)]: ...
+@overload
+def concat(
+    arrays: Sequence[_ArrayLike[Any]] | _Array[Any] | np.ndarray[Any],
+    /,
+    *,
+    axis: int | None = 0,
+) -> _Array[IntTuple]: ...
 @overload
 def append[Shape1: _Shape = [], Shape2: _Shape = [], Axis: Flag[int | None] = None](
     arr: _ArrayLike[Shape1],

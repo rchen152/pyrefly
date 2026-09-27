@@ -11,7 +11,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 from jax import Array
-from shape_extensions import assert_shape, IntTuple
+from shape_extensions import assert_raises, assert_shape, IntTuple
 
 
 def test_expand_dims() -> None:
@@ -63,9 +63,23 @@ def test_concatenate_and_concat() -> None:
         (7, 3),
     )
 
-    # concat alias
+    # Array API concat
     assert_shape(jnp.concat([jnp.ones((2, 3)), jnp.ones((4, 3))]).shape, (6, 3))
     assert_shape(jnp.concat([jnp.ones((2, 3)), jnp.ones((2, 4))], axis=1).shape, (2, 7))
+    assert_shape(jnp.concat(jnp.ones((2, 3))).shape, IntTuple, runtime=(6,))
+
+    with assert_raises(TypeError):
+        jnp.concat([jnp.ones(3), jnp.ones(3)], 0)  # E: Expected at most 1 positional
+    with assert_raises(TypeError):
+        jnp.concat(  # E: Unexpected keyword argument `dtype`
+            [jnp.ones(3), jnp.ones(3)], dtype=jnp.float32
+        )
+    with assert_raises(TypeError):
+        jnp.concat(  # E: Expected at least 1 positional
+            arrays=[jnp.ones(3), jnp.ones(3)]
+        )
+    with assert_raises(TypeError):
+        jnp.concat(1)  # E: No matching overload
 
 
 def test_stack() -> None:
