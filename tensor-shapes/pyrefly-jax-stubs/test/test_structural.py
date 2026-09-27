@@ -166,6 +166,18 @@ def test_shape_preserving_array_methods() -> None:
     assert_shape(array.to_device(jax.devices()[0]).shape, (2, 3, 4))
 
 
+def test_view_and_item() -> None:
+    array = jnp.ones((2, 3, 4))
+    assert_shape(array.view().shape, (2, 3, 4))
+    assert_shape(
+        jnp.zeros((2, 4), dtype=jnp.int8).view(jnp.int16).shape,
+        IntTuple,
+        runtime=(2, 2),
+    )
+    assert_type(jnp.array(1).item(), bool | int | float | complex)
+    assert_type(array.item(0), bool | int | float | complex)
+
+
 def test_array_metadata() -> None:
     array = jnp.ones((2, 3, 4))
     assert_type(array.itemsize, int)
