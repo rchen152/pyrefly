@@ -15489,22 +15489,30 @@ def check_unknown_flag[Spec: Flag[str]](spec: Spec) -> None:
 );
 
 testcase!(
-    bug = "The public gufunc wrapper cannot be composed inside a DSL function",
     test_type_shape_dsl_gufunc_public_wrapper_composition,
     shape_extensions_env(),
     r#"
 import shape_extensions.dsl as dsl
 from shape_extensions import IntTuple, IntTuples, gufunc_broadcast
 from shape_extensions import type_shape_dsl_function
+from typing import assert_type
+
+class ShapeBox[Shape: IntTuple]: ...
 
 @type_shape_dsl_function
 def assigned(prefix: IntTuple, operands: IntTuples) -> IntTuple:
-    result = gufunc_broadcast("(),()->()", operands)  # E: local assignment value is not supported
+    result = gufunc_broadcast("(),()->()", operands)
     return dsl.concat(prefix, result)
 
 @type_shape_dsl_function
 def nested(prefix: IntTuple, operands: IntTuples) -> IntTuple:
-    return dsl.concat(prefix, gufunc_broadcast("(),()->()", operands))  # E: IntTuple shape expressions support parameters
+    return dsl.concat(prefix, gufunc_broadcast("(),()->()", operands))
+
+def assigned_result() -> ShapeBox[assigned(IntTuple[5], tuple[IntTuple[2, 1, 4], IntTuple[3, 4]])]: ...
+def nested_result() -> ShapeBox[nested(IntTuple[5], tuple[IntTuple[2, 1, 4], IntTuple[3, 4]])]: ...
+
+assert_type(assigned_result(), ShapeBox[IntTuple[5, 2, 3, 4]])
+assert_type(nested_result(), ShapeBox[IntTuple[5, 2, 3, 4]])
 "#,
 );
 

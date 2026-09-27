@@ -950,6 +950,11 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         if function_kind == FunctionKind::Len {
             return Some(TypeShapeDslIntrinsic::Len);
         }
+        if let FunctionKind::TypeShapeDsl(ref id, _) = function_kind
+            && id.has_toplevel_qname("shape_extensions", "gufunc_broadcast")
+        {
+            return Some(TypeShapeDslIntrinsic::GufuncBroadcast);
+        }
         let FunctionKind::Def(id) = function_kind else {
             return None;
         };
