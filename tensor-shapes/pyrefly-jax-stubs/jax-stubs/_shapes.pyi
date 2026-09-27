@@ -86,7 +86,7 @@ def double_sided_maxwell_shape(
     sample_shape: IntTuple, left_shape: IntTuple, right_shape: IntTuple
 ) -> IntTuple:
     parameter_shapes = dsl.IntTuples((left_shape, right_shape))
-    parameter_shape = dsl._gufunc_broadcast("(),()->()", parameter_shapes)
+    parameter_shape = gufunc_broadcast("(),()->()", parameter_shapes)
     if len(sample_shape) == 0:
         return dsl.concat(parameter_shape, parameter_shape)
     return dsl.concat(sample_shape, parameter_shape)
@@ -104,7 +104,7 @@ def event_sample_shape(parameter_shape: IntTuple, sample_shape: IntTuple) -> Int
     if len(parameter_shape) == 0:
         return dsl.Invalid("distribution parameters must have an event dimension")
     batch_shapes = dsl.IntTuples((parameter_shape[:-1], sample_shape))
-    batch_shape = dsl._gufunc_broadcast("(),()->()", batch_shapes)
+    batch_shape = gufunc_broadcast("(),()->()", batch_shapes)
     if len(batch_shape) != len(sample_shape) or any(
         batch_shape[index] != sample_shape[index] for index in range(len(sample_shape))
     ):
@@ -116,7 +116,7 @@ def parameter_broadcast_shape(
     parameter_shape: IntTuple, result_shape: IntTuple
 ) -> IntTuple:
     shapes = dsl.IntTuples((parameter_shape, result_shape))
-    broadcasted = dsl._gufunc_broadcast("(),()->()", shapes)
+    broadcasted = gufunc_broadcast("(),()->()", shapes)
     if len(broadcasted) != len(result_shape) or any(
         broadcasted[index] != result_shape[index] for index in range(len(result_shape))
     ):
@@ -130,14 +130,14 @@ def multinomial_shape(
     if len(p_shape) == 0 or len(result_shape) == 0:
         return dsl.Invalid("multinomial probabilities must have an event dimension")
     probability_shapes = dsl.IntTuples((p_shape, result_shape))
-    probability_shape = dsl._gufunc_broadcast("(),()->()", probability_shapes)
+    probability_shape = gufunc_broadcast("(),()->()", probability_shapes)
     if len(probability_shape) != len(result_shape) or any(
         probability_shape[index] != result_shape[index]
         for index in range(len(result_shape))
     ):
         return dsl.Invalid("probabilities cannot broadcast to the requested shape")
     count_shapes = dsl.IntTuples((n_shape, result_shape[:-1]))
-    count_shape = dsl._gufunc_broadcast("(),()->()", count_shapes)
+    count_shape = gufunc_broadcast("(),()->()", count_shapes)
     if len(count_shape) != len(result_shape) - 1 or any(
         count_shape[index] != result_shape[index]
         for index in range(len(result_shape) - 1)
@@ -150,9 +150,9 @@ def multivariate_normal_shape(
     mean_shape: IntTuple, covariance_shape: IntTuple, sample_shape: IntTuple
 ) -> IntTuple:
     parameter_shapes = dsl.IntTuples((mean_shape, covariance_shape))
-    parameter_shape = dsl._gufunc_broadcast("(n),(n,n)->(n)", parameter_shapes)
+    parameter_shape = gufunc_broadcast("(n),(n,n)->(n)", parameter_shapes)
     batch_shapes = dsl.IntTuples((parameter_shape[:-1], sample_shape))
-    batch_shape = dsl._gufunc_broadcast("(),()->()", batch_shapes)
+    batch_shape = gufunc_broadcast("(),()->()", batch_shapes)
     if len(batch_shape) != len(sample_shape) or any(
         batch_shape[index] != sample_shape[index] for index in range(len(sample_shape))
     ):
