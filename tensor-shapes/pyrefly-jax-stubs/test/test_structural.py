@@ -166,6 +166,21 @@ def test_shape_preserving_array_methods() -> None:
     assert_shape(array.to_device(jax.devices()[0]).shape, (2, 3, 4))
 
 
+def test_array_metadata() -> None:
+    array = jnp.ones((2, 3, 4))
+    assert_type(array.itemsize, int)
+    assert_type(array.nbytes, int)
+    assert_type(array.committed, bool)
+    assert_type(array.is_fully_addressable, bool)
+    assert_type(array.is_fully_replicated, bool)
+    assert array.device is not None
+    assert array.sharding is not None
+    assert array.addressable_shards
+    assert array.global_shards
+    assert_shape(array.addressable_data(0).shape, IntTuple, runtime=(2, 3, 4))
+    assert array.copy_to_host_async() is None
+
+
 def test_column_stack() -> None:
     # 1-D arrays stacked as columns (N, len(tup))
     assert_shape(jnp.column_stack([jnp.ones(3), jnp.ones(3)]).shape, (3, 2))
