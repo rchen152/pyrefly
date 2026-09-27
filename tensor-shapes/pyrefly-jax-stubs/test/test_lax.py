@@ -29,6 +29,8 @@ def test_unary_elementwise() -> None:
     assert_shape(lax.neg(mat).shape, (2, 3))
     assert_shape(lax.exp(tensor).shape, (2, 3, 4))
     assert_shape(lax.log(mat).shape, (2, 3))
+    assert_shape(lax.log2(tensor, accuracy=lax.AccuracyMode.DEFAULT).shape, (2, 3, 4))
+    assert_shape(lax.one_minus_square(mat).shape, (2, 3))
     assert_shape(lax.sqrt(vec).shape, (4,))
     assert_shape(lax.sin(mat).shape, (2, 3))
     assert_shape(lax.cos(tensor).shape, (2, 3, 4))
@@ -54,6 +56,7 @@ def test_unary_elementwise() -> None:
     assert_shape(lax.sin(1.0).shape, ())
     assert_shape(lax.abs(-5).shape, ())
     assert_shape(lax.exp(0.0).shape, ())
+    assert_shape(lax.log2(2.0).shape, ())
     assert_shape(lax.real(1.0 + 2.0j).shape, ())
     assert_shape(lax.imag(1.0 + 2.0j).shape, ())
     assert_shape(lax.conj(1.0 + 2.0j).shape, ())
@@ -62,6 +65,7 @@ def test_unary_elementwise() -> None:
     # NumPy arrays
     assert_shape(lax.sin(np.ones((2, 3))).shape, (2, 3))
     assert_shape(lax.sqrt(np.ones(4)).shape, (4,))
+    assert_shape(lax.one_minus_square(np.ones(4)).shape, (4,))
     assert_shape(lax.abs(np.ones((2, 3, 4))).shape, (2, 3, 4))
     assert_shape(lax.neg(np.ones(())).shape, ())
 
