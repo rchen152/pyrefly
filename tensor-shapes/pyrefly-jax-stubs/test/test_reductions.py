@@ -33,6 +33,28 @@ def test_reductions_accept_their_other_keywords() -> None:
     assert_shape(a.sum(axis=0, dtype=jnp.float32).shape, (4,))
 
 
+def test_reduction_calling_conventions() -> None:
+    a = jnp.ones((3, 4))
+
+    assert_shape(jnp.sum(a, 0, jnp.float32, None, True).shape, (1, 4))
+    assert_shape(a.prod(1, jnp.float32, None, True).shape, (3, 1))
+    assert_shape(jnp.mean(a, 0, jnp.float32, None, True).shape, (1, 4))
+    assert_shape(a.mean(1, jnp.float32, None, True).shape, (3, 1))
+    assert_shape(jnp.max(a, 0, None, True, 0, None).shape, (1, 4))
+    assert_shape(a.max(1, None, True, 0, None).shape, (3, 1))
+    assert_shape(jnp.min(a, 0, None, True, 0, None).shape, (1, 4))
+    assert_shape(a.min(1, None, True, 0, None).shape, (3, 1))
+
+    with assert_raises(TypeError):
+        jnp.mean(a, initial=0)  # E: Unexpected keyword argument `initial`
+    with assert_raises(TypeError):
+        a.mean(promote_integers=True)  # E: Unexpected keyword
+    with assert_raises(TypeError):
+        jnp.max(a, dtype=jnp.float32)  # E: Unexpected keyword argument `dtype`
+    with assert_raises(TypeError):
+        a.min(promote_integers=True)  # E: Unexpected keyword
+
+
 def test_reduce_all_axes() -> None:
     a = jnp.ones((3, 4))
 

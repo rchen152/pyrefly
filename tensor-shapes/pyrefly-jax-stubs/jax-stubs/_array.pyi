@@ -337,121 +337,101 @@ class Array[Shape: _Shape = _Shape]:
     def sum[Axis: Flag[_Axis], KeepDims: Flag[bool]](
         self,
         axis: Axis = None,
-        *,
+        dtype: DTypeLike | None = None,
+        out: None = None,
         keepdims: KeepDims = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
+        promote_integers: bool = True,
     ) -> Array[reduce_shape(Shape, Axis, KeepDims)]: ...
     @overload
     def sum(
         self,
         axis: Sequence[int],
-        *,
+        dtype: DTypeLike | None = None,
+        out: None = None,
         keepdims: bool = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
+        promote_integers: bool = True,
     ) -> Array[IntTuple]: ...
     @overload
     def prod[Axis: Flag[_Axis], KeepDims: Flag[bool]](
         self,
         axis: Axis = None,
-        *,
+        dtype: DTypeLike | None = None,
+        out: None = None,
         keepdims: KeepDims = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
+        promote_integers: bool = True,
     ) -> Array[reduce_shape(Shape, Axis, KeepDims)]: ...
     @overload
     def prod(
         self,
         axis: Sequence[int],
-        *,
+        dtype: DTypeLike | None = None,
+        out: None = None,
         keepdims: bool = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
+        promote_integers: bool = True,
     ) -> Array[IntTuple]: ...
     @overload
     def mean[Axis: Flag[_Axis], KeepDims: Flag[bool]](
         self,
         axis: Axis = None,
-        *,
+        dtype: DTypeLike | None = None,
+        out: None = None,
         keepdims: KeepDims = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        *,
+        where: Any = None,
     ) -> Array[reduce_shape(Shape, Axis, KeepDims)]: ...
     @overload
     def mean(
         self,
         axis: Sequence[int],
-        *,
+        dtype: DTypeLike | None = None,
+        out: None = None,
         keepdims: bool = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        *,
+        where: Any = None,
     ) -> Array[IntTuple]: ...
     @overload
     def max[Axis: Flag[_Axis], KeepDims: Flag[bool]](
         self,
         axis: Axis = None,
-        *,
+        out: None = None,
         keepdims: KeepDims = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
     ) -> Array[reduce_shape(Shape, Axis, KeepDims)]: ...
     @overload
     def max(
         self,
         axis: Sequence[int],
-        *,
+        out: None = None,
         keepdims: bool = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
     ) -> Array[IntTuple]: ...
     @overload
     def min[Axis: Flag[_Axis], KeepDims: Flag[bool]](
         self,
         axis: Axis = None,
-        *,
+        out: None = None,
         keepdims: KeepDims = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
     ) -> Array[reduce_shape(Shape, Axis, KeepDims)]: ...
     @overload
     def min(
         self,
         axis: Sequence[int],
-        *,
+        out: None = None,
         keepdims: bool = False,
-        dtype: DTypeLike | None = ...,
-        out: Any = ...,
-        initial: Any = ...,
-        where: Any = ...,
-        promote_integers: bool = ...,
+        initial: Any = None,
+        where: Any = None,
     ) -> Array[IntTuple]: ...
     @overload
     def all[Axis: Flag[_Axis], KeepDims: Flag[bool]](
