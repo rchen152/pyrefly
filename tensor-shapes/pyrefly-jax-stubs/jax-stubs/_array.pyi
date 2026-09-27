@@ -479,7 +479,6 @@ class Array[Shape: _Shape = _Shape]:
         keepdims: KeepDims = False,
         *,
         where: Any = None,
-        mean: Any = None,
         correction: Any = None,
     ) -> Array[reduce_shape(Shape, Axis, KeepDims)]: ...
     @overload
@@ -492,7 +491,6 @@ class Array[Shape: _Shape = _Shape]:
         keepdims: bool = False,
         *,
         where: Any = None,
-        mean: Any = None,
         correction: Any = None,
     ) -> Array[IntTuple]: ...
     @overload
@@ -505,7 +503,6 @@ class Array[Shape: _Shape = _Shape]:
         keepdims: KeepDims = False,
         *,
         where: Any = None,
-        mean: Any = None,
         correction: Any = None,
     ) -> Array[reduce_shape(Shape, Axis, KeepDims)]: ...
     @overload
@@ -518,7 +515,6 @@ class Array[Shape: _Shape = _Shape]:
         keepdims: bool = False,
         *,
         where: Any = None,
-        mean: Any = None,
         correction: Any = None,
     ) -> Array[IntTuple]: ...
     @overload

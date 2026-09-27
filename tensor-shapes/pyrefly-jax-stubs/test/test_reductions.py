@@ -181,6 +181,18 @@ def test_extrema_and_stats_reductions() -> None:
     assert_shape(jnp.median(a, axis=1, keepdims=True).shape, (3, 1))
 
 
+def test_variance_method_signatures() -> None:
+    a = jnp.ones((3, 4))
+    mean = jnp.mean(a, axis=0, keepdims=True)
+
+    assert_shape(jnp.std(a, axis=0, mean=mean).shape, (4,))
+    assert_shape(jnp.var(a, axis=0, mean=mean).shape, (4,))
+    with assert_raises(TypeError):
+        a.std(mean=mean)  # E: Unexpected keyword argument `mean`
+    with assert_raises(TypeError):
+        a.var(mean=mean)  # E: Unexpected keyword argument `mean`
+
+
 def test_nan_reductions() -> None:
     a = jnp.ones((3, 4))
 
