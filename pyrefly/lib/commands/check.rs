@@ -865,10 +865,12 @@ fn write_baseline_errors_to_file(
     errors: &[Error],
     matching_mode: BaselineMatchingMode,
     format: BaselineFormat,
+    min_severity: Severity,
 ) -> anyhow::Result<()> {
     write_formatted_baseline_errors_to_file(
         path,
-        &BaselineErrors::from_errors(relative_to, errors).with_format(matching_mode, format),
+        &BaselineErrors::from_errors(relative_to, min_severity, errors)
+            .with_format(matching_mode, format),
     )
 }
 
@@ -2047,6 +2049,7 @@ impl CheckArgs {
                 &new_baseline,
                 defaults.baseline_matching_mode,
                 defaults.baseline_format,
+                min_severity,
             )?;
         } else if rewriting_baseline {
             let baseline_path = defaults

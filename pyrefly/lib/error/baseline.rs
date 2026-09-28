@@ -11,6 +11,7 @@ use std::path::Path;
 
 use anyhow::Context;
 use anyhow::Result;
+use pyrefly_config::error_kind::Severity;
 use pyrefly_util::absolutize::Absolutize;
 use pyrefly_util::prelude::SliceExt;
 use ruff_text_size::Ranged;
@@ -199,8 +200,22 @@ enum Lookup {
     /// number of diagnostics that match it.
     Membership(HashSet<BaselineKey>),
     /// `column-ordered` aligns per file, so the baseline's row order within a file is
-    /// significant and must not be re-sorted. Maps each path to its row positions.
-    Sequences(HashMap<String, Vec<usize>>),
+    /// significant and must not be re-sorted.
+    Sequences {
+        /// Each path's row positions, in file order.
+        rows_by_path: HashMap<String, Vec<usize>>,
+        /// The severity threshold the baseline was written with. A diagnostic below it
+        /// was never recorded, so it must not take part in the alignment, or it displaces
+        /// a diagnostic the baseline does record. Diagnostics sharing a key normally share
+        /// a severity, because severity follows the error kind; a
+        /// `downgrade-to-warning` unknown-tag ignore is what lets one differ.
+        ///
+        /// It comes from the baseline rather than from this run because
+        /// `--min-severity` can differ between runs, and reading the current flag would
+        /// let `--prune-baseline` retire rows that still describe real diagnostics.
+        /// Baselines without it hold nothing back, which is never unsafe.
+        min_severity: Option<Severity>,
+    },
 }
 
 /// A parsed baseline: one key per row, indexed for matching.
@@ -214,11 +229,12 @@ struct BaselineIndex {
 
 impl BaselineIndex {
     fn new(
-        rows: &[BaselineError],
+        baseline: &BaselineErrors,
         relative_to: &Path,
         matching_mode: BaselineMatchingMode,
     ) -> Result<Self> {
-        let keys = rows
+        let keys = baseline
+            .errors
             .iter()
             .enumerate()
             .map(|(index, row)| {
@@ -233,7 +249,10 @@ impl BaselineIndex {
                     .or_default()
                     .push(position);
             }
-            Lookup::Sequences(rows_by_path)
+            Lookup::Sequences {
+                rows_by_path,
+                min_severity: baseline.min_severity,
+            }
         } else {
             Lookup::Membership(keys.iter().cloned().collect())
         };
@@ -247,6 +266,19 @@ impl BaselineIndex {
     /// Move every diagnostic the baseline covers from `shown_errors` to
     /// `baseline_errors`, and return whether each row covered at least one diagnostic.
     fn apply(&self, shown_errors: &mut Vec<Error>, baseline_errors: &mut Vec<Error>) -> Vec<bool> {
+        let unrecorded = match &self.lookup {
+            Lookup::Sequences {
+                min_severity: Some(min_severity),
+                ..
+            } => {
+                let (recorded, unrecorded) = shown_errors
+                    .drain(..)
+                    .partition(|error| error.severity() >= *min_severity);
+                *shown_errors = recorded;
+                unrecorded
+            }
+            _ => Vec::new(),
+        };
         let (covered, rows_matched) = match &self.lookup {
             Lookup::Membership(lookup) => {
                 let observed =
@@ -260,7 +292,7 @@ impl BaselineIndex {
                 let rows_matched = self.keys.map(|key| matched_keys.contains(key));
                 (covered, rows_matched)
             }
-            Lookup::Sequences(rows_by_path) => {
+            Lookup::Sequences { rows_by_path, .. } => {
                 sort_by_source_position(shown_errors);
                 // Copies of one diagnostic are adjacent once sorted. Each run of copies is
                 // a single observation, and every copy takes that observation's result.
@@ -301,6 +333,7 @@ impl BaselineIndex {
                 remaining_errors.push(error);
             }
         }
+        remaining_errors.extend(unrecorded);
         *shown_errors = remaining_errors;
         rows_matched
     }
@@ -334,7 +367,7 @@ impl BaselineProcessor {
         matching_mode: BaselineMatchingMode,
     ) -> Result<Self> {
         Ok(Self {
-            index: BaselineIndex::new(&baseline_errors.errors, relative_to, matching_mode)?,
+            index: BaselineIndex::new(&baseline_errors, relative_to, matching_mode)?,
         })
     }
 
@@ -367,6 +400,8 @@ fn is_definitely_unused(
 pub struct TrackedBaselineProcessor {
     /// The baseline's rows, in the same order as `index.keys`.
     entries: Vec<BaselineError>,
+    /// The baseline's recorded severity threshold, written back unchanged by a prune.
+    min_severity: Option<Severity>,
     index: BaselineIndex,
 }
 
@@ -387,8 +422,9 @@ impl TrackedBaselineProcessor {
         relative_to: &Path,
         matching_mode: BaselineMatchingMode,
     ) -> Result<Self> {
-        let index = BaselineIndex::new(&baseline_errors.errors, relative_to, matching_mode)?;
+        let index = BaselineIndex::new(&baseline_errors, relative_to, matching_mode)?;
         Ok(Self {
+            min_severity: baseline_errors.min_severity,
             entries: baseline_errors.errors,
             index,
         })
@@ -433,7 +469,10 @@ impl TrackedBaselineProcessor {
             .collect();
         BaselinePruningResult {
             unused_entry_count,
-            retained: BaselineErrors { errors: retained },
+            retained: BaselineErrors {
+                min_severity: self.min_severity,
+                errors: retained,
+            },
         }
     }
 }
@@ -1070,6 +1109,7 @@ mod tests {
         prepare_baseline_rows(&mut written, BaselineMatchingMode::ColumnOrdered);
         let processor = ordered_processor_for(BaselineErrors::from_errors(
             Path::new("/workspace"),
+            Severity::Error,
             &written,
         ));
 
@@ -1198,6 +1238,96 @@ mod tests {
         )
         .unwrap();
         assert!(reported_lines(&processor, errors_at(&[3, 3, 3])).is_empty());
+    }
+
+    /// A `column-ordered` baseline written at `min_severity` records `rows` column-3 rows.
+    fn ordered_processor_at(rows: usize, min_severity: Option<&str>) -> BaselineProcessor {
+        let mut baseline = serde_json::to_value(baseline_of(&vec![3; rows])).unwrap();
+        if let Some(min_severity) = min_severity {
+            baseline["min_severity"] = serde_json::json!(min_severity);
+        }
+        BaselineProcessor::from_baseline_errors(
+            serde_json::from_value(baseline).unwrap(),
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap()
+    }
+
+    /// A warning on line 1 followed by an error on line 2, both keyed at column 3.
+    fn warning_then_error() -> Vec<Error> {
+        let mut errors = errors_at(&[3, 3]);
+        errors[0] = errors[0].clone().with_severity(Severity::Warn);
+        errors
+    }
+
+    /// A diagnostic below the baseline's recorded threshold takes no part in the
+    /// alignment, so it neither consumes a row nor is suppressed.
+    #[test]
+    fn test_ordered_holds_back_diagnostics_below_the_recorded_threshold() {
+        let processor = ordered_processor_at(1, Some("error"));
+        let mut shown = warning_then_error();
+        let mut baselined = Vec::new();
+        processor.process_errors(&mut shown, &mut baselined);
+        assert_eq!(baselined.len(), 1);
+        assert_eq!(baselined[0].severity(), Severity::Error);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].severity(), Severity::Warn);
+    }
+
+    /// A baseline written at a lower threshold recorded the warning, so it still matches.
+    #[test]
+    fn test_ordered_matches_diagnostics_at_the_recorded_threshold() {
+        let processor = ordered_processor_at(2, Some("warn"));
+        let mut shown = warning_then_error();
+        let mut baselined = Vec::new();
+        processor.process_errors(&mut shown, &mut baselined);
+        assert!(shown.is_empty());
+        assert_eq!(baselined.len(), 2);
+    }
+
+    /// A baseline written before the threshold was recorded holds nothing back, so the
+    /// warning takes part and, being first, consumes the only row.
+    ///
+    /// Assuming a threshold instead would be unsafe. Such a baseline may have been
+    /// written at a lower threshold than the default, and holding its rows back would
+    /// leave them unmatched, so `--prune-baseline` would retire rows that still describe
+    /// real diagnostics. Holding nothing back can at worst report a diagnostic as new.
+    #[test]
+    fn test_ordered_does_not_assume_a_threshold_for_older_baselines() {
+        let processor = ordered_processor_at(1, None);
+        let mut shown = warning_then_error();
+        let mut baselined = Vec::new();
+        processor.process_errors(&mut shown, &mut baselined);
+        assert_eq!(baselined.len(), 1);
+        assert_eq!(baselined[0].severity(), Severity::Warn);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].severity(), Severity::Error);
+    }
+
+    /// A row recorded at `warn` still describes a live warning, so pruning keeps it. The
+    /// threshold is read from the baseline, so how this run was invoked cannot change it.
+    #[test]
+    fn test_ordered_pruning_keeps_rows_recorded_below_the_default_threshold() {
+        let mut baseline = serde_json::to_value(baseline_of(&[3])).unwrap();
+        baseline["min_severity"] = serde_json::json!("warn");
+        let processor = TrackedBaselineProcessor::from_baseline_errors(
+            serde_json::from_value(baseline).unwrap(),
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap();
+
+        let mut shown = vec![errors_at(&[3])[0].clone().with_severity(Severity::Warn)];
+        let mut baselined = Vec::new();
+        let result = processor.process_errors(
+            &mut shown,
+            &mut baselined,
+            &HashSet::from(["/workspace/test.py".to_owned()]),
+        );
+        assert!(shown.is_empty());
+        assert_eq!(result.unused_entry_count, 0);
+        assert_eq!(result.retained.min_severity, Some(Severity::Warn));
     }
 
     #[test]
