@@ -442,6 +442,9 @@ pub enum ErrorKind {
     /// This occurs when a return/yield follows a statement that always exits,
     /// such as return, raise, break, or continue.
     Unreachable,
+    /// An `except` clause that can never be entered, because earlier clauses in the
+    /// same `try` statement already catch every exception it matches.
+    UnreachableExceptClause,
     /// A match case whose pattern can never match the subject type.
     UnreachableMatchCase,
     /// `__all__` is defined but cannot be statically analyzed.
@@ -619,6 +622,7 @@ impl ErrorKind {
             ErrorKind::UnnecessaryComparison => Severity::Warn,
             ErrorKind::UnnecessaryTypeConversion => Severity::Warn,
             ErrorKind::Unreachable => Severity::Warn,
+            ErrorKind::UnreachableExceptClause => Severity::Warn,
             ErrorKind::UnreachableMatchCase => Severity::Warn,
             ErrorKind::UnresolvableDunderAll => Severity::Warn,
             ErrorKind::UnsupportedDynamicBase => Severity::Ignore,

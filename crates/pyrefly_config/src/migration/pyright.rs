@@ -555,6 +555,7 @@ impl RuleOverrides {
             ErrorKind::NonExhaustiveMatch,
         );
         add(self.report_unreachable, ErrorKind::Unreachable);
+        add(self.report_unreachable, ErrorKind::UnreachableExceptClause);
         add(self.report_unreachable, ErrorKind::UnreachableMatchCase);
 
         // Import rules

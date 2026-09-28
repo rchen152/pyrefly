@@ -29,6 +29,7 @@ use ruff_python_ast::StmtReturn;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
+use ruff_text_size::TextSize;
 use starlark_map::small_set::SmallSet;
 
 use crate::binding::binding::AnnAssignHasValue;
@@ -38,6 +39,7 @@ use crate::binding::binding::BindingAnnotation;
 use crate::binding::binding::BindingExpect;
 use crate::binding::binding::BindingTypeAlias;
 use crate::binding::binding::BranchSuite;
+use crate::binding::binding::ExceptClauseCatches;
 use crate::binding::binding::ExhaustiveBinding;
 use crate::binding::binding::ExhaustivenessKind;
 use crate::binding::binding::ExprOrBinding;
@@ -1709,11 +1711,14 @@ impl<'a> BindingsBuilder<'a> {
                 self.stmts(x.orelse, parent);
                 self.finish_branch();
 
+                // The exception classes of the clauses seen so far, which decide whether a
+                // later clause can still be reached.
+                let mut preceding: Vec<Idx<Key>> = Vec::new();
                 for h in x.handlers {
                     self.start_branch();
                     let range = h.range();
                     let h = h.except_handler().unwrap(); // Only one variant for now
-                    match (&h.name, h.type_) {
+                    let catches = match (&h.name, h.type_) {
                         (Some(name), Some(type_)) => {
                             let type_range = type_.range();
                             let classes = self.bind_exception_classes(*type_, x.is_star);
@@ -1722,9 +1727,10 @@ impl<'a> BindingsBuilder<'a> {
                             self.bind_current_as(
                                 name,
                                 handler,
-                                Binding::ExceptionHandler(classes, x.is_star, type_range),
+                                Binding::ExceptionHandler(classes.clone(), x.is_star, type_range),
                                 FlowStyle::Other,
                             );
+                            Some((ExceptClauseCatches::Classes(classes), type_range))
                         }
                         (None, Some(type_)) => {
                             let type_range = type_.range();
@@ -1732,8 +1738,9 @@ impl<'a> BindingsBuilder<'a> {
                             let handler = self.declare_current_idx(Key::Anon(range));
                             self.insert_binding_current(
                                 handler,
-                                Binding::ExceptionHandler(classes, x.is_star, type_range),
+                                Binding::ExceptionHandler(classes.clone(), x.is_star, type_range),
                             );
+                            Some((ExceptClauseCatches::Classes(classes), type_range))
                         }
                         (Some(name), None) => {
                             // Must be a syntax error. But make sure we bind name to something.
@@ -1745,8 +1752,29 @@ impl<'a> BindingsBuilder<'a> {
                                 Binding::Any(AnyStyle::Error),
                                 FlowStyle::Other,
                             );
+                            None
                         }
-                        (None, None) => {}
+                        // A bare `except`, whose only source range is its keyword.
+                        (None, None) => Some((
+                            ExceptClauseCatches::Everything,
+                            TextRange::at(range.start(), TextSize::of("except")),
+                        )),
+                    };
+                    if let Some((catches, catches_range)) = catches {
+                        if !preceding.is_empty() {
+                            self.insert_binding(
+                                KeyExpect::ExceptClauseReachability(catches_range),
+                                BindingExpect::ExceptClauseReachability {
+                                    catches: catches.clone(),
+                                    preceding: preceding.clone().into_boxed_slice(),
+                                    is_star: x.is_star,
+                                    range: catches_range,
+                                },
+                            );
+                        }
+                        if let ExceptClauseCatches::Classes(classes) = catches {
+                            preceding.extend(classes);
+                        }
                     }
 
                     self.stmts(h.body, parent);

@@ -422,14 +422,31 @@ except int:  # E: Invalid exception class
     pass
 except Exception as e2:
     assert_type(e2, Exception)
+
+# Each of the remaining clauses catches a subclass of `Exception`, so they need their
+# own `try` statements to stay reachable.
+try:
+    pass
 except ExceptionGroup as e3:
     assert_type(e3, ExceptionGroup[Exception])
+
+try:
+    pass
 except (Exception1, Exception2) as e4:
     assert_type(e4, Exception1 | Exception2)
+
+try:
+    pass
 except Exception1 as e5:
     assert_type(e5, Exception1)
+
+try:
+    pass
 except x1 as e6:
     assert_type(e6, Exception)
+
+try:
+    pass
 except x2 as e7:
     assert_type(e7, Exception1 | Exception2)
 "#,
@@ -493,10 +510,21 @@ except* int as e1:  # E: Invalid exception class
     reveal_type(e1)  # E: revealed type: ExceptionGroup[int]
 except* Exception as e2:
     assert_type(e2, ExceptionGroup)
+
+# Each of the remaining clauses catches a subclass of `Exception`, so they need their
+# own `try` statements to stay reachable.
+try:
+    pass
 except* ExceptionGroup as e3:  # E: Exception handler annotation in `except*` clause may not extend `BaseExceptionGroup`
     assert_type(e3, ExceptionGroup[ExceptionGroup])
+
+try:
+    pass
 except* (Exception1, Exception2) as e4:
     assert_type(e4, ExceptionGroup[Exception1 | Exception2])
+
+try:
+    pass
 except* Exception1 as e5:
     assert_type(e5, ExceptionGroup[Exception1])
 "#,
@@ -505,29 +533,27 @@ except* Exception1 as e5:
 // An earlier `except BaseException` catches every exception, so nothing reaches
 // the later clauses.
 testcase!(
-    bug = "Unreachable except clauses are not reported",
     test_unreachable_except_after_base_exception,
     r#"
 try:
     pass
 except BaseException:
     pass
-except Exception:
+except Exception:  # E: This `except` clause is unreachable, because an earlier clause already catches `BaseException`
     pass
 "#,
 );
 
 testcase!(
-    bug = "Unreachable except clauses are not reported",
     test_unreachable_except_subclass_of_earlier_clause,
     r#"
 try:
     pass
 except Exception:
     pass
-except ValueError:
+except ValueError:  # E: This `except` clause is unreachable, because an earlier clause already catches `Exception`
     pass
-except ValueError:
+except ValueError:  # E: This `except` clause is unreachable, because an earlier clause already catches `Exception`
     pass
 "#,
 );
@@ -551,31 +577,40 @@ except:
 );
 
 testcase!(
-    bug = "Unreachable except clauses are not reported",
     test_unreachable_bare_except_after_base_exception,
     r#"
 try:
     pass
 except BaseException:
     pass
-except:
+except:  # E: This `except` clause is unreachable, because an earlier clause already catches `BaseException`
     pass
 "#,
 );
 
+// The second clause is dead because of the first two classes taken together, so there is
+// no single earlier clause to blame; the last is dead because of `Exception` alone.
 testcase!(
-    bug = "Unreachable except clauses are not reported",
     test_unreachable_except_tuple,
     r#"
 try:
     pass
 except (ValueError, TypeError):
     pass
-except (TypeError, ValueError):
+except (TypeError, ValueError):  # E: This `except` clause is unreachable, because earlier clauses already catch every exception it matches
     pass
 except Exception:
     pass
-except (KeyError, IndexError):
+except (KeyError, IndexError):  # E: This `except` clause is unreachable, because an earlier clause already catches `Exception`
+    pass
+
+# A single class is dead once any one member of an earlier tuple catches it, and the blame
+# names that member rather than the whole clause, since each class is judged on its own.
+try:
+    pass
+except (ValueError, TypeError):
+    pass
+except ValueError:  # E: This `except` clause is unreachable, because an earlier clause already catches `ValueError`
     pass
 "#,
 );
@@ -605,15 +640,70 @@ except (Exception, ValueError):
 "#,
 );
 
+// A `type[Exception]` value may hold any subclass, so what it catches is an upper bound and
+// nothing follows from it about what is already caught. Its instance type is indistinguishable
+// from `except Exception:` once resolved, which is why the source expression decides.
 testcase!(
-    bug = "Unreachable except* clauses are not reported",
+    test_dynamic_exception_class_is_not_a_guaranteed_catch,
+    r#"
+def one(dynamic: type[Exception]) -> None:
+    try:
+        pass
+    except dynamic:
+        pass
+    except ValueError:
+        pass
+
+def unpacked(errors: tuple[type[Exception], ...]) -> None:
+    try:
+        pass
+    except errors:
+        pass
+    except ValueError:
+        pass
+
+def starred(errors: tuple[type[Exception], ...]) -> None:
+    try:
+        pass
+    except (*errors, KeyError):
+        pass
+    except ValueError:
+        pass
+
+# The bound still covers this clause, so it is dead whichever subclass it holds.
+def covered(dynamic: type[Exception]) -> None:
+    try:
+        pass
+    except Exception:
+        pass
+    except dynamic:  # E: This `except` clause is unreachable, because an earlier clause already catches `Exception`
+        pass
+"#,
+);
+
+// Only `ValueError` is redundant; the clause still runs for `TypeError`. Neither clause is
+// dead as a whole, since each catches something the other does not.
+testcase!(
+    bug = "Redundant exception classes within an except clause are not reported",
+    test_redundant_exception_class_across_except_tuples,
+    r#"
+try:
+    pass
+except (ValueError, KeyError):
+    pass
+except (ValueError, TypeError):
+    pass
+"#,
+);
+
+testcase!(
     test_unreachable_except_star,
     r#"
 try:
     pass
 except* Exception:
     pass
-except* ValueError:
+except* ValueError:  # E: This `except*` clause is unreachable, because an earlier clause already catches `Exception`
     pass
 "#,
 );

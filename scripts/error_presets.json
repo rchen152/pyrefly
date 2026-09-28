@@ -135,6 +135,7 @@
     "unnecessary-comparison": ["legacy", "default", "strict", "all"],
     "unnecessary-type-conversion": ["legacy", "default", "strict", "all"],
     "unreachable": ["legacy", "default", "strict", "all"],
+    "unreachable-except-clause": ["legacy", "default", "strict", "all"],
     "unreachable-match-case": ["legacy", "default", "strict", "all"],
     "unresolvable-dunder-all": ["legacy", "default", "strict", "all"],
     "unsafe-overlap": ["legacy", "default", "strict", "all"],

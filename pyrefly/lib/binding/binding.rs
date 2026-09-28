@@ -1108,6 +1108,8 @@ pub enum KeyExpect {
     MatchExhaustiveness(TextRange),
     /// Match case reachability check.
     MatchCaseReachability(TextRange),
+    /// `except` clause reachability check.
+    ExceptClauseReachability(TextRange),
     /// Private attribute access validation.
     PrivateAttributeAccess(TextRange),
     /// Deferred uninitialized variable check.
@@ -1135,6 +1137,7 @@ impl Ranged for KeyExpect {
             | KeyExpect::Bool(range)
             | KeyExpect::MatchExhaustiveness(range)
             | KeyExpect::MatchCaseReachability(range)
+            | KeyExpect::ExceptClauseReachability(range)
             | KeyExpect::PrivateAttributeAccess(range)
             | KeyExpect::UninitializedCheck(range)
             | KeyExpect::ForwardRefUnion(range)
@@ -1157,6 +1160,7 @@ impl DisplayWith<ModuleInfo> for KeyExpect {
             KeyExpect::Bool(r) => ("Bool", r),
             KeyExpect::MatchExhaustiveness(r) => ("MatchExhaustiveness", r),
             KeyExpect::MatchCaseReachability(r) => ("MatchCaseReachability", r),
+            KeyExpect::ExceptClauseReachability(r) => ("ExceptClauseReachability", r),
             KeyExpect::PrivateAttributeAccess(r) => ("PrivateAttributeAccess", r),
             KeyExpect::UninitializedCheck(r) => ("UninitializedCheck", r),
             KeyExpect::ForwardRefUnion(r) => ("ForwardRefUnion", r),
@@ -1208,6 +1212,17 @@ impl DisplayWith<Bindings> for ExprOrBinding {
             Self::Binding(x) => write!(f, "{}", x.display_with(ctx)),
         }
     }
+}
+
+/// What an `except` clause catches, distinguishing the two ways of catching nothing:
+/// `except ()`, which lists no classes, and a bare `except`, which lists none but
+/// catches everything.
+#[derive(Clone, Debug)]
+pub enum ExceptClauseCatches {
+    /// The clause's [`Binding::ExceptionClass`] keys, in source order.
+    Classes(Box<[Idx<Key>]>),
+    /// A bare `except`, which catches `BaseException`.
+    Everything,
 }
 
 #[derive(Clone, Debug)]
@@ -1274,6 +1289,16 @@ pub enum BindingExpect {
     /// on a `str` narrows to `Never` too, but reporting that would condemn a defensive check that
     /// a wrong annotation makes real, and such checks are everywhere.
     BranchSuiteReachability(Box<[BranchSuite]>),
+    /// An `except` clause that earlier clauses in the same `try` statement may already
+    /// catch everything for. Only emitted when there is at least one earlier clause.
+    ExceptClauseReachability {
+        catches: ExceptClauseCatches,
+        /// The [`Binding::ExceptionClass`] keys of every earlier clause, in source order.
+        preceding: Box<[Idx<Key>]>,
+        is_star: bool,
+        /// The clause's exception-class expression, or its `except` keyword if it is bare.
+        range: TextRange,
+    },
     /// Track private attribute accesses that need semantic validation.
     PrivateAttributeAccess(PrivateAttributeAccessCheck),
     /// Deferred check for uninitialized variables. This is a "dangling" binding
@@ -1421,6 +1446,32 @@ impl DisplayWith<Bindings> for BindingExpect {
             }
             Self::BranchSuiteReachability(branches) => {
                 write!(f, "BranchSuiteReachability({})", branches.len())
+            }
+            Self::ExceptClauseReachability {
+                catches,
+                preceding,
+                is_star,
+                range,
+            } => {
+                match catches {
+                    ExceptClauseCatches::Everything => write!(f, "ExceptClauseReachability(bare")?,
+                    ExceptClauseCatches::Classes(classes) => {
+                        write!(f, "ExceptClauseReachability([")?;
+                        for (i, idx) in classes.iter().enumerate() {
+                            if i > 0 {
+                                write!(f, ", ")?;
+                            }
+                            write!(f, "{}", ctx.display(*idx))?;
+                        }
+                        write!(f, "]")?;
+                    }
+                }
+                write!(
+                    f,
+                    ", {} preceding, {is_star:?}, {})",
+                    preceding.len(),
+                    ctx.module().display(range)
+                )
             }
             Self::UninitializedCheck {
                 name,
