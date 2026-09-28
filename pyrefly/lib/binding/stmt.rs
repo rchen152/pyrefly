@@ -1761,7 +1761,11 @@ impl<'a> BindingsBuilder<'a> {
                         )),
                     };
                     if let Some((catches, catches_range)) = catches {
-                        if !preceding.is_empty() {
+                        // With no earlier clause and a single class, there is nothing that
+                        // could already have been caught.
+                        let could_be_caught_already = !preceding.is_empty()
+                            || matches!(&catches, ExceptClauseCatches::Classes(cs) if cs.len() > 1);
+                        if could_be_caught_already {
                             self.insert_binding(
                                 KeyExpect::ExceptClauseReachability(catches_range),
                                 BindingExpect::ExceptClauseReachability {

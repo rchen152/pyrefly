@@ -2219,7 +2219,25 @@ The same applies to `except*`, and to a bare `except`, which catches `BaseExcept
 Note that a bare `except` after `except Exception` is *not* flagged: it still catches
 the `BaseException`s that `Exception` does not, such as `KeyboardInterrupt`.
 
-A clause is only flagged when every class it lists is understood. A class whose type is
+A clause that lists several classes is still reachable as long as one of them can match.
+The classes that cannot are reported individually, judged against both the earlier
+clauses and their own earlier siblings:
+
+```python
+try:
+    pass
+except ValueError:
+    pass
+except (ValueError, TypeError):  # `ValueError` is already caught earlier in this `try` statement, so it never matches here [unreachable-except-clause]
+    pass
+
+try:
+    pass
+except (Exception, ValueError):  # `ValueError` is already caught earlier in this `try` statement, so it never matches here [unreachable-except-clause]
+    pass
+```
+
+Nothing is reported unless every class in the clause is understood. A class whose type is
 unknown, or that does not derive from `BaseException` (already reported as
 `invalid-inheritance`), is ignored rather than assumed to catch everything.
 

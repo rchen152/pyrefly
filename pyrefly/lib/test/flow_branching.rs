@@ -617,25 +617,37 @@ except ValueError:  # E: This `except` clause is unreachable, because an earlier
 
 // Only `ValueError` is redundant here; the clause still runs for `TypeError`.
 testcase!(
-    bug = "Redundant exception classes within an except clause are not reported",
     test_redundant_exception_class_in_except_tuple,
     r#"
 try:
     pass
 except ValueError:
     pass
-except (ValueError, TypeError):
+except (ValueError, TypeError):  # E: `ValueError` is already caught earlier in this `try` statement, so it never matches here
     pass
 "#,
 );
 
 testcase!(
-    bug = "Redundant exception classes within an except clause are not reported",
     test_redundant_exception_class_within_one_except_tuple,
     r#"
 try:
     pass
-except (Exception, ValueError):
+except (Exception, ValueError):  # E: `ValueError` is already caught earlier in this `try` statement, so it never matches here
+    pass
+"#,
+);
+
+// Each redundant class is reported separately, and a class is judged against its own
+// earlier siblings as well as the earlier clauses.
+testcase!(
+    test_several_redundant_exception_classes_in_one_except_tuple,
+    r#"
+try:
+    pass
+except ValueError:
+    pass
+except (ValueError, TypeError, KeyError, TypeError):  # E: `ValueError` is already caught # E: `TypeError` is already caught
     pass
 "#,
 );
@@ -681,18 +693,69 @@ def covered(dynamic: type[Exception]) -> None:
 "#,
 );
 
+// A union of class objects is a choice between them, so it guarantees only what they all catch,
+// which for distinct classes is nothing. It is the same upper bound as a `type[Exception]`
+// value, just arrived at from alternatives rather than from an annotation.
+//
+// `all_alternatives_cover` is the cost of that: every alternative there really does catch
+// `ValueError`, so the clause after it is dead, but saying so needs the intersection of the
+// alternatives rather than a union, and we do not compute it. Missing a report is the safe
+// direction, whereas trusting the union produces false positives.
+testcase!(
+    test_alternative_exception_classes_are_not_a_guaranteed_catch,
+    r#"
+def flag() -> bool: ...
+f = flag()
+
+def as_sibling() -> None:
+    try:
+        pass
+    except ((ValueError if f else TypeError), ValueError):
+        pass
+
+def across_clauses() -> None:
+    try:
+        pass
+    except (ValueError if f else TypeError):
+        pass
+    except ValueError:
+        pass
+
+def all_alternatives_cover() -> None:
+    try:
+        pass
+    except (Exception if f else BaseException):
+        pass
+    except ValueError:
+        pass
+"#,
+);
+
 // Only `ValueError` is redundant; the clause still runs for `TypeError`. Neither clause is
 // dead as a whole, since each catches something the other does not.
 testcase!(
-    bug = "Redundant exception classes within an except clause are not reported",
     test_redundant_exception_class_across_except_tuples,
     r#"
 try:
     pass
 except (ValueError, KeyError):
     pass
-except (ValueError, TypeError):
+except (ValueError, TypeError):  # E: `ValueError` is already caught earlier in this `try` statement, so it never matches here
     pass
+"#,
+);
+
+// One class we cannot reason about leaves us unable to judge its siblings, because it
+// may be what catches them first.
+testcase!(
+    test_unknown_exception_class_suppresses_sibling_reporting,
+    r#"
+from typing import Any
+def f(unknown: Any) -> None:
+    try:
+        pass
+    except (Exception, unknown, ValueError):
+        pass
 "#,
 );
 

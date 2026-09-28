@@ -4402,9 +4402,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
     }
 
-    /// Handle `BindingExpect::ExceptClauseReachability` - report an `except` clause that
-    /// can never be entered, because earlier clauses in the same `try` statement already
-    /// catch every exception it matches.
+    /// Handle `BindingExpect::ExceptClauseReachability` - report the exception classes of
+    /// an `except` clause that can never match, because they are already caught earlier in
+    /// the same `try` statement. When that is true of every class the clause lists, the
+    /// clause as a whole never runs and is reported instead.
     fn check_except_clause_reachability(
         &self,
         catches: &ExceptClauseCatches,
@@ -4428,58 +4429,104 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 Some(ty)
             }
         };
-        // What a clause is guaranteed to catch. An upper bound is only a guarantee when the
-        // class is written as a class object: `except ValueError:` catches exactly
-        // `ValueError`, but `except dynamic:` on a `dynamic: type[Exception]` catches whichever
-        // subclass it holds at runtime. Both resolve to the instance type `Exception` once
-        // `untype` is applied, so the source expression is what tells them apart.
-        let guaranteed_by = |idx: &Idx<Key>| {
+        // Whether what a class catches is a guarantee rather than an upper bound. `except
+        // ValueError:` catches exactly `ValueError`, but `except dynamic:` on a
+        // `dynamic: type[Exception]` catches whichever subclass it holds at runtime. Both resolve
+        // to the same instance type once `untype` is applied, so the source expression is what
+        // tells them apart, and only a guarantee may be counted as already caught.
+        let is_guaranteed = |idx: &Idx<Key>| {
             let Binding::ExceptionClass(class, _) = self.bindings().get(*idx) else {
-                return None;
+                return false;
             };
             // A starred element contributes the classes it unpacks, so judge those.
             let class = match &**class {
                 Expr::Starred(starred) => &starred.value,
                 class => class,
             };
-            if Self::denotes_class_objects(&self.expr_infer(class, &self.error_swallower())) {
-                caught_by(idx)
-            } else {
-                None
-            }
+            // Inferring only to classify the expression, so keep the result out of the
+            // trace data that hover and signature help read.
+            self.without_tracing(|| {
+                Self::denotes_class_objects(&self.expr_infer(class, &self.error_swallower()))
+            })
         };
-        let caught: Vec<Type> = preceding.iter().filter_map(guaranteed_by).collect();
-        if caught.is_empty() {
-            return;
-        }
-        let matches = match catches {
-            ExceptClauseCatches::Everything => base_exception.clone(),
+        let classes: Vec<(Type, TextRange, bool)> = match catches {
+            // A bare `except` behaves as a single class, `BaseException`, whose only
+            // source range is the clause's own.
+            ExceptClauseCatches::Everything => vec![(base_exception.clone(), range, true)],
             ExceptClauseCatches::Classes(classes) => {
-                match classes.iter().map(caught_by).collect::<Option<Vec<_>>>() {
-                    Some(classes) => self.unions(classes),
-                    // A class we cannot reason about may still catch something the earlier
-                    // clauses miss.
+                let resolved = classes
+                    .iter()
+                    .map(|idx| {
+                        caught_by(idx).map(|ty| {
+                            (
+                                ty,
+                                self.bindings().idx_to_key(*idx).range(),
+                                is_guaranteed(idx),
+                            )
+                        })
+                    })
+                    .collect::<Option<Vec<_>>>();
+                match resolved {
+                    Some(resolved) => resolved,
+                    // A class we cannot reason about may still catch something the others
+                    // miss, and we cannot tell which of its siblings it makes redundant.
                     None => return,
                 }
             }
         };
-        // `except ()` matches nothing at all, which is a different problem.
-        if matches.is_never() {
-            return;
-        }
-        // Blame the single earlier clause responsible where there is one. Finding one also
-        // settles that this clause is dead, since that clause is itself part of what the earlier
-        // clauses catch between them.
-        let culprit = caught
+
+        // Walk the clause's classes in order against everything caught before them, which
+        // includes their own earlier siblings: `except (Exception, ValueError)` never
+        // matches on `ValueError` either.
+        let preceding_caught: Vec<Type> = preceding
             .iter()
-            .find(|ty| self.is_subset_eq(&matches, ty))
-            .cloned();
-        // With no one clause to blame, this one is dead only if the earlier clauses cover it
-        // taken together.
-        if culprit.is_none() && !self.is_subset_eq(&matches, &self.unions(caught)) {
+            .filter_map(|idx| {
+                if is_guaranteed(idx) {
+                    caught_by(idx)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let mut caught = self.unions(preceding_caught.clone());
+        let mut redundant = Vec::new();
+        for (ty, ty_range, guaranteed) in &classes {
+            // Nothing has been caught yet while `caught` is `Never`, and a class that is
+            // itself `Never` (`except ()`) matches nothing at all, a different problem.
+            if !caught.is_never() && !ty.is_never() && self.is_subset_eq(ty, &caught) {
+                redundant.push((ty.clone(), *ty_range));
+            }
+            if *guaranteed {
+                caught = self.unions(vec![caught, ty.clone()]);
+            }
+        }
+        if redundant.is_empty() {
             return;
         }
+
         let keyword = if is_star { "except*" } else { "except" };
+        if redundant.len() < classes.len() {
+            for (ty, ty_range) in redundant {
+                self.error(
+                    errors,
+                    ty_range,
+                    ErrorKind::UnreachableExceptClause,
+                    format!(
+                        "`{}` is already caught earlier in this `try` statement, so it never matches here",
+                        self.for_display(ty)
+                    ),
+                );
+            }
+            return;
+        }
+
+        // Every class is already caught, so the clause as a whole never runs. Blame the single
+        // earlier clause responsible where there is one; otherwise the clause is dead only
+        // because of several earlier clauses taken together.
+        let matches = self.unions(classes.into_iter().map(|(ty, _, _)| ty).collect());
+        let culprit = preceding_caught
+            .into_iter()
+            .find(|ty| self.is_subset_eq(&matches, ty));
         let message = match culprit {
             Some(ty) => format!(
                 "This `{keyword}` clause is unreachable, because an earlier clause already catches `{}`",
@@ -4500,13 +4547,16 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     /// yield an instance type. But the first catches exactly that class, while the second
     /// catches whichever subclass it happens to hold, so its instance type is an upper bound and
     /// nothing may be concluded from it about what an earlier clause already caught.
+    ///
+    /// A union is such a bound too. It is a choice between alternatives, so only what every
+    /// alternative catches is guaranteed, and distinct class objects share nothing. A tuple is
+    /// not a choice: every element of `except (A, B):` is entered into, so both are guaranteed.
     fn denotes_class_objects(ty: &Type) -> bool {
         match ty {
             Type::ClassDef(_) => true,
             Type::Tuple(Tuple::Concrete(elements)) => {
                 elements.iter().all(Self::denotes_class_objects)
             }
-            Type::Union(union) => union.members.iter().all(Self::denotes_class_objects),
             _ => false,
         }
     }
