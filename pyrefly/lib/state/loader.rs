@@ -25,6 +25,7 @@ use crate::config::config::FallbackSearchPath;
 use crate::config::config::ImportLookupPathPart;
 use crate::error::context::ErrorContext;
 use crate::module::finder::DirEntryCache;
+use crate::module::finder::FindImportOptions;
 use crate::module::finder::ImportLookupMode;
 use crate::module::finder::find_import;
 use crate::module::finder::find_import_with_mode;
@@ -293,10 +294,12 @@ impl LoaderFindCache {
                     find_import_with_mode(
                         &self.config,
                         module,
-                        origin,
                         ImportLookupMode::style_including_replaced(style),
-                        &self.dir_cache,
-                        timing,
+                        FindImportOptions {
+                            origin,
+                            timing,
+                            ..FindImportOptions::new(&self.dir_cache)
+                        },
                     )
                 };
                 match find(preferred_style) {
@@ -328,10 +331,12 @@ impl LoaderFindCache {
                 match find_import_with_mode(
                     &self.config,
                     module,
-                    origin,
                     ImportLookupMode::style(ModuleStyle::Executable),
-                    &self.dir_cache,
-                    timing,
+                    FindImportOptions {
+                        origin,
+                        timing,
+                        ..FindImportOptions::new(&self.dir_cache)
+                    },
                 ) {
                     FindingOrError::Finding(import) => {
                         self.executable_cache
@@ -374,8 +379,15 @@ impl LoaderFindCache {
             .cache
             .ensure(&(module.dupe(), effective_origin.clone()), || {
                 let phantom_paths = Vec::new();
-                let result =
-                    find_import(&self.config, module, origin, None, &self.dir_cache, timing);
+                let result = find_import(
+                    &self.config,
+                    module,
+                    FindImportOptions {
+                        origin,
+                        timing,
+                        ..FindImportOptions::new(&self.dir_cache)
+                    },
+                );
                 (result, Arc::new(phantom_paths))
             })
             .0
@@ -431,8 +443,15 @@ impl LoaderFindCache {
             .cache
             .ensure(&(module.dupe(), origin.cloned()), || {
                 let phantom_paths = Vec::new();
-                let result =
-                    find_import(&self.config, module, origin, None, &self.dir_cache, timing);
+                let result = find_import(
+                    &self.config,
+                    module,
+                    FindImportOptions {
+                        origin,
+                        timing,
+                        ..FindImportOptions::new(&self.dir_cache)
+                    },
+                );
                 (result, Arc::new(phantom_paths))
             })
             .0;

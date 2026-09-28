@@ -46,6 +46,7 @@ use crate::config::finder::ConfigFinder;
 use crate::error::error::print_errors;
 use crate::lsp::non_wasm::server::resolve_export_location;
 use crate::module::finder::DirEntryCache;
+use crate::module::finder::FindImportOptions;
 use crate::module::finder::find_import;
 use crate::state::load::FileContents;
 use crate::state::require::Require;
@@ -155,9 +156,13 @@ else:
 
     let f = |name: &str, sys_info: &SysInfo| {
         let name = ModuleName::from_str(name);
-        let path = find_import(&config_file, name, None, None, &DirEntryCache::new(), None)
-            .finding()
-            .unwrap();
+        let path = find_import(
+            &config_file,
+            name,
+            FindImportOptions::new(&DirEntryCache::new()),
+        )
+        .finding()
+        .unwrap();
         Handle::new(name, path, sys_info.dupe())
     };
 
@@ -204,9 +209,13 @@ fn test_lookup_export_location_warm_with_multiple_sysinfos() {
 
     let f = |name: &str, sys_info: &SysInfo| {
         let name = ModuleName::from_str(name);
-        let path = find_import(&config_file, name, None, None, &DirEntryCache::new(), None)
-            .finding()
-            .unwrap();
+        let path = find_import(
+            &config_file,
+            name,
+            FindImportOptions::new(&DirEntryCache::new()),
+        )
+        .finding()
+        .unwrap();
         Handle::new(name, path, sys_info.dupe())
     };
 
@@ -261,9 +270,13 @@ fn test_resolve_export_location_inherits_source_sysinfo() {
 
     let f = |name: &str, sys_info: &SysInfo| {
         let name = ModuleName::from_str(name);
-        let path = find_import(&config_file, name, None, None, &DirEntryCache::new(), None)
-            .finding()
-            .unwrap();
+        let path = find_import(
+            &config_file,
+            name,
+            FindImportOptions::new(&DirEntryCache::new()),
+        )
+        .finding()
+        .unwrap();
         Handle::new(name, path, sys_info.dupe())
     };
 
@@ -300,9 +313,13 @@ fn test_cross_module_literal_promotion() {
     let state = State::new(test_env.config_finder(), TEST_THREAD_COUNT);
     let f = |name: &str| {
         let name = ModuleName::from_str(name);
-        let path = find_import(&config_file, name, None, None, &DirEntryCache::new(), None)
-            .finding()
-            .unwrap();
+        let path = find_import(
+            &config_file,
+            name,
+            FindImportOptions::new(&DirEntryCache::new()),
+        )
+        .finding()
+        .unwrap();
         Handle::new(name, path, sys_info.dupe())
     };
     let handles = [f("main")];

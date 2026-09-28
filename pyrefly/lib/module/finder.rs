@@ -85,23 +85,23 @@ fn resolve_third_party_stub(
     module: ModuleName,
     stub_result: Option<&StubSearchResult>,
     normal_result: Option<&FindResult>,
-    bundled_stub: Option<FindingOrError<ModulePath>>,
-    from_real_config_file: bool,
+    policy: &SitePackagePolicy,
     dir_cache: &DirEntryCache,
-    replace_untyped: bool,
 ) -> Option<FindingOrError<ModulePath>> {
+    let bundled_stub = policy.typeshed_third_party_stub.as_ref();
+
     // This is the case where we do have a config file, the package is installed, but there are no stubs
     // available besides the bundled stubs. In this case
     // return the stub but with the error attached telling the user to install stubs.
-    if let Some(ref bundled) = bundled_stub
-        && from_real_config_file
+    if let Some(bundled) = bundled_stub
+        && policy.from_real_config_file
         && let Some(normal_result) = normal_result
         && !package_has_py_typed(module, normal_result, dir_cache)
         && stub_result.is_none()
     {
         let hint = recommended_stubs_package(module)
             .map(|package| FindError::UntypedImport(module, package.to_string().into()));
-        if replace_untyped {
+        if policy.replace_untyped {
             return Some(FindingOrError::from_error_opt(hint));
         } else {
             return Some(bundled.clone().with_error_opt(hint));
@@ -117,23 +117,23 @@ fn resolve_third_party_stub(
     {
         if let Some(normal_result) = normal_result {
             // We have both typeshed third party stubs and the actual package.
-            if replace_untyped && !package_has_py_typed(module, normal_result, dir_cache) {
+            if policy.replace_untyped && !package_has_py_typed(module, normal_result, dir_cache) {
                 return Some(FindingOrError::Error(FindError::Ignored));
             } else {
-                return Some(bundled);
+                return Some(bundled.clone());
             }
         } else {
             // If we have a real config file, don't return stubs when package is missing.
             // Return None to continue search, which will eventually hit NotFound error.
-            if from_real_config_file {
+            if policy.from_real_config_file {
                 return None;
             } else {
                 // Keep existing behavior for non-real config files
                 let error = FindError::MissingSourceForStubs(module);
-                if replace_untyped {
+                if policy.replace_untyped {
                     return Some(FindingOrError::Error(error));
                 } else {
-                    return Some(bundled.with_error(error));
+                    return Some(bundled.clone().with_error(error));
                 }
             }
         }
@@ -150,7 +150,7 @@ fn combine_normal_and_stub_results(
     module: ModuleName,
     stub_result: Option<StubSearchResult>,
     normal_result: Option<FindResult>,
-    namespaces_found: &mut Vec<PathBuf>,
+    namespaces_found: Option<&mut Vec<PathBuf>>,
     dir_cache: &DirEntryCache,
     replace_untyped: bool,
 ) -> Option<FindingOrError<ModulePath>> {
@@ -162,8 +162,10 @@ fn combine_normal_and_stub_results(
             Some(FindResult::ImplicitNamespacePackage(normal_namespaces)),
             Some(StubSearchResult::Transparent(stub_namespaces)),
         ) => {
-            namespaces_found.append(&mut normal_namespaces.into_vec());
-            namespaces_found.extend(stub_namespaces);
+            if let Some(namespaces_found) = namespaces_found {
+                namespaces_found.append(&mut normal_namespaces.into_vec());
+                namespaces_found.extend(stub_namespaces);
+            }
             None
         }
         (Some(normal_result), Some(StubSearchResult::Transparent(_))) => {
@@ -177,7 +179,9 @@ fn combine_normal_and_stub_results(
             Some(find_result_module_path(stub_result.into_find_result()))
         }
         (Some(FindResult::ImplicitNamespacePackage(namespaces)), _) => {
-            namespaces_found.append(&mut namespaces.into_vec());
+            if let Some(namespaces_found) = namespaces_found {
+                namespaces_found.append(&mut namespaces.into_vec());
+            }
             None
         }
         (Some(normal_result), None) => {
@@ -217,32 +221,60 @@ struct SitePackagePolicy {
     replace_untyped: bool,
 }
 
+/// The inputs to [`find_module`] that have a sensible default. Build one with
+/// [`FindModuleOptions::new`] and override individual fields using struct update
+/// syntax, so that adding a field leaves existing callers untouched:
+///
+/// ```ignore
+/// FindModuleOptions {
+///     style_filter: Some(ModuleStyle::Interface),
+///     ..FindModuleOptions::new(&dir_cache)
+/// }
+/// ```
+struct FindModuleOptions<'a> {
+    /// When set, only modules matching this style are returned. The first module
+    /// found that matches wins; if nothing matches we return `None` even when
+    /// there were other results.
+    style_filter: Option<ModuleStyle>,
+    /// How to treat installed distributions. Only meaningful when `include` is a
+    /// list of site package roots.
+    site_package_policy: SitePackagePolicy,
+    /// A [`FindResult::ImplicitNamespacePackage`] is appended here rather than
+    /// returned, since a higher-priority [`FindResult`] variant may still turn up
+    /// in a later search location. It is the caller's responsibility to recognize
+    /// that these entries hold the final result if no search location returns
+    /// `Some`.
+    namespaces_found: Option<&'a mut Vec<PathBuf>>,
+    /// Paths that were checked but did not exist are appended here.
+    /// Mutually exclusive with `style_filter`.
+    phantom_paths: Option<&'a mut Vec<PathBuf>>,
+    /// Directory listings cached across one resolution transaction.
+    dir_cache: &'a DirEntryCache,
+    timing: Option<&'a TransactionTimingCounters>,
+}
+
+impl<'a> FindModuleOptions<'a> {
+    fn new(dir_cache: &'a DirEntryCache) -> Self {
+        Self {
+            style_filter: None,
+            site_package_policy: SitePackagePolicy::default(),
+            namespaces_found: None,
+            phantom_paths: None,
+            dir_cache,
+            timing: None,
+        }
+    }
+}
+
 /// Search for the given [`ModuleName`] in the given `include`, which is
 /// a list of paths denoting import roots. A [`FindError`] result indicates
 /// searching should be discontinued because of a special condition, whereas
 /// an `Ok(None)` indicates the module wasn't found here, but could be found in another
 /// search location (`search_path`, `typeshed`, ...).
-///
-/// If the result is a [`FindResult::ImplicitNamespacePackage`], we instead add its entries to
-/// `namespaces_found`, since this can be overridden by a higher-priority [`FindResult`]
-/// variant later. It is the calling function's responsibility to recognize that
-/// `namespaces_found` might hold the final result if no `Ok(Some(_))` values are
-/// returned from this function.
-///
-/// If `style_filter` is provided, only modules matching that style will be returned.
-/// Returns the first module found that matches the style, or `None` if no matching module is found.
-///
-/// If `phantom_paths` is provided, paths that were checked but did not exist will be added to it.
-/// Note: `phantom_paths` and `style_filter` are mutually exclusive.
 fn find_module<'a, I>(
     module: ModuleName,
     include: I,
-    namespaces_found: &mut Vec<PathBuf>,
-    style_filter: Option<ModuleStyle>,
-    site_package_policy: SitePackagePolicy,
-    phantom_paths: &mut Option<&mut Vec<PathBuf>>,
-    dir_cache: &DirEntryCache,
-    timing: Option<&TransactionTimingCounters>,
+    mut options: FindModuleOptions<'_>,
 ) -> Option<FindingOrError<ModulePath>>
 where
     I: Iterator<Item = &'a PathBuf> + Clone,
@@ -250,19 +282,17 @@ where
     let results = find_module_results(
         module,
         include,
-        style_filter,
-        phantom_paths,
-        dir_cache,
-        observer(timing),
+        options.style_filter,
+        &mut options.phantom_paths,
+        options.dir_cache,
+        observer(options.timing),
     );
     if let Some(result) = resolve_third_party_stub(
         module,
         results.stub_result.as_ref(),
         results.normal_result.as_ref(),
-        site_package_policy.typeshed_third_party_stub,
-        site_package_policy.from_real_config_file,
-        dir_cache,
-        site_package_policy.replace_untyped,
+        &options.site_package_policy,
+        options.dir_cache,
     ) {
         return Some(result);
     }
@@ -270,9 +300,9 @@ where
         module,
         results.stub_result,
         results.normal_result,
-        namespaces_found,
-        dir_cache,
-        site_package_policy.replace_untyped,
+        options.namespaces_found,
+        options.dir_cache,
+        options.site_package_policy.replace_untyped,
     )
 }
 
@@ -439,6 +469,55 @@ fn find_third_party_stub(
     }
 }
 
+/// The inputs to [`find_import`] and [`find_import_with_mode`] that have a
+/// sensible default. Build one with [`FindImportOptions::new`] and override
+/// individual fields using struct update syntax, so that adding a field leaves
+/// existing callers untouched:
+///
+/// ```ignore
+/// FindImportOptions {
+///     origin: Some(path),
+///     ..FindImportOptions::new(&dir_cache)
+/// }
+/// ```
+pub struct FindImportOptions<'a> {
+    /// The file we're importing from. Determines whether imports are replaced
+    /// with `typing.Any` and scopes lookups within a `SourceDatabase`. Only
+    /// `None` when importing from typeshed or builtins.
+    pub origin: Option<&'a ModulePath>,
+    /// Paths that were checked but did not exist are appended here.
+    pub phantom_paths: Option<&'a mut Vec<PathBuf>>,
+    /// Directory listings cached across one resolution transaction.
+    pub dir_cache: &'a DirEntryCache,
+    pub timing: Option<&'a TransactionTimingCounters>,
+}
+
+impl<'a> FindImportOptions<'a> {
+    pub fn new(dir_cache: &'a DirEntryCache) -> Self {
+        Self {
+            origin: None,
+            phantom_paths: None,
+            dir_cache,
+            timing: None,
+        }
+    }
+
+    /// Options for searching one of the import lookup path's components.
+    fn module_options<'b>(
+        &'b mut self,
+        style_filter: Option<ModuleStyle>,
+        namespaces_found: &'b mut Vec<PathBuf>,
+    ) -> FindModuleOptions<'b> {
+        FindModuleOptions {
+            style_filter,
+            namespaces_found: Some(namespaces_found),
+            phantom_paths: self.phantom_paths.as_deref_mut(),
+            timing: self.timing,
+            ..FindModuleOptions::new(self.dir_cache)
+        }
+    }
+}
+
 /// Controls whether a lookup follows `replace-imports-with-any`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ImportReplacementPolicy {
@@ -499,31 +578,29 @@ impl ImportLookupMode {
 // keep searching, and if we get the end, look through everything we've found and select the
 // best thing.
 /// Attempt to find an import with [`ModuleName`] from the search components specified
-/// in the config (including build system). Origin specifies the file we're importing from,
-/// and should only be empty when importing from typeshed/builtins.
+/// in the config (including build system).
 ///
-/// [`ModuleStyle`] specifies whether we prefer a `.py` or `.pyi` file. When provided,
-/// - if the result is an init file, we will treat `style_filter` as a preference, meaning
+/// [`ImportLookupMode`] may specify a [`ModuleStyle`], i.e. whether we prefer a `.py`
+/// or `.pyi` file. When provided,
+/// - if the result is an init file, we will treat the style as a preference, meaning
 ///   if we find a match, we'll see if the preferred value exists, but return whatever we
 ///   find immediately.
 /// - if our best result is a namespace, we return nothing. Anything else is always
 ///   preferable to a namespace.
-/// - otherwise, we return the first value if it matches the `style_filter`. If nothing
-///   matches, we return None, even if there were other results.
+/// - otherwise, we return the first value if it matches the style. If nothing
+///   matches, we return an error, even if there were other results.
 ///
-/// If `None` is returned when `style_filter.is_some()`, the import should be retried
-/// with `style_filter.is_none()`, since we hard-filter a lot of values here.
-fn find_import_internal(
+/// If an error is returned for a style lookup, the import should be retried with
+/// [`ImportLookupMode::TypeChecking`], since we hard-filter a lot of values here.
+pub(crate) fn find_import_with_mode(
     config: &ConfigFile,
     module: ModuleName,
-    origin: Option<&ModulePath>,
     lookup_mode: ImportLookupMode,
-    phantom_paths: &mut Option<&mut Vec<PathBuf>>,
-    dir_cache: &DirEntryCache,
-    timing: Option<&TransactionTimingCounters>,
+    mut options: FindImportOptions<'_>,
 ) -> FindingOrError<ModulePath> {
     let style_filter = lookup_mode.style_filter();
     let mut namespaces_found = vec![];
+    let origin = options.origin;
     let bundled_typeshed_origin =
         origin.is_some_and(|path| matches!(path.details(), ModulePathDetails::BundledTypeshed(_)));
     let origin_path = origin.map(|p| p.as_path());
@@ -545,12 +622,7 @@ fn find_import_internal(
         && let Some(path) = find_module(
             module,
             build_system.search_path_prefix.iter(),
-            &mut namespaces_found,
-            style_filter,
-            SitePackagePolicy::default(),
-            phantom_paths,
-            dir_cache,
-            timing,
+            options.module_options(style_filter, &mut namespaces_found),
         )
     {
         path
@@ -561,12 +633,7 @@ fn find_import_internal(
     } else if let Some(path) = find_module(
         module,
         config.search_path(),
-        &mut namespaces_found,
-        style_filter,
-        SitePackagePolicy::default(),
-        phantom_paths,
-        dir_cache,
-        timing,
+        options.module_options(style_filter, &mut namespaces_found),
     ) {
         path
     } else if !custom_typeshed_excluded
@@ -574,12 +641,7 @@ fn find_import_internal(
         && let Some(path) = find_module(
             module,
             std::iter::once(custom_typeshed_stdlib),
-            &mut namespaces_found,
-            style_filter,
-            SitePackagePolicy::default(),
-            phantom_paths,
-            dir_cache,
-            timing,
+            options.module_options(style_filter, &mut namespaces_found),
         )
     {
         path
@@ -621,32 +683,25 @@ fn find_import_internal(
                         .site_package_path()
                         .any(|site_package| path.starts_with(site_package))
                 }),
-            &mut namespaces_found,
-            style_filter,
-            SitePackagePolicy::default(),
-            phantom_paths,
-            dir_cache,
-            timing,
+            options.module_options(style_filter, &mut namespaces_found),
         )
     {
         path
     } else if let Some(path) = find_module(
         module,
         config.site_package_path(),
-        &mut namespaces_found,
-        style_filter,
-        SitePackagePolicy {
-            typeshed_third_party_stub: find_third_party_stub(module, style_filter),
-            from_real_config_file,
-            // A style-filtered search asks where a module's implementation file
-            // lives, not whether to trust the package's types, so it must keep
-            // resolving to the real source.
-            replace_untyped: style_filter.is_none()
-                && config.replace_untyped_imports_with_any(origin, module),
+        FindModuleOptions {
+            site_package_policy: SitePackagePolicy {
+                typeshed_third_party_stub: find_third_party_stub(module, style_filter),
+                from_real_config_file,
+                // A style-filtered search asks where a module's implementation file
+                // lives, not whether to trust the package's types, so it must keep
+                // resolving to the real source.
+                replace_untyped: style_filter.is_none()
+                    && config.replace_untyped_imports_with_any(origin, module),
+            },
+            ..options.module_options(style_filter, &mut namespaces_found)
         },
-        phantom_paths,
-        dir_cache,
-        timing,
     ) {
         path
     } else if config.has_extra_file_extensions()
@@ -654,7 +709,7 @@ fn find_import_internal(
             module,
             config.search_path().chain(config.site_package_path()),
             &config.extra_file_extensions,
-            phantom_paths,
+            &mut options.phantom_paths,
         )
     {
         path
@@ -686,47 +741,15 @@ fn find_import_internal(
     }
 }
 
-/// Get the given [`ModuleName`] from this config's search and site package paths.
-/// We take the [`Handle`] of the file we're searching for the module from to determine if
-/// we should replace imports with `typing.Any` and to perform lookups within a
-/// `SourceDatabase`.
+/// Get the given [`ModuleName`] from this config's search and site package paths,
+/// resolving it the way the type checker would.
 /// Return `Err` when indicating the module could not be found.
 pub fn find_import(
     config: &ConfigFile,
     module: ModuleName,
-    origin: Option<&ModulePath>,
-    mut phantom_paths: Option<&mut Vec<PathBuf>>,
-    dir_cache: &DirEntryCache,
-    timing: Option<&TransactionTimingCounters>,
+    options: FindImportOptions<'_>,
 ) -> FindingOrError<ModulePath> {
-    find_import_internal(
-        config,
-        module,
-        origin,
-        ImportLookupMode::TypeChecking,
-        &mut phantom_paths,
-        dir_cache,
-        timing,
-    )
-}
-
-pub(crate) fn find_import_with_mode(
-    config: &ConfigFile,
-    module: ModuleName,
-    origin: Option<&ModulePath>,
-    lookup_mode: ImportLookupMode,
-    dir_cache: &DirEntryCache,
-    timing: Option<&TransactionTimingCounters>,
-) -> FindingOrError<ModulePath> {
-    find_import_internal(
-        config,
-        module,
-        origin,
-        lookup_mode,
-        &mut None,
-        dir_cache,
-        timing,
-    )
+    find_import_with_mode(config, module, ImportLookupMode::TypeChecking, options)
 }
 
 /// Find all legitimate imports that start with `module`
@@ -837,12 +860,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/bar.py")))
@@ -851,12 +869,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.baz"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/baz.pyi")))
@@ -865,12 +878,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.qux"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None,
         );
@@ -890,12 +898,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                Some(&timing),
+                FindModuleOptions {
+                    timing: Some(&timing),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/__init__.py"))),
@@ -923,12 +929,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/bar/__init__.py")))
@@ -937,12 +938,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.baz"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/baz/__init__.pyi")))
@@ -968,12 +964,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/bar.pyi")))
@@ -999,12 +990,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/bar/__init__.py")))
@@ -1043,12 +1029,10 @@ mod tests {
                 find_module(
                     ModuleName::from_str(name),
                     search_roots.iter(),
-                    &mut namespaces,
-                    None,
-                    SitePackagePolicy::default(),
-                    &mut None,
-                    &DirEntryCache::new(),
-                    None,
+                    FindModuleOptions {
+                        namespaces_found: Some(&mut namespaces),
+                        ..FindModuleOptions::new(&DirEntryCache::new())
+                    },
                 ),
                 None
             );
@@ -1067,12 +1051,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("c.d.e"),
                 search_roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("first/c/d/e.py")))
@@ -1089,12 +1068,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 [root.join("search_root0")].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -1119,12 +1093,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 [root.join("search_root0")].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1136,12 +1105,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 [root.join("search_root0")].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root0/a/b.py")))
@@ -1179,12 +1143,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1196,12 +1155,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root0/a/b.py")))
@@ -1211,12 +1165,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -1249,12 +1198,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1266,12 +1210,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -1314,12 +1253,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1331,12 +1265,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root0/a/b.py")))
@@ -1346,12 +1275,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root1/a/c.py")))
@@ -1389,12 +1313,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1407,12 +1326,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root1/a/c.py")))
@@ -1423,12 +1337,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -1472,12 +1381,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1489,12 +1393,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root0/a/b.py")))
@@ -1504,12 +1403,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root1/a/c.py")))
@@ -1552,12 +1446,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1570,12 +1459,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root0/a/b.py")))
@@ -1586,12 +1470,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root1/a/c.py")))
@@ -1630,12 +1509,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1647,12 +1521,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root0/a/b.py")))
@@ -1662,12 +1531,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root1/a/c.py")))
@@ -1702,12 +1566,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("root/a/b.py")))
@@ -1718,12 +1577,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -1760,12 +1614,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("root/a/b/__init__.py")))
@@ -1776,12 +1625,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("root/a/b/c.py")))
@@ -1820,12 +1664,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("root/a/b/__init__.py")))
@@ -1836,12 +1675,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("root/a/b/c.py")))
@@ -1883,12 +1717,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -1901,12 +1730,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.b"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("search_root0/a/b.py")))
@@ -1917,12 +1741,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("a.c"),
                 roots.iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -1972,10 +1791,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 ModuleName::from_str("a.c"),
-                None,
                 ImportLookupMode::TypeChecking,
-                &DirEntryCache::new(),
-                None
+                FindImportOptions::new(&DirEntryCache::new()),
             ),
             // We will find `a.c` because `a` is a namespace package whose search roots
             // include both `search_root0/a/` and `search_root1/a/`.
@@ -1985,10 +1802,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 ModuleName::from_str("spp_priority"),
-                None,
                 ImportLookupMode::TypeChecking,
-                &DirEntryCache::new(),
-                None
+                FindImportOptions::new(&DirEntryCache::new()),
             ),
             // We will find `spp_priority` in `site_package_path`, even though it's
             // in a later module find component, because we continue searching for
@@ -2003,10 +1818,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 ModuleName::from_str("spp_priority.d"),
-                None,
                 ImportLookupMode::TypeChecking,
-                &DirEntryCache::new(),
-                None
+                FindImportOptions::new(&DirEntryCache::new()),
             ),
             FindingOrError::new_finding(ModulePath::filesystem(
                 root.join("site_package_path/spp_priority/d.py")
@@ -2016,10 +1829,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 ModuleName::from_str("spp_priority.d"),
-                None,
                 ImportLookupMode::style(ModuleStyle::Interface),
-                &DirEntryCache::new(),
-                None,
+                FindImportOptions::new(&DirEntryCache::new()),
             ),
             // When applying a `ModuleStyle`, we don't find a result and force a find import
             // without a module style.
@@ -2059,12 +1870,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo-stubs/__init__.py"))),
@@ -2073,12 +1879,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -2089,12 +1890,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.baz"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/baz/__init__.pyi"))),
@@ -2103,12 +1899,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.qux"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -2133,12 +1924,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/bar/__init__.py")))
@@ -2147,12 +1933,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.baz"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/baz/__init__.pyi")))
@@ -2161,12 +1942,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.qux"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -2200,12 +1976,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/__init__.py"))),
@@ -2214,12 +1985,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo-stubs/bar.pyi"))),
@@ -2228,12 +1994,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.baz"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/baz/__init__.pyi")))
@@ -2242,12 +2003,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.qux"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -2269,12 +2025,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::namespace(root.join("foo-stubs"))),
@@ -2306,12 +2057,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/bar/__init__.py"))),
@@ -2338,12 +2084,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/bar/__init__.py"))),
@@ -2352,12 +2093,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.baz"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo/baz/__init__.pyi"))),
@@ -2366,12 +2102,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.qux"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -2405,12 +2136,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::Finding(Finding {
@@ -2422,12 +2148,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("baz.qux"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::Finding(Finding {
@@ -2463,12 +2184,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("namespace"),
                 [root.to_path_buf()].iter(),
-                &mut namespaces,
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    namespaces_found: Some(&mut namespaces),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             ),
             None
         );
@@ -2477,12 +2196,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("namespace.a"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -2493,12 +2207,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("namespace.b"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -2515,12 +2224,7 @@ mod tests {
         let find_compiled_result = find_module(
             ModuleName::from_str("compiled_module"),
             [root.to_path_buf()].iter(),
-            &mut vec![],
-            None,
-            SitePackagePolicy::default(),
-            &mut None,
-            &DirEntryCache::new(),
-            None,
+            FindModuleOptions::new(&DirEntryCache::new()),
         );
         assert_eq!(
             find_compiled_result.unwrap(),
@@ -2530,12 +2234,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("compiled_module.nested"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             ),
             None
         );
@@ -2554,12 +2253,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("foo"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("foo.py")))
@@ -2584,12 +2278,7 @@ mod tests {
             find_module(
                 ModuleName::from_str("subdir.nested_import"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                None,
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions::new(&DirEntryCache::new()),
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -2599,12 +2288,7 @@ mod tests {
         let find_compiled_result = find_module(
             ModuleName::from_str("subdir.another_compiled_module"),
             [root.to_path_buf()].iter(),
-            &mut vec![],
-            None,
-            SitePackagePolicy::default(),
-            &mut None,
-            &DirEntryCache::new(),
-            None,
+            FindModuleOptions::new(&DirEntryCache::new()),
         );
         assert_eq!(
             find_compiled_result.unwrap(),
@@ -2635,12 +2319,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                Some(ModuleStyle::Executable),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Executable),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("bar.py")))
@@ -2650,12 +2332,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("module"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                Some(ModuleStyle::Interface),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Interface),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("module/__init__.pyi")))
@@ -2664,12 +2344,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("module"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                Some(ModuleStyle::Executable),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Executable),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("module/__init__.py")))
@@ -2679,12 +2357,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                Some(ModuleStyle::Interface),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Interface),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("bar.pyi")))
@@ -2704,12 +2380,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                Some(ModuleStyle::Executable),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Executable),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::Error(FindError::Ignored)
@@ -2718,12 +2392,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                Some(ModuleStyle::Interface),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Interface),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("bar.pyi")))
@@ -2746,12 +2418,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("baz.bar"),
                 [root.to_path_buf()].iter(),
-                &mut vec![],
-                Some(ModuleStyle::Executable),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Executable),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("baz").join("bar.py")))
@@ -2782,12 +2452,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("standalone"),
                 search_roots.iter(),
-                &mut vec![],
-                Some(ModuleStyle::Executable),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Executable),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -2798,12 +2466,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("standalone"),
                 search_roots.iter(),
-                &mut vec![],
-                Some(ModuleStyle::Interface),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Interface),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -2815,12 +2481,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("standalone2"),
                 search_roots.iter(),
-                &mut vec![],
-                Some(ModuleStyle::Interface),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Interface),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             ),
             None
         );
@@ -2828,12 +2492,10 @@ mod tests {
             find_module(
                 ModuleName::from_str("standalone2"),
                 search_roots.iter(),
-                &mut vec![],
-                Some(ModuleStyle::Executable),
-                SitePackagePolicy::default(),
-                &mut None,
-                &DirEntryCache::new(),
-                None,
+                FindModuleOptions {
+                    style_filter: Some(ModuleStyle::Executable),
+                    ..FindModuleOptions::new(&DirEntryCache::new())
+                },
             )
             .unwrap(),
             FindingOrError::new_finding(ModulePath::filesystem(
@@ -2933,10 +2595,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 ModuleName::from_str(module),
-                None,
                 ImportLookupMode::TypeChecking,
-                &DirEntryCache::new(),
-                None,
+                FindImportOptions::new(&DirEntryCache::new()),
             )
         };
         let found = |path: PathBuf| FindingOrError::new_finding(ModulePath::filesystem(path));
@@ -2998,10 +2658,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 ModuleName::from_str(module),
-                None,
                 ImportLookupMode::TypeChecking,
-                &DirEntryCache::new(),
-                None,
+                FindImportOptions::new(&DirEntryCache::new()),
             )
         };
 
@@ -3060,10 +2718,8 @@ mod tests {
         let unfiltered = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         assert!(
             matches!(
@@ -3076,10 +2732,8 @@ mod tests {
         let executable = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::style(ModuleStyle::Executable),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         assert_eq!(
             executable.finding(),
@@ -3098,10 +2752,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         assert!(
             matches!(result, FindingOrError::Finding(_)),
@@ -3121,10 +2773,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         assert!(
             matches!(
@@ -3146,10 +2796,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         assert!(
             matches!(result, FindingOrError::Finding(_)),
@@ -3205,10 +2853,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("chunk"),
-            None,
             ImportLookupMode::TypeChecking,
-            &dir_cache,
-            None,
+            FindImportOptions::new(&dir_cache),
         );
         assert!(matches!(result, FindingOrError::Finding(_)));
 
@@ -3217,10 +2863,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("chunk"),
-            None,
             ImportLookupMode::TypeChecking,
-            &dir_cache,
-            None,
+            FindImportOptions::new(&dir_cache),
         );
         assert!(matches!(
             result,
@@ -3265,10 +2909,8 @@ mod tests {
         find_import_with_mode(
             &config,
             ModuleName::from_str(module),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         )
     }
 
@@ -3410,10 +3052,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("distutils"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         let FindingOrError::Finding(finding) = result else {
             panic!("Expected installed third-party distutils to resolve, got: {result:?}");
@@ -3432,10 +3072,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         // Should return NotFound error when using real config and typeshed third party stubs exist but package is not installed
@@ -3457,10 +3095,8 @@ mod tests {
         let result_synthetic = find_import_with_mode(
             &config_synthetic,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         assert!(
             matches!(result_synthetic, FindingOrError::Finding(_)),
@@ -3472,10 +3108,8 @@ mod tests {
         let result_marker = find_import_with_mode(
             &config_marker,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
         assert!(
             matches!(result_marker, FindingOrError::Finding(_)),
@@ -3508,10 +3142,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         if let FindingOrError::Finding(finding) = &result {
@@ -3556,10 +3188,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         if let FindingOrError::Finding(finding) = &result {
@@ -3601,10 +3231,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests.api"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         if let FindingOrError::Finding(finding) = &result {
@@ -3646,10 +3274,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests.api"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         if let FindingOrError::Finding(finding) = &result {
@@ -3687,10 +3313,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("dateutil"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         if let FindingOrError::Finding(finding) = &result {
@@ -3727,10 +3351,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         let FindError::MissingSourceForStubs(module) = result.error().unwrap() else {
@@ -3764,10 +3386,8 @@ mod tests {
         let result = find_import_with_mode(
             &config,
             ModuleName::from_str("requests"),
-            None,
             ImportLookupMode::TypeChecking,
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions::new(&DirEntryCache::new()),
         );
 
         if let FindingOrError::Finding(finding) = result {
@@ -3894,10 +3514,10 @@ mod tests {
         let _result = find_import(
             &config,
             ModuleName::from_str("nonexistent"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         // find_import first checks for -stubs package, then the regular package
@@ -3954,10 +3574,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("mypackage"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         assert!(result.finding().is_some(), "Should find the package");
@@ -4000,10 +3620,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("mypackage"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         assert!(result.finding().is_some(), "Should find the package");
@@ -4043,10 +3663,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("mymodule"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         assert!(result.finding().is_some(), "Should find the module");
@@ -4087,10 +3707,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("mymodule"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         assert!(result.finding().is_some(), "Should find the module");
@@ -4133,10 +3753,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("mymodule"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         // Compiled modules are ignored for type checking (no source/type info)
@@ -4192,10 +3812,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("parent.child"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         assert!(result.finding().is_some(), "Should find parent.child");
@@ -4253,10 +3873,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("mymodule"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         assert!(
@@ -4345,10 +3965,10 @@ mod tests {
         let result = find_import(
             &config,
             ModuleName::from_str("a.b.c.d"),
-            None,
-            Some(&mut phantom_paths),
-            &DirEntryCache::new(),
-            None,
+            FindImportOptions {
+                phantom_paths: Some(&mut phantom_paths),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
         );
 
         assert!(result.finding().is_some(), "Should find a.b.c.d");
@@ -4720,10 +4340,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 module,
-                None,
                 ImportLookupMode::style(ModuleStyle::Executable),
-                &cache,
-                None,
+                FindImportOptions::new(&cache),
             ),
             FindingOrError::Error(FindError::Ignored)
         );
@@ -4731,10 +4349,8 @@ mod tests {
             find_import_with_mode(
                 &config,
                 module,
-                None,
                 ImportLookupMode::style_including_replaced(ModuleStyle::Executable),
-                &cache,
-                None,
+                FindImportOptions::new(&cache),
             ),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("replaced.py")))
         );
