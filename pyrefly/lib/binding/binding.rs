@@ -1121,7 +1121,7 @@ pub enum KeyExpect {
     /// Validate an implementation's implicit return against its annotation.
     ValidateImplicitReturn(TextRange),
     /// Reachability of the code following a `with` whose body ended in a jump.
-    WithFallthroughReachability(TextRange),
+    GatedSuiteReachability(TextRange),
     /// Reachability of all suites in an `if`/`elif`/`else` chain.
     BranchSuiteReachability(TextRange),
 }
@@ -1143,7 +1143,7 @@ impl Ranged for KeyExpect {
             | KeyExpect::ForwardRefUnion(range)
             | KeyExpect::ImplicitAliasCheck(range)
             | KeyExpect::ValidateImplicitReturn(range)
-            | KeyExpect::WithFallthroughReachability(range)
+            | KeyExpect::GatedSuiteReachability(range)
             | KeyExpect::BranchSuiteReachability(range) => *range,
         }
     }
@@ -1166,7 +1166,7 @@ impl DisplayWith<ModuleInfo> for KeyExpect {
             KeyExpect::ForwardRefUnion(r) => ("ForwardRefUnion", r),
             KeyExpect::ImplicitAliasCheck(r) => ("ImplicitAliasCheck", r),
             KeyExpect::ValidateImplicitReturn(r) => ("ValidateImplicitReturn", r),
-            KeyExpect::WithFallthroughReachability(r) => ("WithFallthroughReachability", r),
+            KeyExpect::GatedSuiteReachability(r) => ("GatedSuiteReachability", r),
             KeyExpect::BranchSuiteReachability(r) => ("BranchSuiteReachability", r),
         };
         write!(f, "KeyExpect::{}({})", name, ctx.display(range))
@@ -1270,13 +1270,13 @@ pub enum BindingExpect {
         narrow_ops_for_case: (Box<NarrowOp>, TextRange),
         case_range: TextRange,
     },
-    /// Code following one or more `with` statements whose bodies definitely ended in a jump, each
-    /// of which therefore only falls through if one of its context managers suppresses an
-    /// exception raised before that jump. Whether any of them does is a solve-time question, so
-    /// binding leaves the flow reachable and defers the reachability diagnostic to here.
-    WithFallthroughReachability {
-        /// One gate per such `with`, in source order.
-        gates: Box<[WithFallthroughGate]>,
+    /// Code following one or more points in a suite that control passes only conditionally, such
+    /// as a `with` whose body ended in a jump or a call that may never return. Each condition is
+    /// a solve-time question, so binding leaves the flow reachable and defers the reachability
+    /// diagnostic to here.
+    GatedSuiteReachability {
+        /// The gates the code sits behind, in source order.
+        gates: Box<[SuiteGate]>,
         /// End of the region. Any definitely-dead tail is excluded, being reported on its own.
         end: TextSize,
     },
@@ -1433,10 +1433,10 @@ impl DisplayWith<Bindings> for BindingExpect {
                     ctx.module().display(case_range)
                 )
             }
-            Self::WithFallthroughReachability { gates, end } => {
+            Self::GatedSuiteReachability { gates, end } => {
                 write!(
                     f,
-                    "WithFallthroughReachability({}, {})",
+                    "GatedSuiteReachability({}, {})",
                     gates.len(),
                     ctx.module().display(&TextRange::new(
                         gates.first().map_or(*end, |gate| gate.start),
@@ -2376,20 +2376,30 @@ pub struct ExhaustiveBinding {
     pub narrow_entries: Vec<(Idx<Key>, Box<NarrowOp>, TextRange)>,
 }
 
-/// One `with` in a suite that only falls through when a context manager suppresses.
+/// A point in a suite that control passes only under a condition binding cannot settle.
 ///
-/// Control passes a single gate only if at least one of its managers suppresses, so the code
-/// after it is dead when every one of them is known not to. Consecutive gates chain: a statement
-/// runs only if *every* gate before it was passed, which makes the suite dead from the first gate
-/// that cannot be.
+/// Consecutive gates chain: a statement runs only if *every* gate before it was passed, which
+/// makes the suite dead from the first gate that cannot be.
 #[derive(Clone, Debug)]
-pub struct WithFallthroughGate {
-    /// The context expressions of this `with`, which must all be known not to suppress for the
-    /// code after it to be dead.
-    pub contexts: Box<[Idx<Key>]>,
-    pub kind: IsAsync,
-    /// Where this gate's dead region would begin, i.e. the statement following its `with`.
+pub struct SuiteGate {
+    pub condition: GateCondition,
+    /// Where this gate's dead region would begin, i.e. the statement following it.
     pub start: TextSize,
+}
+
+/// What must hold for control to pass a [`SuiteGate`].
+#[derive(Clone, Debug)]
+pub enum GateCondition {
+    /// A `with` whose body ended in a jump. Control continues past it only if one of these
+    /// managers suppresses the exception that reached it, so the code after is dead when every
+    /// one of them is known not to.
+    ManagerSuppresses {
+        contexts: Box<[Idx<Key>]>,
+        kind: IsAsync,
+    },
+    /// An expression statement. Control continues past it only if evaluating it returned, so
+    /// the code after is dead when its type is `Never`.
+    ExpressionReturns { result: Idx<Key> },
 }
 
 /// Data for the reachability of the code following a `with` statement whose body

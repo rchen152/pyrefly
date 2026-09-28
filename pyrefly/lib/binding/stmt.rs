@@ -43,6 +43,7 @@ use crate::binding::binding::ExceptClauseCatches;
 use crate::binding::binding::ExhaustiveBinding;
 use crate::binding::binding::ExhaustivenessKind;
 use crate::binding::binding::ExprOrBinding;
+use crate::binding::binding::GateCondition;
 use crate::binding::binding::ImportBinding;
 use crate::binding::binding::ImportFallback;
 use crate::binding::binding::IsAsync;
@@ -1669,7 +1670,8 @@ impl<'a> BindingsBuilder<'a> {
                     if definitely_terminated {
                         // The flow is now live again, but only conditionally. Let `stmts()`
                         // ask the solver whether the code that follows can really run.
-                        self.pending_with_suppression = Some((contexts, kind));
+                        self.pending_gate =
+                            Some(GateCondition::ManagerSuppresses { contexts, kind });
                     }
                 }
             }

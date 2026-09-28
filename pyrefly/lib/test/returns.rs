@@ -356,7 +356,7 @@ def f(b: bool) -> int:
         return 1
     else:
         fail()
-        return 4
+        return 4  # E: This code is unreachable
 "#,
 );
 

@@ -68,8 +68,8 @@ use crate::binding::binding::BranchInfo;
 use crate::binding::binding::DjangoRelationClass;
 use crate::binding::binding::FirstUse;
 use crate::binding::binding::FunctionParameter;
+use crate::binding::binding::GateCondition;
 use crate::binding::binding::ImportBinding;
-use crate::binding::binding::IsAsync;
 use crate::binding::binding::Key;
 use crate::binding::binding::KeyAnnotation;
 use crate::binding::binding::KeyClass;
@@ -90,11 +90,11 @@ use crate::binding::binding::LambdaParamId;
 use crate::binding::binding::LastStmt;
 use crate::binding::binding::LegacyTypeParamModule;
 use crate::binding::binding::NarrowUseLocation;
+use crate::binding::binding::SuiteGate;
 use crate::binding::binding::TypeAliasParams;
 use crate::binding::binding::TypeAliasRefBinding;
 use crate::binding::binding::TypeLevelLambdaParameter;
 use crate::binding::binding::TypeParameter;
-use crate::binding::binding::WithFallthroughGate;
 use crate::binding::expr::Usage;
 use crate::binding::metadata::BindingsMetadata;
 use crate::binding::narrow::NarrowOp;
@@ -332,10 +332,9 @@ pub struct BindingsBuilder<'a> {
     /// True while binding the outermost known-unreachable suite. The call that sets this flag
     /// owns resetting it after nested `stmts()` calls, suppressing duplicate diagnostics.
     pub(super) in_unreachable_suite: bool,
-    /// Set by a `with` whose body definitely ended in a jump, and consumed by `stmts()` on the
-    /// next statement, which is reachable only if one of the managers suppresses. Holds the
-    /// context expressions that decide it.
-    pub(super) pending_with_suppression: Option<(Box<[Idx<Key>]>, IsAsync)>,
+    /// Set while binding a statement that control passes only conditionally, and consumed by
+    /// `stmts()` on the next statement, which is the first the condition can strand.
+    pub(super) pending_gate: Option<GateCondition>,
 }
 
 /// An enum tracking whether we are in a generator expression
@@ -693,7 +692,7 @@ impl Bindings {
             promote_ranges: SmallSet::new(),
             type_checking_depth: 0,
             in_unreachable_suite: false,
-            pending_with_suppression: None,
+            pending_gate: None,
         };
         builder.init_static_scope(&x.body, true);
         if module_info.name() != ModuleName::builtins() {
@@ -1324,7 +1323,7 @@ impl<'a> BindingsBuilder<'a> {
         // A suite has at most two dead regions, and the certain one is always last: nothing after
         // a definite exit is live, so no gate can open past it. They are kept disjoint so the
         // same code is never blamed twice.
-        let mut gates: Vec<WithFallthroughGate> = Vec::new();
+        let mut gates: Vec<SuiteGate> = Vec::new();
         let mut gated_end = None;
         let mut certain_start = None;
         let mut prev_end = None;
@@ -1335,20 +1334,23 @@ impl<'a> BindingsBuilder<'a> {
             let is_yield = is_empty_generator_yield(&x);
             let can_open_region =
                 !is_yield && !self.in_unreachable_suite && certain_start.is_none();
-            // Set while binding the previous statement, if it was a `with` that only falls
-            // through when a manager suppresses. This statement begins that gate's region; a
-            // leading `yield` leaves the value pending so the region starts past it too.
+            // A statement that begins the certain region cannot also begin a gated one: the
+            // gated region ends where the certain one starts, so it would be empty.
+            let starts_certain_region = can_open_region && self.scopes.is_definitely_unreachable();
+            // Set while binding an earlier statement that control passes only conditionally.
+            // This statement begins that gate's region; a leading `yield` leaves the value
+            // pending so the region starts past it too.
             if !is_yield
-                && let Some((contexts, kind)) = self.pending_with_suppression.take()
+                && let Some(condition) = self.pending_gate.take()
                 && can_open_region
+                && !starts_certain_region
             {
-                gates.push(WithFallthroughGate {
-                    contexts,
-                    kind,
+                gates.push(SuiteGate {
+                    condition,
                     start: x.range().start(),
                 });
             }
-            if can_open_region && self.scopes.is_definitely_unreachable() {
+            if starts_certain_region {
                 certain_start = Some(x.range().start());
                 // The gated region stops where the certain one takes over, so the two abut
                 // rather than overlap.
@@ -1371,11 +1373,22 @@ impl<'a> BindingsBuilder<'a> {
                 self.adjacent_namedtuple_defaults = Some(defaults);
             }
             prev_end = Some(x.range().end());
+            // A `with` body can leave `last_stmt_expr` set, and the `with` arm already gates on
+            // it, so only an expression statement of this suite opens a divergence gate.
+            let is_expr_stmt = matches!(&x, Stmt::Expr(_));
             self.stmt(x, parent);
+            // A gate still pending was skipped by the `yield` carve-out above and must survive to
+            // the statement that carve-out is holding it for. A `yield` cannot diverge anyway.
+            if is_expr_stmt
+                && self.pending_gate.is_none()
+                && let Some(result) = self.scopes.last_stmt_expr()
+            {
+                self.pending_gate = Some(GateCondition::ExpressionReturns { result });
+            }
             self.adjacent_namedtuple_defaults = None;
         }
-        // A `with` in the final position has no following code to judge.
-        self.pending_with_suppression = None;
+        // A gate in the final position has no following code to judge.
+        self.pending_gate = None;
         // Without a certain region the gated one runs to the end of the suite; with one it stops
         // where that takes over, since the certain region is reported on its own.
         let gated_end = if certain_start.is_some() {
@@ -1383,12 +1396,18 @@ impl<'a> BindingsBuilder<'a> {
         } else {
             suite_end
         };
+        // Every gate must open before the region ends, or it describes nothing. Construction
+        // above upholds that; dropping any that do not keeps the range handed to the solver
+        // well formed rather than relying on it.
+        if let Some(end) = gated_end {
+            gates.retain(|gate| gate.start < end);
+        }
         if let Some(first) = gates.first()
             && let Some(end) = gated_end
         {
             self.insert_binding(
-                KeyExpect::WithFallthroughReachability(TextRange::new(first.start, end)),
-                BindingExpect::WithFallthroughReachability {
+                KeyExpect::GatedSuiteReachability(TextRange::new(first.start, end)),
+                BindingExpect::GatedSuiteReachability {
                     gates: gates.into_boxed_slice(),
                     end,
                 },

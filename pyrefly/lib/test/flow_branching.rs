@@ -2602,7 +2602,9 @@ def raises() -> NoReturn:
 def f(x: str | None):
     if x is None:
         raises()
-        y = "unreachable"  # This makes the branch NOT terminate
+        # The assignment still leaves the branch non-terminating for flow purposes, so `x` is
+        # not narrowed, even though the assignment itself can never run.
+        y = "unreachable"  # E: This code is unreachable
     assert_type(x, str | None)
 "#,
 );
@@ -3471,5 +3473,155 @@ def impossible_identity(x: str) -> None:
 def impossible_isinstance(x: int) -> None:
     if isinstance(x, str):
         assert_type(x, Never)
+"#,
+);
+
+// A call that never returns leaves the rest of its suite dead. The flow does not terminate
+// syntactically, and whether the call diverges is known only once its return type is solved,
+// so the diagnostic is deferred.
+testcase!(
+    test_unreachable_after_a_diverging_call,
+    r#"
+import sys
+from typing import NoReturn
+
+def never() -> NoReturn: ...
+def returns() -> None: ...
+
+def after_call() -> None:
+    never()
+    print(1)  # E: This code is unreachable
+
+def after_sys_exit() -> None:
+    sys.exit(1)
+    print(2)  # E: This code is unreachable
+
+# One region to the end of the suite, as with any other dead code.
+def to_end_of_suite() -> None:
+    never()
+    print(3)  # E: This code is unreachable
+    print(4)
+
+def nothing_follows() -> None:
+    never()
+
+def returns_normally() -> None:
+    returns()
+    print(5)
+"#,
+);
+
+// `os._exit` both ends the flow at bind time and is an expression statement, so it opens a gate
+// on the statement after it while that same statement begins the definitely-dead region. The
+// gated region ends where the certain one starts, leaving the gate nothing to describe.
+testcase!(
+    test_gate_and_certain_region_on_one_statement,
+    r#"
+import os
+
+def f() -> None:
+    print("a")
+    os._exit(1)
+    print("b")  # E: This code is unreachable
+
+def only_the_certain_region(x: int) -> None:
+    os._exit(1)
+    raise ValueError  # E: This code is unreachable
+"#,
+);
+
+// A `Never` result does not by itself mean the statement diverged. Narrowing a receiver away
+// gives one too, and that deadness comes from narrowing, which we do not report. What separates
+// them is the callee: a callable returning `Never` against a callee that is itself `Never`.
+testcase!(
+    test_never_by_propagation_is_not_a_diverging_call,
+    r#"
+import socket
+from typing import Never, assert_type
+
+def receiver_narrowed_away(af: int, sa: object) -> None:
+    sock = None
+    try:
+        sock = socket.socket(af)
+        return
+    except OSError:
+        if sock is not None:
+            sock.close()
+            sock = None
+
+def argument_is_never(x: Never) -> None:
+    assert_type(x, Never)
+    print(1)
+"#,
+);
+
+// `raise NotImplementedError` is the abstract-method placeholder, and pyrefly deliberately lets
+// a subclass override it with one that returns. Its inferred `Never` is therefore a statement
+// about the base alone, not a promise about the receiver's actual class.
+testcase!(
+    test_abstract_placeholder_is_not_a_diverging_call,
+    r#"
+from typing import NoReturn
+
+class Abstract:
+    def m(self):
+        raise NotImplementedError()
+
+class Concrete(Abstract):
+    def m(self) -> None: ...
+
+def through_base(a: Abstract) -> None:
+    a.m()
+    print(1)
+
+# An explicit annotation is a promise, and overriding it is reported as inconsistent, so it is
+# still trusted here.
+class Diverges:
+    def m(self) -> NoReturn:
+        raise RuntimeError
+
+def annotated(d: Diverges) -> None:
+    d.m()
+    print(2)  # E: This code is unreachable
+"#,
+);
+
+// An inferred `Never` travels: `row_del` has an ordinary body, but returns the result of an
+// unimplemented base method several classes away. Every concrete subclass overrides that method
+// and returns normally, so the call does not diverge. Modelled on sympy's `MatrixBase`, which
+// this reported as dead code for the whole rest of the function.
+testcase!(
+    test_inferred_never_inherited_from_a_base_is_not_a_diverging_call,
+    r#"
+class Base:
+    def _new(self, n: int):
+        raise NotImplementedError("Subclasses must implement this.")
+
+    def _eval_row_del(self, row: int):
+        return self._new(row)
+
+    def row_del(self, row: int):
+        return self._eval_row_del(row)
+
+class Concrete(Base):
+    def _new(self, n: int) -> "Concrete":
+        return self
+
+def use(m: Base) -> None:
+    m.row_del(0)
+    print(1)
+"#,
+);
+
+// A plain function is not overridable, so an inferred `Never` on it is a real guarantee.
+testcase!(
+    test_inferred_never_on_a_plain_function_still_diverges,
+    r#"
+def boom():
+    raise RuntimeError("no")
+
+def use() -> None:
+    boom()
+    print(1)  # E: This code is unreachable
 "#,
 );

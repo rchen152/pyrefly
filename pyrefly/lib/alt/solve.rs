@@ -18,6 +18,7 @@ use pyrefly_python::sys_info::SysInfo;
 use pyrefly_types::dimension::Int;
 use pyrefly_types::dimension::gradual_size;
 use pyrefly_types::facet::FacetKind;
+use pyrefly_types::function::BodyKind;
 use pyrefly_types::identity::IdentityIgnored;
 use pyrefly_types::shaped_array::IntTuple;
 use pyrefly_types::shaped_array::ShapedArrayType;
@@ -104,6 +105,7 @@ use crate::binding::binding::ExceptClauseCatches;
 use crate::binding::binding::ExprOrBinding;
 use crate::binding::binding::FirstUse;
 use crate::binding::binding::FunctionParameter;
+use crate::binding::binding::GateCondition;
 use crate::binding::binding::ImportBinding;
 use crate::binding::binding::ImportFallback;
 use crate::binding::binding::IsAsync;
@@ -2754,16 +2756,22 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 case_range,
                 errors,
             ),
-            BindingExpect::WithFallthroughReachability { gates, end } => {
+            BindingExpect::GatedSuiteReachability { gates, end } => {
                 // Everything from the first gate that cannot be passed is dead, so report from
                 // there; later gates describe code that region already covers.
-                if let Some(gate) = gates.iter().find(|gate| {
-                    gate.contexts.iter().all(|context| {
-                        self.context_manager_definitely_does_not_suppress(
-                            self.get_idx(*context).ty(),
-                            gate.kind,
-                        )
-                    })
+                if let Some(gate) = gates.iter().find(|gate| match &gate.condition {
+                    GateCondition::ManagerSuppresses { contexts, kind } => {
+                        contexts.iter().all(|context| {
+                            self.context_manager_definitely_does_not_suppress(
+                                self.get_idx(*context).ty(),
+                                *kind,
+                            )
+                        })
+                    }
+                    GateCondition::ExpressionReturns { result } => {
+                        self.get_idx(*result).ty().is_never()
+                            && self.statement_is_a_diverging_call(*result)
+                    }
                 }) {
                     errors
                         .error_builder(
@@ -4375,6 +4383,47 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             Type::ClassType(cls) => cls == self.stdlib.none_type(),
             _ => false,
         }
+    }
+
+    /// Whether this expression statement is a call to something that never returns.
+    ///
+    /// A `Never` result does not say so on its own. A call whose receiver was narrowed away has
+    /// one too: `sock.close()` on a `sock` narrowed to `Never` yields `Never` because the
+    /// receiver did, not because `close` diverges. That is deadness by narrowing, which we do
+    /// not report. The callee separates the two, being a callable returning `Never` in the first
+    /// case and itself `Never` in the second.
+    fn statement_is_a_diverging_call(&self, result: Idx<Key>) -> bool {
+        let Binding::StmtExpr(expr, _) = self.bindings().get(result) else {
+            return false;
+        };
+        let Expr::Call(call) = &**expr else {
+            return false;
+        };
+        // Inferring only to decide reachability, so keep the result out of the trace data
+        // that hover and signature help read.
+        let callee = self.without_tracing(|| self.expr_infer(&call.func, &self.error_swallower()));
+        // A `Never` return only speaks for the call if the implementation we resolved to is the
+        // one that runs. Two kinds of callee where it is not:
+        //
+        // - A method whose return type was inferred. Any subclass may override it with one that
+        //   returns, so the receiver's runtime class decides, and the `Never` describes only the
+        //   implementation we happened to resolve. An inferred `Never` also travels: a method
+        //   returning `self._new(...)` inherits it from an unimplemented `_new` several classes
+        //   away, while every concrete subclass overrides `_new` and returns normally. A
+        //   *declared* `NoReturn` is a promise instead, and overriding it is reported as an
+        //   inconsistent override, so it stays trusted.
+        // - `raise NotImplementedError`, the abstract placeholder, which describes unimplemented
+        //   code rather than code that genuinely diverges.
+        let callee_is_a_method = matches!(callee, Type::BoundMethod(_));
+        if callee.toplevel_func_metadata().is_some_and(|meta| {
+            meta.flags.body_kind == BodyKind::RaiseNotImplementedError
+                || (callee_is_a_method && meta.flags.is_return_inferred)
+        }) {
+            return false;
+        }
+        callee
+            .to_callable()
+            .is_some_and(|callable| callable.ret.is_never())
     }
 
     /// Handle `Binding::ReturnImplicit` - compute the implicit return type.
