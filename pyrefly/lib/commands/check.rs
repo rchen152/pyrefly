@@ -2054,12 +2054,7 @@ impl CheckArgs {
                 .as_ref()
                 .expect("a baseline action requires a baseline path");
             // Pruning removes entries and preserves the format of remaining ones.
-            write_formatted_baseline_errors_to_file(
-                baseline_path,
-                &BaselineErrors {
-                    errors: retained_baseline_entries,
-                },
-            )?;
+            write_formatted_baseline_errors_to_file(baseline_path, &retained_baseline_entries)?;
         }
         if rewriting_baseline {
             info!(

@@ -350,7 +350,9 @@ impl BaselineProcessor {
 /// The result of classifying unmatched baseline entries after a CLI check.
 pub struct BaselinePruningResult {
     pub unused_entry_count: usize,
-    pub retained_entries: Vec<BaselineError>,
+    /// The rows that survive, kept as a whole baseline so that a prune rewrite preserves
+    /// anything recorded alongside them rather than reconstructing the file from the rows.
+    pub retained: BaselineErrors,
 }
 
 fn is_definitely_unused(
@@ -411,7 +413,7 @@ impl TrackedBaselineProcessor {
     ) -> BaselinePruningResult {
         let rows_matched = self.index.apply(shown_errors, baseline_errors);
         let mut unused_entry_count = 0;
-        let retained_entries = self
+        let retained = self
             .entries
             .into_iter()
             .zip(&self.index.keys)
@@ -431,7 +433,7 @@ impl TrackedBaselineProcessor {
             .collect();
         BaselinePruningResult {
             unused_entry_count,
-            retained_entries,
+            retained: BaselineErrors { errors: retained },
         }
     }
 }
@@ -777,10 +779,11 @@ mod tests {
 
         // The surviving entries are the two `test.py` rows, returned in file
         // order rather than as a single deduplicated key.
-        assert_eq!(result.retained_entries.len(), 2);
+        assert_eq!(result.retained.errors.len(), 2);
         assert!(
             result
-                .retained_entries
+                .retained
+                .errors
                 .iter()
                 .all(|e| e.path == "/workspace/test.py")
         );
@@ -1032,7 +1035,7 @@ mod tests {
             processor.process_errors(&mut Vec::new(), &mut Vec::new(), &HashSet::from([checked]));
         assert_eq!(result.unused_entry_count, 2);
         assert_eq!(
-            result.retained_entries.map(|entry| entry.path.clone()),
+            result.retained.errors.map(|entry| entry.path.clone()),
             vec![kept]
         );
     }
@@ -1218,7 +1221,7 @@ mod tests {
 
         // Two of the three rows still align, so exactly one is retired.
         assert_eq!(result.unused_entry_count, 1);
-        assert_eq!(result.retained_entries.len(), 2);
+        assert_eq!(result.retained.errors.len(), 2);
     }
 
     /// Check that an error matches a baseline entry regardless of how the path is stored,

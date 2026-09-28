@@ -157,7 +157,7 @@ impl BaselineError {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Default)]
 pub struct BaselineErrors {
     pub errors: Vec<BaselineError>,
 }

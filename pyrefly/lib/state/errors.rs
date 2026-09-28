@@ -48,7 +48,7 @@ use crate::error::collector::CollectedErrors;
 use crate::error::error::BaselineStatus;
 use crate::error::error::Error;
 use crate::error::expectation::Expectation;
-use crate::error::legacy::BaselineError;
+use crate::error::legacy::BaselineErrors;
 use crate::error::style::ErrorStyle;
 use crate::state::load::Load;
 
@@ -298,7 +298,7 @@ pub enum BaselineApplyResult {
     /// When `classify_stale_entries` is false, `unused=0` and `retained=[]`.
     Applied {
         unused_entry_count: usize,
-        retained_entries: Vec<BaselineError>,
+        retained: BaselineErrors,
     },
 }
 
@@ -311,25 +311,23 @@ impl BaselineApplyResult {
     pub fn resolve(
         self,
         tolerate_read_error: bool,
-    ) -> anyhow::Result<(BaselineStatus, usize, Vec<BaselineError>)> {
+    ) -> anyhow::Result<(BaselineStatus, usize, BaselineErrors)> {
         match self {
-            Self::NotConfigured => Ok((BaselineStatus::NotConfigured, 0, Vec::new())),
-            Self::NotFound => Ok((BaselineStatus::NotCompared, 0, Vec::new())),
+            Self::NotConfigured => {
+                Ok((BaselineStatus::NotConfigured, 0, BaselineErrors::default()))
+            }
+            Self::NotFound => Ok((BaselineStatus::NotCompared, 0, BaselineErrors::default())),
             Self::Applied {
                 unused_entry_count,
-                retained_entries,
-            } => Ok((
-                BaselineStatus::Unmatched,
-                unused_entry_count,
-                retained_entries,
-            )),
+                retained,
+            } => Ok((BaselineStatus::Unmatched, unused_entry_count, retained)),
             Self::FailedToRead(e) if tolerate_read_error => {
                 // When regenerating the baseline, a corrupt/unreadable existing
                 // file is tolerated and treated as missing.
                 eprintln!(
                     "Ignoring unreadable baseline while regenerating it with `--update-baseline`: {e:#}"
                 );
-                Ok((BaselineStatus::NotCompared, 0, Vec::new()))
+                Ok((BaselineStatus::NotCompared, 0, BaselineErrors::default()))
             }
             Self::FailedToRead(e) => Err(e),
         }
@@ -432,7 +430,7 @@ impl Errors {
             );
             BaselineApplyResult::Applied {
                 unused_entry_count: result.unused_entry_count,
-                retained_entries: result.retained_entries,
+                retained: result.retained,
             }
         } else {
             let processor = match BaselineProcessor::from_json(&content, relative_to, matching_mode)
@@ -444,7 +442,7 @@ impl Errors {
             processor.process_errors(&mut errors.ordinary, &mut errors.baseline);
             BaselineApplyResult::Applied {
                 unused_entry_count: 0,
-                retained_entries: Vec::new(),
+                retained: BaselineErrors::default(),
             }
         }
     }
