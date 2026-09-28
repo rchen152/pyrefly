@@ -111,9 +111,10 @@ impl BaselineKey {
     }
 }
 
-/// Order diagnostics the way `--update-baseline` writes them, so that the sequence
-/// handed to `align` is in the same order as the rows it is compared against.
-fn sort_by_source_position(errors: &mut [Error]) {
+/// Order diagnostics the way a baseline stores its rows. `--update-baseline` writes rows
+/// in this order and `column-ordered` matching sorts diagnostics into it, so the two
+/// sequences handed to `align` line up; they must never be sorted two different ways.
+pub(crate) fn sort_by_source_position(errors: &mut [Error]) {
     errors.sort_by_cached_key(|error| {
         (
             error.path().to_string(),
@@ -1000,6 +1001,43 @@ mod tests {
             result.retained_entries.map(|entry| entry.path.clone()),
             vec![kept]
         );
+    }
+
+    /// A baseline written the way `--update-baseline` writes it matches the same
+    /// diagnostics however they arrive, including several kinds at one position.
+    #[test]
+    fn test_ordered_round_trips_through_the_written_order() {
+        let module = Module::new(
+            ModuleName::from_str("test_module"),
+            ModulePath::filesystem(PathBuf::from("/workspace/test.py")),
+            Arc::new("aaaaaaaa\naaaaaaaa\n".to_owned()),
+        );
+        let at = |start: u32, kind: ErrorKind| {
+            Error::new(
+                module.dupe(),
+                TextRange::new(TextSize::new(start), TextSize::new(start + 1)),
+                "err".to_owned(),
+                Vec::new(),
+                kind,
+            )
+        };
+        let mut errors = vec![
+            at(11, ErrorKind::BadReturn),
+            at(2, ErrorKind::BadReturn),
+            at(2, ErrorKind::BadAssignment),
+            at(11, ErrorKind::BadAssignment),
+        ];
+        errors.extend(errors_in("/workspace/other.py", &[3, 5]));
+
+        let mut written = errors.clone();
+        sort_by_source_position(&mut written);
+        let processor = ordered_processor_for(BaselineErrors::from_errors(
+            Path::new("/workspace"),
+            &written,
+        ));
+
+        errors.reverse();
+        assert!(reported(&processor, errors).is_empty());
     }
 
     /// The set-based modes keep their existing behaviour: one row absorbs any number
