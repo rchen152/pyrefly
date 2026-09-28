@@ -553,13 +553,15 @@ more details on how baseline files work.
 
 Controls how diagnostics are matched against baseline entries. `"column"`
 matches the file, error kind, and starting column. `"concise-description"`
-matches the file, error kind, and concise description.
+matches the file, error kind, and concise description. `"column-ordered"` matches the
+same fields as `"column"`, but compares each file's diagnostics against its baseline
+rows as an ordered sequence rather than as a set.
 
 ```toml
 baseline-matching-mode = "concise-description"
 ```
 
-- Type: `"column"` | `"concise-description"`
+- Type: `"column"` | `"concise-description"` | `"column-ordered"`
 - Default: `"column"`
 - Flag equivalent: none
 - Notes:
@@ -569,6 +571,32 @@ baseline-matching-mode = "concise-description"
       property of the checked-in baseline and must be consistent for all users.
     - After changing modes, regenerate a baseline that does not contain the new
       mode's required field with `pyrefly check --update-baseline`.
+    - Under `"column"` and `"concise-description"` a single entry suppresses any
+      number of diagnostics that match it, so adding another occurrence of an
+      already-baselined diagnostic reports nothing. `"column-ordered"` aligns each
+      file's diagnostics against its rows, so a new diagnostic is reported at the
+      line where it was added rather than at some later line sharing its key, and
+      the number of suppressed diagnostics cannot grow without running
+      `--update-baseline`. In exchange, a baseline under `"column-ordered"` needs
+      updating more often, and moving code so that two diagnostics swap places can
+      report one of them as new.
+    - Because the order of rows within a file is part of the comparison, do not
+      re-sort a `"column-ordered"` baseline by hand. `--update-baseline` writes the
+      rows in source order. Baselines written by Pyrefly 0.49 or earlier can list
+      diagnostics that share a position in a different order, which
+      `"column-ordered"` would report as new, so regenerate those with
+      `pyrefly check --update-baseline` after switching.
+    - A `"column-ordered"` baseline records the `min-severity` threshold it was
+      written with, and diagnostics below it take no part in the comparison, even
+      if the threshold changes between runs. A baseline without a recorded
+      threshold, such as one written under another mode, can be used as is: every
+      diagnostic then takes part. That only makes a difference when diagnostics
+      with the same file, error kind, and column have different severities, which
+      [`type-ignore-unknown-tag-behavior`](#type-ignore-unknown-tag-behavior)
+      `= "downgrade-to-warning"` can cause. There, a downgraded warning can take
+      the place of a baselined error, which is then reported as new. If you use
+      that setting, run `pyrefly check --update-baseline` after switching to
+      `"column-ordered"`.
 
 ### `baseline-format`
 
@@ -1302,6 +1330,12 @@ same comment independently use the configured behavior.
 - Type: `"no-effect" | "downgrade-to-warning" | "suppress"`
 - Default: `"suppress"`
 - Flag equivalent: `--type-ignore-unknown-tag-behavior`
+- Notes:
+    - If `downgrade-to-warning` is in use when you switch
+      [`baseline-matching-mode`](#baseline-matching-mode) to `"column-ordered"`,
+      regenerate the baseline once with `pyrefly check --update-baseline`
+      immediately after the switch, so that it records the severity threshold it
+      was written with. Later runs need no special treatment.
 
 ### `sub-config`
 
