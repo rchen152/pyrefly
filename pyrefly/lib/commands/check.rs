@@ -83,7 +83,7 @@ use crate::commands::files::get_config_finder_for_snippet;
 use crate::commands::util::CommandExitStatus;
 use crate::config::error_kind::Severity;
 use crate::config::finder::ConfigFinder;
-use crate::error::baseline::sort_by_source_position;
+use crate::error::baseline::prepare_baseline_rows;
 use crate::error::code_climate::CodeClimateIssues;
 use crate::error::error::BaselineStatus;
 use crate::error::error::Error;
@@ -2040,7 +2040,7 @@ impl CheckArgs {
             let mut new_baseline = errors.baseline;
             new_baseline.retain(|e| e.severity() >= min_severity);
             new_baseline.extend(ordinary_errors.iter().cloned());
-            sort_by_source_position(&mut new_baseline);
+            prepare_baseline_rows(&mut new_baseline, defaults.baseline_matching_mode);
             write_baseline_errors_to_file(
                 baseline_path,
                 relative_to.as_path(),

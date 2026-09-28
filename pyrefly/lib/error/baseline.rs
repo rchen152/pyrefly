@@ -114,15 +114,40 @@ impl BaselineKey {
 /// Order diagnostics the way a baseline stores its rows. `--update-baseline` writes rows
 /// in this order and `column-ordered` matching sorts diagnostics into it, so the two
 /// sequences handed to `align` line up; they must never be sorted two different ways.
-pub(crate) fn sort_by_source_position(errors: &mut [Error]) {
+///
+/// The file is compared by its path rather than by how its handle displays it, which
+/// for an in-memory handle adds a prefix. Copies of one diagnostic from different kinds
+/// of handle therefore still sort next to each other, which `is_copy` relies on.
+fn sort_by_source_position(errors: &mut [Error]) {
     errors.sort_by_cached_key(|error| {
         (
-            error.path().to_string(),
+            error.path().as_path().to_string_lossy().into_owned(),
             error.range().start(),
             error.range().end(),
             error.error_kind(),
         )
     });
+}
+
+/// Whether two diagnostics are copies of one diagnostic. A file checked under more than
+/// one handle reports each of its diagnostics once per handle, and the number of handles
+/// can differ between the run that wrote a baseline and the run that reads it. Copies
+/// agree on file, range, and error kind, so `sort_by_source_position` puts them next to
+/// each other.
+fn is_copy(a: &Error, b: &Error) -> bool {
+    a.path().as_path() == b.path().as_path()
+        && a.range() == b.range()
+        && a.error_kind() == b.error_kind()
+}
+
+/// Put the diagnostics `--update-baseline` is about to record into row order. Under
+/// `column-ordered`, copies of one diagnostic are recorded once, because matching reads
+/// them back as one.
+pub(crate) fn prepare_baseline_rows(errors: &mut Vec<Error>, matching_mode: BaselineMatchingMode) {
+    sort_by_source_position(errors);
+    if matching_mode.is_ordered() {
+        errors.dedup_by(|a, b| is_copy(a, b));
+    }
 }
 
 /// Align a file's baseline rows against its observed diagnostics, returning which
@@ -237,9 +262,17 @@ impl BaselineIndex {
             }
             Lookup::Sequences(rows_by_path) => {
                 sort_by_source_position(shown_errors);
-                let observed =
-                    shown_errors.map(|error| BaselineKey::from_error(error, self.matching_mode));
-                let mut covered = vec![false; observed.len()];
+                // Copies of one diagnostic are adjacent once sorted. Each run of copies is
+                // a single observation, and every copy takes that observation's result.
+                let mut observed = Vec::with_capacity(shown_errors.len());
+                let mut observation_of = Vec::with_capacity(shown_errors.len());
+                for (index, error) in shown_errors.iter().enumerate() {
+                    if index == 0 || !is_copy(&shown_errors[index - 1], error) {
+                        observed.push(BaselineKey::from_error(error, self.matching_mode));
+                    }
+                    observation_of.push(observed.len() - 1);
+                }
+                let mut observed_covered = vec![false; observed.len()];
                 let mut rows_matched = vec![false; self.keys.len()];
                 for (path, positions) in group_by_path(&observed) {
                     let empty = Vec::new();
@@ -252,9 +285,10 @@ impl BaselineIndex {
                         rows_matched[*position] = used;
                     }
                     for (index, used) in positions.iter().zip(observed_used) {
-                        covered[*index] = used;
+                        observed_covered[*index] = used;
                     }
                 }
+                let covered = observation_of.map(|observation| observed_covered[*observation]);
                 (covered, rows_matched)
             }
         };
@@ -1030,7 +1064,7 @@ mod tests {
         errors.extend(errors_in("/workspace/other.py", &[3, 5]));
 
         let mut written = errors.clone();
-        sort_by_source_position(&mut written);
+        prepare_baseline_rows(&mut written, BaselineMatchingMode::ColumnOrdered);
         let processor = ordered_processor_for(BaselineErrors::from_errors(
             Path::new("/workspace"),
             &written,
@@ -1038,6 +1072,116 @@ mod tests {
 
         errors.reverse();
         assert!(reported(&processor, errors).is_empty());
+    }
+
+    /// A `bad-return` at each given column of line 1 of `/workspace/test.py`, reported
+    /// once per handle, as a file checked under two handles reports them: first every
+    /// diagnostic from the file on disk, then every diagnostic from memory.
+    fn copies_from_two_handles(columns: &[usize]) -> Vec<Error> {
+        let path = PathBuf::from("/workspace/test.py");
+        [
+            ModulePath::filesystem(path.clone()),
+            ModulePath::memory(path),
+        ]
+        .into_iter()
+        .flat_map(|module_path| {
+            let module = Module::new(
+                ModuleName::from_str("test_module"),
+                module_path,
+                Arc::new("aaaaaaaa\n".to_owned()),
+            );
+            columns.map(|column| {
+                let start = TextSize::new(*column as u32 - 1);
+                Error::new(
+                    module.dupe(),
+                    TextRange::new(start, start + TextSize::new(1)),
+                    "err".to_owned(),
+                    Vec::new(),
+                    ErrorKind::BadReturn,
+                )
+            })
+        })
+        .collect()
+    }
+
+    /// Copies of one diagnostic are one observation, so a single row covers all of them
+    /// and none is reported as new.
+    #[test]
+    fn test_ordered_treats_copies_of_a_diagnostic_as_one() {
+        let processor = ordered_processor(&[3]);
+        assert!(reported(&processor, copies_from_two_handles(&[3])).is_empty());
+
+        let tracked = TrackedBaselineProcessor::from_baseline_errors(
+            baseline_of(&[3]),
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap();
+        let mut baselined = Vec::new();
+        let result = tracked.process_errors(
+            &mut copies_from_two_handles(&[3]),
+            &mut baselined,
+            &HashSet::from(["/workspace/test.py".to_owned()]),
+        );
+        assert_eq!(baselined.len(), 2);
+        assert_eq!(result.unused_entry_count, 0);
+    }
+
+    /// Copies stay adjacent however their handles render their paths. An in-memory path
+    /// displays with a prefix, so ordering by the displayed path would put both on-disk
+    /// diagnostics before both in-memory ones and pair neither copy.
+    #[test]
+    fn test_ordered_treats_copies_of_several_diagnostics_as_one_each() {
+        let processor = ordered_processor(&[3, 5]);
+        assert!(reported(&processor, copies_from_two_handles(&[3, 5])).is_empty());
+
+        let mut rows = copies_from_two_handles(&[3, 5]);
+        prepare_baseline_rows(&mut rows, BaselineMatchingMode::ColumnOrdered);
+        assert_eq!(rows.len(), 2);
+    }
+
+    /// A second row recorded for a second copy, as a writer that keeps copies produces,
+    /// finds no counterpart and goes stale, while both copies stay suppressed.
+    #[test]
+    fn test_ordered_retires_a_row_recorded_for_a_second_copy() {
+        let tracked = TrackedBaselineProcessor::from_baseline_errors(
+            baseline_of(&[3, 3]),
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap();
+        let mut shown = copies_from_two_handles(&[3]);
+        let result = tracked.process_errors(
+            &mut shown,
+            &mut Vec::new(),
+            &HashSet::from(["/workspace/test.py".to_owned()]),
+        );
+        assert!(shown.is_empty());
+        assert_eq!(result.unused_entry_count, 1);
+    }
+
+    /// `--update-baseline` records copies once under `column-ordered` and leaves the other
+    /// modes' rows as they were. A diagnostic of another kind at the same position is not
+    /// a copy.
+    #[test]
+    fn test_prepare_baseline_rows_records_copies_once_only_under_column_ordered() {
+        let mut errors = copies_from_two_handles(&[3]);
+        let other_kind = errors[0].clone();
+        errors.push(Error::new(
+            other_kind.module().dupe(),
+            other_kind.range(),
+            "err".to_owned(),
+            Vec::new(),
+            ErrorKind::BadAssignment,
+        ));
+        for (matching_mode, expected) in [
+            (BaselineMatchingMode::ColumnOrdered, 2),
+            (BaselineMatchingMode::Column, 3),
+        ] {
+            let mut rows = errors.clone();
+            prepare_baseline_rows(&mut rows, matching_mode);
+            assert_eq!(rows.len(), expected, "{matching_mode:?}");
+        }
     }
 
     /// The set-based modes keep their existing behaviour: one row absorbs any number
