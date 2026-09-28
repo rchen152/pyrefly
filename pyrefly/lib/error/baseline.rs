@@ -5,6 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -12,6 +13,10 @@ use anyhow::Context;
 use anyhow::Result;
 use pyrefly_util::absolutize::Absolutize;
 use pyrefly_util::prelude::SliceExt;
+use ruff_text_size::Ranged;
+use similar::Algorithm;
+use similar::DiffOp;
+use similar::capture_diff_slices;
 
 use crate::config::config::BaselineMatchingMode;
 use crate::error::error::Error;
@@ -106,12 +111,78 @@ impl BaselineKey {
     }
 }
 
+/// Order diagnostics the way `--update-baseline` writes them, so that the sequence
+/// handed to `align` is in the same order as the rows it is compared against.
+fn sort_by_source_position(errors: &mut [Error]) {
+    errors.sort_by_cached_key(|error| {
+        (
+            error.path().to_string(),
+            error.range().start(),
+            error.range().end(),
+            error.error_kind(),
+        )
+    });
+}
+
+/// Align a file's baseline rows against its observed diagnostics, returning which
+/// entries of each sequence found a counterpart.
+///
+/// Both sequences are in source order, and neither key carries a line number, so an
+/// unrelated diagnostic appearing earlier in the file shifts nothing: the surrounding
+/// keys still align and only the new diagnostic is left over. That is the reason for
+/// aligning rather than comparing per-key totals, which would blame the *last*
+/// occurrence of a key instead of the one that was added.
+///
+/// Whether a diagnostic is reported decides whether a check passes, so this uses the
+/// plain algorithm rather than a deadline-bounded one: the same inputs have to give the
+/// same answer on every machine.
+fn align(baseline: &[BaselineKey], observed: &[BaselineKey]) -> (Vec<bool>, Vec<bool>) {
+    let mut baseline_matched = vec![false; baseline.len()];
+    let mut observed_matched = vec![false; observed.len()];
+    for op in capture_diff_slices(Algorithm::Myers, baseline, observed) {
+        if let DiffOp::Equal {
+            old_index,
+            new_index,
+            len,
+        } = op
+        {
+            baseline_matched[old_index..old_index + len].fill(true);
+            observed_matched[new_index..new_index + len].fill(true);
+        }
+    }
+    (baseline_matched, observed_matched)
+}
+
+/// Group positions in a source-ordered key sequence by path, preserving order within
+/// each path so that each group can be aligned against that file's baseline rows.
+fn group_by_path(keys: &[BaselineKey]) -> Vec<(String, Vec<usize>)> {
+    let mut groups: Vec<(String, Vec<usize>)> = Vec::new();
+    for (index, key) in keys.iter().enumerate() {
+        match groups.last_mut() {
+            Some((path, positions)) if *path == key.path => positions.push(index),
+            _ => groups.push((key.path.clone(), vec![index])),
+        }
+    }
+    groups
+}
+
+/// How rows are looked up, which follows from the matching mode.
+#[derive(Debug)]
+enum Lookup {
+    /// The set-based modes ask only whether a key is present, so one row suppresses any
+    /// number of diagnostics that match it.
+    Membership(HashSet<BaselineKey>),
+    /// `column-ordered` aligns per file, so the baseline's row order within a file is
+    /// significant and must not be re-sorted. Maps each path to its row positions.
+    Sequences(HashMap<String, Vec<usize>>),
+}
+
 /// A parsed baseline: one key per row, indexed for matching.
 #[derive(Debug)]
 struct BaselineIndex {
     /// The key of each row, in file order.
     keys: Vec<BaselineKey>,
-    lookup: HashSet<BaselineKey>,
+    lookup: Lookup,
     matching_mode: BaselineMatchingMode,
 }
 
@@ -128,7 +199,18 @@ impl BaselineIndex {
                 BaselineKey::from_baseline_error(row, relative_to, matching_mode, index)
             })
             .collect::<Result<Vec<_>>>()?;
-        let lookup = keys.iter().cloned().collect();
+        let lookup = if matching_mode.is_ordered() {
+            let mut rows_by_path: HashMap<String, Vec<usize>> = HashMap::new();
+            for (position, key) in keys.iter().enumerate() {
+                rows_by_path
+                    .entry(key.path.clone())
+                    .or_default()
+                    .push(position);
+            }
+            Lookup::Sequences(rows_by_path)
+        } else {
+            Lookup::Membership(keys.iter().cloned().collect())
+        };
         Ok(Self {
             keys,
             lookup,
@@ -139,14 +221,42 @@ impl BaselineIndex {
     /// Move every diagnostic the baseline covers from `shown_errors` to
     /// `baseline_errors`, and return whether each row covered at least one diagnostic.
     fn apply(&self, shown_errors: &mut Vec<Error>, baseline_errors: &mut Vec<Error>) -> Vec<bool> {
-        let observed = shown_errors.map(|error| BaselineKey::from_error(error, self.matching_mode));
-        let covered = observed.map(|key| self.lookup.contains(key));
-        let matched_keys: HashSet<&BaselineKey> = observed
-            .iter()
-            .zip(&covered)
-            .filter_map(|(key, covered)| covered.then_some(key))
-            .collect();
-        let rows_matched = self.keys.map(|key| matched_keys.contains(key));
+        let (covered, rows_matched) = match &self.lookup {
+            Lookup::Membership(lookup) => {
+                let observed =
+                    shown_errors.map(|error| BaselineKey::from_error(error, self.matching_mode));
+                let covered = observed.map(|key| lookup.contains(key));
+                let matched_keys: HashSet<&BaselineKey> = observed
+                    .iter()
+                    .zip(&covered)
+                    .filter_map(|(key, covered)| covered.then_some(key))
+                    .collect();
+                let rows_matched = self.keys.map(|key| matched_keys.contains(key));
+                (covered, rows_matched)
+            }
+            Lookup::Sequences(rows_by_path) => {
+                sort_by_source_position(shown_errors);
+                let observed =
+                    shown_errors.map(|error| BaselineKey::from_error(error, self.matching_mode));
+                let mut covered = vec![false; observed.len()];
+                let mut rows_matched = vec![false; self.keys.len()];
+                for (path, positions) in group_by_path(&observed) {
+                    let empty = Vec::new();
+                    let row_positions = rows_by_path.get(&path).unwrap_or(&empty);
+                    let (rows_used, observed_used) = align(
+                        &row_positions.map(|position| self.keys[*position].clone()),
+                        &positions.map(|index| observed[*index].clone()),
+                    );
+                    for (position, used) in row_positions.iter().zip(rows_used) {
+                        rows_matched[*position] = used;
+                    }
+                    for (index, used) in positions.iter().zip(observed_used) {
+                        covered[*index] = used;
+                    }
+                }
+                (covered, rows_matched)
+            }
+        };
 
         let mut remaining_errors = Vec::new();
         for (error, covered) in shown_errors.drain(..).zip(covered) {
@@ -194,6 +304,9 @@ impl BaselineProcessor {
     }
 
     /// Baseline suppressions are processed last, after inline and config suppressions.
+    ///
+    /// Under `column-ordered`, each call must include every diagnostic for the files it
+    /// covers, because each file's rows are aligned against that file's diagnostics.
     pub fn process_errors(&self, shown_errors: &mut Vec<Error>, baseline_errors: &mut Vec<Error>) {
         self.index.apply(shown_errors, baseline_errors);
     }
@@ -250,6 +363,11 @@ impl TrackedBaselineProcessor {
     /// check. An unmatched row is unused only when its file was checked, or when the file
     /// is conclusively absent. Existing unchecked files and filesystem errors are
     /// retained. Duplicate rows sharing a key are classified individually.
+    ///
+    /// Under `column-ordered` a row is unused when the alignment found no counterpart
+    /// for it. The set-based modes instead treat a single match as covering every row
+    /// sharing that key, because there one row already suppresses any number of
+    /// diagnostics.
     pub fn process_errors(
         self,
         shown_errors: &mut Vec<Error>,
@@ -288,6 +406,7 @@ mod tests {
     use std::path::PathBuf;
     use std::sync::Arc;
 
+    use dupe::Dupe;
     use pyrefly_python::module::Module;
     use pyrefly_python::module_name::ModuleName;
     use pyrefly_python::module_path::ModulePath;
@@ -632,7 +751,296 @@ mod tests {
         );
     }
 
-    /// Check that an error matches a baseline entry regardless of how the path is stored.
+    /// Baseline rows given as `(path, column, error kind)`, in the order listed.
+    fn baseline_rows(rows: &[(&str, usize, ErrorKind)]) -> BaselineErrors {
+        serde_json::from_value(serde_json::json!({
+            "errors": rows
+                .iter()
+                .map(|(path, column, kind)| serde_json::json!({
+                    "column": column,
+                    "path": path,
+                    "name": kind.to_name()
+                }))
+                .collect::<Vec<_>>()
+        }))
+        .unwrap()
+    }
+
+    /// Baseline rows for one file, in the order `--update-baseline` writes them.
+    fn baseline_of(columns: &[usize]) -> BaselineErrors {
+        baseline_rows(&columns.map(|column| ("/workspace/test.py", *column, ErrorKind::BadReturn)))
+    }
+
+    /// One `bad-return` diagnostic per line of `path`, each at the given column.
+    fn errors_in(path: &str, columns: &[usize]) -> Vec<Error> {
+        let module = Module::new(
+            ModuleName::from_str("test_module"),
+            ModulePath::filesystem(PathBuf::from(path)),
+            Arc::new("aaaaaaaa\n".repeat(columns.len())),
+        );
+        columns
+            .iter()
+            .enumerate()
+            .map(|(line, column)| {
+                let start = TextSize::new(line as u32 * 9 + (*column as u32 - 1));
+                Error::new(
+                    module.dupe(),
+                    TextRange::new(start, start + TextSize::new(1)),
+                    "Any error message".to_owned(),
+                    Vec::new(),
+                    ErrorKind::BadReturn,
+                )
+            })
+            .collect()
+    }
+
+    /// One diagnostic per line of `/workspace/test.py`, each at the given column.
+    fn errors_at(columns: &[usize]) -> Vec<Error> {
+        errors_in("/workspace/test.py", columns)
+    }
+
+    /// Run the processor and return the file and 1-indexed line of each diagnostic it
+    /// reports, in source order.
+    fn reported(processor: &BaselineProcessor, mut shown: Vec<Error>) -> Vec<(String, u32)> {
+        let mut baselined = Vec::new();
+        processor.process_errors(&mut shown, &mut baselined);
+        let mut reported = shown.map(|error| {
+            (
+                error.path().as_path().to_string_lossy().into_owned(),
+                error.display_range().start.line_within_cell().get(),
+            )
+        });
+        reported.sort();
+        reported
+    }
+
+    fn ordered_processor_for(baseline: BaselineErrors) -> BaselineProcessor {
+        BaselineProcessor::from_baseline_errors(
+            baseline,
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap()
+    }
+
+    /// Run the processor and return the 1-indexed lines of the diagnostics it reports.
+    fn reported_lines(processor: &BaselineProcessor, mut shown: Vec<Error>) -> Vec<u32> {
+        let mut baselined = Vec::new();
+        processor.process_errors(&mut shown, &mut baselined);
+        shown
+            .iter()
+            .map(|error| error.display_range().start.line_within_cell().get())
+            .collect()
+    }
+
+    fn ordered_processor(columns: &[usize]) -> BaselineProcessor {
+        BaselineProcessor::from_baseline_errors(
+            baseline_of(columns),
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap()
+    }
+
+    /// The reason for aligning rather than tallying: a diagnostic inserted in the middle
+    /// of a file is reported at the line it was added, not at some later line that shares
+    /// its key. Here the baseline is `[col 3, col 5, col 3]` and a new `col 3` appears on
+    /// line 2, between the first two rows.
+    #[test]
+    fn test_ordered_reports_the_inserted_diagnostic_not_a_later_one() {
+        let processor = ordered_processor(&[3, 5, 3]);
+        assert_eq!(
+            reported_lines(&processor, errors_at(&[3, 3, 5, 3])),
+            vec![2]
+        );
+    }
+
+    #[test]
+    fn test_ordered_suppresses_an_unchanged_file() {
+        let processor = ordered_processor(&[3, 5, 3]);
+        assert!(reported_lines(&processor, errors_at(&[3, 5, 3])).is_empty());
+    }
+
+    #[test]
+    fn test_ordered_suppresses_when_diagnostics_have_been_fixed() {
+        let processor = ordered_processor(&[3, 5, 3]);
+        assert!(reported_lines(&processor, errors_at(&[3, 5])).is_empty());
+    }
+
+    /// A key the baseline does not record at all is reported wherever it appears.
+    #[test]
+    fn test_ordered_reports_an_unrecorded_key() {
+        let processor = ordered_processor(&[3, 5]);
+        assert_eq!(reported_lines(&processor, errors_at(&[3, 7, 5])), vec![2]);
+    }
+
+    /// Alignment cannot tell which member of a run of identical keys is new, so it falls
+    /// back to blaming the last one. This is the known limit of a key that does not vary
+    /// with the surrounding source.
+    #[test]
+    fn test_ordered_blames_the_last_of_an_identical_run() {
+        let processor = ordered_processor(&[3, 3, 3]);
+        assert_eq!(
+            reported_lines(&processor, errors_at(&[3, 3, 3, 3])),
+            vec![4]
+        );
+    }
+
+    /// Each file is aligned against its own rows. Diagnostics arrive from two files in no
+    /// particular order, and a new one in `a.py` leaves `b.py` untouched.
+    #[test]
+    fn test_ordered_aligns_each_file_independently() {
+        let processor = ordered_processor_for(baseline_rows(&[
+            ("/workspace/a.py", 3, ErrorKind::BadReturn),
+            ("/workspace/a.py", 5, ErrorKind::BadReturn),
+            ("/workspace/b.py", 3, ErrorKind::BadReturn),
+        ]));
+        let mut shown = errors_in("/workspace/b.py", &[3]);
+        shown.extend(errors_in("/workspace/a.py", &[3, 3, 5]));
+        assert_eq!(
+            reported(&processor, shown),
+            vec![("/workspace/a.py".to_owned(), 2)]
+        );
+    }
+
+    /// A file with no rows at all reports every diagnostic, without disturbing a file
+    /// that does have rows.
+    #[test]
+    fn test_ordered_reports_everything_in_a_file_without_rows() {
+        let processor = ordered_processor_for(baseline_rows(&[(
+            "/workspace/a.py",
+            3,
+            ErrorKind::BadReturn,
+        )]));
+        let mut shown = errors_in("/workspace/a.py", &[3]);
+        shown.extend(errors_in("/workspace/new.py", &[3, 5]));
+        assert_eq!(
+            reported(&processor, shown),
+            vec![
+                ("/workspace/new.py".to_owned(), 1),
+                ("/workspace/new.py".to_owned(), 2),
+            ]
+        );
+    }
+
+    /// Diagnostics at the same position are ordered by error kind, as the rows are, so
+    /// they match however they happen to be emitted.
+    #[test]
+    fn test_ordered_matches_several_kinds_at_one_position() {
+        let mut kinds = [ErrorKind::BadReturn, ErrorKind::BadAssignment];
+        kinds.sort();
+        let processor = ordered_processor_for(baseline_rows(
+            &kinds.map(|kind| ("/workspace/test.py", 3, kind)),
+        ));
+        let module = Module::new(
+            ModuleName::from_str("test_module"),
+            ModulePath::filesystem(PathBuf::from("/workspace/test.py")),
+            Arc::new("aaaaaaaa\n".to_owned()),
+        );
+        let range = TextRange::new(TextSize::new(2), TextSize::new(3));
+        let shown = kinds
+            .iter()
+            .rev()
+            .map(|kind| Error::new(module.dupe(), range, "err".to_owned(), Vec::new(), *kind))
+            .collect();
+        assert!(reported(&processor, shown).is_empty());
+    }
+
+    /// The cost of comparing by position: when two diagnostics swap places, one of them
+    /// no longer lines up, so it is reported and its row goes stale. A set-based mode
+    /// would match both.
+    #[test]
+    fn test_ordered_reports_one_of_two_swapped_diagnostics() {
+        let processor = ordered_processor(&[3, 5]);
+        assert_eq!(reported_lines(&processor, errors_at(&[5, 3])).len(), 1);
+
+        let tracked = TrackedBaselineProcessor::from_baseline_errors(
+            baseline_of(&[3, 5]),
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap();
+        let result = tracked.process_errors(
+            &mut errors_at(&[5, 3]),
+            &mut Vec::new(),
+            &HashSet::from(["/workspace/test.py".to_owned()]),
+        );
+        assert_eq!(result.unused_entry_count, 1);
+    }
+
+    /// Pruning keeps its conservative guard under `column-ordered`: rows for a file that
+    /// was checked but has no diagnostics, or that no longer exists, are retired, while
+    /// rows for an existing file outside the check are kept.
+    #[test]
+    fn test_ordered_pruning_retains_rows_for_unchecked_files() {
+        let root = tempfile::tempdir().unwrap();
+        let checked = root.path().join("checked.py");
+        let kept = root.path().join("kept.py");
+        std::fs::write(&kept, "").unwrap();
+        let path = |file: &Path| file.to_string_lossy().into_owned();
+        let (checked, kept, gone) = (
+            path(&checked),
+            path(&kept),
+            path(&root.path().join("gone.py")),
+        );
+        let processor = TrackedBaselineProcessor::from_baseline_errors(
+            baseline_rows(&[
+                (&checked, 3, ErrorKind::BadReturn),
+                (&kept, 3, ErrorKind::BadReturn),
+                (&gone, 3, ErrorKind::BadReturn),
+            ]),
+            root.path(),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap();
+        let result =
+            processor.process_errors(&mut Vec::new(), &mut Vec::new(), &HashSet::from([checked]));
+        assert_eq!(result.unused_entry_count, 2);
+        assert_eq!(
+            result.retained_entries.map(|entry| entry.path.clone()),
+            vec![kept]
+        );
+    }
+
+    /// The set-based modes keep their existing behaviour: one row absorbs any number
+    /// of matching diagnostics.
+    #[test]
+    fn test_column_mode_still_absorbs_repeated_occurrences() {
+        let processor = BaselineProcessor::from_baseline_errors(
+            baseline_of(&[3]),
+            Path::new("/workspace"),
+            BaselineMatchingMode::Column,
+        )
+        .unwrap();
+        assert!(reported_lines(&processor, errors_at(&[3, 3, 3])).is_empty());
+    }
+
+    #[test]
+    fn test_ordered_retires_rows_the_alignment_did_not_match() {
+        let processor = TrackedBaselineProcessor::from_baseline_errors(
+            baseline_of(&[3, 5, 3]),
+            Path::new("/workspace"),
+            BaselineMatchingMode::ColumnOrdered,
+        )
+        .unwrap();
+
+        let mut shown = errors_at(&[3, 5]);
+        let mut baselined = Vec::new();
+        let result = processor.process_errors(
+            &mut shown,
+            &mut baselined,
+            &HashSet::from(["/workspace/test.py".to_owned()]),
+        );
+        assert!(shown.is_empty());
+        assert_eq!(baselined.len(), 2);
+
+        // Two of the three rows still align, so exactly one is retired.
+        assert_eq!(result.unused_entry_count, 1);
+        assert_eq!(result.retained_entries.len(), 2);
+    }
+
+    /// Check that an error matches a baseline entry regardless of how the path is stored,
+    /// under both modes that key on the column.
     fn assert_baseline_path_matches(baseline_path: &str) {
         let cwd = std::env::current_dir().unwrap();
         let abs_path = cwd.join("src/foo.py");
@@ -646,14 +1054,6 @@ mod tests {
             }]
         });
 
-        let baseline_file: BaselineErrors = serde_json::from_value(baseline_json).unwrap();
-        let processor = BaselineProcessor::from_baseline_errors(
-            baseline_file,
-            &cwd,
-            BaselineMatchingMode::Column,
-        )
-        .unwrap();
-
         let module = Module::new(
             ModuleName::from_str("foo"),
             ModulePath::filesystem(abs_path),
@@ -666,7 +1066,18 @@ mod tests {
             Vec::new(),
             ErrorKind::BadReturn,
         );
-        assert!(is_suppressed(&processor, &error));
+        for matching_mode in [
+            BaselineMatchingMode::Column,
+            BaselineMatchingMode::ColumnOrdered,
+        ] {
+            let processor = BaselineProcessor::from_baseline_errors(
+                serde_json::from_value(baseline_json.clone()).unwrap(),
+                &cwd,
+                matching_mode,
+            )
+            .unwrap();
+            assert!(is_suppressed(&processor, &error), "{matching_mode:?}");
+        }
     }
 
     #[test]
@@ -693,14 +1104,6 @@ mod tests {
             }]
         });
 
-        let baseline_file: BaselineErrors = serde_json::from_value(baseline_json).unwrap();
-        let processor = BaselineProcessor::from_baseline_errors(
-            baseline_file,
-            Path::new("/workspace"),
-            BaselineMatchingMode::Column,
-        )
-        .unwrap();
-
         // Simulate a Windows-style path with backslashes in the error.
         let module = Module::new(
             ModuleName::from_str("foo"),
@@ -714,7 +1117,18 @@ mod tests {
             Vec::new(),
             ErrorKind::BadReturn,
         );
-        assert!(is_suppressed(&processor, &error));
+        for matching_mode in [
+            BaselineMatchingMode::Column,
+            BaselineMatchingMode::ColumnOrdered,
+        ] {
+            let processor = BaselineProcessor::from_baseline_errors(
+                serde_json::from_value(baseline_json.clone()).unwrap(),
+                Path::new("/workspace"),
+                matching_mode,
+            )
+            .unwrap();
+            assert!(is_suppressed(&processor, &error), "{matching_mode:?}");
+        }
     }
 
     #[test]
@@ -731,13 +1145,6 @@ mod tests {
                 "description": "test", "concise_description": "test"
             }]
         });
-        let baseline_file: BaselineErrors = serde_json::from_value(baseline_json).unwrap();
-        let processor = BaselineProcessor::from_baseline_errors(
-            baseline_file,
-            &relative_to,
-            BaselineMatchingMode::Column,
-        )
-        .unwrap();
 
         let module = Module::new(
             ModuleName::from_str("foo"),
@@ -751,6 +1158,17 @@ mod tests {
             Vec::new(),
             ErrorKind::BadReturn,
         );
-        assert!(is_suppressed(&processor, &error));
+        for matching_mode in [
+            BaselineMatchingMode::Column,
+            BaselineMatchingMode::ColumnOrdered,
+        ] {
+            let processor = BaselineProcessor::from_baseline_errors(
+                serde_json::from_value(baseline_json.clone()).unwrap(),
+                &relative_to,
+                matching_mode,
+            )
+            .unwrap();
+            assert!(is_suppressed(&processor, &error), "{matching_mode:?}");
+        }
     }
 }
