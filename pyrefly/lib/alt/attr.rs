@@ -1170,6 +1170,17 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             ));
         }
         for (attr, found_on) in lookup_found {
+            if matches!(found_on, AttributeBase1::Never) {
+                // An attribute write on `Never` always succeeds. However, this is often indicative
+                // of a bug, so emit a warning.
+                errors.error_builder(
+                    range,
+                    ErrorKind::AttributeAssignOnNever,
+                    format!("Assigning to attribute `{attr_name}` on an object with type `Never`"),
+                ).with_detail("If this is unexpected, the object type may have been incorrectly narrowed to `Never` by previous checks".to_owned()).with_context(context).emit();
+                setters.push(None);
+                continue;
+            }
             match attr {
                 // Attribute setting bypasses `__getattr__` lookup and checks `__setattr__`
                 // If the attribute is not found, we fall back to `__setattr__`
