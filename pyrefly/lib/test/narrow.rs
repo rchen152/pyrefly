@@ -4473,3 +4473,20 @@ def f(c: C):
         reveal_type(c.x)  # E: A & B
     "#,
 );
+
+testcase!(
+    test_impossible_facet_narrow,
+    r#"
+from typing import Never, assert_type
+class Container: pass
+class Env:
+    def __init__(self) -> None:
+        self.domains: Container = Container()
+    def setup(self) -> None:
+        if self.domains is None:
+            assert_type(self, Never)
+            # `Never` accepts all attribute writes, so this is technically valid. However,
+            # this is often indicative of a bug, so we emit a warning.
+            self.domains = Container()  # E: Assigning to attribute `domains` on an object with type `Never`
+    "#,
+);

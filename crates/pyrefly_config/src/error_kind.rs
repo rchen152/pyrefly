@@ -86,6 +86,8 @@ pub enum ErrorKind {
     AbstractMethodCall,
     /// Raised when an assert_type() call fails.
     AssertType,
+    /// Setting an attribute on an object with type `Never`.
+    AttributeAssignOnNever,
     /// Attempting to call a function with the wrong number of arguments.
     BadArgumentCount,
     /// Attempting to call a function with an argument that does not match the parameter's type.
@@ -567,6 +569,7 @@ impl ErrorKind {
     pub fn default_severity(self) -> Severity {
         // IMPORTANT: When updating these, also update error-kinds.mdx in the docs
         match self {
+            ErrorKind::AttributeAssignOnNever => Severity::Warn,
             ErrorKind::CoverageMissing => Severity::Warn,
             ErrorKind::CoveragePartial => Severity::Warn,
             ErrorKind::Deprecated => Severity::Warn,
