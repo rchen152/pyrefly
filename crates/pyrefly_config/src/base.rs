@@ -502,6 +502,18 @@ impl ConfigBase {
     pub fn get_treat_all_caps_as_final(base: &Self) -> Option<bool> {
         base.treat_all_caps_as_final
     }
+
+    /// Set `replace-imports-with-any` from module patterns such as `["pandas"]`.
+    /// This supports programmatic config construction, notably in tests.
+    pub fn set_replace_imports_with_any(&mut self, modules: &[&str]) -> anyhow::Result<()> {
+        self.replace_imports_with_any = Some(
+            modules
+                .iter()
+                .map(|m| ModuleWildcard::new(m))
+                .collect::<anyhow::Result<Vec<_>>>()?,
+        );
+        Ok(())
+    }
 }
 
 #[cfg(test)]

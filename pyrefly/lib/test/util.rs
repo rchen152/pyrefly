@@ -189,6 +189,7 @@ pub struct TestEnv {
     implicit_reexport_error: bool,
     default_require_level: Require,
     extra_file_extensions: Vec<String>,
+    replace_imports_with_any: Vec<String>,
     /// The `Require` level passed to `run()` in `to_state()`. Controls whether
     /// IDE features (indexing, hover) are enabled. Defaults to `Require::Everything`.
     run_require: Require,
@@ -247,6 +248,7 @@ impl TestEnv {
             implicit_reexport_error: false,
             default_require_level: Require::Exports,
             extra_file_extensions: Vec::new(),
+            replace_imports_with_any: Vec::new(),
             run_require: Require::Everything,
         }
     }
@@ -550,6 +552,11 @@ impl TestEnv {
         self
     }
 
+    pub fn with_replace_imports_with_any(mut self, modules: &[&str]) -> Self {
+        self.replace_imports_with_any = modules.iter().map(|m| (*m).to_owned()).collect();
+        self
+    }
+
     pub fn with_version(mut self, version: PythonVersion) -> Self {
         self.version = version;
         self
@@ -630,6 +637,17 @@ impl TestEnv {
         config.root.spec_compliant_overloads = Some(self.spec_compliant_overloads);
         config.root.legacy_overload_expansion = Some(self.legacy_overload_expansion);
         config.root.treat_all_caps_as_final = Some(self.treat_all_caps_as_final);
+        if !self.replace_imports_with_any.is_empty() {
+            let modules = self
+                .replace_imports_with_any
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>();
+            config
+                .root
+                .set_replace_imports_with_any(&modules)
+                .expect("replace_imports_with_any test modules should be valid");
+        }
         let unknown_tag_behavior = self.type_ignore_unknown_tag_behavior;
         config.root.type_ignore_unknown_tag_behavior = Some(unknown_tag_behavior);
         if config.root.errors.is_none() {
