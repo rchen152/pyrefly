@@ -52,12 +52,11 @@ use starlark_map::small_set::SmallSet;
 
 use crate::alt::answers::LookupAnswer;
 use crate::alt::answers_solver::AnswersSolver;
+use crate::alt::attr::AttrSetter;
 use crate::alt::attr::AttrSubsetError;
 use crate::alt::attr::ClassBase;
 use crate::alt::attr::NoAccessReason;
 use crate::alt::call::CallTargetLookup;
-use crate::alt::callable::CallArg;
-use crate::alt::expr::TypeOrExpr;
 use crate::alt::types::class_bases::ClassBases;
 use crate::alt::types::class_metadata::ClassMetadata;
 use crate::alt::types::class_metadata::DataclassKind;
@@ -5351,20 +5350,19 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
     }
 
-    pub fn check_class_attr_set_and_infer_narrow(
+    /// Resolves how to check an assignment to a class attribute. Returns `None` if the
+    /// assignment is an error, which has already been reported.
+    pub fn resolve_class_attr_setter(
         &self,
         class_attr: ClassAttribute,
         instance_class: Option<&ClassType>,
         class_base: Option<&ClassBase>,
         attr_name: &Name,
-        got: TypeOrExpr,
         allow_assign_to_final: bool,
         range: TextRange,
         errors: &ErrorCollector,
         context: Option<&dyn Fn() -> ErrorContext>,
-        should_narrow: &mut bool,
-        narrowed_types: &mut Vec<Type>,
-    ) {
+    ) -> Option<AttrSetter> {
         match class_attr {
             ClassAttribute::NoAccess(e) => {
                 self.error_with_context(
@@ -5374,7 +5372,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     e.to_error_msg(attr_name),
                     context,
                 );
-                *should_narrow = false;
+                None
             }
             ClassAttribute::ReadOnly(attr_ty, reason) => {
                 // In pydantic, if a non-frozen model inherits from a frozen model,
@@ -5399,16 +5397,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             ReadOnlyReason::Final(IsFinalVariableInitialized::No)
                         ))
                 {
-                    self.check_set_read_write_and_infer_narrow(
-                        attr_ty,
-                        attr_name,
-                        got,
-                        range,
-                        errors,
-                        context,
-                        *should_narrow,
-                        narrowed_types,
-                    );
+                    Some(AttrSetter::Declared {
+                        ty: attr_ty,
+                        narrow: true,
+                    })
                 } else {
                     errors
                         .error_builder(
@@ -5418,7 +5410,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         )
                         .with_detail(reason.error_message())
                         .emit();
-                    *should_narrow = false;
+                    None
                 }
             }
             ClassAttribute::ReadWrite(attr_ty) => {
@@ -5437,34 +5429,20 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 if let Some(class_object) = class_object {
                     self.check_dataclass_field_final(class_object, attr_name, errors, range);
                 }
-                self.check_set_read_write_and_infer_narrow(
-                    attr_ty,
-                    attr_name,
-                    got,
-                    range,
-                    errors,
-                    context,
-                    *should_narrow,
-                    narrowed_types,
-                );
+                Some(AttrSetter::Declared {
+                    ty: attr_ty,
+                    narrow: true,
+                })
             }
             ClassAttribute::Property(getter, None, cls) => {
                 let is_cached_property = getter
                     .toplevel_func_metadata()
                     .is_some_and(|meta| meta.flags.is_cached_property);
                 if is_cached_property {
-                    let attr_ty = self.call_property_getter(getter, range, errors, context);
-                    self.check_set_read_write_and_infer_narrow(
-                        attr_ty,
-                        attr_name,
-                        got,
-                        range,
-                        errors,
-                        context,
-                        *should_narrow,
-                        narrowed_types,
-                    );
-                    *should_narrow = false;
+                    Some(AttrSetter::Declared {
+                        ty: self.call_property_getter(getter, range, errors, context),
+                        narrow: false,
+                    })
                 } else {
                     let e = NoAccessReason::SettingReadOnlyProperty(cls);
                     self.error_with_context(
@@ -5474,74 +5452,55 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         e.to_error_msg(attr_name),
                         context,
                     );
-                    *should_narrow = false;
+                    None
                 }
             }
             ClassAttribute::Property(_, Some(setter), _) => {
-                let got = CallArg::arg(got);
-                self.call_property_setter(setter, got, range, errors, context);
-                *should_narrow = false;
+                Some(AttrSetter::PropertySetter(setter))
             }
-            ClassAttribute::Descriptor(x, base) => {
-                match base {
-                    DescriptorBase::Instance(_) | DescriptorBase::SelfInstance(_)
-                        if let Some(setter) =
-                            self.resolve_descriptor_setter(attr_name, &x, errors) =>
-                    {
-                        // TODO(mfish33) we allow uninitialized descriptors in this case. This
-                        // is to have better compatibility with other type checkers and support
-                        // common metaclass patterns. In the future it would be better to detect
-                        // this and use an intersection type between the setter and the descriptor
-                        // class.
-                        let got = CallArg::arg(got);
-                        self.call_descriptor_setter(setter, base, got, range, errors, context);
-                    }
-                    DescriptorBase::Instance(class_type)
-                    | DescriptorBase::SelfInstance(class_type) => {
-                        let e = NoAccessReason::SettingReadOnlyDescriptor(
-                            class_type.class_object().dupe(),
-                        );
-                        self.error_with_context(
-                            errors,
-                            range,
-                            ErrorKind::ReadOnly,
-                            e.to_error_msg(attr_name),
-                            context,
-                        );
-                    }
-                    DescriptorBase::ClassDef(_) => {
-                        // Class-level assignment bypasses the descriptor protocol.
-                        // __set__ only intercepts instance assignments, so we check
-                        // that the value is assignable to the descriptor type.
-                        let attr_ty = self.heap.mk_class_type(x.cls.clone());
-                        self.check_set_read_write_and_infer_narrow(
-                            attr_ty,
-                            attr_name,
-                            got,
-                            range,
-                            errors,
-                            context,
-                            false,
-                            narrowed_types,
-                        );
-                    }
-                };
-                *should_narrow = false;
-            }
-            attr @ ClassAttribute::DescriptorRead { .. } => self
-                .check_class_attr_set_and_infer_narrow(
-                    attr.into_declared(),
-                    instance_class,
-                    class_base,
-                    attr_name,
-                    got,
-                    allow_assign_to_final,
-                    range,
-                    errors,
-                    context,
-                    should_narrow,
-                    narrowed_types,
-                ),
+            ClassAttribute::Descriptor(x, base) => match base {
+                DescriptorBase::Instance(_) | DescriptorBase::SelfInstance(_)
+                    if let Some(setter) = self.resolve_descriptor_setter(attr_name, &x, errors) =>
+                {
+                    // TODO(mfish33) we allow uninitialized descriptors in this case. This
+                    // is to have better compatibility with other type checkers and support
+                    // common metaclass patterns. In the future it would be better to detect
+                    // this and use an intersection type between the setter and the descriptor
+                    // class.
+                    Some(AttrSetter::DescriptorSetter(setter, base))
+                }
+                DescriptorBase::Instance(class_type) | DescriptorBase::SelfInstance(class_type) => {
+                    let e =
+                        NoAccessReason::SettingReadOnlyDescriptor(class_type.class_object().dupe());
+                    self.error_with_context(
+                        errors,
+                        range,
+                        ErrorKind::ReadOnly,
+                        e.to_error_msg(attr_name),
+                        context,
+                    );
+                    None
+                }
+                DescriptorBase::ClassDef(_) => {
+                    // Class-level assignment bypasses the descriptor protocol.
+                    // __set__ only intercepts instance assignments, so we check
+                    // that the value is assignable to the descriptor type.
+                    Some(AttrSetter::Declared {
+                        ty: self.heap.mk_class_type(x.cls.clone()),
+                        narrow: false,
+                    })
+                }
+            },
+            attr @ ClassAttribute::DescriptorRead { .. } => self.resolve_class_attr_setter(
+                attr.into_declared(),
+                instance_class,
+                class_base,
+                attr_name,
+                allow_assign_to_final,
+                range,
+                errors,
+                context,
+            ),
         }
     }
 
