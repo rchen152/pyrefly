@@ -5392,11 +5392,12 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     true
                 };
 
-                if allow_assign_to_final
-                    && matches!(
-                        reason,
-                        ReadOnlyReason::Final(IsFinalVariableInitialized::No)
-                    )
+                if !should_raise_error
+                    || (allow_assign_to_final
+                        && matches!(
+                            reason,
+                            ReadOnlyReason::Final(IsFinalVariableInitialized::No)
+                        ))
                 {
                     self.check_set_read_write_and_infer_narrow(
                         attr_ty,
@@ -5408,7 +5409,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         *should_narrow,
                         narrowed_types,
                     );
-                } else if should_raise_error {
+                } else {
                     errors
                         .error_builder(
                             range,
