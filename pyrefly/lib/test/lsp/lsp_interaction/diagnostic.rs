@@ -3,7 +3,9 @@
  *
  * This source code is licensed under the MIT license found in the
  * LICENSE file in the root directory of this source tree.
- */
+*/
+
+use std::fs;
 
 use lsp_server::RequestId;
 use lsp_types::DocumentDiagnosticReport;
@@ -2189,6 +2191,41 @@ fn test_diagnostics_for_extensionless_script() {
                         ))
                 })
         })
+        .expect("Failed to receive expected response");
+
+    interaction.shutdown().expect("Failed to shutdown");
+}
+
+#[test]
+fn test_diagnostics_extensionless_file_not_in_includes() {
+    let test_files_root = get_test_files_root();
+    let dir = test_files_root.path().join("extensionless_not_in_includes");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("pyrefly.toml"),
+        "project-includes = [\"included.py\"]\n",
+    )
+    .unwrap();
+    fs::write(dir.join("myscript"), "x: int = \"hello\"\n").unwrap();
+
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(test_files_root.path().to_path_buf());
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(Some(json!([{
+                "pyrefly": {"displayTypeErrors": "force-on"}
+            }]))),
+            ..Default::default()
+        })
+        .expect("Failed to initialize");
+
+    interaction
+        .client
+        .did_open("extensionless_not_in_includes/myscript");
+    interaction
+        .client
+        .diagnostic("extensionless_not_in_includes/myscript")
+        .expect_response(json!({"items": [], "kind": "full"}))
         .expect("Failed to receive expected response");
 
     interaction.shutdown().expect("Failed to shutdown");

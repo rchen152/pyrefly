@@ -3169,19 +3169,17 @@ impl Server {
             // the `typeCheckingMode` IDE setting reaches us through the
             // resolver at config synthesis time, not per-diagnostic.
 
-            // A file the editor explicitly opened as Python is in scope for
-            // diagnostics even though its name lacks a python extension —
-            // default includes are an extension heuristic, not a scope
-            // decision; only excludes scope open files down (pyright/ty
-            // parity, #4397). The recorded didOpen language keeps this from
-            // firing on every extension-less file.
+            // Match extension-less Python documents as `.py` files so explicit
+            // include paths continue to constrain their scope.
             if let Some(lsp_file) = open_files.get(&path)
                 && (config.project_includes.covers(&path)
                     || (matches!(&**lsp_file, LspFile::Notebook(_))
                         && config
                             .project_includes
                             .covers(&path.with_extension("ipynb")))
-                    || (path.extension().is_none() && self.editor_opened_as_python(&path)))
+                    || (path.extension().is_none()
+                        && self.editor_opened_as_python(&path)
+                        && config.project_includes.covers(&path.with_extension("py"))))
                 && !config.project_excludes.covers(&path)
                 && type_error_status.is_enabled()
             {
