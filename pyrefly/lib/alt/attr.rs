@@ -1245,8 +1245,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             && let Some(dc) = metadata.dataclass_metadata()
         {
             let mut names = SmallSet::new();
-            let has_dict = dc.fields.iter().any(|n| *n == dunder::DICT);
-            for name in dc.fields.iter() {
+            let has_dict = dc.fields.contains_key(&dunder::DICT);
+            for name in dc.fields.keys() {
                 names.insert(name.clone());
             }
             return Some((names, has_dict));

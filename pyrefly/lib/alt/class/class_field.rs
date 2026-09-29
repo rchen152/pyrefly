@@ -2898,7 +2898,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         if let Some(dm) = metadata.dataclass_metadata()
             && (dm.kws.frozen || dm.kws.attrs_setattr_frozen)
             && !is_classvar
-            && dm.fields.contains(name)
+            && dm.fields.contains_key(name)
         {
             let reason = if let Some(pydantic) = metadata.pydantic_model_kind() {
                 if pydantic != PydanticModelKind::DataClass
