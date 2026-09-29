@@ -1076,6 +1076,12 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             context,
             todo_ctx,
         );
+        if setters.iter().all(Option::is_none)
+            && let TypeOrExpr::Expr(e) = got
+        {
+            // Nothing checks `got`, so infer it to catch any errors in the expression.
+            self.expr_infer(e, errors);
+        }
         let type_check_context = || {
             TypeCheckContext::of_kind(TypeCheckKind::Attribute(attr_name.clone()))
                 .with_context(context.map(|ctx| ctx()))
