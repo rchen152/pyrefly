@@ -1151,9 +1151,6 @@ pub struct Server {
     /// These registrations are additive and never removed, so this set only grows.
     watched_exact_paths: Mutex<SmallSet<PathBuf>>,
     version_info: Mutex<HashMap<PathBuf, i32>>,
-    /// The `language_id` the editor declared for each open file at didOpen time.
-    /// Consulted to scope extension-less files into diagnostics (#4397).
-    open_file_languages: Mutex<HashMap<PathBuf, String>>,
     id: Uuid,
     /// The surface/entrypoint for the language server (`--from` CLI arg)
     surface: Option<String>,
@@ -2081,7 +2078,7 @@ impl Server {
                 if self.uris_pending_close.lock().contains_key(uri.path()) {
                     telemetry_event.canceled = true;
                 } else {
-                    let contents = Arc::new(LspFile::from_source(text));
+                    let contents = Arc::new(LspFile::from_source(text, language_id));
                     self.did_open(
                         ide_transaction_manager,
                         telemetry,
@@ -2089,7 +2086,6 @@ impl Server {
                         subsequent_mutation,
                         uri,
                         version,
-                        Some(language_id),
                         contents,
                     )?;
                 }
@@ -2145,7 +2141,6 @@ impl Server {
                         subsequent_mutation,
                         url,
                         version,
-                        None,
                         Arc::new(LspFile::Notebook(Arc::new(lsp_notebook))),
                     )?;
                 }
@@ -2957,7 +2952,6 @@ impl Server {
             watched_patterns: Mutex::new(SmallSet::new()),
             watched_exact_paths: Mutex::new(SmallSet::new()),
             version_info: Mutex::new(HashMap::new()),
-            open_file_languages: Mutex::new(HashMap::new()),
             id: Uuid::new_v4(),
             surface,
             agent_session_id,
@@ -3133,14 +3127,6 @@ impl Server {
             .collect()
     }
 
-    /// Whether the editor declared this open file Python at didOpen time.
-    fn editor_opened_as_python(&self, path: &PathBuf) -> bool {
-        self.open_file_languages
-            .lock()
-            .get(path)
-            .is_some_and(|language_id| language_id == "python")
-    }
-
     fn get_diag_if_shown(
         &self,
         e: &Error,
@@ -3178,7 +3164,11 @@ impl Server {
                             .project_includes
                             .covers(&path.with_extension("ipynb")))
                     || (path.extension().is_none()
-                        && self.editor_opened_as_python(&path)
+                        && matches!(
+                            &**lsp_file,
+                            LspFile::Source { language_id, .. }
+                                if language_id.as_ref() == "python"
+                        )
                         && config.project_includes.covers(&path.with_extension("py"))))
                 && !config.project_excludes.covers(&path)
                 && type_error_status.is_enabled()
@@ -3195,7 +3185,7 @@ impl Server {
                             Some((PathBuf::from(error_cell_uri.to_string()), e.to_diagnostic()))
                         }
                     }
-                    LspFile::Source(_) => Some((path.to_path_buf(), e.to_diagnostic())),
+                    LspFile::Source { .. } => Some((path.to_path_buf(), e.to_diagnostic())),
                 };
             }
 
@@ -3363,7 +3353,7 @@ impl Server {
                             diags.insert(PathBuf::from(url.to_string()), Vec::new());
                         }
                     }
-                    LspFile::Source(_) => {
+                    LspFile::Source { .. } => {
                         open_diag_paths.insert(handle_path_buf.clone());
                         diags.insert(handle_path_buf, Vec::new());
                     }
@@ -3996,7 +3986,6 @@ impl Server {
         subsequent_mutation: bool,
         url: Url,
         version: i32,
-        language_id: Option<String>,
         contents: Arc<LspFile>,
     ) -> anyhow::Result<()> {
         let is_notebook = matches!(&*contents, LspFile::Notebook(_));
@@ -4022,11 +4011,6 @@ impl Server {
             None
         };
         self.version_info.lock().insert(path.clone(), version);
-        if let Some(language_id) = language_id {
-            self.open_file_languages
-                .lock()
-                .insert(path.clone(), language_id);
-        }
         self.open_files.write().insert(path.clone(), contents);
         self.queue_source_db_rebuild_and_recheck(telemetry, telemetry_event, false);
         if !subsequent_mutation {
@@ -4086,10 +4070,22 @@ impl Server {
                 file_path.display()
             ));
         };
-        *original = Arc::new(LspFile::from_source(apply_change_events(
-            original.get_string(),
-            params.content_changes,
-        )));
+        let language_id = match original.as_ref() {
+            LspFile::Source { language_id, .. } => Arc::clone(language_id),
+            LspFile::Notebook(_) => {
+                return Err(anyhow::anyhow!(
+                    "Expected text file for {}, but got notebook",
+                    uri
+                ));
+            }
+        };
+        *original = Arc::new(LspFile::Source {
+            contents: Arc::new(apply_change_events(
+                original.get_string(),
+                params.content_changes,
+            )),
+            language_id,
+        });
         drop(lock);
         // Update version_info only after the mutation has fully succeeded.
         self.version_info.lock().insert(file_path.clone(), version);
@@ -4395,7 +4391,6 @@ impl Server {
             .lock()
             .remove(&path)
             .map(|version| version + 1);
-        self.open_file_languages.lock().remove(&path);
         let mut open_files = self.open_files.write();
         let Entry::Occupied(entry) = open_files.entry(path.clone()) else {
             return;
@@ -4420,7 +4415,7 @@ impl Server {
                     return;
                 }
             },
-            LspFile::Source(_) => match kind {
+            LspFile::Source { .. } => match kind {
                 DidCloseKind::NotebookDocument => {
                     info!("notebookDocument/didClose received for file open in a text editor");
                     return;
