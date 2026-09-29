@@ -67,6 +67,30 @@ fn test_publish_diagnostics_preserves_unsaved_file_uri() {
 }
 
 #[test]
+fn test_no_diagnostics_for_non_python_unsaved_file() {
+    let interaction = LspInteraction::new();
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(Some(
+                json!([{"pyrefly": {"displayTypeErrors": "force-on"}}]),
+            )),
+            ..Default::default()
+        })
+        .unwrap();
+
+    let uri = Url::parse("untitled:Untitled-Text").unwrap();
+    interaction
+        .client
+        .did_open_uri(&uri, "plaintext", "x: str = 1\n");
+    interaction
+        .client
+        .expect_publish_diagnostics_uri(&uri, 0)
+        .unwrap();
+
+    interaction.shutdown().unwrap();
+}
+
+#[test]
 fn test_completion_for_unsaved_file() {
     let interaction = LspInteraction::new();
     interaction

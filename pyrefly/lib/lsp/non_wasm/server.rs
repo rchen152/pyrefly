@@ -3988,14 +3988,17 @@ impl Server {
         version: i32,
         contents: Arc<LspFile>,
     ) -> anyhow::Result<()> {
-        let is_notebook = matches!(&*contents, LspFile::Notebook(_));
+        let (is_notebook, language_id) = match &*contents {
+            LspFile::Source { language_id, .. } => (false, language_id.as_ref()),
+            LspFile::Notebook(_) => (true, "jupyter"),
+        };
         let path = url
             .to_file_path()
             .or_else(|_| {
                 if is_notebook || url.scheme() == "untitled" || url.scheme() == "inmemory" {
                     Ok(self
                         .unsaved_file_tracker
-                        .ensure_path_for_open(&url, if is_notebook { "jupyter" } else { "python" }))
+                        .ensure_path_for_open(&url, language_id))
                 } else {
                     Err(())
                 }
