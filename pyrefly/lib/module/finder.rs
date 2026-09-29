@@ -310,9 +310,6 @@ where
 /// When a path component matches a Python keyword (e.g. `if`), module names
 /// escape it with a trailing underscore (`if_`). This convention is specific
 /// to configerator repos and should not apply to other extra file extensions.
-///
-/// Kept consistent with `CONFIGERATOR_FILE_SUFFIX_EXCLUDE_THRIFT` in Pyright's
-/// `configerator-file-system.ts`.
 const CONFIGERATOR_EXTENSIONS: &[&str] = &["cinc", "cconf", "thrift-cvalidator", "ctest", "mcconf"];
 
 /// If `component` has a trailing underscore and the base is a Python keyword
