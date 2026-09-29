@@ -840,12 +840,16 @@ def test_dynamic_classinfo_narrows_to_any(x: A, cls: Any) -> None:
         assert_type(x, Any)
         if isinstance(x, B):
             reveal_type(x)  # E: revealed type: B
+    else:
+        assert_type(x, A)
 
 def test_type_any_classinfo_narrows_to_any(x: A, cls: type[Any]) -> None:
     if isinstance(x, cls):
         assert_type(x, Any)
         if isinstance(x, B):
             reveal_type(x)  # E: revealed type: B
+    else:
+        assert_type(x, A)
     "#,
 );
 
@@ -1585,7 +1589,7 @@ def f(tp: type[Point] | type[Other]) -> None:
 testcase!(
     test_typeis_any_keeps_definite_members,
     r#"
-from typing import Any, TypeIs, reveal_type
+from typing import Any, TypeIs, assert_type, reveal_type
 
 class A: ...
 class B: ...
@@ -1596,6 +1600,8 @@ def f(x: A) -> None:
     if is_any(x):
         if isinstance(x, B):
             reveal_type(x)  # E: revealed type: A & B
+    else:
+        assert_type(x, A)
     "#,
 );
 
