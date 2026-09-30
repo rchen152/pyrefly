@@ -847,18 +847,18 @@ fn definition_relative_import_outside_search_path() {
     let init_file = "site_packages/mypkg/__init__.py";
     interaction.client.did_open(init_file);
 
-    // Go-to-definition on `helpers` in `from .helpers import MyClass` (line 0, char 6).
+    // Go-to-definition on `helpers` in `from .helpers import MyClass` (line 5, char 6).
     interaction
         .client
-        .definition(init_file, 0, 6)
+        .definition(init_file, 5, 6)
         .expect_definition_response_from_root("site_packages/mypkg/helpers.py", 0, 0, 0, 0)
         .unwrap();
 
-    // Hover on `MyClass` in `from .helpers import MyClass` (line 0, char 21).
+    // Hover on `MyClass` in `from .helpers import MyClass` (line 5, char 21).
     // Verify the type is resolved (not Unknown).
     interaction
         .client
-        .hover(init_file, 0, 21)
+        .hover(init_file, 5, 21)
         .expect_hover_response_with_markup(|value| {
             value
                 .is_some_and(|text| text.contains("(class) MyClass: def MyClass() -> MyClass: ..."))
@@ -897,10 +897,10 @@ fn definition_site_packages_relative_import() {
     let init_file = "venv/lib/python3.13/site-packages/fake_site_package/__init__.py";
     interaction.client.did_open(init_file);
 
-    // Go-to-definition on `relative` in `from .relative import Foo` (line 0, char 6).
+    // Go-to-definition on `relative` in `from .relative import Foo` (line 5, char 6).
     interaction
         .client
-        .definition(init_file, 0, 6)
+        .definition(init_file, 5, 6)
         .expect_definition_response_from_root(
             "venv/lib/python3.13/site-packages/fake_site_package/relative.py",
             0,
@@ -910,10 +910,10 @@ fn definition_site_packages_relative_import() {
         )
         .unwrap();
 
-    // Hover on `Foo` in `from .relative import Foo` (line 0, char 22).
+    // Hover on `Foo` in `from .relative import Foo` (line 5, char 22).
     interaction
         .client
-        .hover(init_file, 0, 22)
+        .hover(init_file, 5, 22)
         .expect_hover_response_with_markup(|value| {
             value.is_some_and(|text| text.contains("(class) Foo") && !text.contains("Unknown"))
         })
