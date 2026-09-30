@@ -364,7 +364,8 @@ impl<'a> BindingsBuilder<'a> {
         is_runtime_evaluated_annotation: bool,
         allow_class_body_forward_reference: bool,
     ) -> Idx<Key> {
-        let key = Key::BoundName(ShortIdentifier::new(name));
+        let short_name = ShortIdentifier::new(name);
+        let key = Key::BoundName(short_name);
         if name.is_empty() {
             // We only get empty identifiers if Ruff has done error correction,
             // so there must be a parse error.
@@ -386,6 +387,7 @@ impl<'a> BindingsBuilder<'a> {
         match lookup_result {
             NameLookupResult::Found {
                 idx: lookup_result_idx,
+                value_idx,
                 initialized: is_initialized,
                 is_module_scope,
                 is_outer_class_type_parameter,
@@ -441,7 +443,7 @@ impl<'a> BindingsBuilder<'a> {
                 if promote {
                     self.promote_ranges.insert(name.range);
                 }
-                self.defer_bound_name(key, lookup_result_idx, usage, promote)
+                self.defer_bound_name(short_name, lookup_result_idx, value_idx, usage, promote)
             }
             NameLookupResult::NotFound => {
                 if self.scopes.is_definitely_unreachable() {

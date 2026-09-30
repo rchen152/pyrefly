@@ -91,6 +91,8 @@ pub enum NameReadInfo {
     /// flow such that I am not defined in at least one branch.
     Flow {
         idx: Idx<Key>,
+        /// The most recent value binding, before any flow narrowing.
+        value_idx: Option<Idx<Key>>,
         initialized: InitializedInFlow,
     },
     /// The name is an anywhere-style lookup. If it came from a non-barrier scope
@@ -3501,6 +3503,7 @@ impl Scopes {
                         if self.is_interface {
                             return Some(NameReadInfo::Flow {
                                 idx: flow_info.idx(),
+                                value_idx: flow_info.value().map(|value| value.idx),
                                 initialized: InitializedInFlow::Yes,
                             });
                         }
@@ -3508,6 +3511,7 @@ impl Scopes {
                     }
                     return Some(NameReadInfo::Flow {
                         idx: flow_info.idx(),
+                        value_idx: flow_info.value().map(|value| value.idx),
                         initialized,
                     });
                 }

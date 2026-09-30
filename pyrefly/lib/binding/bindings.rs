@@ -154,6 +154,8 @@ pub enum NameLookupResult {
     ///   if I am used after a `del` or is an anywhere-style lookup)
     Found {
         idx: Idx<Key>,
+        /// The most recent value binding, before any flow narrowing.
+        value_idx: Option<Idx<Key>>,
         initialized: InitializedInFlow,
         is_module_scope: bool,
         /// Does this name resolve to a type parameter outside the current class's scope?
@@ -278,6 +280,8 @@ struct DeferredBoundName {
     bound_name_idx: Idx<Key>,
     /// The result of the name lookup (may be a phi that forwards elsewhere)
     lookup_result_idx: Idx<Key>,
+    /// The most recent value binding, before any flow narrowing.
+    value_idx: Option<Idx<Key>>,
     /// Information about the usage context where the lookup occurred
     usage: Usage,
     promote: bool,
@@ -311,8 +315,8 @@ pub struct BindingsBuilder<'a> {
     semantic_checker: SemanticSyntaxChecker,
     semantic_syntax_errors: RefCell<Vec<SemanticSyntaxError>>,
     pytest_info: Option<crate::binding::pytest::PytestBindingInfo>,
-    /// BoundName lookups deferred until after AST traversal
-    deferred_bound_names: Vec<DeferredBoundName>,
+    /// BoundName lookups keyed by source occurrence and finalized in insertion order.
+    deferred_bound_names: SmallMap<ShortIdentifier, DeferredBoundName>,
     /// Yield and yield-from indices for lambdas that contain yields.
     lambda_yield_keys: Vec<(TextRange, Box<[Idx<KeyYield>]>, Box<[Idx<KeyYieldFrom>]>)>,
     next_lambda_param_id: u32,
@@ -682,7 +686,7 @@ impl Bindings {
             semantic_checker: SemanticSyntaxChecker::new(),
             semantic_syntax_errors: RefCell::new(Vec::new()),
             pytest_info,
-            deferred_bound_names: Vec::new(),
+            deferred_bound_names: SmallMap::new(),
             lambda_yield_keys: Vec::new(),
             next_lambda_param_id: 0,
             class_scopes: Vec::new(),
@@ -1710,7 +1714,11 @@ impl<'a> BindingsBuilder<'a> {
     pub fn lookup_name(&mut self, name: Hashed<&Name>, usage: &mut Usage) -> NameLookupResult {
         let name_read_info = self.look_up_name_for_read(name, usage);
         match name_read_info {
-            NameReadInfo::Flow { idx, initialized } => {
+            NameReadInfo::Flow {
+                idx,
+                value_idx,
+                initialized,
+            } => {
                 // Mark as used (this must happen during traversal for unused-variable detection)
                 self.scopes.mark_parameter_used(name.key());
                 self.scopes.mark_import_used(name.key());
@@ -1735,6 +1743,7 @@ impl<'a> BindingsBuilder<'a> {
                 }
                 NameLookupResult::Found {
                     idx,
+                    value_idx,
                     initialized,
                     is_module_scope: false,
                     is_outer_class_type_parameter: false,
@@ -1763,6 +1772,7 @@ impl<'a> BindingsBuilder<'a> {
                 }
                 NameLookupResult::Found {
                     idx,
+                    value_idx: None,
                     initialized,
                     is_module_scope,
                     is_outer_class_type_parameter: false,
@@ -1772,6 +1782,7 @@ impl<'a> BindingsBuilder<'a> {
                 let idx = self.materialize_implicit_builtin_name(name.key(), module);
                 NameLookupResult::Found {
                     idx,
+                    value_idx: None,
                     initialized: InitializedInFlow::Yes,
                     is_module_scope: true,
                     is_outer_class_type_parameter: false,
@@ -1779,6 +1790,7 @@ impl<'a> BindingsBuilder<'a> {
             }
             NameReadInfo::OuterClassTypeParameter { key } => NameLookupResult::Found {
                 idx: self.idx_for_promise(key),
+                value_idx: None,
                 initialized: InitializedInFlow::Yes,
                 is_module_scope: false,
                 is_outer_class_type_parameter: true,
@@ -1818,19 +1830,36 @@ impl<'a> BindingsBuilder<'a> {
     /// `process_deferred_bound_names` when all phi nodes are populated.
     pub fn defer_bound_name(
         &mut self,
-        key: Key,
+        name: ShortIdentifier,
         lookup_result_idx: Idx<Key>,
+        value_idx: Option<Idx<Key>>,
         usage: &Usage,
         promote: bool,
     ) -> Idx<Key> {
-        let bound_name_idx = self.idx_for_promise(key);
-        self.deferred_bound_names.push(DeferredBoundName {
-            bound_name_idx,
-            lookup_result_idx,
-            usage: usage.clone(),
-            promote,
-        });
+        let bound_name_idx = self.idx_for_promise(Key::BoundName(name));
+        assert!(
+            self.deferred_bound_names
+                .insert(
+                    name,
+                    DeferredBoundName {
+                        bound_name_idx,
+                        lookup_result_idx,
+                        value_idx,
+                        usage: usage.clone(),
+                        promote,
+                    },
+                )
+                .is_none(),
+            "a BoundName is deferred only once"
+        );
         bound_name_idx
+    }
+
+    /// Return the unnarrowed value binding captured for this exact name read.
+    pub fn value_idx_at_name_read(&self, name: &ShortIdentifier) -> Option<Idx<Key>> {
+        self.deferred_bound_names
+            .get(name)
+            .and_then(|deferred| deferred.value_idx)
     }
 
     /// Process all deferred BoundName bindings after AST traversal.
@@ -1842,7 +1871,7 @@ impl<'a> BindingsBuilder<'a> {
         let deferred = std::mem::take(&mut self.deferred_bound_names);
 
         // Process each deferred binding.
-        for deferred_binding in deferred {
+        for (_, deferred_binding) in deferred {
             self.finalize_bound_name(deferred_binding);
         }
     }
@@ -2496,6 +2525,7 @@ impl TParamLookupResult {
         match self {
             Self::MaybeTParam(possible_tparam) => NameLookupResult::Found {
                 idx: possible_tparam.idx,
+                value_idx: None,
                 initialized: possible_tparam.initialized.clone(),
                 is_module_scope: false,
                 is_outer_class_type_parameter: false,
@@ -2506,6 +2536,7 @@ impl TParamLookupResult {
                 is_outer_class_type_parameter,
             } => NameLookupResult::Found {
                 idx: *idx,
+                value_idx: None,
                 initialized: initialized.clone(),
                 is_module_scope: false,
                 is_outer_class_type_parameter: *is_outer_class_type_parameter,
