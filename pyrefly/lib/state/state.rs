@@ -2048,29 +2048,26 @@ impl<'a> Transaction<'a> {
             // must resolve to the same `typeshed_path`; otherwise the cached stdlib would
             // depend on which handle happened to be seen first. Enforce that invariant
             // rather than silently loading the stdlib from an arbitrary handle's typeshed.
-            let typeshed_path = handles
+            let config = handles
                 .iter()
                 .filter(|h| h.sys_info() == &*k)
-                .map(|h| self.data.state.get_config(h).typeshed_path.clone())
+                .map(|h| self.data.state.get_config(h))
                 .reduce(|a, b| {
                     assert_eq!(
-                        a, b,
+                        a.typeshed_path, b.typeshed_path,
                         "handles sharing a SysInfo must agree on typeshed_path"
                     );
                     a
                 })
-                .flatten();
-            // Load the stdlib through a config that supplies its own, else from the
-            // user-provided typeshed if one is set, else from the bundled typeshed.
-            let own_stdlib_config = handles
-                .iter()
-                .filter(|h| h.sys_info() == &*k)
-                .map(|h| self.data.state.get_config(h))
-                .find(|config| config.disable_bundled_typeshed);
-            let base_stdlib_config = own_stdlib_config.unwrap_or_else(|| {
-                typeshed_path
-                    .map_or_else(BundledTypeshedStdlib::config, custom_typeshed_stdlib_config)
-            });
+                .expect("at least one handle has this SysInfo");
+            // Load the stdlib from the user-provided typeshed if one is set; otherwise
+            // use the bundled typeshed.
+            let base_stdlib_config = config
+                .typeshed_path
+                .as_ref()
+                .map_or_else(BundledTypeshedStdlib::config, |_| {
+                    custom_typeshed_stdlib_config(&config)
+                });
             // Import availability in typeshed is version-dependent, so the loader used to
             // initialize this Stdlib must resolve modules for the same SysInfo version.
             let mut stdlib_config = base_stdlib_config.as_ref().clone();

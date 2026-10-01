@@ -43,6 +43,8 @@ use crate::state::load::FileContents;
 use crate::state::require::Require;
 use crate::state::state::State;
 
+const EMBEDDED_TYPESHED_PATH: &str = "__typeshed__";
+
 /// A reusable type checker holding one warm [`State`].
 ///
 /// Construct once, amortizing the typeshed load, then call [`check`](Checker::check)
@@ -94,7 +96,9 @@ impl Checker {
 
         let source_db = SharedMapDatabase::new(MapDatabase::new(sys_info.dupe()));
         config.source_db = Some(ArcId::new(Box::new(source_db.clone())));
-        config.disable_bundled_typeshed = stdlib.is_some();
+        if stdlib.is_some() {
+            config.typeshed_path = Some(PathBuf::from(EMBEDDED_TYPESHED_PATH));
+        }
         let stdlib = stdlib.unwrap_or_default();
 
         config.configure();
@@ -205,7 +209,7 @@ fn stub_module_name(path: &Path) -> Option<ModuleName> {
 }
 
 fn typeshed_memory_path(path: &Path) -> ModulePath {
-    ModulePath::memory(Path::new("__typeshed__/stdlib").join(path))
+    ModulePath::memory(Path::new(EMBEDDED_TYPESHED_PATH).join("stdlib").join(path))
 }
 
 /// In-memory module path for `name`, e.g. `name.py`. Shared by the source database

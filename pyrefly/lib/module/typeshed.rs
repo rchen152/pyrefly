@@ -163,12 +163,13 @@ fn stdlib_error_overrides() -> HashMap<ErrorKind, Severity> {
 
 /// Config used to load the `Stdlib` from a user-provided typeshed directory from the
 /// `typeshed_path` config option. Stdlib modules will be resolved from
-/// `<typeshed_path>/stdlib` on disk; missing modules fall back to the bundled typeshed,
-/// matching how `typeshed_path` already behaves for ordinary import resolution.
-pub fn custom_typeshed_stdlib_config(typeshed_path: PathBuf) -> ArcId<ConfigFile> {
+/// `<typeshed_path>/stdlib`; the source database supports virtual typesheds supplied by
+/// embedders.
+pub fn custom_typeshed_stdlib_config(config: &ConfigFile) -> ArcId<ConfigFile> {
     let mut config_file =
         create_bundled_stub_config(None, Some(stdlib_error_overrides()), Some(true));
-    config_file.typeshed_path = Some(typeshed_path);
+    config_file.typeshed_path = config.typeshed_path.clone();
+    config_file.source_db = config.source_db.clone();
     config_file.configure();
     ArcId::new(config_file)
 }
