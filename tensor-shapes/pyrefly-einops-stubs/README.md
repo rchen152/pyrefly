@@ -2,7 +2,8 @@
 
 This package is a PEP 561 stub-only distribution for `einops`. It provides
 shape-aware annotations for `rearrange`, `reduce`, `repeat`, and `einsum` using
-Pyrefly's type-level shape DSL.
+Pyrefly's type-level shape DSL. The `einops.layers.torch` `Rearrange` and `Reduce`
+modules preserve the constructor pattern and axis lengths across calls.
 
 The precise annotations currently target PyTorch. The runtime corpus also
 exercises NumPy and JAX to validate that the shared einops pattern semantics
