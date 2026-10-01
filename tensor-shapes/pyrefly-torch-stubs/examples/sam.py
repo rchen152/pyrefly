@@ -53,13 +53,15 @@ Key patterns exercised:
 - ConvTranspose2d upscaling in mask decoder
 """
 
+from __future__ import annotations
+
 import math
 from typing import Any, assert_type, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from shape_extensions import Elements, IntTuple, IntVar
+from shape_extensions import IntTuple, IntVar
 
 if TYPE_CHECKING:
     from shape_extensions import Int
@@ -789,8 +791,8 @@ class PositionalEmbeddingRandom[D: IntVar](nn.Module):
         )
 
     def _pe_encoding[Batch: IntTuple](
-        self, coords: Tensor[[*Elements[Batch], 2]]
-    ) -> Tensor[[*Elements[Batch], 2 * D]]:
+        self, coords: Tensor[[*Batch, 2]]
+    ) -> Tensor[[*Batch, 2 * D]]:
         """Encode coordinates to positional features.
 
         coords: (*Batch, 2) normalized to [0, 1]

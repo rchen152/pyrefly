@@ -12,6 +12,8 @@ https://github.com/openai/gpt-2/blob/master/src/model.py
 https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt2/modeling_gpt2.py
 """
 
+from __future__ import annotations
+
 import inspect
 import math
 from dataclasses import dataclass
@@ -21,7 +23,7 @@ import torch
 import torch.nn as nn
 import torch.nn.init
 import torch.optim
-from shape_extensions import Elements, IntTuple
+from shape_extensions import IntTuple
 from torch.nn import functional as F
 
 if TYPE_CHECKING:
@@ -39,9 +41,7 @@ class LayerNorm[M: IntVar](nn.Module):
         self.bias = nn.Parameter(torch.zeros(ndim)) if bias else None
         assert_type(self.bias, nn.Parameter[[M]] | None)
 
-    def forward[Bs: IntTuple](
-        self, input: Tensor[[*Elements[Bs], M]]
-    ) -> Tensor[[*Elements[Bs], M]]:
+    def forward[Bs: IntTuple](self, input: Tensor[[*Bs, M]]) -> Tensor[[*Bs, M]]:
         return F.layer_norm(input, self.weight.shape, self.weight, self.bias, 1e-5)
 
 
