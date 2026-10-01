@@ -551,6 +551,29 @@ def bounded[T: Shaped[ndarray, "[N]"]](x: T) -> T: ...  # E: Type variable bound
 );
 
 testcase!(
+    test_shaped_in_cast,
+    shaped_env(),
+    r#"
+from typing import Any, assert_type, cast
+from arrays import ndarray
+from shape_extensions import IntTuple, Shaped, shape_vars
+
+@shape_vars("N")
+def symbolic(value: Any) -> None:
+    assert_type(cast(Shaped[ndarray, "[N, 2]"], value), Shaped[ndarray, "[N, 2]"])
+
+@shape_vars("")
+def literal(value: Any) -> None:
+    assert_type(cast(Shaped[ndarray, "[3, 2]"], value), ndarray[[3, 2]])
+    assert_type(cast(typ=Shaped[ndarray, "[3, 2]"], val=value), ndarray[[3, 2]])
+    assert_type(cast(list[Shaped[tuple[int, int], "[3, 2]"]], value), list[IntTuple[3, 2]])
+
+def outside_scope(value: Any) -> None:
+    assert_type(cast(Shaped[ndarray, "[N]"], value), ndarray)
+"#,
+);
+
+testcase!(
     test_shaped_through_aliases,
     {
         let mut env = shaped_env();

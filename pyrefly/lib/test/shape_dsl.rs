@@ -8879,6 +8879,24 @@ def call(
 );
 
 testcase!(
+    test_jaxtyping_in_cast_contexts,
+    shape_extensions_env_with_torch_and_jaxtyping(),
+    r#"
+from jaxtyping import Float
+from shape_extensions import static_jaxtyping
+from torch import Tensor
+from typing import Any, assert_type, cast
+
+@static_jaxtyping("")
+def check(value: Any) -> None:
+    assert_type(cast(Float[Tensor, "3"], value), Tensor[[3]])
+
+def outside(value: Any) -> None:
+    assert_type(cast(Float[Tensor, "3"], value), Tensor)
+"#,
+);
+
+testcase!(
     test_non_jaxtyping_annotated_alias_keeps_vanilla_metadata,
     legacy_shaped_array_env_with_torch(),
     r#"

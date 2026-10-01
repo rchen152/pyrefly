@@ -449,7 +449,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             if matches!(t, Expr::Call(_)) {
                 self.expr_untype(t, TypeFormContext::FunctionArgument, errors)
             } else {
-                match self.untype_opt(self.expr_infer(t, errors), range, errors) {
+                let inferred = self
+                    .expr_infer_impl(t, None, errors, Some(TypeFormContext::FunctionArgument))
+                    .into_ty();
+                match self.untype_opt(inferred, range, errors) {
                     Some(t) => t,
                     None => self.error(
                         errors,
