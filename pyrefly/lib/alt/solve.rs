@@ -2651,7 +2651,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         .as_ref()
                         .and_then(|test| self.check_bool_expr_and_get_value(test, errors));
                     if let Some(range) = branch.range
-                        && (preempted || value == Some(false))
+                        && (preempted
+                            || (branch.test_is_environment_independent && value == Some(false)))
                     {
                         errors
                             .error_builder(

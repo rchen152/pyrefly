@@ -3457,6 +3457,21 @@ def type_checking() -> None:
 "#,
 );
 
+// Projects that avoid importing `typing` at runtime define their own `TYPE_CHECKING = False`. Its
+// type is `Literal[False]`, but it is still an environment guard, true while checking.
+testcase!(
+    test_no_report_for_locally_defined_type_checking,
+    r#"
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    print(1)
+
+def f() -> None:
+    if TYPE_CHECKING:
+        print(2)
+"#,
+);
+
 // Only the test's own value is consulted, never the narrowing it performs. Each test below
 // narrows its subject to `Never`, so the suite is indeed dead — but a wrong annotation makes
 // these checks real at runtime, and defensive code is full of them. Reporting here would be

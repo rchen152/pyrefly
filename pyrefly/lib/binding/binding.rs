@@ -1202,7 +1202,8 @@ pub struct BranchSuite {
     pub test: Option<Expr>,
     /// The suite's reportable body, if it has one.
     pub range: Option<TextRange>,
-    /// Whether a true test makes later suites unreachable in every environment.
+    /// Whether the test's value holds in every environment, so that a false test kills this
+    /// suite and a true one kills the suites below it.
     pub test_is_environment_independent: bool,
 }
 
