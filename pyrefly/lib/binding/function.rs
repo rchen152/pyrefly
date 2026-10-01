@@ -9,6 +9,7 @@ use std::mem;
 
 use dupe::Dupe as _;
 use pyrefly_graph::index::Idx;
+use pyrefly_python::ast::AssignmentTargetKind;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::docstring::Docstring;
 use pyrefly_python::dunder;
@@ -197,27 +198,15 @@ struct SelfAttrNames<'a> {
 
 impl<'a> SelfAttrNames<'a> {
     fn expr_lvalue(&mut self, x: &Expr) {
-        match x {
-            Expr::Attribute(x) => {
-                if let Some(attr) = Ast::expr_receiver_attr(x, self.self_name)
-                    && !self.names.contains_key(&attr.id)
-                {
-                    self.names.insert(attr.id.clone(), attr.range());
-                }
+        Ast::expr_assignment_targets(x, &mut |target| {
+            if !target.is_within_starred
+                && let AssignmentTargetKind::Attribute(x) = target.kind
+                && let Some(attr) = Ast::expr_receiver_attr(x, self.self_name)
+                && !self.names.contains_key(&attr.id)
+            {
+                self.names.insert(attr.id.clone(), attr.range());
             }
-            Expr::Tuple(x) => {
-                for x in &x.elts {
-                    self.expr_lvalue(x);
-                }
-            }
-
-            Expr::List(x) => {
-                for x in &x.elts {
-                    self.expr_lvalue(x);
-                }
-            }
-            _ => {}
-        }
+        });
     }
 
     fn stmt(&mut self, x: &Stmt) {
@@ -1107,5 +1096,59 @@ fn is_docstring(x: &Stmt) -> bool {
     match x {
         Stmt::Expr(StmtExpr { value, .. }) => value.is_string_literal_expr(),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyrefly_python::ast::Ast;
+    use ruff_python_ast::Expr;
+    use ruff_python_ast::PySourceType;
+    use ruff_python_ast::Stmt;
+    use ruff_python_ast::name::Name;
+    use ruff_text_size::TextRange;
+    use ruff_text_size::TextSize;
+
+    use super::SelfAttrNames;
+
+    #[test]
+    fn self_attr_names_expr_lvalue_preserves_supported_targets() {
+        let source = "(self.tuple_attr, [self.list_attr, *self.starred_attr, name, items[0], other.attr, self.child.attr, self.repeated, self.repeated])";
+        let (module, errors, _) = Ast::parse(source, PySourceType::Python);
+        assert!(errors.is_empty(), "unexpected parse errors: {errors:?}");
+        let expr = match module.body.into_iter().next() {
+            Some(Stmt::Expr(stmt)) => *stmt.value,
+            other => panic!("expected an expression statement, got {other:?}"),
+        };
+        let Expr::Tuple(_) = &expr else {
+            panic!("expected a tuple expression");
+        };
+
+        let self_name = Name::new_static("self");
+        let mut finder = SelfAttrNames {
+            self_name: &self_name,
+            names: Default::default(),
+        };
+        finder.expr_lvalue(&expr);
+
+        assert_eq!(
+            finder
+                .names
+                .keys()
+                .map(|name| name.as_str())
+                .collect::<Vec<_>>(),
+            vec!["tuple_attr", "list_attr", "repeated"]
+        );
+        let repeated_start = source
+            .find("self.repeated")
+            .expect("test source should contain a repeated attribute")
+            + "self.".len();
+        assert_eq!(
+            finder.names.get(&Name::new_static("repeated")),
+            Some(&TextRange::at(
+                TextSize::new(repeated_start as u32),
+                TextSize::new("repeated".len() as u32),
+            ))
+        );
     }
 }
