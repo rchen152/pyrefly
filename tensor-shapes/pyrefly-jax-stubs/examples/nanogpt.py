@@ -31,7 +31,7 @@ from typing import Any, assert_type, Literal, overload, TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 from jax import Array
-from shape_extensions import assert_shape, Elements, Int, IntTuple, IntVar
+from shape_extensions import assert_shape, Int, IntTuple, IntVar
 
 # ============================================================================
 # Core Layers: Linear, LayerNorm, Embedding
@@ -55,9 +55,7 @@ class Linear[In: IntVar, Out: IntVar]:
             bias=jnp.zeros(out_features) if bias else None,
         )
 
-    def __call__[Batch: IntTuple](
-        self, x: Array[[*Elements[Batch], In]]
-    ) -> Array[[*Elements[Batch], Out]]:
+    def __call__[Batch: IntTuple](self, x: Array[[*Batch, In]]) -> Array[[*Batch, Out]]:
         out = jnp.matmul(x, self.weight)
         if self.bias is not None:
             out = out + self.bias
@@ -84,8 +82,8 @@ class LayerNorm[Features: IntVar]:
         )
 
     def __call__[Batch: IntTuple](
-        self, x: Array[[*Elements[Batch], Features]]
-    ) -> Array[[*Elements[Batch], Features]]:
+        self, x: Array[[*Batch, Features]]
+    ) -> Array[[*Batch, Features]]:
         mean = jnp.mean(x, axis=-1, keepdims=True)
         variance = jnp.var(x, axis=-1, keepdims=True)
         out = self.weight * (x - mean) / jnp.sqrt(variance + self.eps)
@@ -107,7 +105,7 @@ class Embedding[NumEmbeddings: IntVar, EmbeddingDim: IntVar]:
 
     def __call__[Batch: IntTuple](
         self, x: Array[Batch]
-    ) -> Array[[*Elements[Batch], EmbeddingDim]]:
+    ) -> Array[[*Batch, EmbeddingDim]]:
         return self.weight[x]
 
 

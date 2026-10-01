@@ -8,7 +8,7 @@ from __future__ import annotations
 import jax
 import jax.numpy as jnp
 import numpy as np
-from shape_extensions import assert_shape, Elements, IntTuple, IntVar
+from shape_extensions import assert_shape, IntTuple, IntVar
 
 
 def square_svd_components[N: IntVar](
@@ -247,8 +247,8 @@ def test_norm_variations() -> None:
 
 
 def generic_batched_cholesky[Batch: IntTuple, N: IntVar](
-    x: jax.Array[[*Elements[Batch], N, N]],
-) -> jax.Array[[*Elements[Batch], N, N]]:
+    x: jax.Array[[*Batch, N, N]],
+) -> jax.Array[[*Batch, N, N]]:
     return jnp.linalg.cholesky(x)
 
 
