@@ -11,7 +11,6 @@ import torch
 from shape_extensions import (
     assert_raises,
     assert_shape,
-    Elements,
     Int,
     IntTuple,
     IntVar,
@@ -171,7 +170,7 @@ if TYPE_CHECKING:
         assert_type(torch.rand((n, plain)), Tensor[[N, int]])
         assert_type(torch.zeros(*dimensions), Tensor[IntTuple])
         assert_type(torch.ones(unbounded), Tensor[IntTuple])
-        assert_type(torch.empty(*unpacked), Tensor[[1, *Elements[IntTuple], 3]])
+        assert_type(torch.empty(*unpacked), Tensor[[1, *IntTuple, 3]])
         assert_type(torch.full(unbounded, 1.0), Tensor[IntTuple])
 
     def check_arange[N: IntVar, M: IntVar](

@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import assert_type, TYPE_CHECKING
 
 import torch
-from shape_extensions import assert_shape, Elements, IntTuple, IntVar
+from shape_extensions import assert_shape, IntTuple, IntVar
 from torch import Tensor
 
 
@@ -114,11 +114,11 @@ if TYPE_CHECKING:
         assert_type(torch.sum(input=tensor, dim=-1), Tensor[IntTuple])
 
     def check_symbolic_rank_reduction[Batch: IntTuple, N: IntVar](
-        tensor: Tensor[[*Elements[Batch], N]], keepdim: bool
+        tensor: Tensor[[*Batch, N]], keepdim: bool
     ) -> None:
         assert_type(torch.sum(tensor, dim=-1), Tensor[Batch])
-        assert_type(tensor.mean(dim=-1, keepdim=True), Tensor[[*Elements[Batch], 1]])
-        assert_type(tensor.mean(axis=-1, keepdim=True), Tensor[[*Elements[Batch], 1]])
+        assert_type(tensor.mean(dim=-1, keepdim=True), Tensor[[*Batch, 1]])
+        assert_type(tensor.mean(axis=-1, keepdim=True), Tensor[[*Batch, 1]])
         assert_type(tensor.mean(axis=[-1]), Tensor[IntTuple])
         assert_type(tensor.mean(axis=-1, dtype=torch.float64), Tensor[Batch])
         assert_type(torch.mean(tensor, axis=-1), Tensor[Batch])

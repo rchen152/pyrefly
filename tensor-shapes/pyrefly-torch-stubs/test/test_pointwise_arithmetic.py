@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any, assert_type, TYPE_CHECKING
 
 import torch
-from shape_extensions import assert_raises, assert_shape, Elements, IntTuple, IntVar
+from shape_extensions import assert_raises, assert_shape, IntTuple, IntVar
 from torch import Tensor
 
 
@@ -153,16 +153,16 @@ if TYPE_CHECKING:
         assert_type(concrete + gradual_shape, Tensor[IntTuple])
 
     def check_variadic_broadcast[Left: IntTuple, Right: IntTuple](
-        left: Tensor[[*Elements[Left], 3]],
-        same: Tensor[[*Elements[Left], 3]],
-        right: Tensor[[*Elements[Right], 3]],
+        left: Tensor[[*Left, 3]],
+        same: Tensor[[*Left, 3]],
+        right: Tensor[[*Right, 3]],
         vector: Tensor[[3]],
         scalar: Tensor[[]],
     ) -> None:
-        assert_type(left + same, Tensor[[*Elements[Left], 3]])
-        assert_type(vector + left, Tensor[[*Elements[Left], 3]])
-        assert_type(scalar + left, Tensor[[*Elements[Left], 3]])
-        assert_type(left + right, Tensor[[*Elements[IntTuple], 3]])
+        assert_type(left + same, Tensor[[*Left, 3]])
+        assert_type(vector + left, Tensor[[*Left, 3]])
+        assert_type(scalar + left, Tensor[[*Left, 3]])
+        assert_type(left + right, Tensor[[*IntTuple, 3]])
 
     def check_incompatible_symbolic_broadcast[N: IntVar, M: IntVar](
         left: Tensor[[N, 3]], right: Tensor[[M, 3]]
@@ -173,7 +173,7 @@ if TYPE_CHECKING:
 
     def check_incompatible_variadic_broadcast[Batch: IntTuple](
         concrete: Tensor[[5, 10, 20]],
-        variadic: Tensor[[*Elements[Batch], 20]],
+        variadic: Tensor[[*Batch, 20]],
     ) -> None:
         # E: Cannot evaluate type-level shape DSL call
         concrete + variadic
