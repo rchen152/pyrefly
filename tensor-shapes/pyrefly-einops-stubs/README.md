@@ -11,9 +11,9 @@ agree across backends.
 TODO: Once Pyrefly supports a `MapShape` type operator, make the annotations
 generic over array libraries while preserving the input's nominal array type.
 
-Patterns that need named `axes_lengths` currently return a gradual shape; the
-core evaluator already supports those lengths, and a future call-site bridge
-will make them available to the shape rule.
+Literal `axes_lengths` keyword arguments are carried into the shape rules, so named
+input splits and repeated output axes remain tracked. Dynamically unpacked mappings
+preserve the known rank but use gradual dimensions for unknown axis lengths.
 
 Run the static tests with:
 

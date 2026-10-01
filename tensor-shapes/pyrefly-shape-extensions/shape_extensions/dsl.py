@@ -89,17 +89,23 @@ def einops_einsum(spec: str, shapes: _IntTuplesSchema, /) -> _IntTupleSchema:
     ...
 
 
-def rearrange(spec: str, shape: _IntTupleSchema, /) -> _IntTupleSchema:
+def rearrange(
+    spec: str, shape: _IntTupleSchema, axes: object | None = None, /
+) -> _IntTupleSchema:
     """Compute the output shape described by an einops rearrange pattern."""
     ...
 
 
-def reduce(spec: str, shape: _IntTupleSchema, /) -> _IntTupleSchema:
+def reduce(
+    spec: str, shape: _IntTupleSchema, axes: object | None = None, /
+) -> _IntTupleSchema:
     """Compute the output shape described by an einops reduction pattern."""
     ...
 
 
-def repeat(spec: str, shape: _IntTupleSchema, /) -> _IntTupleSchema:
+def repeat(
+    spec: str, shape: _IntTupleSchema, axes: object | None = None, /
+) -> _IntTupleSchema:
     """Compute the output shape described by an einops repeat pattern."""
     ...
 

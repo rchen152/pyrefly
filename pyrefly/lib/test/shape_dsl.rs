@@ -15257,6 +15257,23 @@ nonunit_input()  # E: Cannot evaluate type-level shape DSL call: einops.rearrang
 );
 
 testcase!(
+    test_type_shape_dsl_einops_axis_length_errors,
+    shape_extensions_env(),
+    r#"
+import shape_extensions.dsl as dsl
+from shape_extensions import IntTuple, type_shape_dsl_function
+
+@type_shape_dsl_function
+def wrong_domain(spec: str, shape: IntTuple, axes: int) -> IntTuple:
+    return dsl.rearrange(spec, shape, axes)  # E: einops axis lengths must be annotated as `NamedInts`
+
+@type_shape_dsl_function
+def not_a_parameter(spec: str, shape: IntTuple) -> IntTuple:
+    return dsl.repeat(spec, shape, 1)  # E: value must be a bare parameter or local name
+"#,
+);
+
+testcase!(
     test_type_shape_dsl_reduce_and_repeat,
     shape_extensions_env(),
     r#"

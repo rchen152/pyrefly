@@ -328,7 +328,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     dsl.parameter_annotation_range(index),
                     ErrorKind::InvalidArgument,
                     format!(
-                        "`@type_shape_dsl_function` parameter `{}` must be annotated as `Int`, `Int | None`, `IntTuple`, `IntTuples`, or a supported Flag value type (`int`, `bool`, `str`, `tuple[int, ...]`, `None`, or a union of these)",
+                        "`@type_shape_dsl_function` parameter `{}` must be annotated as `Int`, `Int | None`, `IntTuple`, `IntTuples`, or a supported Flag value type (`int`, `bool`, `str`, `tuple[int, ...]`, `None`, or a union of these); `NamedInts` is also accepted",
                         dsl.parameter_name(index)
                     ),
                 );
@@ -659,6 +659,21 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             == TypeShapeDslInputDomain::Value(TypeShapeDslDomain::IntTuples)
                     }))
                     .then_some("`@type_shape_dsl_function` gufunc operands must be annotated as `IntTuples`"),
+                    TypeShapeDslExpressionKind::Rearrange {
+                        parameter_origins,
+                        ..
+                    }
+                    | TypeShapeDslExpressionKind::Reduce {
+                        parameter_origins,
+                        ..
+                    }
+                    | TypeShapeDslExpressionKind::Repeat {
+                        parameter_origins,
+                        ..
+                    } => (!parameter_origins.iter().all(|parameter| {
+                        parameter_domains[*parameter] == TypeShapeDslInputDomain::NamedInts
+                    }))
+                    .then_some("`@type_shape_dsl_function` einops axis lengths must be annotated as `NamedInts`"),
                     TypeShapeDslExpressionKind::FlagValueSlot {
                         parameter_uses: Some(uses),
                         required,
@@ -704,9 +719,6 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     | TypeShapeDslExpressionKind::IntTupleConcat
                     | TypeShapeDslExpressionKind::Einsum { .. }
                     | TypeShapeDslExpressionKind::EinopsEinsum { .. }
-                    | TypeShapeDslExpressionKind::Rearrange
-                    | TypeShapeDslExpressionKind::Reduce
-                    | TypeShapeDslExpressionKind::Repeat
                     | TypeShapeDslExpressionKind::GufuncBroadcast { .. }
                     | TypeShapeDslExpressionKind::IntTupleConstructor
                     | TypeShapeDslExpressionKind::IntTuplesConstructor
@@ -797,6 +809,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                                     "`@type_shape_dsl_function` Flag parameter `{}` is input-only and cannot be returned",
                                     dsl.parameter_name(parameter)
                                 ),
+                                TypeShapeDslInputDomain::NamedInts => format!(
+                                    "`@type_shape_dsl_function` NamedInts parameter `{}` is input-only and cannot be returned",
+                                    dsl.parameter_name(parameter)
+                                ),
                                 TypeShapeDslInputDomain::OptionalInt
                                     if result == TypeShapeDslDomain::Int => format!(
                                     "`@type_shape_dsl_function` `Int | None` parameter `{}` must be narrowed to exclude `None` before it can be returned as `Int`",
@@ -822,6 +838,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             let message = match parameter_domains[invalid_use.parameter()] {
                                 TypeShapeDslInputDomain::Flag(_) => format!(
                                         "`@type_shape_dsl_function` Flag parameter `{}` is input-only and cannot be returned",
+                                        dsl.parameter_name(invalid_use.parameter())
+                                    ),
+                                TypeShapeDslInputDomain::NamedInts => format!(
+                                        "`@type_shape_dsl_function` NamedInts parameter `{}` is input-only and cannot be returned",
                                         dsl.parameter_name(invalid_use.parameter())
                                     ),
                                 TypeShapeDslInputDomain::OptionalInt
@@ -1127,7 +1147,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             }
             if !self.is_type_shape_dsl_argument(&arg, *domain) {
                 let article = match domain {
-                    TypeShapeDslInputDomain::Flag(_) => "a",
+                    TypeShapeDslInputDomain::Flag(_) | TypeShapeDslInputDomain::NamedInts => "a",
                     TypeShapeDslInputDomain::Value(_) | TypeShapeDslInputDomain::OptionalInt => {
                         "an"
                     }
@@ -1236,7 +1256,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             }
             TypeShapeDslInputDomain::Value(
                 TypeShapeDslDomain::IntTuple | TypeShapeDslDomain::IntTuples,
-            ) => self.expr_untype(arg, type_form_context, errors),
+            )
+            | TypeShapeDslInputDomain::NamedInts => {
+                self.expr_untype(arg, type_form_context, errors)
+            }
             TypeShapeDslInputDomain::Flag(_) => match arg {
                 Expr::NumberLiteral(_) | Expr::BooleanLiteral(_) | Expr::StringLiteral(_) => {
                     self.expr_infer(arg, errors)
@@ -1332,6 +1355,15 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     _ => false,
                 })
             }
+            TypeShapeDslInputDomain::NamedInts => match ty {
+                Type::Any(style) => *style != AnyStyle::Error,
+                Type::NamedInts(_) => true,
+                Type::Quantified(q) if q.kind == QuantifiedKind::TypeVar => {
+                    q.restriction.is_named_ints()
+                }
+                Type::TypeVar(type_var) => type_var.restriction().is_named_ints(),
+                _ => false,
+            },
         }
     }
 }
@@ -1350,6 +1382,16 @@ fn type_shape_dsl_domain(ty: &Type) -> Option<TypeShapeDslDomain> {
 fn type_shape_dsl_input_domain(ty: &Type) -> Option<TypeShapeDslInputDomain> {
     if is_optional_int(ty) {
         return Some(TypeShapeDslInputDomain::OptionalInt);
+    }
+    if matches!(
+        ty,
+        Type::ClassType(cls) if cls.has_qname("shape_extensions", "NamedInts")
+    ) || matches!(
+        ty,
+        Type::Quantified(q) if q.restriction.is_named_ints()
+    ) || matches!(ty, Type::TypeVar(type_var) if type_var.restriction().is_named_ints())
+    {
+        return Some(TypeShapeDslInputDomain::NamedInts);
     }
     type_shape_dsl_domain(ty)
         .map(TypeShapeDslInputDomain::Value)
