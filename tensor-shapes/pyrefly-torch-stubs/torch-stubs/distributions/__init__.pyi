@@ -15,7 +15,7 @@ Submodules re-exported to support original import patterns:
 
 from typing import Any
 
-from shape_extensions import broadcast, Elements, IntTuple, IntVar
+from shape_extensions import broadcast, IntTuple, IntVar
 from torch import Tensor
 from torch._shapes import distribution_sample_shape
 
@@ -116,8 +116,8 @@ class Categorical[BatchShape: IntTuple, Categories: IntVar](Distribution[BatchSh
     """Categorical distribution."""
     def __init__(
         self,
-        probs: Tensor[[*Elements[BatchShape], Categories]] | None = None,
-        logits: Tensor[[*Elements[BatchShape], Categories]] | None = None,
+        probs: Tensor[[*BatchShape, Categories]] | None = None,
+        logits: Tensor[[*BatchShape, Categories]] | None = None,
         validate_args: bool | None = None,
     ) -> None: ...
     def sample[SampleShape: IntTuple = []](

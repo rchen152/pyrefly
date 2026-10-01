@@ -20,7 +20,7 @@ from typing import (
     TypeVar,
 )
 
-from shape_extensions import broadcast, Elements, Flag, IntTuple, IntVar
+from shape_extensions import broadcast, Flag, IntTuple, IntVar
 
 if TYPE_CHECKING:
     from shape_extensions import Int as _Int, ProxyMethod
@@ -236,9 +236,7 @@ class Linear[IN: IntVar, OUT: IntVar](Module):
         device: Any = None,
         dtype: Any = None,
     ) -> None: ...
-    def forward[Bs: IntTuple](
-        self, input: Tensor[[*Elements[Bs], IN]]
-    ) -> Tensor[[*Elements[Bs], OUT]]: ...
+    def forward[Bs: IntTuple](self, input: Tensor[[*Bs, IN]]) -> Tensor[[*Bs, OUT]]: ...
 
 # Dropout
 class Dropout(Module):
@@ -1386,8 +1384,8 @@ class LazyLinear[OUT: IntVar](Module):
         dtype: Any = None,
     ) -> None: ...
     def forward[Bs: IntTuple](
-        self, input: Tensor[[*Elements[Bs], Any]]
-    ) -> Tensor[[*Elements[Bs], OUT]]: ...
+        self, input: Tensor[[*Bs, Any]]
+    ) -> Tensor[[*Bs, OUT]]: ...
 
 class Flatten[StartDim: Flag[int], EndDim: Flag[int]](Module):
     """Flattens a contiguous range of dims.

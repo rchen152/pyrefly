@@ -25,7 +25,6 @@ import numpy as np
 import shape_extensions
 import torch as torch
 from shape_extensions import (
-    Elements,
     Flag,
     gufunc_broadcast,
     Int as _Int,
@@ -1413,10 +1412,10 @@ def softmin[Shape: IntTuple](
 # ==============================================================================
 
 def linear[Bs: IntTuple, IN: IntVar, OUT: IntVar](
-    input: Tensor[[*Elements[Bs], IN]],
+    input: Tensor[[*Bs, IN]],
     weight: Tensor[[OUT, IN]],
     bias: Tensor[[OUT]] | None = None,
-) -> Tensor[[*Elements[Bs], OUT]]:
+) -> Tensor[[*Bs, OUT]]:
     """Linear transformation: y = xA^T + b. Shape inference via generic fixture signature."""
     ...
 
@@ -1508,7 +1507,7 @@ def cosine_similarity[S1: IntTuple, S2: IntTuple, Dim: Flag[builtins.int]](
     ...
 
 def grid_sample[B: IntVar, C: IntVar, Hout: IntVar, Wout: IntVar](
-    input: Tensor[[B, C, *Elements[IntTuple]]],
+    input: Tensor[[B, C, *IntTuple]],
     grid: Tensor[[B, Hout, Wout, 2]],
     mode: str = "bilinear",
     padding_mode: str = "zeros",

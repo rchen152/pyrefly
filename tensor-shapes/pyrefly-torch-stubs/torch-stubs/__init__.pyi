@@ -18,7 +18,6 @@ from typing import Any, Callable, Literal, overload, Self, TYPE_CHECKING, Unpack
 
 from shape_extensions import (
     broadcast,
-    Elements,
     Flag,
     Index,
     index_shape,
@@ -2226,20 +2225,20 @@ class Tensor[Shape: _Shape = _Shape](_TensorBase):
         ...
 
     def det[Batch: IntTuple, M: IntVar, N: IntVar](
-        self: Tensor[[*Elements[Batch], M, N]],
+        self: Tensor[[*Batch, M, N]],
     ) -> Tensor[Batch]:
         """Determinant. Returns batch dimensions only (drops last 2 dims)."""
         ...
 
     def logdet[Batch: IntTuple, M: IntVar, N: IntVar](
-        self: Tensor[[*Elements[Batch], M, N]],
+        self: Tensor[[*Batch, M, N]],
     ) -> Tensor[Batch]:
         """Log determinant. Returns batch dimensions only (drops last 2 dims)."""
         ...
 
     @overload
     def slogdet[Batch: IntTuple, M: IntVar, N: IntVar](
-        self: Tensor[[*Elements[Batch], M, N]],
+        self: Tensor[[*Batch, M, N]],
     ) -> return_types.slogdet[Batch]: ...
     @overload
     def slogdet[Shape: IntTuple](
@@ -3831,16 +3830,16 @@ def einsum[Spec: Flag[str], Shapes: IntTuples](
 # Eigenvalue decomposition
 @overload
 def eig[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]], eigenvectors: bool = False
-) -> tuple[Tensor[[*Elements[Batch], M]], Tensor[[*Elements[Batch], M, N]]]: ...
+    self: Tensor[[*Batch, M, N]], eigenvectors: bool = False
+) -> tuple[Tensor[[*Batch, M]], Tensor[[*Batch, M, N]]]: ...
 @overload
 def eig[Shape: IntTuple](
     self: Tensor[Shape], eigenvectors: bool = False
 ) -> tuple[Tensor[eig_shape(Shape)], Tensor[Shape]]: ...
 @overload
 def eigh[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]], UPLO: str = "L"
-) -> tuple[Tensor[[*Elements[Batch], M]], Tensor[[*Elements[Batch], M, N]]]: ...
+    self: Tensor[[*Batch, M, N]], UPLO: str = "L"
+) -> tuple[Tensor[[*Batch, M]], Tensor[[*Batch, M, N]]]: ...
 @overload
 def eigh[Shape: IntTuple](
     self: Tensor[Shape], UPLO: str = "L"
@@ -3876,20 +3875,20 @@ def inverse[Shape: IntTuple](input: Tensor[Shape]) -> Tensor[Shape]:
 
 # Determinant
 def det[Batch: IntTuple, M: IntVar, N: IntVar](
-    input: Tensor[[*Elements[Batch], M, N]],
+    input: Tensor[[*Batch, M, N]],
 ) -> Tensor[Batch]:
     """Determinant. Returns batch dimensions only (drops last 2 dims)."""
     ...
 
 def logdet[Batch: IntTuple, M: IntVar, N: IntVar](
-    input: Tensor[[*Elements[Batch], M, N]],
+    input: Tensor[[*Batch, M, N]],
 ) -> Tensor[Batch]:
     """Log determinant. Returns batch dimensions only (drops last 2 dims)."""
     ...
 
 @overload
 def slogdet[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]],
+    self: Tensor[[*Batch, M, N]],
 ) -> return_types.slogdet[Batch]: ...
 @overload
 def slogdet[Shape: IntTuple](
@@ -3912,7 +3911,7 @@ def trace[M: IntVar, N: IntVar](input: Tensor[[M, N]]) -> Tensor[[]]:
 
 # Matrix rank
 def matrix_rank[Batch: IntTuple, M: IntVar, N: IntVar](
-    input: Tensor[[*Elements[Batch], M, N]],
+    input: Tensor[[*Batch, M, N]],
     tol: builtins.float | None = None,
     symmetric: bool = False,
 ) -> Tensor[Batch]:
@@ -4233,11 +4232,11 @@ def polar[Shape: IntTuple](abs: Tensor[Shape], angle: Tensor[Shape]) -> Tensor[S
     """Construct complex tensor from polar coordinates. Shape-preserving operation."""
     ...
 
-def view_as_complex[S: IntTuple](input: Tensor[[*Elements[S], 2]]) -> Tensor[S]:
+def view_as_complex[S: IntTuple](input: Tensor[[*S, 2]]) -> Tensor[S]:
     """View a real tensor as complex. Last dim of size 2 is consumed."""
     ...
 
-def view_as_real[S: IntTuple](input: Tensor[S]) -> Tensor[[*Elements[S], 2]]:
+def view_as_real[S: IntTuple](input: Tensor[S]) -> Tensor[[*S, 2]]:
     """View a complex tensor as real. Appends trailing dim of size 2."""
     ...
 
@@ -4284,10 +4283,10 @@ def addmm[N: IntVar, K: IntVar, M: IntVar](
     ...
 
 def cross[B: IntTuple](
-    input: Tensor[[*Elements[B], 3]],
-    other: Tensor[[*Elements[B], 3]],
+    input: Tensor[[*B, 3]],
+    other: Tensor[[*B, 3]],
     dim: int = -1,
-) -> Tensor[[*Elements[B], 3]]:
+) -> Tensor[[*B, 3]]:
     """Cross product of two tensors along a dimension of size 3."""
     ...
 

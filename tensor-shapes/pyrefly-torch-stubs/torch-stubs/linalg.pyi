@@ -6,7 +6,7 @@
 # Type stubs for torch.linalg module (Phase 4: Advanced Linear Algebra)
 from typing import Any, overload
 
-from shape_extensions import Elements, Flag, IntTuple, IntVar
+from shape_extensions import Flag, IntTuple, IntVar
 from torch import return_types, Tensor
 from torch._C import _LinAlgError as LinAlgError
 from torch._shapes import eig_shape, eigvals_shape, reduce_shape, slogdet_shape
@@ -14,16 +14,16 @@ from torch._shapes import eig_shape, eigvals_shape, reduce_shape, slogdet_shape
 # Eigenvalue decomposition
 @overload
 def eig[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]],
-) -> tuple[Tensor[[*Elements[Batch], M]], Tensor[[*Elements[Batch], M, N]]]: ...
+    self: Tensor[[*Batch, M, N]],
+) -> tuple[Tensor[[*Batch, M]], Tensor[[*Batch, M, N]]]: ...
 @overload
 def eig[Shape: IntTuple](
     self: Tensor[Shape],
 ) -> tuple[Tensor[eig_shape(Shape)], Tensor[Shape]]: ...
 @overload
 def eigh[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]], UPLO: str = "L"
-) -> tuple[Tensor[[*Elements[Batch], M]], Tensor[[*Elements[Batch], M, N]]]: ...
+    self: Tensor[[*Batch, M, N]], UPLO: str = "L"
+) -> tuple[Tensor[[*Batch, M]], Tensor[[*Batch, M, N]]]: ...
 @overload
 def eigh[Shape: IntTuple](
     self: Tensor[Shape], UPLO: str = "L"
@@ -32,14 +32,14 @@ def eigh[Shape: IntTuple](
 # Tier 3: Eigenvalues only (no eigenvectors)
 @overload
 def eigvals[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]],
-) -> Tensor[[*Elements[Batch], M]]: ...
+    self: Tensor[[*Batch, M, N]],
+) -> Tensor[[*Batch, M]]: ...
 @overload
 def eigvals[Shape: IntTuple](self: Tensor[Shape]) -> Tensor[eigvals_shape(Shape)]: ...
 @overload
 def eigvalsh[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]], UPLO: str = "L"
-) -> Tensor[[*Elements[Batch], M]]: ...
+    self: Tensor[[*Batch, M, N]], UPLO: str = "L"
+) -> Tensor[[*Batch, M]]: ...
 @overload
 def eigvalsh[Shape: IntTuple](
     self: Tensor[Shape], UPLO: str = "L"
@@ -66,13 +66,13 @@ def inv[Shape: IntTuple](input: Tensor[Shape]) -> Tensor[Shape]: ...
 
 # Determinant
 def det[Batch: IntTuple, M: IntVar, N: IntVar](
-    input: Tensor[[*Elements[Batch], M, N]],
+    input: Tensor[[*Batch, M, N]],
 ) -> Tensor[Batch]: ...
 
 # Sign and log determinant
 @overload
 def slogdet[Batch: IntTuple, M: IntVar, N: IntVar](
-    self: Tensor[[*Elements[Batch], M, N]],
+    self: Tensor[[*Batch, M, N]],
 ) -> return_types.linalg_slogdet[Batch]: ...
 @overload
 def slogdet[Shape: IntTuple](
@@ -87,7 +87,7 @@ def matrix_exp[Shape: IntTuple](input: Tensor[Shape]) -> Tensor[Shape]: ...
 
 # Matrix rank
 def matrix_rank[Batch: IntTuple, M: IntVar, N: IntVar](
-    input: Tensor[[*Elements[Batch], M, N]], tol: float = None, hermitian: bool = False
+    input: Tensor[[*Batch, M, N]], tol: float = None, hermitian: bool = False
 ) -> Tensor[Batch]: ...
 
 # TODO: Add precise types and signatures for the remaining public API.
