@@ -163,15 +163,13 @@ fn push_assignment_targets(out: &mut Vec<FlatSymbol>, target: &Expr, scope: Scop
                 scope.parent,
             );
         }
-        Expr::Attribute(attr) => {
+        Expr::Attribute(_) => {
             if let Some((receiver, class)) = scope.receiver
-                && let Expr::Name(value) = &*attr.value
-                && &value.id == receiver
-                && !Ast::is_synthesized_empty_identifier(&attr.attr)
+                && let Some(attr) = Ast::expr_receiver_attr(target, receiver)
             {
                 push_symbol(
                     out,
-                    ShortIdentifier::new(&attr.attr),
+                    ShortIdentifier::new(attr),
                     SymbolKind::Attribute,
                     Some(class),
                 );

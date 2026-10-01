@@ -352,6 +352,21 @@ impl Ast {
         }
     }
 
+    /// Returns the attribute bound by `receiver.<attr>`, if this expression has that shape.
+    pub fn expr_receiver_attr<'a>(x: &'a Expr, receiver: &Name) -> Option<&'a Identifier> {
+        let Expr::Attribute(x) = x else {
+            return None;
+        };
+        if let Expr::Name(value) = x.value.as_ref()
+            && &value.id == receiver
+            && !Self::is_synthesized_empty_identifier(&x.attr)
+        {
+            Some(&x.attr)
+        } else {
+            None
+        }
+    }
+
     /// The [`Pattern`] type contains lvalues as identifiers. Although some patterns like
     /// MatchValue contain [`Expr`], those do not contain lvalues and thus are ignored.
     pub fn pattern_lvalue<'a>(x: &'a Pattern, f: &mut impl FnMut(&'a Identifier)) {
@@ -650,6 +665,18 @@ mod tests {
             Some(Stmt::Expr(stmt)) => *stmt.value,
             other => panic!("expected an expression statement, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn receiver_attr_matches_direct_receiver_only() {
+        let receiver = Name::new_static("self");
+        let direct = parse_expr_stmt("self.value");
+        assert_eq!(
+            Ast::expr_receiver_attr(&direct, &receiver).map(|attr| attr.id.as_str()),
+            Some("value")
+        );
+        assert!(Ast::expr_receiver_attr(&parse_expr_stmt("other.value"), &receiver).is_none());
+        assert!(Ast::expr_receiver_attr(&parse_expr_stmt("self.child.value"), &receiver).is_none());
     }
 
     #[test]

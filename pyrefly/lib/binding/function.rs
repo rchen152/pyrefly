@@ -198,12 +198,11 @@ struct SelfAttrNames<'a> {
 impl<'a> SelfAttrNames<'a> {
     fn expr_lvalue(&mut self, x: &Expr) {
         match x {
-            Expr::Attribute(x) => {
-                if let Expr::Name(v) = x.value.as_ref()
-                    && &v.id == self.self_name
-                    && !self.names.contains_key(&x.attr.id)
+            Expr::Attribute(_) => {
+                if let Some(attr) = Ast::expr_receiver_attr(x, self.self_name)
+                    && !self.names.contains_key(&attr.id)
                 {
-                    self.names.insert(x.attr.id.clone(), x.attr.range());
+                    self.names.insert(attr.id.clone(), attr.range());
                 }
             }
             Expr::Tuple(x) => {
