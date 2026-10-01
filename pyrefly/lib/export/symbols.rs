@@ -26,6 +26,7 @@ use std::slice;
 
 use pyrefly_python::ast::AssignmentTargetKind;
 use pyrefly_python::ast::Ast;
+use pyrefly_python::dunder;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
 use pyrefly_util::visit::Visit;
@@ -207,15 +208,14 @@ fn build<'a>(stmts: &'a [Stmt], scope: Scope<'a>, out: &mut Vec<FlatSymbol>) {
                 };
                 // The export pass is syntactic: recognize spelled-out staticmethod
                 // decorators without resolving imports or evaluating decorators.
-                let is_staticmethod =
-                    f.decorator_list
-                        .iter()
-                        .any(|decorator| match &decorator.expression {
-                            Expr::Name(name) => name.id == "staticmethod",
-                            Expr::Attribute(attr) => attr.attr.id == "staticmethod",
-                            _ => false,
-                        });
-                let receiver = if scope.kind == ScopeKind::Class && !is_staticmethod {
+                let is_staticmethod = f.decorator_list.iter().any(|decorator| {
+                    Ast::decorator_trailing_name(&decorator.expression) == Some("staticmethod")
+                });
+                // `__new__` is implicitly static but still receives the class as its first
+                // argument, so an explicit `@staticmethod` must not suppress its receiver.
+                let receiver = if scope.kind == ScopeKind::Class
+                    && (!is_staticmethod || f.name.id == dunder::NEW)
+                {
                     f.parameters
                         .posonlyargs
                         .first()
@@ -449,6 +449,25 @@ class Example:
                 ".Method no_positional_parameter",
                 ".Method class_method",
                 ".Attribute class_attribute",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_dunder_new_has_receiver_even_when_explicitly_static() {
+        assert_eq!(
+            walk(
+                r#"
+class Example:
+    @staticmethod
+    def __new__(cls):
+        cls.new_attribute = 1
+"#
+            ),
+            vec![
+                "Class Example",
+                ".Method __new__",
+                ".Attribute new_attribute",
             ]
         );
     }
