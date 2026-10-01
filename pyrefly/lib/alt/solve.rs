@@ -33,13 +33,18 @@ use pyrefly_util::prelude::SliceExt;
 use pyrefly_util::prelude::VecExt;
 use pyrefly_util::visit::Visit;
 use pyrefly_util::visit::VisitMut;
+use ruff_python_ast::BoolOp;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprAttribute;
 use ruff_python_ast::ExprBinOp;
+use ruff_python_ast::ExprBoolOp;
 use ruff_python_ast::ExprCall;
+use ruff_python_ast::ExprName;
 use ruff_python_ast::ExprSubscript;
+use ruff_python_ast::ExprUnaryOp;
 use ruff_python_ast::Identifier;
 use ruff_python_ast::TypeParams;
+use ruff_python_ast::UnaryOp;
 use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
@@ -2373,15 +2378,24 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
 
     fn check_bool_expr_and_get_value(&self, x: &Expr, errors: &ErrorCollector) -> Option<bool> {
         let ty = self.expr_infer(x, errors);
-        let contains_class_object = self.uses_class_object_attribute_lookup(&ty);
-        let intrinsic_value = if let Type::TypedDict(td) = &ty
+        self.check_bool_type_and_get_value(&ty, x.range(), errors)
+    }
+
+    fn check_bool_type_and_get_value(
+        &self,
+        ty: &Type,
+        range: TextRange,
+        errors: &ErrorCollector,
+    ) -> Option<bool> {
+        let contains_class_object = self.uses_class_object_attribute_lookup(ty);
+        let intrinsic_value = if let Type::TypedDict(td) = ty
             && self
                 .typed_dict_fields(td)
                 .values()
                 .any(|field| field.required)
         {
             Some(true)
-        } else if let Type::ClassType(cls) = &ty {
+        } else if let Type::ClassType(cls) = ty {
             let cls = cls.class_object();
             if !self.is_subclassable(cls) && self.class_instances_always_truthy(cls) {
                 Some(true)
@@ -2392,16 +2406,16 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             ty.as_bool()
         };
         let dunder_bool_ty = if contains_class_object || intrinsic_value.is_some() {
-            self.check_dunder_bool_is_callable(&ty, x.range(), errors);
+            self.check_dunder_bool_is_callable(ty, range, errors);
             None
         } else {
-            self.check_dunder_bool_is_callable_and_get_type(&ty, x.range(), errors)
+            self.check_dunder_bool_is_callable_and_get_type(ty, range, errors)
         };
-        self.check_redundant_condition(&ty, x.range(), errors);
-        self.check_implicit_bool(&ty, x.range(), errors);
+        self.check_redundant_condition(ty, range, errors);
+        self.check_implicit_bool(ty, range, errors);
 
         if contains_class_object {
-            return self.as_bool(&ty, x.range(), &self.error_swallower());
+            return self.as_bool(ty, range, &self.error_swallower());
         }
         intrinsic_value.or_else(|| {
             let dunder_bool_ty = dunder_bool_ty?;
@@ -2413,18 +2427,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             };
             let swallow = self.error_swallower();
             let infer_bool = || {
-                self.call_infer(
-                    *call_target,
-                    &[],
-                    &[],
-                    x.range(),
-                    &swallow,
-                    None,
-                    None,
-                    None,
-                )
-                .ty
-                .as_bool()
+                self.call_infer(*call_target, &[], &[], range, &swallow, None, None, None)
+                    .ty
+                    .as_bool()
             };
             if self.current().tracing_enabled() {
                 self.without_tracing(infer_bool)
@@ -2432,6 +2437,92 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 infer_bool()
             }
         })
+    }
+
+    /// The truth value of a branch test according to declarations alone: annotations, `def`
+    /// and `class` statements, literals, and the declared types of attributes and call returns.
+    /// A value that only inference or flow narrowing supplies is `None`, because a variable
+    /// assigned `False` may be reassigned in ways flow analysis does not see (through `global`,
+    /// `nonlocal`, an exception edge, or another module), and narrowing an operand to `Never`
+    /// inside `x == a and x != b` fixes the `and` without saying anything about the program.
+    fn declared_bool_value(&self, x: &Expr) -> Option<bool> {
+        let swallow = self.error_swallower();
+        let value_of_type = |ty: &Type| self.check_bool_type_and_get_value(ty, x.range(), &swallow);
+        match x {
+            Expr::UnaryOp(ExprUnaryOp {
+                op: UnaryOp::Not,
+                operand,
+                ..
+            }) => self.declared_bool_value(operand).map(|value| !value),
+            Expr::BoolOp(ExprBoolOp { op, values, .. }) => {
+                // One `or` operand that is always true makes the whole test true, and one `and`
+                // operand that is always false makes it false. Otherwise the test is settled only
+                // if every operand is settled the other way.
+                let decisive = matches!(op, BoolOp::Or);
+                let mut all_settled = true;
+                for value in values.iter().map(|x| self.declared_bool_value(x)) {
+                    match value {
+                        Some(value) if value == decisive => return Some(decisive),
+                        Some(_) => {}
+                        None => all_settled = false,
+                    }
+                }
+                all_settled.then_some(!decisive)
+            }
+            Expr::Name(name) => value_of_type(&self.declared_type_of_name(name)?),
+            Expr::Attribute(attr) => {
+                let base = self.expr_infer(&attr.value, &swallow);
+                // A module attribute is an unannotated global more often than not.
+                if matches!(base, Type::Module(_)) {
+                    return None;
+                }
+                value_of_type(&self.attr_infer_for_type(
+                    &base,
+                    &attr.attr.id,
+                    attr.range,
+                    &swallow,
+                    None,
+                ))
+            }
+            Expr::Call(_)
+            | Expr::StringLiteral(_)
+            | Expr::BytesLiteral(_)
+            | Expr::NumberLiteral(_)
+            | Expr::BooleanLiteral(_)
+            | Expr::NoneLiteral(_)
+            | Expr::EllipsisLiteral(_) => value_of_type(&self.expr_infer(x, &swallow)),
+            _ => None,
+        }
+    }
+
+    /// The type a name has at its declaration, before any narrowing, or `None` if the name is not
+    /// bound by a declaration: an annotated parameter or assignment, `def`, `class`, or `type`.
+    fn declared_type_of_name(&self, name: &ExprName) -> Option<Type> {
+        let mut idx = self
+            .bindings()
+            .key_to_idx(&Key::BoundName(ShortIdentifier::expr_name(name)));
+        loop {
+            match self.bindings().get(idx) {
+                Binding::Forward(next)
+                | Binding::ForwardToFirstUse(next)
+                | Binding::PromoteForward(next)
+                | Binding::Narrow(next, ..) => idx = *next,
+                Binding::FunctionParameter(param)
+                    if matches!(**param, FunctionParameter::Annotated(_)) =>
+                {
+                    break;
+                }
+                Binding::NameAssign(assign) if assign.annotation.is_some() => break,
+                Binding::Function { .. }
+                | Binding::ClassDef(..)
+                | Binding::TypeAlias(_)
+                | Binding::AnnotatedType(..) => break,
+                // An unannotated assignment, a merge of several definitions, a capture, and the
+                // like all carry an inferred type.
+                _ => return None,
+            }
+        }
+        Some(self.get_idx(idx).ty().clone())
     }
 
     pub fn solve_expectation(
@@ -2646,10 +2737,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             BindingExpect::BranchSuiteReachability(branches) => {
                 let mut preempted = false;
                 for branch in branches {
-                    let value = branch
-                        .test
-                        .as_ref()
-                        .and_then(|test| self.check_bool_expr_and_get_value(test, errors));
+                    let value = branch.test.as_ref().and_then(|test| {
+                        let value = self.check_bool_expr_and_get_value(test, errors)?;
+                        (self.declared_bool_value(test) == Some(value)).then_some(value)
+                    });
                     if let Some(range) = branch.range
                         && (preempted
                             || (branch.test_is_environment_independent && value == Some(false)))

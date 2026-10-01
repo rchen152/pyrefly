@@ -3472,6 +3472,79 @@ def f() -> None:
 "#,
 );
 
+// A test's value settles its branch only when declarations fix it. Each test below is typed
+// `Literal[False]`, `None`, or `Never` only by inference from an unannotated assignment or by
+// flow narrowing, and each is live at runtime.
+testcase!(
+    test_no_report_for_test_values_only_inference_settles,
+    r#"
+FLAG = False
+
+def enable() -> None:
+    global FLAG
+    FLAG = True
+
+def reads_module_flag() -> None:
+    if FLAG:
+        print(1)
+
+def nonlocal_flag() -> None:
+    done = False
+    def callback() -> None:
+        nonlocal done
+        done = True
+    callback()
+    if done:
+        print(2)
+
+def work() -> None: ...
+
+def cleanup_flag() -> None:
+    ok = False
+    try:
+        work()
+        ok = True
+    finally:
+        if not ok:
+            print(3)
+
+class Resource:
+    def __init__(self, c: bool) -> None:
+        self.closed = False
+        self.value = None
+        if c:
+            self.value = 3
+        if self.value:
+            print(4)
+
+    def close(self) -> None:
+        self.closed = True
+
+    def narrowed_across_a_call(self) -> None:
+        if self.closed:
+            return
+        self.close()
+        if self.closed:
+            print(5)
+
+def loop_carried(b: bool) -> None:
+    seen = False
+    if b:
+        pass
+    while True:
+        if seen:
+            return
+        seen = True
+
+class Dtype:
+    def __eq__(self, other: object) -> bool: ...
+
+def chained_equality(d: Dtype) -> None:
+    if d == "int" and d != "int64":
+        print(6)
+"#,
+);
+
 // Only the test's own value is consulted, never the narrowing it performs. Each test below
 // narrows its subject to `Never`, so the suite is indeed dead — but a wrong annotation makes
 // these checks real at runtime, and defensive code is full of them. Reporting here would be

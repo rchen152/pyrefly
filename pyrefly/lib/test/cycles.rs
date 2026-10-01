@@ -695,7 +695,7 @@ def f(cond: bool):
         if cond:
             x = None
         else:
-            x = 1  # E: This code is unreachable
+            x = 1
     assert_type(x, int | None)
 "#,
 );

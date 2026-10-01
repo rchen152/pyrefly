@@ -3714,7 +3714,7 @@ def f(other):
     f_other = isinstance(other, (float, str))
     if f_other:
         if not f_other:
-            other = 3.14  # E: This code is unreachable
+            other = 3.14
     return other
     "#,
 );
