@@ -8008,7 +8008,7 @@ class Outer:
 @static_jaxtyping("n")
 class Shadow:
     @static_jaxtyping("n")
-    def method(self, x: Float[Tensor, "n"]) -> Float[Tensor, "n"]: ...  # E: `n` is declared by `@static_jaxtyping` and is already declared by an enclosing definition
+    def method(self, x: Float[Tensor, "n"]) -> Float[Tensor, "n"]: ...  # E: `n` is declared by `@static_jaxtyping` and is already declared by `@static_jaxtyping` on an enclosing definition
 
 @static_jaxtyping("outer")
 def make(x: Float[Tensor, "outer"]):
@@ -8051,7 +8051,7 @@ def enclosing(x: Float[Tensor, "outer"]) -> None:
     reveal_type(inner)  # E: revealed type: [extra](y: Tensor[[outer, extra]]) -> Tensor[[extra, outer]]
 
     @static_jaxtyping("outer")
-    def shadowed(y: Float[Tensor, "outer"]) -> None: ...  # E: `outer` is declared by `@static_jaxtyping` and is already declared by an enclosing definition
+    def shadowed(y: Float[Tensor, "outer"]) -> None: ...  # E: `outer` is declared by `@static_jaxtyping` and is already declared by `@static_jaxtyping` on an enclosing definition
 
 @static_jaxtyping("outer")
 def undeclared_name(x: Float[Tensor, "outer missing"]) -> None: ...  # E: `missing` is not declared
@@ -8899,6 +8899,89 @@ import jaxtyping
 from torch import Tensor
 
 alias: type[jaxtyping.Shaped[Tensor, "batch"]] = Float[Tensor, "batch"]  # E: `Annotated[Tensor[Unknown]]` is not assignable to `type[Tensor[Unknown]]`
+"#,
+);
+
+testcase!(
+    test_shape_vars_declaration_errors,
+    shape_extensions_env(),
+    r#"
+from shape_extensions import shape_vars
+
+NAMES = "N"
+
+@shape_vars("N, N")  # E: `N` is declared more than once
+def duplicate() -> None: ...
+
+@shape_vars("M")
+@shape_vars("N")  # E: Duplicate `@shape_vars` decorator
+def repeated() -> None: ...
+
+@shape_vars  # E: `@shape_vars` requires a declaration string  # E: Argument `() -> None` is not assignable to parameter `declaration`
+def bare() -> None: ...
+
+@shape_vars(declaration="N")  # E: `@shape_vars` takes its declaration as a positional string
+def keyword() -> None: ...
+
+@shape_vars(NAMES)  # E: `@shape_vars` requires a string literal declaration
+def non_literal() -> None: ...
+
+@shape_vars("M N")  # E: `M N` cannot be declared. Separate the names in a `@shape_vars` declaration with commas
+def missing_comma() -> None: ...
+
+@shape_vars("3")  # E: `3` cannot be declared
+def literal() -> None: ...
+
+@shape_vars("N", required=True)  # E: `required` is supported only on `@shape_vars` classes
+def required_function() -> None: ...
+
+@shape_vars("N", required=1)  # E: `required` must be a boolean literal (`True` or `False`)  # E: Argument `Literal[1]` is not assignable to parameter `required`
+class NonLiteralRequired: ...
+"#,
+);
+
+testcase!(
+    test_shape_vars_generic_class_without_shaped,
+    shape_extensions_env(),
+    r#"
+from typing import assert_type
+from shape_extensions import shape_vars
+
+@shape_vars("N")
+class Box[T]:
+    def get(self) -> T: ...
+
+@shape_vars("N", required=True)
+class StrictBox[T]:
+    def get(self) -> T: ...
+
+def check(default: Box[str], shaped: Box[str, 3], strict: StrictBox[str, 3]) -> None:
+    assert_type(default.get(), str)
+    assert_type(shaped.get(), str)
+    assert_type(strict.get(), str)
+"#,
+);
+
+testcase!(
+    bug = "Defaulted shape dimensions cannot follow TypeVarTuple",
+    test_shape_vars_default_after_type_var_tuple,
+    shape_extensions_env(),
+    r#"
+from typing import assert_type
+from shape_extensions import shape_vars
+
+@shape_vars("N")
+class Defaulted[*Ts]: ...  # E: TypeVar `N` with a default cannot follow TypeVarTuple `Ts`
+
+@shape_vars("N", required=True)
+class Required[*Ts]:
+    members: tuple[*Ts]
+
+def check(
+    bad: Defaulted[int, str],  # E: Tensor shape dimensions must be integer literals or type variables
+    good: Required[int, str, 3],
+) -> None:
+    assert_type(good.members, tuple[int, str])
 "#,
 );
 

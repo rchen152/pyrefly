@@ -37,6 +37,7 @@ __all__ = [
     "defines_assert_shape",
     "gufunc_broadcast",
     "index_shape",
+    "shape_vars",
     "static_jaxtyping",
     "type_shape_dsl_function",
 ]
@@ -422,24 +423,16 @@ def type_shape_dsl_function(fn: _F) -> _F:
     return fn
 
 
-def static_jaxtyping(declaration: str) -> typing.Callable[[_F], _F]:
-    """Declare the dimension names a function or class may use with jaxtyping.
+def _shape_declaration(tokens: typing.Iterable[str]) -> typing.Callable[[_F], _F]:
+    """Build the decorator shared by `static_jaxtyping` and `shape_vars`.
 
-    ``declaration`` is a space-separated list of dimension names, where a
-    leading ``*`` marks a variadic shape::
-
-        @static_jaxtyping("batch channels *rest")
-        def f(x: Float[Tensor, "batch channels"]) -> Float[Tensor, "*rest"]: ...
-
-    Pyrefly reads the declaration to scope the dimensions and check the shape
-    strings. Without it, jaxtyping annotations keep their ordinary ``Annotated``
-    meaning and the array shape stays gradual. At runtime functions are unchanged,
-    while classes become subscriptable so their static shape arguments can appear
-    in evaluated annotations.
+    In both, a bare token names a dimension and a ``*``-prefixed token names a
+    variadic shape. They differ only in how the declaration string is split into
+    tokens.
     """
 
     declared_names: list[str] = []
-    for token in declaration.split():
+    for token in tokens:
         name = token.removeprefix("*")
         if (
             name != "_"
@@ -479,7 +472,7 @@ def static_jaxtyping(declaration: str) -> typing.Callable[[_F], _F]:
                     if candidate is None:
                         continue
                     function = getattr(candidate, "__func__", candidate)
-                    if getattr(function, "__static_jaxtyping__", False):
+                    if getattr(function, "__shape_declaration__", False):
                         continue
                     delegate_descriptor = candidate
                     break
@@ -490,11 +483,50 @@ def static_jaxtyping(declaration: str) -> typing.Callable[[_F], _F]:
             delegate = delegate_descriptor.__get__(None, cls)
             return delegate(ordinary_params)
 
-        class_getitem.__static_jaxtyping__ = True
+        class_getitem.__shape_declaration__ = True
         value.__class_getitem__ = classmethod(class_getitem)
         return value
 
     return decorate
+
+
+def static_jaxtyping(declaration: str) -> typing.Callable[[_F], _F]:
+    """Declare the dimension names a function or class may use with jaxtyping.
+
+    ``declaration`` is a space-separated list of dimension names, where a
+    leading ``*`` marks a variadic shape::
+
+        @static_jaxtyping("batch channels *rest")
+        def f(x: Float[Tensor, "batch channels"]) -> Float[Tensor, "*rest"]: ...
+
+    Pyrefly reads the declaration to scope the dimensions and check the shape
+    strings. Without it, jaxtyping annotations keep their ordinary ``Annotated``
+    meaning and the array shape stays gradual. At runtime functions are unchanged,
+    while classes become subscriptable so their static shape arguments can appear
+    in evaluated annotations.
+    """
+
+    return _shape_declaration(declaration.split())
+
+
+def shape_vars(
+    declaration: str, *, required: bool = False
+) -> typing.Callable[[_F], _F]:
+    """Declare dimension names in functions or classes for shaped annotations.
+
+    ``declaration`` is a comma-separated list of dimension names, where a
+    leading ``*`` marks a variadic shape.
+
+    On a class, the declared names become type parameters that follow the
+    class's own.
+    They default to gradual dimensions, so a consumer's `Encoder` or
+    `GenericEncoder[Input]` still checks. With ``required=True`` they have no
+    defaults, and Pyrefly rejects a specialization that leaves them out. At
+    runtime, functions are unchanged, while classes become subscriptable so that
+    such annotations can be evaluated.
+    """
+
+    return _shape_declaration(token.strip() for token in declaration.split(","))
 
 
 # `dsl` imports the public schema classes above, so defer this import until they exist.

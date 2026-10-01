@@ -112,7 +112,7 @@ use crate::binding::scope::UnusedParameter;
 use crate::binding::scope::UnusedVariable;
 use crate::binding::scope::fallback_builtin_modules;
 use crate::binding::scope::is_constant_name;
-use crate::binding::shape_type::JaxtypingScopes;
+use crate::binding::shape_type::ShapeDeclarations;
 use crate::binding::shape_type::TypeParameterBound;
 use crate::binding::table::TableKeyed;
 use crate::config::base::InferReturnTypes;
@@ -237,7 +237,7 @@ pub struct Bindings {
     /// so a reverse iteration with "first containing range" yields the
     /// innermost enclosing class.
     class_scopes: Vec<(TextRange, Idx<KeyClass>)>,
-    pub(crate) jaxtyping_scopes: JaxtypingScopes,
+    pub(crate) shape_declarations: ShapeDeclarations,
     /// Annotation-only declarations (`x: Final[int]`) that are subsequently
     /// initialized by an assignment that cannot be syntactically merged with
     /// the annotation (tuple unpacking, walrus operator, `with … as`).
@@ -325,7 +325,7 @@ pub struct BindingsBuilder<'a> {
     /// recover the enclosing class for a given expression range without
     /// needing a per-`Self`-use bind-time key.
     pub class_scopes: Vec<(TextRange, Idx<KeyClass>)>,
-    pub jaxtyping_scopes: JaxtypingScopes,
+    pub shape_declarations: ShapeDeclarations,
     /// See `Bindings::subsequently_initialized`.
     subsequently_initialized: SmallSet<Idx<KeyAnnotation>>,
     /// Defaults extracted from an adjacent `__new__.__defaults__` assignment,
@@ -397,7 +397,7 @@ impl Bindings {
             pytest_info: None,
             lambda_yield_keys: Vec::new(),
             class_scopes: Vec::new(),
-            jaxtyping_scopes: JaxtypingScopes::default(),
+            shape_declarations: ShapeDeclarations::default(),
             subsequently_initialized: SmallSet::new(),
             promote_ranges: SmallSet::new(),
         }
@@ -690,7 +690,7 @@ impl Bindings {
             lambda_yield_keys: Vec::new(),
             next_lambda_param_id: 0,
             class_scopes: Vec::new(),
-            jaxtyping_scopes: JaxtypingScopes::default(),
+            shape_declarations: ShapeDeclarations::default(),
             subsequently_initialized: SmallSet::new(),
             adjacent_namedtuple_defaults: None,
             promote_ranges: SmallSet::new(),
@@ -816,7 +816,7 @@ impl Bindings {
             pytest_info: builder.pytest_info,
             lambda_yield_keys: builder.lambda_yield_keys,
             class_scopes: builder.class_scopes,
-            jaxtyping_scopes: builder.jaxtyping_scopes.finish(),
+            shape_declarations: builder.shape_declarations.finish(),
             subsequently_initialized: builder.subsequently_initialized,
             promote_ranges: builder.promote_ranges,
         }

@@ -25,6 +25,7 @@ pub mod overload;
 pub mod polars_specials;
 pub mod regex;
 pub mod regular_nested_list;
+pub mod shape_declarations;
 pub mod shape_extension;
 pub mod shape_flag;
 pub mod shape_index;
