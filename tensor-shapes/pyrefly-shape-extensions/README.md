@@ -22,3 +22,31 @@ binds `Values` to `IntTuple[2, 3]`; an existing or starred list remains gradual,
 while a direct literal containing a non-integer is rejected.
 
 The package is versioned in lockstep with Pyrefly.
+
+## Portable shape annotations
+
+`Shaped[T, "..."]` is an alias for `typing.Annotated`, so other type checkers
+read `T` and ignore the shape string. Inside a `@shape_vars` function or class,
+Pyrefly also reads the string in annotations, casts, type aliases, and class
+bases. Use `@shape_vars("")` for a literal shape with no declared dimensions.
+
+Legacy type aliases cannot capture dimensions declared on an enclosing
+`@shape_vars` function or class. For example, an `Alias: TypeAlias =
+Shaped[Array, "[N]"]` inside a `@shape_vars("N")` definition reports that `N`
+is not in scope for the alias. This is the same restriction that applies when
+legacy type aliases capture ordinary enclosing type parameters. Use the
+`Shaped` annotation directly in that scope; literal-only aliases are supported.
+
+A defaulted `@shape_vars("N")` dimension after a `*Ts` class parameter is not
+supported: Pyrefly reports the declaration and can mistake a trailing ordinary
+type argument for the dimension. Pyrefly accepts
+`@shape_vars("N", required=True) class Required[*Ts]` with an explicit shape,
+as in `Required[int, str, 3]`; `Required[int, str]` still treats `str` as a
+dimension. This explicit specialization is specific to Pyrefly, not a
+portable workaround for other type checkers.
+
+At runtime, `Shaped[Base, "..."]` can appear as a class base because
+`Annotated` resolves to `Base`. Pyrefly reads its shape. In Pyright 1.1.414,
+the base is rejected and inherited attributes and methods are inferred as
+`Unknown` downstream. Do not rely on this base spelling when Pyright users
+need inherited signatures.
