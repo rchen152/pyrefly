@@ -4,6 +4,8 @@
 
 Fixes #XXXX
 
+- [ ] I am a human, and I fully understand the code I am submitting.
+
 # Test Plan
 
 <!-- Describe how you tested this PR -->

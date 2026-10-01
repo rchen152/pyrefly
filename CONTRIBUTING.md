@@ -187,16 +187,6 @@ Contributing a pull request (PR) is the main way to propose changes to Pyrefly. 
 
 We aim to respond to all PRs in a timely manner, but please note we prioritise reviews for work that is highest priority (e.g. critical bug fixes, upcoming milestones). If you haven’t received a response to your PR within a week of submitting, you can nudge maintainers by tagging us in a comment or sending a reminder in discord.
 
-### AI Usage
-
-We’re excited to see how AI is transforming the way people write code. We encourage contributors to use AI tools to explore, learn, and enhance the Pyrefly codebase. While we generally support the use of AI for creating PRs, please ensure you thoroughly review and understand any AI-generated code before submitting. This practice helps us maintain high code quality standards, facilitates meaningful review discussions with maintainers, and increases the likelihood that your submission will be accepted.
-
-If your PR is mostly or entirely driven by an AI agent, please disclose the manner of AI usage in the PR description and ensure you follow our guidelines and code of conduct carefully. This disclosure is required if AI is used to respond to review comments, regardless of whether the agent is operating autonomously or if you are copy-pasting its output. Disclosure is not required if your words are your own and simply translated or cleaned up using AI, but we still encourage it so that your PR is not mistaken for being agent-driven.
-
-We also ask that you refrain from using AI to one-shot "good first issues" (i.e. use AI to complete the issue without any input of your own). There are only a limited number of these issues available and they are intended to help newcomers learn about the codebase. By using AI to generate solutions to these issues you miss out on learning the basics of Pyrefly and take the opportunity away from other new contributors. Using AI as a learning aid, especially for researching the codebase, is fully acceptable.
-
-As with manually written code, low-quality or spam PRs written with AI may be rejected. Contributors or agents who repeatedly submit such PRs may be blocked from future contributions.
-
 ## Contributor License Agreement ("CLA")
 
 In order to accept your pull request, we need you to submit a CLA. You only need
