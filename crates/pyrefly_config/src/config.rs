@@ -672,6 +672,12 @@ pub struct ConfigFile {
     #[serde(default, skip_serializing_if = "BaselineFormat::is_default")]
     pub baseline_format: BaselineFormat,
 
+    /// Let the language server rewrite the baseline file when a saved file stops
+    /// producing entries recorded for it. Only entries belonging to the saved file
+    /// are eligible for removal.
+    #[serde(default, skip_serializing_if = "crate::util::skip_default_false")]
+    pub baseline_auto_update: bool,
+
     /// Default error output format for CLI checks when `--output-format` is not set.
     pub output_format: Option<OutputFormat>,
 
@@ -800,6 +806,7 @@ impl Default for ConfigFile {
             baseline_error_level: None,
             baseline_matching_mode: BaselineMatchingMode::default(),
             baseline_format: BaselineFormat::default(),
+            baseline_auto_update: false,
             min_severity: None,
             output_format: None,
             skip_lsp_config_indexing: false,
@@ -2450,6 +2457,7 @@ mod tests {
                 baseline_error_level: None,
                 baseline_matching_mode: BaselineMatchingMode::Column,
                 baseline_format: BaselineFormat::Full,
+                baseline_auto_update: false,
                 min_severity: None,
                 skip_lsp_config_indexing: false,
                 extra_file_extensions: Vec::new(),
@@ -2788,6 +2796,7 @@ mod tests {
             baseline_error_level: None,
             baseline_matching_mode: BaselineMatchingMode::Column,
             baseline_format: BaselineFormat::Full,
+            baseline_auto_update: false,
             min_severity: None,
             skip_lsp_config_indexing: false,
             extra_file_extensions: Vec::new(),
@@ -2865,6 +2874,7 @@ mod tests {
             baseline_error_level: None,
             baseline_matching_mode: BaselineMatchingMode::Column,
             baseline_format: BaselineFormat::Full,
+            baseline_auto_update: false,
             min_severity: None,
             skip_lsp_config_indexing: false,
             extra_file_extensions: Vec::new(),
@@ -2954,6 +2964,7 @@ baseline = "baseline.json"
 baseline-error-level = "warn"
 baseline-matching-mode = "concise-description"
 baseline-format = "minimal"
+baseline-auto-update = true
 "#;
         let config = ConfigFile::parse_config(config_str).unwrap();
         assert_eq!(config.baseline, Some(PathBuf::from("baseline.json")));
@@ -2963,6 +2974,7 @@ baseline-format = "minimal"
             BaselineMatchingMode::ConciseDescription
         );
         assert_eq!(config.baseline_format, BaselineFormat::Minimal);
+        assert!(config.baseline_auto_update);
 
         let counted =
             ConfigFile::parse_config("baseline-matching-mode = \"column-ordered\"").unwrap();
@@ -2979,6 +2991,7 @@ baseline-format = "minimal"
         );
         assert!(!defaults.baseline_matching_mode.is_ordered());
         assert_eq!(defaults.baseline_format, BaselineFormat::Full);
+        assert!(!defaults.baseline_auto_update);
     }
 
     #[test]

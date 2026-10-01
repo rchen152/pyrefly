@@ -53,6 +53,7 @@ baseline = "baseline.json"
 baseline-error-level = "warn"
 baseline-matching-mode = "concise-description"
 baseline-format = "minimal"
+baseline-auto-update = true
 
 # Error configuration
 [errors]

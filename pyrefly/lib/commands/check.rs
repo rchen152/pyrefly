@@ -83,7 +83,9 @@ use crate::commands::files::get_config_finder_for_snippet;
 use crate::commands::util::CommandExitStatus;
 use crate::config::error_kind::Severity;
 use crate::config::finder::ConfigFinder;
+use crate::error::baseline::StaleRowScope;
 use crate::error::baseline::prepare_baseline_rows;
+use crate::error::baseline::write_baseline_file;
 use crate::error::code_climate::CodeClimateIssues;
 use crate::error::error::BaselineStatus;
 use crate::error::error::Error;
@@ -846,19 +848,6 @@ fn write_error_json_to_file(
         .with_context(|| format!("while writing JSON errors to `{}`", path.display()))
 }
 
-fn write_formatted_baseline_errors_to_file(
-    path: &Path,
-    errors: &BaselineErrors,
-) -> anyhow::Result<()> {
-    fn f(path: &Path, errors: &BaselineErrors) -> anyhow::Result<()> {
-        let mut writer = BufWriter::new(File::create(path)?);
-        serde_json::to_writer_pretty(&mut writer, errors)?;
-        writer.flush()?;
-        Ok(())
-    }
-    f(path, errors).with_context(|| format!("while writing baseline to `{}`", path.display()))
-}
-
 fn write_baseline_errors_to_file(
     path: &Path,
     relative_to: &Path,
@@ -867,7 +856,7 @@ fn write_baseline_errors_to_file(
     format: BaselineFormat,
     min_severity: Severity,
 ) -> anyhow::Result<()> {
-    write_formatted_baseline_errors_to_file(
+    write_baseline_file(
         path,
         &BaselineErrors::from_errors(relative_to, min_severity, errors)
             .with_format(matching_mode, format),
@@ -1942,7 +1931,10 @@ impl CheckArgs {
             defaults.baseline.as_deref(),
             relative_to.as_path(),
             defaults.baseline_matching_mode,
-            self.output.prune_baseline || self.output.error_stale_baseline,
+            // A CLI check covers the whole project, so a row whose file is gone really is
+            // stale rather than merely out of scope.
+            (self.output.prune_baseline || self.output.error_stale_baseline)
+                .then_some(StaleRowScope::CheckedOrMissing),
         );
 
         let (baseline_status, unused_baseline_entries, retained_baseline_entries) =
@@ -2057,7 +2049,7 @@ impl CheckArgs {
                 .as_ref()
                 .expect("a baseline action requires a baseline path");
             // Pruning removes entries and preserves the format of remaining ones.
-            write_formatted_baseline_errors_to_file(baseline_path, &retained_baseline_entries)?;
+            write_baseline_file(baseline_path, &retained_baseline_entries)?;
         }
         if rewriting_baseline {
             info!(

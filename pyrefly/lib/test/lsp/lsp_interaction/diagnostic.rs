@@ -6,6 +6,9 @@
 */
 
 use std::fs;
+use std::path::Path;
+use std::time::Duration;
+use std::time::Instant;
 
 use lsp_server::RequestId;
 use lsp_types::ConfigurationRequest;
@@ -301,6 +304,205 @@ fn test_baseline_diagnostic_is_hint_push() {
             }
         })
         .expect("Failed to receive push diagnostics with baseline HINT");
+
+    interaction.shutdown().unwrap();
+}
+
+/// Poll the baseline file until it holds `expected` entries. The prune runs on the
+/// recheck that follows the save, so there is no client message to synchronize on.
+/// A read that lands mid-rewrite sees the previous file, since the rewrite renames a
+/// complete temporary file over the baseline rather than truncating it in place.
+///
+/// The deadline is generous because it only bounds how long a failure takes: a passing
+/// call returns as soon as the baseline settles. A whole-suite run leaves these servers
+/// contending for CPU with thousands of other tests, and a tight deadline turns that
+/// contention into flakiness.
+fn wait_for_baseline_entries(baseline_path: &Path, expected: usize) -> Vec<Value> {
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        let entries = fs::read_to_string(baseline_path)
+            .ok()
+            .and_then(|contents| serde_json::from_str::<Value>(&contents).ok())
+            .and_then(|baseline| baseline["errors"].as_array().cloned());
+        match entries {
+            Some(entries) if entries.len() == expected => return entries,
+            last_read => assert!(
+                Instant::now() < deadline,
+                "baseline never settled at {expected} entries, last read: {last_read:?}"
+            ),
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+/// With `baseline-auto-update`, saving a file drops the entries recorded for it that
+/// it no longer produces. `bad.py` has two baselined errors; fixing one must remove
+/// only that entry.
+#[test]
+fn test_baseline_auto_update_on_save() {
+    let test_files_root = get_test_files_root();
+    let root_path = test_files_root.path().join("baseline_auto_update");
+    let baseline_path = root_path.join("baseline.json");
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root_path);
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .expect("Failed to initialize");
+
+    interaction.client.did_open("bad.py");
+    interaction
+        .client
+        .edit_file("bad.py", "x: str = \"fixed\"\nlongname: str = 2\n");
+
+    let entries = wait_for_baseline_entries(&baseline_path, 1);
+    assert_eq!(entries[0]["column"], json!(17));
+
+    interaction.shutdown().unwrap();
+}
+
+/// Auto-update leaves a file's entries alone while that file still has unbaselined errors,
+/// even though the entries match nothing any more.
+///
+/// `new_error.py` fixes its baselined error but introduces a different one, so its entry
+/// must survive. `clean_fix.py` fixes its error outright, and the entry that drops for it
+/// is what proves the prune pass ran at all — without it, "the baseline was not rewritten"
+/// would also be satisfied by the prune never firing. Pruning `new_error.py` too would
+/// empty the file, so the wait never settles at one entry.
+#[test]
+fn test_baseline_auto_update_skips_file_with_new_errors() {
+    let test_files_root = get_test_files_root();
+    let root_path = test_files_root.path().join("baseline_new_errors");
+    let baseline_path = root_path.join("baseline.json");
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root_path);
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .expect("Failed to initialize");
+
+    interaction.client.did_open("new_error.py");
+    interaction.client.did_open("clean_fix.py");
+
+    // Edited before `clean_fix.py` so that a wrongly pruned `new_error.py` cannot be
+    // mistaken for the single entry this test waits for.
+    interaction.client.edit_file(
+        "new_error.py",
+        "b: str = \"fixed\"\nnew_failure: int = \"boom\"\n",
+    );
+    interaction
+        .client
+        .edit_file("clean_fix.py", "a: str = \"fixed\"\n");
+
+    let entries = wait_for_baseline_entries(&baseline_path, 1);
+    assert_eq!(entries[0]["path"], json!("new_error.py"));
+    assert_eq!(entries[0]["column"], json!(10));
+
+    interaction.shutdown().unwrap();
+}
+
+/// A baselined `unused-ignore` row survives a save. The diagnostic is synthesized rather
+/// than collected, so a prune that matched only collected diagnostics would find nothing
+/// for the row and delete it, and the next CLI check would report it as new.
+///
+/// `clean_fix.py` is pruned in the same batch, which is what shows the pass ran.
+#[test]
+fn test_baseline_prune_keeps_unused_ignore_rows() {
+    let test_files_root = get_test_files_root();
+    let root_path = test_files_root.path().join("baseline_unused_ignore_prune");
+    let baseline_path = root_path.join("baseline.json");
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root_path);
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .expect("Failed to initialize");
+
+    interaction.client.did_open("keep.py");
+    interaction.client.did_open("clean_fix.py");
+    interaction.client.did_save("keep.py");
+    interaction
+        .client
+        .edit_file("clean_fix.py", "y: str = \"fixed\"\n");
+
+    let entries = wait_for_baseline_entries(&baseline_path, 1);
+    assert_eq!(entries[0]["path"], json!("keep.py"));
+    assert_eq!(entries[0]["name"], json!("unused-type-ignore"));
+
+    interaction.shutdown().unwrap();
+}
+
+/// A diagnostic below the threshold the baseline was written at does not block pruning.
+/// `bad.py` keeps a `bad-return` warning after its baselined `bad-assignment` error is
+/// fixed; blocking on every remaining diagnostic would strand the row for as long as the
+/// warning exists, even though an error-level baseline would never have recorded it.
+#[test]
+fn test_baseline_prune_ignores_diagnostics_below_threshold() {
+    let test_files_root = get_test_files_root();
+    let root_path = test_files_root.path().join("baseline_below_threshold");
+    let baseline_path = root_path.join("baseline.json");
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root_path);
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .expect("Failed to initialize");
+
+    interaction.client.did_open("bad.py");
+    interaction.client.edit_file(
+        "bad.py",
+        "def warn_only() -> int:\n    return \"still wrong\"\n\n\nx: str = \"fixed\"\n",
+    );
+
+    wait_for_baseline_entries(&baseline_path, 0);
+
+    interaction.shutdown().unwrap();
+}
+
+/// Saving a file and then editing it without saving again must not prune that file. The
+/// recheck validates whatever the buffer holds when it reaches it, so its errors describe
+/// the unsaved text; dropping a row on that basis would delete one for an error still
+/// present on disk, and the next CLI check would report it as new.
+///
+/// The edit is a notification handled on the main loop, while the prune it has to beat
+/// runs at the end of a queued recheck that must validate and commit first, so the
+/// ordering does not depend on timing. `clean_fix.py` is saved alongside and is pruned,
+/// showing the pass ran rather than skipping everything.
+#[test]
+fn test_baseline_prune_skips_file_edited_after_save() {
+    let test_files_root = get_test_files_root();
+    let root_path = test_files_root.path().join("baseline_unsaved_edit");
+    let baseline_path = root_path.join("baseline.json");
+    let mut interaction = LspInteraction::new();
+    interaction.set_root(root_path);
+    interaction
+        .initialize(InitializeSettings {
+            configuration: Some(None),
+            ..Default::default()
+        })
+        .expect("Failed to initialize");
+
+    interaction.client.did_open("edited.py");
+    interaction.client.did_open("clean_fix.py");
+
+    interaction.client.did_save("edited.py");
+    interaction
+        .client
+        .did_change("edited.py", "e: str = \"fixed but unsaved\"\n");
+    interaction
+        .client
+        .edit_file("clean_fix.py", "c: str = \"fixed\"\n");
+
+    let entries = wait_for_baseline_entries(&baseline_path, 1);
+    assert_eq!(entries[0]["path"], json!("edited.py"));
 
     interaction.shutdown().unwrap();
 }

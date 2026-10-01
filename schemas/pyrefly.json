@@ -254,6 +254,11 @@
           "enum": ["full", "minimal"],
           "default": "full"
         },
+        "baseline-auto-update": {
+          "description": "Let the language server rewrite the baseline file when a saved file stops producing entries recorded for it. Only entries belonging to the saved file are eligible for removal.",
+          "type": "boolean",
+          "default": false
+        },
         "build-system": {
           "description": "Pyrefly supports integrating into build systems to discover targets to type check and their dependencies. Currently supports Buck2 and custom queries.",
           "type": "object",

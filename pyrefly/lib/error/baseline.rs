@@ -7,6 +7,10 @@
 
 use std::collections::HashMap;
 use std::collections::HashSet;
+use std::io::ErrorKind;
+use std::io::Write;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 
 use anyhow::Context;
@@ -18,6 +22,7 @@ use ruff_text_size::Ranged;
 use similar::Algorithm;
 use similar::DiffOp;
 use similar::capture_diff_slices;
+use tempfile::NamedTempFile;
 
 use crate::config::config::BaselineMatchingMode;
 use crate::error::error::Error;
@@ -26,6 +31,48 @@ use crate::error::legacy::BaselineErrors;
 
 const INVALID_BASELINE_GUIDANCE: &str =
     "baseline file is invalid; rerun with `--update-baseline` to regenerate it";
+
+/// Write baseline entries verbatim, so pruning preserves the format of the rows it keeps.
+///
+/// The file is replaced atomically: serialize in full, write a temporary file, then rename
+/// it over the baseline. A reader therefore observes either the old baseline or the new
+/// one, never a partial file. Writing in place would let a concurrent diagnostics request
+/// parse a truncated baseline, treat it as unavailable, and report every baselined
+/// diagnostic as new; an interrupted write would leave invalid JSON on disk for good.
+pub fn write_baseline_file(path: &Path, errors: &BaselineErrors) -> Result<()> {
+    fn f(path: &Path, errors: &BaselineErrors) -> Result<()> {
+        let serialized = serde_json::to_vec_pretty(errors)?;
+        // A temporary file is created private to its owner, and the rename carries those
+        // bits onto the baseline. The baseline is checked in, so restore whatever the file
+        // being replaced had, or the usual mode when writing a new one. Metadata that is
+        // unavailable for any other reason stops the write, because carrying on would
+        // silently widen the permissions of a file whose own mode could not be read.
+        let replaced_permissions = match path.metadata() {
+            Ok(metadata) => Some(metadata.permissions()),
+            Err(e) if e.kind() == ErrorKind::NotFound => None,
+            Err(e) => {
+                return Err(e).context("while reading the permissions of the existing baseline");
+            }
+        };
+        // The temporary file goes in the baseline's own directory so that the rename
+        // stays within one filesystem, which is what makes it atomic.
+        let directory = path.parent().unwrap_or_else(|| Path::new("."));
+        let mut temporary = NamedTempFile::new_in(directory)?;
+        temporary.write_all(&serialized)?;
+        if let Some(permissions) = replaced_permissions {
+            temporary.as_file().set_permissions(permissions)?;
+        } else {
+            #[cfg(unix)]
+            temporary
+                .as_file()
+                .set_permissions(std::fs::Permissions::from_mode(0o644))?;
+        }
+        temporary.as_file().sync_all()?;
+        temporary.persist(path)?;
+        Ok(())
+    }
+    f(path, errors).with_context(|| format!("while writing baseline to `{}`", path.display()))
+}
 
 /// Keys use absolute paths internally so comparison is independent of the baseline's path format.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -388,12 +435,31 @@ pub struct BaselinePruningResult {
     pub retained: BaselineErrors,
 }
 
+/// Which unmatched baseline rows a prune may drop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StaleRowScope {
+    /// Drop a row whose file was checked, and a row whose file is conclusively absent.
+    /// Only sound when the check covered the whole project, because that is what makes an
+    /// absent file genuinely deleted rather than merely outside the checked set.
+    CheckedOrMissing,
+    /// Drop only rows whose file was checked. Used when the caller looked at a subset of
+    /// the project and so cannot judge any row outside it.
+    CheckedOnly,
+}
+
 fn is_definitely_unused(
     matched: bool,
     checked: bool,
+    scope: StaleRowScope,
     try_exists: impl FnOnce() -> std::io::Result<bool>,
 ) -> bool {
-    !matched && (checked || matches!(try_exists(), Ok(false)))
+    if matched {
+        return false;
+    }
+    match scope {
+        StaleRowScope::CheckedOnly => checked,
+        StaleRowScope::CheckedOrMissing => checked || matches!(try_exists(), Ok(false)),
+    }
 }
 
 /// A baseline matcher that also retains rows and tracks matches for CLI maintenance actions.
@@ -432,10 +498,9 @@ impl TrackedBaselineProcessor {
 
     /// Baseline suppressions are processed last, after inline and config suppressions.
     ///
-    /// Unmatched rows are then classified conservatively using the scope of the current
-    /// check. An unmatched row is unused only when its file was checked, or when the file
-    /// is conclusively absent. Existing unchecked files and filesystem errors are
-    /// retained. Duplicate rows sharing a key are classified individually.
+    /// Unmatched rows are then classified conservatively, against `scope` and the set of
+    /// files the current check covered. Existing unchecked files and filesystem errors
+    /// are retained. Duplicate rows sharing a key are classified individually.
     ///
     /// Under `column-ordered` a row is unused when the alignment found no counterpart
     /// for it. The set-based modes instead treat a single match as covering every row
@@ -446,6 +511,7 @@ impl TrackedBaselineProcessor {
         shown_errors: &mut Vec<Error>,
         baseline_errors: &mut Vec<Error>,
         checked_paths: &HashSet<String>,
+        scope: StaleRowScope,
     ) -> BaselinePruningResult {
         let rows_matched = self.index.apply(shown_errors, baseline_errors);
         let mut unused_entry_count = 0;
@@ -456,7 +522,7 @@ impl TrackedBaselineProcessor {
             .zip(rows_matched)
             .filter_map(|((entry, key), matched)| {
                 let definitely_unused =
-                    is_definitely_unused(matched, checked_paths.contains(&key.path), || {
+                    is_definitely_unused(matched, checked_paths.contains(&key.path), scope, || {
                         Path::new(&key.path).try_exists()
                     });
                 if definitely_unused {
@@ -500,23 +566,92 @@ mod tests {
         shown.is_empty()
     }
 
+    /// A rewrite lands complete content over an existing baseline and leaves no
+    /// temporary file behind, because it renames rather than truncating in place.
+    #[test]
+    fn test_write_baseline_file_replaces_without_leaving_a_temporary() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("baseline.json");
+        std::fs::write(&path, "{ superseded }").unwrap();
+
+        let baseline = BaselineErrors {
+            min_severity: Some(Severity::Warn),
+            errors: Vec::new(),
+        };
+        write_baseline_file(&path, &baseline).unwrap();
+
+        let written: BaselineErrors =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written.min_severity, Some(Severity::Warn));
+
+        let left_behind: Vec<_> = std::fs::read_dir(directory.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(left_behind, vec![std::ffi::OsString::from("baseline.json")]);
+    }
+
+    /// The baseline is checked in, so a rewrite must not narrow its permissions. The
+    /// temporary file the rewrite renames into place is created private to the user, and
+    /// those are the bits that would survive the rename if they were not corrected.
+    #[cfg(unix)]
+    #[test]
+    fn test_write_baseline_file_preserves_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("baseline.json");
+        std::fs::write(&path, "{}").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        write_baseline_file(
+            &path,
+            &BaselineErrors {
+                min_severity: None,
+                errors: Vec::new(),
+            },
+        )
+        .unwrap();
+
+        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o644, "rewrite must keep the baseline readable");
+    }
+
     #[test]
     fn test_definitely_unused_is_conservative_about_io_errors() {
-        assert!(is_definitely_unused(false, true, || {
+        let scope = StaleRowScope::CheckedOrMissing;
+        assert!(is_definitely_unused(false, true, scope, || {
             Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "not consulted for checked paths",
             ))
         }));
-        assert!(is_definitely_unused(false, false, || Ok(false)));
-        assert!(!is_definitely_unused(false, false, || Ok(true)));
-        assert!(!is_definitely_unused(false, false, || {
+        assert!(is_definitely_unused(false, false, scope, || Ok(false)));
+        assert!(!is_definitely_unused(false, false, scope, || Ok(true)));
+        assert!(!is_definitely_unused(false, false, scope, || {
             Err(std::io::Error::new(
                 std::io::ErrorKind::PermissionDenied,
                 "inconclusive",
             ))
         }));
-        assert!(!is_definitely_unused(true, true, || Ok(false)));
+        assert!(!is_definitely_unused(true, true, scope, || Ok(false)));
+    }
+
+    /// `CheckedOnly` judges a row solely by whether its file was checked, so an unchecked
+    /// row survives even when its file is gone. A caller that looked at one saved file
+    /// must not delete rows recorded for files it never examined.
+    #[test]
+    fn test_checked_only_never_consults_the_filesystem() {
+        let scope = StaleRowScope::CheckedOnly;
+        assert!(is_definitely_unused(false, true, scope, || {
+            panic!("the filesystem must not be consulted under CheckedOnly")
+        }));
+        assert!(!is_definitely_unused(false, false, scope, || {
+            panic!("the filesystem must not be consulted under CheckedOnly")
+        }));
+        assert!(!is_definitely_unused(true, true, scope, || {
+            panic!("the filesystem must not be consulted under CheckedOnly")
+        }));
     }
 
     #[test]
@@ -745,12 +880,65 @@ mod tests {
             &mut shown_errors,
             &mut baseline_errors,
             &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOrMissing,
         );
 
         assert!(shown_errors.is_empty());
         assert_eq!(baseline_errors.len(), 1);
         // The checked `test.py` entry matched, while the absent `gone.py` entry is stale.
         assert_eq!(result.unused_entry_count, 1);
+    }
+
+    /// The same baseline as `test_unused_entry_count`, pruned by a caller that only looked
+    /// at `test.py`. `gone.py` was not checked, so under `CheckedOnly` its row survives
+    /// even though the file is absent — saving one file must not delete another's rows.
+    #[test]
+    fn test_checked_only_retains_rows_for_absent_unchecked_files() {
+        let baseline_json = serde_json::json!({
+            "errors": [
+                {
+                    "line": 1, "column": 3, "stop_line": 1, "stop_column": 5,
+                    "path": "/workspace/test.py",
+                    "code": -2, "name": "bad-return",
+                    "description": "test", "concise_description": "test"
+                },
+                {
+                    "line": 7, "column": 3, "stop_line": 7, "stop_column": 5,
+                    "path": "/workspace/gone.py",
+                    "code": -2, "name": "bad-return",
+                    "description": "test", "concise_description": "test"
+                }
+            ]
+        });
+        let baseline_file: BaselineErrors = serde_json::from_value(baseline_json).unwrap();
+        let processor = TrackedBaselineProcessor::from_baseline_errors(
+            baseline_file,
+            Path::new("/workspace"),
+            BaselineMatchingMode::Column,
+        )
+        .unwrap();
+
+        let module = Module::new(
+            ModuleName::from_str("test_module"),
+            ModulePath::filesystem(PathBuf::from("/workspace/test.py")),
+            Arc::new("test content 123456789".to_owned()),
+        );
+        let mut shown_errors = vec![Error::new(
+            module,
+            TextRange::new(TextSize::new(2), TextSize::new(5)),
+            "Any error message".to_owned(),
+            Vec::new(),
+            ErrorKind::BadReturn,
+        )];
+        let result = processor.process_errors(
+            &mut shown_errors,
+            &mut Vec::new(),
+            &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOnly,
+        );
+
+        assert_eq!(result.unused_entry_count, 0);
+        assert_eq!(result.retained.errors.len(), 2);
     }
 
     #[test]
@@ -810,6 +998,7 @@ mod tests {
             &mut shown_errors,
             &mut baseline_errors,
             &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOrMissing,
         );
 
         // Both `gone.py` rows are unused even though they share a single key, so
@@ -1041,6 +1230,7 @@ mod tests {
             &mut errors_at(&[5, 3]),
             &mut Vec::new(),
             &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOrMissing,
         );
         assert_eq!(result.unused_entry_count, 1);
     }
@@ -1070,8 +1260,12 @@ mod tests {
             BaselineMatchingMode::ColumnOrdered,
         )
         .unwrap();
-        let result =
-            processor.process_errors(&mut Vec::new(), &mut Vec::new(), &HashSet::from([checked]));
+        let result = processor.process_errors(
+            &mut Vec::new(),
+            &mut Vec::new(),
+            &HashSet::from([checked]),
+            StaleRowScope::CheckedOrMissing,
+        );
         assert_eq!(result.unused_entry_count, 2);
         assert_eq!(
             result.retained.errors.map(|entry| entry.path.clone()),
@@ -1165,6 +1359,7 @@ mod tests {
             &mut copies_from_two_handles(&[3]),
             &mut baselined,
             &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOrMissing,
         );
         assert_eq!(baselined.len(), 2);
         assert_eq!(result.unused_entry_count, 0);
@@ -1198,6 +1393,7 @@ mod tests {
             &mut shown,
             &mut Vec::new(),
             &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOrMissing,
         );
         assert!(shown.is_empty());
         assert_eq!(result.unused_entry_count, 1);
@@ -1324,6 +1520,7 @@ mod tests {
             &mut shown,
             &mut baselined,
             &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOrMissing,
         );
         assert!(shown.is_empty());
         assert_eq!(result.unused_entry_count, 0);
@@ -1345,6 +1542,7 @@ mod tests {
             &mut shown,
             &mut baselined,
             &HashSet::from(["/workspace/test.py".to_owned()]),
+            StaleRowScope::CheckedOrMissing,
         );
         assert!(shown.is_empty());
         assert_eq!(baselined.len(), 2);

@@ -42,6 +42,7 @@ use starlark_map::small_set::SmallSet;
 use crate::config::config::BaselineMatchingMode;
 use crate::config::config::ConfigFile;
 use crate::error::baseline::BaselineProcessor;
+use crate::error::baseline::StaleRowScope;
 use crate::error::baseline::TrackedBaselineProcessor;
 use crate::error::baseline::normalize_baseline_path;
 use crate::error::collector::CollectedErrors;
@@ -295,7 +296,7 @@ pub enum BaselineApplyResult {
     /// `--update-baseline` tolerates it.
     FailedToRead(anyhow::Error),
     /// File was loaded and used to split `ordinary` vs `baseline`.
-    /// When `classify_stale_entries` is false, `unused=0` and `retained=[]`.
+    /// When `stale_rows` is `None`, `unused=0` and `retained=[]`.
     Applied {
         unused_entry_count: usize,
         retained: BaselineErrors,
@@ -384,7 +385,7 @@ impl Errors {
         baseline_path: Option<&Path>,
         relative_to: &Path,
         matching_mode: BaselineMatchingMode,
-        classify_stale_entries: bool,
+        stale_rows: Option<StaleRowScope>,
     ) -> BaselineApplyResult {
         let Some(baseline_path) = baseline_path else {
             return BaselineApplyResult::NotConfigured;
@@ -407,7 +408,7 @@ impl Errors {
             }
         };
 
-        if classify_stale_entries {
+        if let Some(scope) = stale_rows {
             let processor =
                 match TrackedBaselineProcessor::from_json(&content, relative_to, matching_mode)
                     .with_context(fail_ctx)
@@ -427,6 +428,7 @@ impl Errors {
                 &mut errors.ordinary,
                 &mut errors.baseline,
                 &checked_paths,
+                scope,
             );
             BaselineApplyResult::Applied {
                 unused_entry_count: result.unused_entry_count,

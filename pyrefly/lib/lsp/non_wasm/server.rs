@@ -286,6 +286,8 @@ use crate::commands::lsp::IndexingMode;
 use crate::config::config::ConfigFile;
 use crate::config::config::ConfigScope;
 use crate::config::error_kind::ErrorKind;
+use crate::error::baseline::StaleRowScope;
+use crate::error::baseline::write_baseline_file;
 use crate::error::error::Error;
 use crate::lsp::module_helpers::to_real_path;
 use crate::lsp::non_wasm::build_system::should_requery_build_system;
@@ -359,6 +361,7 @@ use crate::lsp::wasm::provide_type::ProvideTypeParams;
 use crate::lsp::wasm::provide_type::ProvideTypeResponse;
 use crate::lsp::wasm::provide_type::provide_type;
 use crate::module::bundled::BundledStub;
+use crate::state::errors::BaselineApplyResult;
 use crate::state::load::Load;
 use crate::state::load::LspFile;
 use crate::state::lsp::FindDefinitionItemWithDocstring;
@@ -1139,6 +1142,15 @@ pub struct Server {
     /// should be mapped through here in case they correspond to a cell.
     open_notebook_cells: RwLock<HashMap<Uri, PathBuf>>,
     open_files: RwLock<HashMap<PathBuf, Arc<LspFile>>>,
+    /// Files saved since the last recheck started, awaiting a baseline prune, each held
+    /// with the buffer that was current at the save. A recheck claims the whole map
+    /// before it runs, so the state it commits reflects everything it claimed; files
+    /// saved while a recheck is already running stay here for the next one.
+    ///
+    /// The buffer is kept because a recheck validates whatever `open_files` holds when it
+    /// reaches them, which is not necessarily what was saved. Comparing the two by
+    /// pointer at prune time is what rules out pruning against unsaved edits.
+    files_saved_pending_baseline_prune: Mutex<HashMap<PathBuf, Arc<LspFile>>>,
     /// Last published fingerprint for unversioned file-backed workspace diagnostics.
     published_workspace_diagnostics: Mutex<HashMap<Uri, u64>>,
     /// Tracks URIs (including virtual/untitled ones) to synthetic on-disk paths so we can
@@ -2990,6 +3002,7 @@ impl Server {
             state: State::new(config_finder, thread_count),
             open_notebook_cells: RwLock::new(HashMap::new()),
             open_files: RwLock::new(HashMap::new()),
+            files_saved_pending_baseline_prune: Mutex::new(HashMap::new()),
             published_workspace_diagnostics: Mutex::new(HashMap::new()),
             unsaved_file_tracker: UnsavedFileTracker::new(),
             indexed_configs: Mutex::new(HashSet::new()),
@@ -3732,7 +3745,15 @@ impl Server {
                     telemetry_event.set_invalidate_find_reason(reason);
                 }
 
+                // Claimed before the recheck runs. `invalidate_queue` reads the open files
+                // after this point, so the state it commits reflects the saved contents of
+                // every file claimed here.
+                let saved_files =
+                    std::mem::take(&mut *server.files_saved_pending_baseline_prune.lock());
+
                 Self::invalidate_queue(server, telemetry_event, open_handles, Some(f));
+
+                server.prune_baselines(saved_files);
 
                 if rewatch {
                     info!("[Pyrefly] Re-registering file watchers");
@@ -3918,6 +3939,140 @@ impl Server {
         }
     }
 
+    /// Rewrite each saved file's baseline without the entries that file no longer produces.
+    ///
+    /// Runs at the end of the recheck that claimed `saved_files`, so the committed state
+    /// reflects their saved contents. Pruning against a state that predates a save would
+    /// delete entries for errors the file still produces.
+    ///
+    /// Files are grouped by baseline path, so a batch parses and rewrites each baseline
+    /// once however many of its files were saved together. Within a group, pruning is
+    /// scoped to those files: only their handles are checked, and `StaleRowScope::CheckedOnly`
+    /// keeps the judgement to rows belonging to them.
+    fn prune_baselines(&self, saved_files: HashMap<PathBuf, Arc<LspFile>>) {
+        if saved_files.is_empty() {
+            return;
+        }
+        let open_files = self.open_files.read();
+        // Baseline settings are project-level, so every file in a group agrees on them and
+        // the config recorded alongside the first one speaks for the whole group.
+        let mut groups: SmallMap<PathBuf, (ArcId<ConfigFile>, Vec<Handle>)> = SmallMap::new();
+        for (path, saved) in saved_files {
+            // The recheck validated whatever the buffer held when it got there, which is
+            // only the saved content while the buffer has not moved on. Editing after the
+            // save would otherwise let a prune judge entries against unsaved text and drop
+            // one for an error still present on disk.
+            if !open_files
+                .get(&path)
+                .is_some_and(|current| Arc::ptr_eq(current, &saved))
+            {
+                continue;
+            }
+            let handle = make_open_handle(&self.state, &path);
+            let config = self
+                .state
+                .config_finder()
+                .python_file(handle.module_kind(), handle.path());
+            if !config.baseline_auto_update {
+                continue;
+            }
+            let Some(baseline_path) = config.baseline.as_deref() else {
+                continue;
+            };
+            groups
+                .entry(baseline_path.to_owned())
+                .or_insert_with(|| (config.dupe(), Vec::new()))
+                .1
+                .push(handle);
+        }
+        drop(open_files);
+
+        let transaction = self.state.transaction();
+        for (baseline_path, (config, handles)) in groups {
+            let relative_to = config
+                .source
+                .root_from_file()
+                .or_else(|| baseline_path.parent())
+                .unwrap_or_else(|| Path::new(""));
+
+            // Match the given files against the baseline, returning the rows that survive
+            // alongside the files that still hold diagnostics the baseline does not cover.
+            let prune = |handles: &[Handle]| {
+                let errors = transaction.get_errors(handles);
+                let mut collected = errors.collect_errors();
+                // Unused-ignore diagnostics are synthesized rather than collected, and both
+                // the CLI and the LSP display path add them before matching. Leaving them
+                // out would match no baselined `unused-ignore` row, so a save would drop it.
+                let unused_ignores = errors.collect_unused_ignore_errors_for_display(&collected);
+                collected.ordinary.extend(unused_ignores.ordinary);
+                let applied = errors.apply_baseline(
+                    &mut collected,
+                    Some(&baseline_path),
+                    relative_to,
+                    config.baseline_matching_mode,
+                    Some(StaleRowScope::CheckedOnly),
+                );
+                let BaselineApplyResult::Applied {
+                    unused_entry_count,
+                    retained,
+                } = applied
+                else {
+                    return None;
+                };
+                // `apply_baseline` leaves the diagnostics that matched no row in `ordinary`.
+                // Judge them against the threshold the baseline was written at, so one the
+                // baseline would never have recorded — a warning, say, under a default
+                // error-only baseline — does not block maintenance for as long as it lasts.
+                let threshold = retained.min_severity.unwrap_or(Severity::Error);
+                let mut unfixed: HashSet<PathBuf> = HashSet::new();
+                for error in collected
+                    .ordinary
+                    .iter()
+                    .filter(|e| e.severity() >= threshold)
+                {
+                    // A diagnostic whose path does not resolve cannot be attributed to any
+                    // of the saved files, so there is no telling which of them is mid-fix.
+                    // Skip the baseline rather than risk dropping a row that still matches.
+                    unfixed.insert(to_real_path(error.path())?);
+                }
+                Some((unused_entry_count, retained, unfixed))
+            };
+
+            let Some((unused_entry_count, retained, unfixed)) = prune(&handles) else {
+                continue;
+            };
+            // A file that still has uncovered diagnostics is mid-fix: a row that looks
+            // unused now may match again once the user finishes, and dropping it would
+            // report that error as new. Exclude those files and prune the rest, so one
+            // half-fixed file does not hold up the others saved alongside it.
+            let (unused_entry_count, retained) = if unfixed.is_empty() {
+                (unused_entry_count, retained)
+            } else {
+                let clean: Vec<Handle> = handles
+                    .into_iter()
+                    .filter(|handle| {
+                        // A handle whose path does not resolve cannot be checked against the
+                        // unfixed set, so leave it out of the prune.
+                        to_real_path(handle.path()).is_some_and(|path| !unfixed.contains(&path))
+                    })
+                    .collect();
+                if clean.is_empty() {
+                    continue;
+                }
+                match prune(&clean) {
+                    Some((count, retained, _)) => (count, retained),
+                    None => continue,
+                }
+            };
+            if unused_entry_count == 0 {
+                continue;
+            }
+            if let Err(e) = write_baseline_file(&baseline_path, &retained) {
+                warn!("{e:#}");
+            }
+        }
+    }
+
     /// Returns true if any workspace root has `DiagnosticMode::Workspace` enabled.
     fn has_workspace_diagnostic_mode(&self) -> bool {
         !self.workspaces.workspace_diagnostic_roots().is_empty()
@@ -4032,6 +4187,14 @@ impl Server {
 
     fn did_save(&self, url: Uri) {
         if let Some(path) = self.path_for_uri(&url) {
+            // Record what was saved, not just that a save happened. A file with no buffer
+            // is not recorded at all, because there would be nothing to check the eventual
+            // prune against.
+            if let Some(saved) = self.open_files.read().get(&path).duped() {
+                self.files_saved_pending_baseline_prune
+                    .lock()
+                    .insert(path.clone(), saved);
+            }
             self.invalidate(TelemetryEventKind::InvalidateDisk, None, false, move |t| {
                 t.invalidate_disk(&[path])
             })
