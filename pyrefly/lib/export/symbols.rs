@@ -6,8 +6,8 @@
  */
 
 //! A flat, source-order table of definitions used to find nested workspace
-//! symbols: functions, classes, methods, type aliases, and simple module/class
-//! assignments, including attributes assigned through a method's receiver.
+//! symbols: functions, classes, methods, type aliases, assignment targets at
+//! module/class scope, and attributes assigned through a method's receiver.
 //! It is cached on `Exports` for first-party modules because the
 //! export table itself contains only top-level names and therefore cannot
 //! provide nested definitions.
@@ -264,6 +264,21 @@ fn build<'a>(stmts: &'a [Stmt], scope: Scope<'a>, out: &mut Vec<FlatSymbol>) {
             Stmt::AnnAssign(a) => {
                 push_assignment_targets(out, &a.target, scope);
             }
+            Stmt::AugAssign(a) => {
+                push_assignment_targets(out, &a.target, scope);
+            }
+            Stmt::For(f) => {
+                push_assignment_targets(out, &f.target, scope);
+                stmt.recurse(&mut |s: &Stmt| build(slice::from_ref(s), scope, out));
+            }
+            Stmt::With(w) => {
+                for item in &w.items {
+                    if let Some(target) = &item.optional_vars {
+                        push_assignment_targets(out, target, scope);
+                    }
+                }
+                stmt.recurse(&mut |s: &Stmt| build(slice::from_ref(s), scope, out));
+            }
             Stmt::TypeAlias(t) if scope.kind != ScopeKind::Function => {
                 if let Expr::Name(name) = &*t.name
                     && !Ast::is_synthesized_empty_name(name)
@@ -471,12 +486,93 @@ class Example:
         );
     }
 
-    /// `for`/`with` bindings are not definitions we surface.
     #[test]
-    fn test_unsupported_binding_forms_are_skipped() {
+    fn test_augmented_for_and_with_assignment_targets() {
         assert_eq!(
-            walk("for i in []: pass\nwith ctx() as value: pass\n"),
-            Vec::<String>::new()
+            walk(
+                r#"
+module_augmented += 1
+for module_loop, [module_item, *module_rest] in values:
+    body_name = 1
+else:
+    else_name = 2
+with first() as module_context, second() as [module_with, *module_with_rest]:
+    with_body = 3
+for duplicate in values:
+    pass
+with ctx() as duplicate:
+    pass
+class Example:
+    CLASS_AUGMENTED += 1
+    for class_loop, [class_item, *class_rest] in values:
+        class_body = 1
+    else:
+        class_else = 2
+    with ctx() as class_context:
+        class_with_body = 3
+    async def method(self):
+        self.augmented += 1
+        for self.loop, [self.item, *self.rest] in values:
+            self.body = 1
+        else:
+            self.orelse = 2
+        async for self.async_loop in values:
+            pass
+        with ctx() as self.context:
+            self.with_body = 3
+        async with ctx() as self.async_context:
+            pass
+        local += 1
+        for local_loop in values:
+            pass
+        with ctx() as local_context:
+            pass
+        other.unrelated += 1
+        for other.unrelated in values:
+            pass
+        with ctx() as other.unrelated:
+            pass
+        self.child.unrelated += 1
+        for self.items[0] in values:
+            pass
+        with ctx() as self.items[0]:
+            pass
+"#,
+            ),
+            vec![
+                "Variable module_augmented",
+                "Variable module_loop",
+                "Variable module_item",
+                "Variable module_rest",
+                "Variable body_name",
+                "Variable else_name",
+                "Variable module_context",
+                "Variable module_with",
+                "Variable module_with_rest",
+                "Variable with_body",
+                "Variable duplicate",
+                "Variable duplicate",
+                "Class Example",
+                ".Constant CLASS_AUGMENTED",
+                ".Attribute class_loop",
+                ".Attribute class_item",
+                ".Attribute class_rest",
+                ".Attribute class_body",
+                ".Attribute class_else",
+                ".Attribute class_context",
+                ".Attribute class_with_body",
+                ".Method method",
+                ".Attribute augmented",
+                ".Attribute loop",
+                ".Attribute item",
+                ".Attribute rest",
+                ".Attribute body",
+                ".Attribute orelse",
+                ".Attribute async_loop",
+                ".Attribute context",
+                ".Attribute with_body",
+                ".Attribute async_context",
+            ]
         );
     }
 
