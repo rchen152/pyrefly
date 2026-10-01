@@ -198,7 +198,7 @@ struct SelfAttrNames<'a> {
 impl<'a> SelfAttrNames<'a> {
     fn expr_lvalue(&mut self, x: &Expr) {
         match x {
-            Expr::Attribute(_) => {
+            Expr::Attribute(x) => {
                 if let Some(attr) = Ast::expr_receiver_attr(x, self.self_name)
                     && !self.names.contains_key(&attr.id)
                 {

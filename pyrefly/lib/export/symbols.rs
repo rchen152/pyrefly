@@ -163,9 +163,9 @@ fn push_assignment_targets(out: &mut Vec<FlatSymbol>, target: &Expr, scope: Scop
                 scope.parent,
             );
         }
-        Expr::Attribute(_) => {
+        Expr::Attribute(attr) => {
             if let Some((receiver, class)) = scope.receiver
-                && let Some(attr) = Ast::expr_receiver_attr(target, receiver)
+                && let Some(attr) = Ast::expr_receiver_attr(attr, receiver)
             {
                 push_symbol(
                     out,
