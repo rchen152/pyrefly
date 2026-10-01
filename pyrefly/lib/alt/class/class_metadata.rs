@@ -11,6 +11,7 @@ use dupe::Dupe;
 use dupe::IterDupedExt;
 use itertools::Itertools;
 use pyrefly_graph::index::Idx;
+use pyrefly_python::ast::Ast;
 use pyrefly_python::dunder;
 use pyrefly_python::module_name::ModuleName;
 use pyrefly_python::short_identifier::ShortIdentifier;
@@ -1599,7 +1600,22 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 let base = self.base_class_expr_infer_for_metadata(value, errors);
                 self.attr_infer_for_type(&base, &attr.id, *range, errors, None)
             }
-            BaseClassExpr::Subscript { value, slice, .. } => {
+            BaseClassExpr::Subscript {
+                value,
+                slice,
+                range,
+            } => {
+                // Metadata needs only the class identity; reading the shape here
+                // would create a dependency on the base class's type arguments.
+                if self
+                    .bindings()
+                    .shape_declarations
+                    .is_shaped_annotation(*range)
+                    && let [base, _] = Ast::unpack_slice(slice)
+                    && let Some(base) = BaseClassExpr::from_expr(base)
+                {
+                    return self.base_class_expr_infer_for_metadata(&base, errors);
+                }
                 let ty = self.base_class_expr_infer_for_metadata(value, errors);
 
                 // One niche special-case: the base expr has type `Forall T. type[T]`. This usually happens for snippets like this:

@@ -644,6 +644,143 @@ def check() -> None:
 );
 
 testcase!(
+    test_shaped_in_base_class_argument,
+    shaped_env(),
+    r#"
+from typing import assert_type
+from arrays import ndarray
+from shape_extensions import IntTuple, Shaped, shape_vars
+
+class Box[T]:
+    def get(self) -> T: ...
+
+@shape_vars("N")
+class Sub(Box[Shaped[tuple[int], "[N]"]]): ...
+
+def check() -> None:
+    assert_type(Sub[3]().get(), IntTuple[3])
+"#,
+);
+
+testcase!(
+    test_shaped_in_base_classes,
+    shaped_env(),
+    r#"
+from typing import assert_type
+from arrays import ndarray
+from shape_extensions import IntTuple, Shaped, shape_vars
+
+class Box[T]:
+    def get(self) -> T: ...
+
+@shape_vars("N")
+class Base:
+    field: Shaped[ndarray, "[N]"]
+
+@shape_vars("N")
+class Direct(Shaped[Base, "N"]): ...
+
+@shape_vars("")
+class Literal(Shaped[Base, "3"]): ...
+
+@shape_vars("N")
+class Nested(Box[Shaped[tuple[int], "[N]"]]): ...
+
+@shape_vars("N")
+class NestedArray(Box[Shaped[ndarray, "[N]"]]): ...
+
+@shape_vars("N")
+class GenericBase[T]:
+    def get(self) -> T: ...
+
+@shape_vars("")
+class GenericChild(Shaped[GenericBase[int], "3"]): ...
+
+@shape_vars("N", required=True)
+class RequiredBase[T]:
+    def get(self) -> T: ...
+
+@shape_vars("")
+class RequiredChild(Shaped[RequiredBase[int], "3"]): ...
+
+class TooMany(Box[int, str]): ...  # E: Expected 1 type argument
+
+def check() -> None:
+    assert_type(Direct[3]().field, ndarray[[3]])
+    assert_type(Literal().field, ndarray[[3]])
+    assert_type(Nested[3]().get(), IntTuple[3])
+    assert_type(NestedArray[3]().get(), ndarray[[3]])
+    assert_type(GenericChild().get(), int)
+    assert_type(RequiredChild().get(), int)
+"#,
+);
+
+testcase!(
+    test_shaped_int_base_inherits_integer_operations,
+    shaped_env(),
+    r#"
+from typing import assert_type
+from shape_extensions import Shaped, shape_vars
+
+@shape_vars("N")
+class IntChild(Shaped[int, "N"]): ...
+
+class Plain(int): ...
+
+@shape_vars("N")
+class Invalid(Shaped[int, "Missing"]): ...  # E: Could not find name `Missing`
+
+def check(shaped: IntChild, plain: Plain) -> None:
+    assert_type(shaped + 1, int)
+    assert_type(plain + 1, int)
+"#,
+);
+
+testcase!(
+    test_shaped_int_nested_base_argument_preserves_dimensions,
+    shaped_env(),
+    r#"
+from typing import assert_type
+from shape_extensions import Int, Shaped, shape_vars
+
+class Box[T]:
+    def get(self) -> T: ...
+
+@shape_vars("N")
+class ViaShaped(Box[Shaped[int, "N"]]): ...
+
+def check() -> None:
+    assert_type(ViaShaped[3]().get(), Int[3])
+"#,
+);
+
+testcase!(
+    test_shaped_base_preserves_strict_alias,
+    {
+        let pydantic = std::env::var("PYDANTIC_TEST_PATH").expect("Pydantic test path");
+        let shapes =
+            std::env::var("SHAPE_EXTENSIONS_TEST_PATH").expect("Shape extensions test path");
+        TestEnv::new_with_site_package_paths(&[&pydantic, &shapes])
+    },
+    r#"
+from typing import Annotated, TypeAlias
+from pydantic import RootModel, Strict
+from shape_extensions import Shaped, shape_vars
+
+class Base(RootModel[int]): ...
+StrictRoot: TypeAlias = Annotated[Base, Strict()]
+
+class Direct(StrictRoot): ...
+
+@shape_vars("")
+class ShapedBase(Shaped[StrictRoot, "3"]): ...
+
+Direct("3")  # E: not assignable
+ShapedBase("3")  # E: not assignable
+"#,
+);
+
+testcase!(
     test_shaped_through_aliases,
     {
         let mut env = shaped_env();

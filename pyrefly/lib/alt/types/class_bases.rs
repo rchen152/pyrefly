@@ -202,6 +202,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     fn base_class_expr_infer(
         &self,
         expr: &BaseClassExpr,
+        direct_base: bool,
         errors: &ErrorCollector,
     ) -> (TypeInfo, bool) {
         match expr {
@@ -211,7 +212,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 false,
             ),
             BaseClassExpr::Attribute { value, attr, range } => {
-                let (base, has_strict) = self.base_class_expr_infer(value, errors);
+                let (base, has_strict) = self.base_class_expr_infer(value, false, errors);
                 (
                     self.attr_infer(&base, &attr.id, *range, errors, None),
                     has_strict,
@@ -222,7 +223,30 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 slice,
                 range,
             } => {
-                let (base_ty, has_strict_from_value) = self.base_class_expr_infer(value, errors);
+                if let Some(ty) = self.parse_shaped_annotation(
+                    slice,
+                    *range,
+                    TypeFormContext::BaseClassList,
+                    errors,
+                ) {
+                    let [base, _] = Ast::unpack_slice(slice) else {
+                        unreachable!("the binder only records `Shaped` with two arguments")
+                    };
+                    // The parsed type discards alias metadata. As a direct base,
+                    // `Shaped[int, "N"]` also inherits `int` at runtime.
+                    let inferred_base = BaseClassExpr::from_expr(base)
+                        .map(|base| self.base_class_expr_infer(&base, false, errors));
+                    let has_strict = inferred_base.as_ref().is_some_and(|(inferred, nested)| {
+                        *nested || self.is_type_alias_with_pydantic_strict_metadata(inferred.ty())
+                    });
+                    let inherited = match (ty, inferred_base) {
+                        (Type::Int(_), Some((base, _))) if direct_base => base.into_ty(),
+                        (ty, _) => self.heap.mk_type_of(ty),
+                    };
+                    return (TypeInfo::of_ty(inherited), has_strict);
+                }
+                let (base_ty, has_strict_from_value) =
+                    self.base_class_expr_infer(value, false, errors);
                 let (result_ty, has_strict_from_subscript) =
                     self.base_class_subscript_infer(base_ty.into_ty(), slice, *range, errors);
                 (
@@ -257,7 +281,11 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         errors: &ErrorCollector,
     ) -> (Type, bool) {
         let range = base_expr.range();
-        let (inferred_ty, has_strict_from_infer) = self.base_class_expr_infer(base_expr, errors);
+        let (inferred_ty, has_strict_from_infer) = self.base_class_expr_infer(
+            base_expr,
+            matches!(type_form_context, TypeFormContext::BaseClassList),
+            errors,
+        );
         let has_pydantic_strict_metadata = self
             .is_type_alias_with_pydantic_strict_metadata(inferred_ty.ty())
             || has_strict_from_infer;
@@ -311,7 +339,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     })
                 }
                 BaseClass::TypeOf(inner_expr, _) => {
-                    let (ty, _) = self.base_class_expr_infer(inner_expr, &fake_error_collector);
+                    let (ty, _) =
+                        self.base_class_expr_infer(inner_expr, false, &fake_error_collector);
                     match self.untype_opt(
                         ty.ty().clone(),
                         inner_expr.range(),
