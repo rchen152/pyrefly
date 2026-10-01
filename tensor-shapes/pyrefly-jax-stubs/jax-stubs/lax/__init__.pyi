@@ -61,7 +61,6 @@ from jax._src.sharding_impls import (
 )
 from jax.typing import DTypeLike
 from shape_extensions import (
-    Elements,
     Flag,
     Int,
     IntTuple,
@@ -449,21 +448,21 @@ def broadcast[D0: IntVar, Shape: _Shape = []](
     sizes: tuple[Int[D0]],
     *,
     out_sharding: _NamedSharding | _PartitionSpec | None = None,
-) -> _Array[[D0, *Elements[Shape]]]: ...
+) -> _Array[[D0, *Shape]]: ...
 @overload
 def broadcast[D0: IntVar, D1: IntVar, Shape: _Shape = []](
     operand: _ArrayLike[Shape],
     sizes: tuple[Int[D0], Int[D1]],
     *,
     out_sharding: _NamedSharding | _PartitionSpec | None = None,
-) -> _Array[[D0, D1, *Elements[Shape]]]: ...
+) -> _Array[[D0, D1, *Shape]]: ...
 @overload
 def broadcast[D0: IntVar, D1: IntVar, D2: IntVar, Shape: _Shape = []](
     operand: _ArrayLike[Shape],
     sizes: tuple[Int[D0], Int[D1], Int[D2]],
     *,
     out_sharding: _NamedSharding | _PartitionSpec | None = None,
-) -> _Array[[D0, D1, D2, *Elements[Shape]]]: ...
+) -> _Array[[D0, D1, D2, *Shape]]: ...
 @overload
 def broadcast(
     operand: Any,
@@ -591,7 +590,7 @@ def transpose[Permutation: Flag[_Axis], Shape: _Shape = []](
     permutation: Permutation,
 ) -> _Array[permute_shape(Shape, Permutation)]: ...
 def unstack[Batch: IntTuple, M: IntVar](
-    x: _ShapedArrayLike[[*Elements[Batch], M]],
+    x: _ShapedArrayLike[[*Batch, M]],
     axis: int = 0,
 ) -> tuple[_Array[IntTuple], ...]: ...
 
@@ -900,10 +899,10 @@ def scatter_sub(
 
 @overload
 def batch_matmul[Batch: IntTuple, M: IntVar, K: IntVar, N: IntVar](
-    lhs: _ShapedArrayLike[[*Elements[Batch], M, K]],
-    rhs: _ShapedArrayLike[[*Elements[Batch], K, N]],
+    lhs: _ShapedArrayLike[[*Batch, M, K]],
+    rhs: _ShapedArrayLike[[*Batch, K, N]],
     precision: PrecisionLike = None,
-) -> _Array[[*Elements[Batch], M, N]]: ...
+) -> _Array[[*Batch, M, N]]: ...
 @overload
 def batch_matmul(
     lhs: Any,
@@ -1322,10 +1321,10 @@ def fori_loop[T](
 @overload
 def map[N: IntVar, InShape: _Shape, OutShape: _Shape](
     f: Callable[[_Array[InShape]], _Array[OutShape]],
-    xs: _ShapedArrayLike[[N, *Elements[InShape]]],
+    xs: _ShapedArrayLike[[N, *InShape]],
     *,
     batch_size: int | None = None,
-) -> _Array[[N, *Elements[OutShape]]]: ...
+) -> _Array[[N, *OutShape]]: ...
 @overload
 def map(
     f: Callable[..., Any],
@@ -1337,12 +1336,12 @@ def map(
 def scan[Carry, N: IntVar, InShape: _Shape, OutShape: _Shape](
     f: Callable[[Carry, _Array[InShape]], tuple[Carry, _Array[OutShape]]],
     init: Carry,
-    xs: _ShapedArrayLike[[N, *Elements[InShape]]],
+    xs: _ShapedArrayLike[[N, *InShape]],
     length: int | None = None,
     reverse: bool = False,
     unroll: int | bool = 1,
     _split_transpose: bool = False,
-) -> tuple[Carry, _Array[[N, *Elements[OutShape]]]]: ...
+) -> tuple[Carry, _Array[[N, *OutShape]]]: ...
 @overload
 def scan[Carry, X, Y](
     f: Callable[[Carry, X], tuple[Carry, Y]],

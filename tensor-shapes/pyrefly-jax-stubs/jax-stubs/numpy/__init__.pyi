@@ -130,7 +130,6 @@ from numpy import (
 )
 from shape_extensions import (
     broadcast,
-    Elements,
     Flag,
     Int,
     IntTuple,
@@ -1156,9 +1155,9 @@ def permute_dims[Shape: _Shape = []](
     a: _ArrayLike[Shape], /, axes: Sequence[int]
 ) -> _Array[IntTuple]: ...
 def matrix_transpose[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ShapedArrayLike[[*Elements[Batch], M, N]],
+    x: _ShapedArrayLike[[*Batch, M, N]],
     /,
-) -> _Array[[*Elements[Batch], N, M]]: ...
+) -> _Array[[*Batch, N, M]]: ...
 
 # A single int or tuple, matching JAX: the free function is not variadic, so
 # `jnp.reshape(a, 2, 3)` is an error there. `Array.reshape` is the variadic one.
@@ -1408,7 +1407,7 @@ def vsplit(
     indices_or_sections: _ArrayLike[Any] | Sequence[int],
 ) -> list[_Array[IntTuple]]: ...
 def unstack[Batch: IntTuple, M: IntVar, Axis: Flag[int]](
-    x: _ShapedArrayLike[[*Elements[Batch], M]],
+    x: _ShapedArrayLike[[*Batch, M]],
     /,
     *,
     axis: Axis = 0,
@@ -1532,11 +1531,11 @@ def flip[Shape: _Shape = []](
     axis: Sequence[int] | None = None,
 ) -> _Array[Shape]: ...
 def fliplr[Batch: IntTuple, M: IntVar, N: IntVar](
-    m: _ShapedArrayLike[[*Elements[Batch], M, N]],
-) -> _Array[[*Elements[Batch], M, N]]: ...
+    m: _ShapedArrayLike[[*Batch, M, N]],
+) -> _Array[[*Batch, M, N]]: ...
 def flipud[Batch: IntTuple, M: IntVar](
-    m: _ShapedArrayLike[[*Elements[Batch], M]],
-) -> _Array[[*Elements[Batch], M]]: ...
+    m: _ShapedArrayLike[[*Batch, M]],
+) -> _Array[[*Batch, M]]: ...
 @overload
 def roll[Shape: _Shape = [], Axis: Flag[_Axis] = None](
     a: _ArrayLike[Shape],

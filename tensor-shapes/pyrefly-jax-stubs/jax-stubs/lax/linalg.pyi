@@ -22,7 +22,7 @@ from jax._shapes import (
     tridiagonal_diag_minus_one_shape,
     tridiagonal_solve_shape,
 )
-from shape_extensions import Elements, Flag, Int, IntTuple, IntVar
+from shape_extensions import Flag, Int, IntTuple, IntVar
 
 type _Shape = IntTuple
 
@@ -31,16 +31,16 @@ class EighImplementation(enum.Enum): ...
 class SvdAlgorithm(enum.Enum): ...
 
 def cholesky[Batch: IntTuple, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], N, N]],
+    x: _ArrayLike[[*Batch, N, N]],
     *,
     symmetrize_input: bool = True,
-) -> _Array[[*Elements[Batch], N, N]]: ...
+) -> _Array[[*Batch, N, N]]: ...
 def cholesky_update[RShape: _Shape = [], WShape: _Shape = []](
     r_matrix: _ArrayLike[RShape],
     w_vector: _ArrayLike[WShape],
 ) -> _Array[cholesky_update_shape(RShape, WShape)]: ...
 def eig[Batch: IntTuple, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], N, N]],
+    x: _ArrayLike[[*Batch, N, N]],
     *,
     compute_left_eigenvectors: bool = True,
     compute_right_eigenvectors: bool = True,
@@ -49,14 +49,14 @@ def eig[Batch: IntTuple, N: IntVar](
     use_magma: bool | None = None,
 ) -> list[_Array[Any]]: ...
 def eigh[Batch: IntTuple, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], N, N]],
+    x: _ArrayLike[[*Batch, N, N]],
     *,
     lower: bool = True,
     symmetrize_input: bool = True,
     sort_eigenvalues: bool = True,
     subset_by_index: tuple[int, int] | None = None,
     implementation: EighImplementation | str | None = None,
-) -> tuple[_Array[[*Elements[Batch], N, N]], _Array[[*Elements[Batch], N]]]: ...
+) -> tuple[_Array[[*Batch, N, N]], _Array[[*Batch, N]]]: ...
 def hessenberg[AShape: _Shape = []](
     a: _ArrayLike[AShape],
 ) -> tuple[_Array[AShape], _Array[hessenberg_taus_shape(AShape)]]: ...
@@ -65,16 +65,16 @@ def householder_product[AShape: _Shape = [], TShape: _Shape = []](
     taus: _ArrayLike[TShape],
 ) -> _Array[householder_product_shape(AShape, TShape)]: ...
 def lu[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
 ) -> tuple[
-    _Array[[*Elements[Batch], M, N]],
-    _Array[[*Elements[Batch], int_min(Int[M], Int[N])]],
-    _Array[[*Elements[Batch], int_min(Int[M], Int[N])]],
+    _Array[[*Batch, M, N]],
+    _Array[[*Batch, int_min(Int[M], Int[N])]],
+    _Array[[*Batch, int_min(Int[M], Int[N])]],
 ]: ...
 def lu_pivots_to_permutation[Batch: IntTuple, K: IntVar, N: IntVar](
-    pivots: _ArrayLike[[*Elements[Batch], K]],
+    pivots: _ArrayLike[[*Batch, K]],
     permutation_size: Int[N],
-) -> _Array[[*Elements[Batch], N]]: ...
+) -> _Array[[*Batch, N]]: ...
 def ormqr[AShape: _Shape = [], TShape: _Shape = [], CShape: _Shape = []](
     a: _ArrayLike[AShape],
     taus: _ArrayLike[TShape],
@@ -84,64 +84,64 @@ def ormqr[AShape: _Shape = [], TShape: _Shape = [], CShape: _Shape = []](
     transpose: bool = False,
 ) -> _Array[ormqr_shape(AShape, TShape, CShape)]: ...
 def qdwh[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     *,
     is_hermitian: bool = False,
     max_iterations: int | None = None,
     eps: float | None = None,
     dynamic_shape: tuple[int, int] | None = None,
 ) -> tuple[
-    _Array[[*Elements[Batch], M, N]],
-    _Array[[*Elements[Batch], N, N]],
+    _Array[[*Batch, M, N]],
+    _Array[[*Batch, N, N]],
     _Array[[]],
     _Array[[]],
 ]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     *,
     pivoting: Literal[False] = False,
     full_matrices: Literal[True] = True,
     use_magma: bool | None = None,
-) -> tuple[_Array[[*Elements[Batch], M, M]], _Array[[*Elements[Batch], M, N]]]: ...
+) -> tuple[_Array[[*Batch, M, M]], _Array[[*Batch, M, N]]]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     *,
     pivoting: Literal[False] = False,
     full_matrices: Literal[False],
     use_magma: bool | None = None,
 ) -> tuple[
-    _Array[[*Elements[Batch], M, int_min(Int[M], Int[N])]],
-    _Array[[*Elements[Batch], int_min(Int[M], Int[N]), N]],
+    _Array[[*Batch, M, int_min(Int[M], Int[N])]],
+    _Array[[*Batch, int_min(Int[M], Int[N]), N]],
 ]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     *,
     pivoting: Literal[True],
     full_matrices: Literal[True] = True,
     use_magma: bool | None = None,
 ) -> tuple[
-    _Array[[*Elements[Batch], M, M]],
-    _Array[[*Elements[Batch], M, N]],
-    _Array[[*Elements[Batch], N]],
+    _Array[[*Batch, M, M]],
+    _Array[[*Batch, M, N]],
+    _Array[[*Batch, N]],
 ]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     *,
     pivoting: Literal[True],
     full_matrices: Literal[False],
     use_magma: bool | None = None,
 ) -> tuple[
-    _Array[[*Elements[Batch], M, int_min(Int[M], Int[N])]],
-    _Array[[*Elements[Batch], int_min(Int[M], Int[N]), N]],
-    _Array[[*Elements[Batch], N]],
+    _Array[[*Batch, M, int_min(Int[M], Int[N])]],
+    _Array[[*Batch, int_min(Int[M], Int[N]), N]],
+    _Array[[*Batch, N]],
 ]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     *,
     pivoting: bool = False,
     full_matrices: bool = True,
@@ -151,12 +151,12 @@ def qr[Batch: IntTuple, M: IntVar, N: IntVar](
     | tuple[_Array[IntTuple], _Array[IntTuple], _Array[IntTuple]]
 ): ...
 def schur[Batch: IntTuple, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], N, N]],
+    x: _ArrayLike[[*Batch, N, N]],
     *,
     compute_schur_vectors: bool = True,
     sort_eig_vals: bool = False,
     select_callable: Any = None,
-) -> tuple[_Array[[*Elements[Batch], N, N]], _Array[[*Elements[Batch], N, N]]]: ...
+) -> tuple[_Array[[*Batch, N, N]], _Array[[*Batch, N, N]]]: ...
 @overload
 def svd[
     FullMatrices: Flag[bool] = True,

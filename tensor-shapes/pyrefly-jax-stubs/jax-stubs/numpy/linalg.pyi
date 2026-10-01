@@ -26,19 +26,19 @@ from jax._src.sharding_impls import (
     PartitionSpec as _PartitionSpec,
 )
 from jax.typing import DTypeLike
-from shape_extensions import broadcast, Elements, Flag, Int, IntTuple, IntVar
+from shape_extensions import broadcast, Flag, Int, IntTuple, IntVar
 
 type _Shape = IntTuple
 type _Axis = int | tuple[int, ...] | None
 
 def cholesky[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
+    a: _ArrayLike[[*Batch, N, N]],
     *,
     upper: bool = False,
     symmetrize_input: bool = True,
-) -> _Array[[*Elements[Batch], N, N]]: ...
+) -> _Array[[*Batch, N, N]]: ...
 def cond[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     p: Any = None,
 ) -> _Array[Batch]: ...
 def cross[
@@ -53,7 +53,7 @@ def cross[
     axis: Axis = -1,
 ) -> _Array[cross_axis_shape(Shape1, Shape2, Axis)]: ...
 def det[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
+    a: _ArrayLike[[*Batch, N, N]],
 ) -> _Array[Batch]: ...
 def diagonal[Shape: _Shape = [], Offset: Flag[int] = 0](
     x: _ArrayLike[Shape],
@@ -62,36 +62,36 @@ def diagonal[Shape: _Shape = [], Offset: Flag[int] = 0](
     offset: Offset = 0,
 ) -> _Array[diagonal_shape(Shape, Offset, -2, -1)]: ...
 def eig[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
-) -> tuple[_Array[[*Elements[Batch], N]], _Array[[*Elements[Batch], N, N]]]: ...
+    a: _ArrayLike[[*Batch, N, N]],
+) -> tuple[_Array[[*Batch, N]], _Array[[*Batch, N, N]]]: ...
 def eigh[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
+    a: _ArrayLike[[*Batch, N, N]],
     UPLO: str | None = None,
     symmetrize_input: bool = True,
-) -> tuple[_Array[[*Elements[Batch], N]], _Array[[*Elements[Batch], N, N]]]: ...
+) -> tuple[_Array[[*Batch, N]], _Array[[*Batch, N, N]]]: ...
 def eigvals[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
-) -> _Array[[*Elements[Batch], N]]: ...
+    a: _ArrayLike[[*Batch, N, N]],
+) -> _Array[[*Batch, N]]: ...
 def eigvalsh[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
+    a: _ArrayLike[[*Batch, N, N]],
     UPLO: str | None = "L",
     *,
     symmetrize_input: bool = True,
-) -> _Array[[*Elements[Batch], N]]: ...
+) -> _Array[[*Batch, N]]: ...
 def inv[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
-) -> _Array[[*Elements[Batch], N, N]]: ...
+    a: _ArrayLike[[*Batch, N, N]],
+) -> _Array[[*Batch, N, N]]: ...
 def lstsq[Batch: IntTuple, M: IntVar, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], M, N]],
-    b: _ArrayLike[[*Elements[Batch], M]],
+    a: _ArrayLike[[*Batch, M, N]],
+    b: _ArrayLike[[*Batch, M]],
     rcond: float | None = None,
     *,
     numpy_resid: bool = False,
 ) -> tuple[
-    _Array[[*Elements[Batch], N]],
+    _Array[[*Batch, N]],
     _Array[IntTuple],
     _Array[Batch],
-    _Array[[*Elements[Batch], int_min(Int[M], Int[N])]],
+    _Array[[*Batch, int_min(Int[M], Int[N])]],
 ]: ...
 def matmul[LeftShape: _Shape = [], RightShape: _Shape = []](
     x1: _ArrayLike[LeftShape],
@@ -112,20 +112,20 @@ def matrix_norm[
     ord: Any = "fro",
 ) -> _Array[matrix_norm_shape(Shape, KeepDims)]: ...
 def matrix_power[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
+    a: _ArrayLike[[*Batch, N, N]],
     n: int,
-) -> _Array[[*Elements[Batch], N, N]]: ...
+) -> _Array[[*Batch, N, N]]: ...
 def matrix_rank[Batch: IntTuple, N: IntVar, K: IntVar](
-    M: _ArrayLike[[*Elements[Batch], N, K]],
+    M: _ArrayLike[[*Batch, N, K]],
     rtol: Any = None,
     *,
     hermitian: bool = False,
     tol: Any = None,
 ) -> _Array[Batch]: ...
 def matrix_transpose[Batch: IntTuple, M: IntVar, N: IntVar](
-    x: _ArrayLike[[*Elements[Batch], M, N]],
+    x: _ArrayLike[[*Batch, M, N]],
     /,
-) -> _Array[[*Elements[Batch], N, M]]: ...
+) -> _Array[[*Batch, N, M]]: ...
 def multi_dot(
     arrays: Sequence[_ArrayLike[Any]],
     *,
@@ -151,50 +151,50 @@ def outer[N: IntVar, M: IntVar](
     /,
 ) -> _Array[[N, M]]: ...
 def pinv[Batch: IntTuple, M: IntVar, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], M, N]],
+    a: _ArrayLike[[*Batch, M, N]],
     rtol: Any = None,
     hermitian: bool = False,
     *,
     rcond: Any = None,
-) -> _Array[[*Elements[Batch], N, M]]: ...
+) -> _Array[[*Batch, N, M]]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], M, N]],
+    a: _ArrayLike[[*Batch, M, N]],
     mode: Literal["reduced"] = "reduced",
 ) -> tuple[
-    _Array[[*Elements[Batch], M, int_min(Int[M], Int[N])]],
-    _Array[[*Elements[Batch], int_min(Int[M], Int[N]), N]],
+    _Array[[*Batch, M, int_min(Int[M], Int[N])]],
+    _Array[[*Batch, int_min(Int[M], Int[N]), N]],
 ]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], M, N]],
+    a: _ArrayLike[[*Batch, M, N]],
     mode: Literal["r"],
-) -> _Array[[*Elements[Batch], int_min(Int[M], Int[N]), N]]: ...
+) -> _Array[[*Batch, int_min(Int[M], Int[N]), N]]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], M, N]],
+    a: _ArrayLike[[*Batch, M, N]],
     mode: Literal["complete"],
-) -> tuple[_Array[[*Elements[Batch], M, M]], _Array[[*Elements[Batch], M, N]]]: ...
+) -> tuple[_Array[[*Batch, M, M]], _Array[[*Batch, M, N]]]: ...
 @overload
 def qr[Batch: IntTuple, M: IntVar, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], M, N]],
+    a: _ArrayLike[[*Batch, M, N]],
     mode: str = "reduced",
 ) -> tuple[_Array[IntTuple], _Array[IntTuple]] | _Array[IntTuple]: ...
 def slogdet[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
+    a: _ArrayLike[[*Batch, N, N]],
     *,
     method: str | None = None,
 ) -> tuple[_Array[Batch], _Array[Batch]]: ...
 @overload
 def solve[Batch: IntTuple, N: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
+    a: _ArrayLike[[*Batch, N, N]],
     b: _ArrayLike[[N]],
-) -> _Array[[*Elements[Batch], N]]: ...
+) -> _Array[[*Batch, N]]: ...
 @overload
 def solve[Batch: IntTuple, N: IntVar, M: IntVar](
-    a: _ArrayLike[[*Elements[Batch], N, N]],
-    b: _ArrayLike[[*Elements[Batch], N, M]],
-) -> _Array[[*Elements[Batch], N, M]]: ...
+    a: _ArrayLike[[*Batch, N, N]],
+    b: _ArrayLike[[*Batch, N, M]],
+) -> _Array[[*Batch, N, M]]: ...
 @overload
 def svd[
     FullMatrices: Flag[bool] = True,

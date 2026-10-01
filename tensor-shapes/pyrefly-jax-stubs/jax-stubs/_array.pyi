@@ -39,7 +39,6 @@ from jax.sharding import Sharding as _Sharding
 from jax.typing import DTypeLike
 from shape_extensions import (
     broadcast,
-    Elements,
     Flag,
     Index,
     index_shape,
@@ -119,10 +118,10 @@ class Array[Shape: _Shape = _Shape]:
     @property
     def imag(self) -> Array[Shape]: ...
     def __len__[N: IntVar, Rest: _Shape = []](
-        self: Array[[N, *Elements[Rest]]],
+        self: Array[[N, *Rest]],
     ) -> Int[N]: ...
     def __iter__[N: IntVar, Rest: _Shape = []](
-        self: Array[[N, *Elements[Rest]]], /
+        self: Array[[N, *Rest]], /
     ) -> Iterator[Array[Rest]]: ...
     def copy(self) -> Array[Shape]: ...
     def conj(self) -> Array[Shape]: ...
