@@ -32,6 +32,15 @@ use crate::error::legacy::BaselineErrors;
 const INVALID_BASELINE_GUIDANCE: &str =
     "baseline file is invalid; rerun with `--update-baseline` to regenerate it";
 
+/// Whether a rewrite reached the baseline.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BaselineWrite {
+    Written,
+    /// Someone else rewrote the baseline after this rewrite was computed, so it was left
+    /// alone rather than reverting their work.
+    Superseded,
+}
+
 /// Write baseline entries verbatim, so pruning preserves the format of the rows it keeps.
 ///
 /// The file is replaced atomically: serialize in full, write a temporary file, then rename
@@ -39,8 +48,21 @@ const INVALID_BASELINE_GUIDANCE: &str =
 /// one, never a partial file. Writing in place would let a concurrent diagnostics request
 /// parse a truncated baseline, treat it as unavailable, and report every baselined
 /// diagnostic as new; an interrupted write would leave invalid JSON on disk for good.
-pub fn write_baseline_file(path: &Path, errors: &BaselineErrors) -> Result<()> {
-    fn f(path: &Path, errors: &BaselineErrors) -> Result<()> {
+///
+/// `expected` is the content the new rows were derived from. When it is supplied the
+/// baseline is re-read immediately before the rename and the write is abandoned if it no
+/// longer matches, so a rewrite computed from a superseded baseline does not undo whatever
+/// replaced it. The rename itself is atomic, so the danger is never a damaged file, only a
+/// lost update; the check closes almost all of the window because the read that fed the
+/// rewrite happened before a whole check's worth of work, whereas this one happens
+/// microseconds earlier. It cannot close the window entirely — nothing short of locking
+/// the file could — so this narrows the race rather than removing it.
+pub fn write_baseline_file(
+    path: &Path,
+    errors: &BaselineErrors,
+    expected: Option<&str>,
+) -> Result<BaselineWrite> {
+    fn f(path: &Path, errors: &BaselineErrors, expected: Option<&str>) -> Result<BaselineWrite> {
         let serialized = serde_json::to_vec_pretty(errors)?;
         // A temporary file is created private to its owner, and the rename carries those
         // bits onto the baseline. The baseline is checked in, so restore whatever the file
@@ -68,10 +90,20 @@ pub fn write_baseline_file(path: &Path, errors: &BaselineErrors) -> Result<()> {
                 .set_permissions(std::fs::Permissions::from_mode(0o644))?;
         }
         temporary.as_file().sync_all()?;
+        // Checked as late as possible, so that as little as possible can happen between
+        // reading the baseline and replacing it.
+        // A baseline that can no longer be read counts as superseded too: it may have been
+        // deleted, and writing would put it back.
+        if let Some(expected) = expected
+            && !std::fs::read_to_string(path).is_ok_and(|current| current == expected)
+        {
+            return Ok(BaselineWrite::Superseded);
+        }
         temporary.persist(path)?;
-        Ok(())
+        Ok(BaselineWrite::Written)
     }
-    f(path, errors).with_context(|| format!("while writing baseline to `{}`", path.display()))
+    f(path, errors, expected)
+        .with_context(|| format!("while writing baseline to `{}`", path.display()))
 }
 
 /// Keys use absolute paths internally so comparison is independent of the baseline's path format.
@@ -578,7 +610,7 @@ mod tests {
             min_severity: Some(Severity::Warn),
             errors: Vec::new(),
         };
-        write_baseline_file(&path, &baseline).unwrap();
+        write_baseline_file(&path, &baseline, None).unwrap();
 
         let written: BaselineErrors =
             serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
@@ -610,11 +642,51 @@ mod tests {
                 min_severity: None,
                 errors: Vec::new(),
             },
+            None,
         )
         .unwrap();
 
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o644, "rewrite must keep the baseline readable");
+    }
+
+    /// A guarded rewrite goes through while the baseline is still the one it was computed
+    /// from, and abandons itself once something else has replaced it, rather than
+    /// reverting that. A baseline that has gone missing counts as replaced.
+    #[test]
+    fn test_guarded_write_yields_to_a_baseline_that_changed() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("baseline.json");
+        let original = "{\n  \"errors\": []\n}";
+        std::fs::write(&path, original).unwrap();
+
+        let pruned = BaselineErrors {
+            min_severity: Some(Severity::Warn),
+            errors: Vec::new(),
+        };
+
+        let superseded = "{\n  \"errors\": [],\n  \"min_severity\": \"info\"\n}";
+        std::fs::write(&path, superseded).unwrap();
+        assert_eq!(
+            write_baseline_file(&path, &pruned, Some(original)).unwrap(),
+            BaselineWrite::Superseded
+        );
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), superseded);
+
+        assert_eq!(
+            write_baseline_file(&path, &pruned, Some(superseded)).unwrap(),
+            BaselineWrite::Written
+        );
+        let written: BaselineErrors =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(written.min_severity, Some(Severity::Warn));
+
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(
+            write_baseline_file(&path, &pruned, Some(original)).unwrap(),
+            BaselineWrite::Superseded
+        );
+        assert!(!path.exists(), "a deleted baseline must not be recreated");
     }
 
     #[test]

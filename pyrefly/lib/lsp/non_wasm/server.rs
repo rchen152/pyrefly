@@ -286,6 +286,7 @@ use crate::commands::lsp::IndexingMode;
 use crate::config::config::ConfigFile;
 use crate::config::config::ConfigScope;
 use crate::config::error_kind::ErrorKind;
+use crate::error::baseline::BaselineWrite;
 use crate::error::baseline::StaleRowScope;
 use crate::error::baseline::write_baseline_file;
 use crate::error::error::Error;
@@ -4015,6 +4016,7 @@ impl Server {
                 let BaselineApplyResult::Applied {
                     unused_entry_count,
                     retained,
+                    source,
                 } = applied
                 else {
                     return None;
@@ -4035,18 +4037,18 @@ impl Server {
                     // Skip the baseline rather than risk dropping a row that still matches.
                     unfixed.insert(to_real_path(error.path())?);
                 }
-                Some((unused_entry_count, retained, unfixed))
+                Some((unused_entry_count, retained, source, unfixed))
             };
 
-            let Some((unused_entry_count, retained, unfixed)) = prune(&handles) else {
+            let Some((unused_entry_count, retained, source, unfixed)) = prune(&handles) else {
                 continue;
             };
             // A file that still has uncovered diagnostics is mid-fix: a row that looks
             // unused now may match again once the user finishes, and dropping it would
             // report that error as new. Exclude those files and prune the rest, so one
             // half-fixed file does not hold up the others saved alongside it.
-            let (unused_entry_count, retained) = if unfixed.is_empty() {
-                (unused_entry_count, retained)
+            let (unused_entry_count, retained, source) = if unfixed.is_empty() {
+                (unused_entry_count, retained, source)
             } else {
                 let clean: Vec<Handle> = handles
                     .into_iter()
@@ -4060,15 +4062,22 @@ impl Server {
                     continue;
                 }
                 match prune(&clean) {
-                    Some((count, retained, _)) => (count, retained),
+                    Some((count, retained, source, _)) => (count, retained, source),
                     None => continue,
                 }
             };
             if unused_entry_count == 0 {
                 continue;
             }
-            if let Err(e) = write_baseline_file(&baseline_path, &retained) {
-                warn!("{e:#}");
+            // Hand back the contents the rows were derived from, so a baseline that
+            // something else rewrote in the meantime is left as they left it.
+            match write_baseline_file(&baseline_path, &retained, Some(&source)) {
+                Ok(BaselineWrite::Written) => {}
+                Ok(BaselineWrite::Superseded) => info!(
+                    "Baseline `{}` changed while it was being pruned; leaving it alone",
+                    baseline_path.display()
+                ),
+                Err(e) => warn!("{e:#}"),
             }
         }
     }

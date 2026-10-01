@@ -856,11 +856,15 @@ fn write_baseline_errors_to_file(
     format: BaselineFormat,
     min_severity: Severity,
 ) -> anyhow::Result<()> {
+    // A CLI run is the authoritative writer for the whole project, so it replaces the
+    // baseline unconditionally rather than yielding to whatever else touched it.
     write_baseline_file(
         path,
         &BaselineErrors::from_errors(relative_to, min_severity, errors)
             .with_format(matching_mode, format),
+        None,
     )
+    .map(|_| ())
 }
 
 fn write_error_json_to_console(relative_to: &Path, errors: &[Error]) -> anyhow::Result<()> {
@@ -2049,7 +2053,7 @@ impl CheckArgs {
                 .as_ref()
                 .expect("a baseline action requires a baseline path");
             // Pruning removes entries and preserves the format of remaining ones.
-            write_baseline_file(baseline_path, &retained_baseline_entries)?;
+            write_baseline_file(baseline_path, &retained_baseline_entries, None)?;
         }
         if rewriting_baseline {
             info!(

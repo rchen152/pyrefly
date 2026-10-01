@@ -300,6 +300,10 @@ pub enum BaselineApplyResult {
     Applied {
         unused_entry_count: usize,
         retained: BaselineErrors,
+        /// The file's contents as they were read, which `retained` was derived from. A
+        /// caller rewriting the baseline passes this back so the write can be abandoned
+        /// if someone else replaced the file in the meantime.
+        source: String,
     },
 }
 
@@ -321,6 +325,7 @@ impl BaselineApplyResult {
             Self::Applied {
                 unused_entry_count,
                 retained,
+                source: _,
             } => Ok((BaselineStatus::Unmatched, unused_entry_count, retained)),
             Self::FailedToRead(e) if tolerate_read_error => {
                 // When regenerating the baseline, a corrupt/unreadable existing
@@ -433,6 +438,7 @@ impl Errors {
             BaselineApplyResult::Applied {
                 unused_entry_count: result.unused_entry_count,
                 retained: result.retained,
+                source: content,
             }
         } else {
             let processor = match BaselineProcessor::from_json(&content, relative_to, matching_mode)
@@ -445,6 +451,7 @@ impl Errors {
             BaselineApplyResult::Applied {
                 unused_entry_count: 0,
                 retained: BaselineErrors::default(),
+                source: content,
             }
         }
     }
