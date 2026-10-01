@@ -161,6 +161,27 @@ def f(x: X[int]):
 );
 
 testcase!(
+    test_ordinary_alias_union_retains_precise_members,
+    r#"
+from collections.abc import Iterable, Mapping
+from typing import Literal, TypeAlias, TypeAliasType, assert_type
+
+type Headers = Mapping[str, str] | Iterable[tuple[str, str]]
+Legacy: TypeAlias = Mapping[str, str] | Iterable[tuple[str, str]]
+type Choice = Literal["auto"] | str
+LegacyChoice: TypeAlias = Literal["auto"] | str
+ViaCall = TypeAliasType("ViaCall", Literal["auto"] | str)
+
+def check(modern: Headers, legacy: Legacy, a: Choice, b: LegacyChoice, c: ViaCall) -> None:
+    assert_type(modern, Mapping[str, str] | Iterable[tuple[str, str]])
+    assert_type(legacy, Mapping[str, str] | Iterable[tuple[str, str]])
+    assert_type(a, str)
+    assert_type(b, str)
+    assert_type(c, str)
+"#,
+);
+
+testcase!(
     test_type_var_tuple_alias_generic,
     r#"
 from typing import Any, assert_type

@@ -9004,6 +9004,27 @@ def check(
 );
 
 testcase!(
+    test_jaxtyping_type_aliases,
+    shape_extensions_env_with_torch_and_jaxtyping(),
+    r#"
+from jaxtyping import Float
+from shape_extensions import static_jaxtyping
+from torch import Tensor
+from typing import Any, TypeAlias, assert_type, cast
+
+@static_jaxtyping("")
+class Scope:
+    type Scoped = Float[Tensor, "3"]
+
+@static_jaxtyping("")
+def check(value: Any) -> None:
+    Legacy: TypeAlias = Float[Tensor, "3"]
+    assert_type(cast(Legacy, value), Tensor[[3]])
+    assert_type(cast(Scope.Scoped, value), Tensor[[3]])
+"#,
+);
+
+testcase!(
     test_shape_extensions_resolvability_enables_jaxtyping_shapes,
     shape_extensions_env_with_torch_and_jaxtyping(),
     r#"

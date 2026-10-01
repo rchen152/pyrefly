@@ -225,6 +225,10 @@ impl ShapeDeclarations {
     pub fn is_shaped_annotation(&self, range: TextRange) -> bool {
         self.shaped_annotations.contains_key(&range)
     }
+
+    pub fn shaped_annotation_metadata(&self, range: TextRange) -> Option<&str> {
+        self.shaped_annotations.get(&range).map(Box::as_ref)
+    }
 }
 
 pub(super) struct ShapeFunctionMetadata {

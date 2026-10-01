@@ -574,6 +574,76 @@ def outside_scope(value: Any) -> None:
 );
 
 testcase!(
+    test_shaped_in_type_aliases,
+    shaped_env(),
+    r#"
+from typing import Any, TypeAlias, TypeAliasType, assert_type, cast
+from arrays import ndarray
+from shape_extensions import IntTuple, Shaped, shape_vars
+
+@shape_vars("")
+class Scope:
+    type Scoped = Shaped[ndarray, "[3, 2]"]
+    type Nested = list[Shaped[tuple[int, int], "[3, 2]"]]
+    ViaCall = TypeAliasType("ViaCall", Shaped[ndarray, "[3, 2]"])
+
+@shape_vars("")
+def literal(value: Any) -> None:
+    Legacy: TypeAlias = Shaped[ndarray, "[3, 2]"]
+    assert_type(cast(Legacy, value), ndarray[[3, 2]])
+    assert_type(cast(Scope.Scoped, value), ndarray[[3, 2]])
+    assert_type(cast(Scope.Nested, value), list[IntTuple[3, 2]])
+    assert_type(cast(Scope.ViaCall, value), ndarray[[3, 2]])
+"#,
+);
+
+testcase!(
+    test_shaped_legacy_alias_cannot_capture_declared_dimensions,
+    shaped_env(),
+    r#"
+from typing import TypeAlias
+from arrays import ndarray
+from shape_extensions import Shaped, shape_vars
+
+@shape_vars("N")
+def function(x: Shaped[ndarray, "[N]"]) -> None:
+    Alias: TypeAlias = Shaped[ndarray, "[N]"]  # E: Type variable `N` is not in scope
+
+@shape_vars("N")
+class Container:
+    Alias: TypeAlias = Shaped[ndarray, "[N]"]  # E: Type variable `N` is not in scope
+"#,
+);
+
+testcase!(
+    test_shaped_type_alias_is_not_a_class_value,
+    shaped_env(),
+    r#"
+from typing import Annotated, TypeAlias
+from shape_extensions import Shaped, shape_vars
+
+@shape_vars("N")
+class Base: ...
+
+@shape_vars("")
+class Scope:
+    type Scoped = Shaped[Base, "3"]
+
+@shape_vars("")
+def check() -> None:
+    Legacy: TypeAlias = Shaped[Base, "3"]
+    Plain: TypeAlias = Annotated[Base[3], "3"]
+
+    legacy: type[Base[3]] = Legacy  # E: not assignable
+    scoped: type[Base[3]] = Scope.Scoped  # E: not assignable
+    plain: type[Base[3]] = Plain  # E: not assignable
+    Legacy()  # E: Expected a callable
+    Scope.Scoped()  # E: Expected a callable
+    Plain()  # E: Expected a callable
+"#,
+);
+
+testcase!(
     test_shaped_through_aliases,
     {
         let mut env = shaped_env();

@@ -1387,7 +1387,11 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
         let annotated_metadata = match &ty {
             Type::Annotated(_, metadata) => Some(metadata.clone()),
-            _ => None,
+            _ => self
+                .bindings()
+                .shape_declarations
+                .shaped_annotation_metadata(range)
+                .map(|shape| vec![Lit::Str(shape.into()).to_implicit_type()].into_boxed_slice()),
         };
         let untyped = self.untype_opt(ty.clone(), range, errors);
         let ty = if let Some(untyped) = untyped {
@@ -1406,8 +1410,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             );
             return TypeAlias::error(name.clone(), style);
         };
-        // If the original type was Annotated[T, ...], preserve the wrapper so that
-        // the alias is not callable and not assignable to type[T] in value position.
+        // An Annotated alias is not a class value, even when its metadata has
+        // been interpreted as a shape in this declaration.
         let stored_ty = if let Some(metadata) = annotated_metadata {
             Type::Annotated(Box::new(ty), metadata)
         } else {
@@ -2778,6 +2782,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     expr,
                     None,
                     None,
+                    Some(TypeFormContext::TypeAlias),
                     errors,
                 );
                 if let Some(annot) = &annot
@@ -2798,7 +2803,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 )
             }
             BindingTypeAlias::Scoped { name, expr, .. } => {
-                let ty = self.expr_infer(expr, errors);
+                let ty = self
+                    .expr_infer_impl(expr, None, errors, Some(TypeFormContext::TypeAlias))
+                    .into_ty();
                 self.as_type_alias(name, TypeAliasStyle::Scoped, ty, expr, errors)
             }
             BindingTypeAlias::TypeAliasType {
@@ -2808,7 +2815,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 ..
             } => {
                 if let Some(expr) = expr {
-                    let mut ty = self.expr_infer(expr, errors);
+                    let mut ty = self
+                        .expr_infer_impl(expr, None, errors, Some(TypeFormContext::TypeAlias))
+                        .into_ty();
                     if let Some(k) = annotation
                         && let AnnotationWithTarget {
                             target,
@@ -3700,6 +3709,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         expr: &Expr,
         attrs_field_specifier: Option<AttrsSpecifier>,
         last_value_or_narrow: Option<Idx<Key>>,
+        type_form_context: Option<TypeFormContext<'_>>,
         errors: &ErrorCollector,
     ) -> (Option<&AnnotationWithTarget>, Type) {
         // Receiver-constrained class assignment: a same-scope rebind of a
@@ -3784,7 +3794,14 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     got
                 } else {
                     let hint = annot_ty.as_ref().map(|t| (t, tcc));
-                    self.expr_check(expr, hint, errors)
+                    let options = match hint {
+                        Some((want, context)) => {
+                            ExprOptions::check(want, errors, errors, context, None)
+                        }
+                        None => ExprOptions::infer(errors, None),
+                    };
+                    self.expr_with_options(expr, options.with_type_form_context(type_form_context))
+                        .into_ty()
                 };
                 let ty = match style {
                     AnnotationStyle::Direct => {
@@ -3828,7 +3845,12 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             None => {
                 // Bare `x = attr.ib(type=T)`/`field(...)` (legacy, unannotated): same
                 // `_CountingAttr` reasoning as the annotated case.
-                let expr_ty = self.expr_check(expr, None, errors);
+                let expr_ty = self
+                    .expr_with_options(
+                        expr,
+                        ExprOptions::infer(errors, None).with_type_form_context(type_form_context),
+                    )
+                    .into_ty();
                 let ty = if attrs_field_specifier.is_some() {
                     self.heap.mk_any_implicit()
                 } else {
@@ -3862,6 +3884,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             expr,
             attrs_field_specifier,
             last_value_or_narrow,
+            None,
             errors,
         );
         // Flag unannotated variables whose inferred type is an implicit `Any` (unknown).
