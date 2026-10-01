@@ -110,3 +110,61 @@ def meshgrid[Shapes: IntTuples, Indexing: Flag[str | None]](
   static error and runtime exception.
 - `SymbolicArithExpr` is the runtime representation used when an evaluated
   annotation contains symbolic dimension arithmetic; do not use it in stubs.
+
+## DSL language
+
+DSL parameters use `Int` for one dimension, `IntTuple` for one shape,
+`IntTuples` for a collection of shapes, and `NamedInts` for captured named
+integers. Runtime configuration reaches the helper as ordinary `int`, `bool`,
+`str`, integer-tuple, or `None` values after a public signature captures it with
+`Flag[...]`. A helper returns `Int`, `IntTuple`, or `IntTuples`, or
+`dsl.Invalid(...)` when the call is ill-formed.
+
+The function body is a deliberately small, immutable Python subset:
+
+- an optional docstring, single-assignment local names, `if`/`else`, and
+  explicit `return` statements;
+- integer arithmetic (`+`, `-`, `*`, `//`, `%`), comparisons, boolean
+  operations, and conditional expressions;
+- shape indexing and slicing, plus `len`, `range`, `tuple`, `zip`, `any`, and
+  tuple `count` and `index`;
+- bounded comprehensions and generator expressions over those values.
+
+Mutation, loops, exceptions, and arbitrary Python calls are not supported. A
+DSL helper may call another decorated helper only by returning that call
+directly. Pyrefly validates the definition itself, so unsupported syntax is
+reported in the stub rather than silently becoming a runtime dependency.
+
+### Constructors and control primitives
+
+| Primitive | Purpose |
+|---|---|
+| `dsl.IntTuple(values)` | Builds one shape from a fixed tuple or bounded generator, as Torch `repeat_shape` does. |
+| `dsl.IntTuples(values)` | Builds a collection of shapes, as Torch `meshgrid_shapes` does. |
+| `dsl.concat(left, right)` | Concatenates shape fragments; Torch `unsqueeze_shape` uses it to append a dimension. |
+| `dsl.prod(shape)` / `dsl.sum(shape)` | Reduces dimensions to one symbolic integer; reshape rules use `prod`, while Torch `cat_shape` uses `sum`. |
+| `dsl.is_concrete_int(value)` | Narrows an `Int` only when its value is known, for checks such as Torch `select` bounds. |
+| `dsl.is_int_value(value)` | Narrows the integer arm of a flag union, such as Torch `squeeze`'s `int | tuple[int, ...] | None` dimension. It does not prove that a symbolic integer is concrete. |
+| `dsl.Invalid(message)` | Rejects an invalid library call with a shape diagnostic, such as an out-of-range Torch dimension. |
+
+Use `dsl.Int.gradual()`, `dsl.IntTuple.gradual()`, or
+`dsl.IntTuples.gradual()` when the call is valid but its result cannot be
+determined statically. A gradual result preserves whatever outer structure is
+known; `dsl.Invalid(...)` instead reports an error.
+
+### Reusable shape operations
+
+| Operation | Purpose |
+|---|---|
+| `broadcast(left, right)` | Computes ordinary two-input broadcasting, used by elementwise Torch, NumPy, and JAX operators. |
+| `gufunc_broadcast(spec, shapes)` | Applies a generalized-ufunc core-dimension signature, such as `"(m,n),(n,p)->(m,p)"` for NumPy or JAX matrix multiplication. |
+| `dsl.einsum(spec, shapes)` | Computes shapes for explicit single-letter einsum equations, as in `torch.einsum("ij,jk->ik", ...)`. |
+| `dsl.einops_einsum(spec, shapes)` | Computes shapes for einops named-axis einsum equations. |
+| `dsl.rearrange(spec, shape, axes)` | Applies an einops rearrangement pattern and optional `NamedInts` axis lengths. |
+| `dsl.reduce(spec, shape, axes)` | Applies an einops reduction pattern and optional named axis lengths. |
+| `dsl.repeat(spec, shape, axes)` | Applies an einops repeat pattern and optional named axis lengths. |
+
+`broadcast` and `gufunc_broadcast` are complete decorated rules exported from
+`shape_extensions`; call them from return annotations or return them directly
+from another DSL helper. The other operations are primitives in
+`shape_extensions.dsl` and are available only inside DSL definitions.
