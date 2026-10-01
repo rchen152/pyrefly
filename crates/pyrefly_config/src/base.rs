@@ -349,9 +349,9 @@ pub struct ConfigBase {
     /// When true, parameter list compatibility is checked strictly even when `*args: Any, **kwargs: Any` is present.
     pub strict_callable_subtyping: Option<bool>,
 
-    /// Whether to strictly check the parameters of a `functools.partial(...)` residual when it is
-    /// assigned to a callable. When false (the default), the residual is treated as gradual (like
-    /// `...`) for subtyping, matching the typeshed `partial` stub. When true, the residual's
+    /// Whether to strictly check the remaining parameters of a `functools.partial(...)` when it is
+    /// assigned to a callable. When false (the default), its parameters are treated as gradual
+    /// (like `...`) for subtyping, matching the typeshed `partial` stub. When true, their
     /// parameter types and arity are checked precisely.
     pub strict_partial_subtyping: Option<bool>,
 

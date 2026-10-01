@@ -51,10 +51,10 @@ class Mixed(TypedDict, closed=True):
     label: str
     width: int
 
-def capture_residual[Axes: NamedInts](label: str, **axes: CaptureNamedInts[Axes]) -> Box[Axes]: ...
+def capture_extra_axes[Axes: NamedInts](label: str, **axes: CaptureNamedInts[Axes]) -> Box[Axes]: ...
 
 def mixed(values: Mixed) -> None:
-    reveal_type(capture_residual(**values))  # E: revealed type: Box[NamedInts[width=Int[int]]]
+    reveal_type(capture_extra_axes(**values))  # E: revealed type: Box[NamedInts[width=Int[int]]]
 
 def dynamic(axes: dict[str, int]) -> None:
     reveal_type(capture(**axes))  # E: revealed type: Box[NamedInts[...]]

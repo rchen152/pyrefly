@@ -12,7 +12,7 @@
 use crate::test::util::TestEnv;
 use crate::testcase;
 
-// Make sure no residual type leaks into user output, when a residual
+// Make sure no fallback type leaks into user output, when a fallback
 // winds up directly in a return type
 testcase!(
     test_no_projection_leak_in_reveal_type,
@@ -46,7 +46,7 @@ def use_it(cb: GenericCallback) -> None:
 );
 
 testcase!(
-    test_simple_generic_residual,
+    test_simple_generic_fallback,
     r#"
 from typing import Callable, reveal_type
 def identity[S](x: Callable[[S], S]) -> Callable[[S], S]:
@@ -59,7 +59,7 @@ reveal_type(result)  # E: revealed type: [T](T) -> T
 );
 
 testcase!(
-    test_two_tparam_generic_residual,
+    test_two_tparam_generic_fallback,
     r#"
 from typing import Callable, reveal_type
 def simple_identity[A, R](f: Callable[[A], R]) -> Callable[[A], R]:
@@ -82,7 +82,7 @@ reveal_type(result)  # E: revealed type: [R](int, R) -> R
 );
 
 testcase!(
-    test_generic_residual_concrete_return,
+    test_generic_fallback_concrete_return,
     r#"
 from typing import Callable, reveal_type
 def higher_order[A, B](x: Callable[[A, B], int]) -> Callable[[A, B], int]:
@@ -108,7 +108,7 @@ f("")
 );
 
 testcase!(
-    test_generic_residual_distinct_positions,
+    test_generic_fallback_distinct_positions,
     r#"
 from typing import Callable, reveal_type
 def higher_order[A, B](x: Callable[[A, B], B]) -> Callable[[A, B], B]:
@@ -121,7 +121,7 @@ reveal_type(result)  # E: revealed type: [T, S](S, T) -> T
 );
 
 testcase!(
-    test_generic_residual_nested_pattern_inner_var,
+    test_generic_fallback_nested_pattern_inner_var,
     r#"
 from typing import Callable, reveal_type
 def higher_order[A](x: Callable[[list[A]], list[A]]) -> Callable[[list[A]], list[A]]:
@@ -134,7 +134,7 @@ reveal_type(result)  # E: revealed type: [A](list[A]) -> list[A]
 );
 
 testcase!(
-    test_generic_residual_nested_source_inner_var,
+    test_generic_fallback_nested_source_inner_var,
     r#"
 from typing import Callable, reveal_type
 def higher_order[A](x: Callable[[A], A]) -> Callable[[A], A]:
@@ -369,7 +369,7 @@ reveal_type(wrapper.__call__)  # E: [R](x: R) -> R
 );
 
 testcase!(
-    test_class_field_with_bare_residual,
+    test_class_field_with_bare_fallback,
     r#"
 from typing import Callable, reveal_type
 
@@ -382,7 +382,7 @@ class Container[**P, R]:
 def f[S](x: S) -> S: ...
 c = Container(f)
 reveal_type(c.fn)  # E: revealed type: [R](x: R) -> R
-# This is expected - a bare residual targ in a class field should flatten on read
+# This is expected - a bare fallback target in a class field should flatten on read
 reveal_type(c.x)  # E: revealed type: Unknown
 "#,
 );
@@ -781,7 +781,7 @@ assert_type(result(b"ok"), str)
 );
 
 testcase!(
-    test_overload_residual_equivalent_branch_collapse,
+    test_overload_fallback_equivalent_branch_collapse,
     r#"
 from typing import Callable, overload, assert_type, reveal_type
 
@@ -846,7 +846,7 @@ assert_type(wrapper("ok"), int)
 );
 
 testcase!(
-    test_overload_residual_nested_inline_union_fallback,
+    test_overload_nested_inline_union_fallback,
     r#"
 from typing import Callable, overload, reveal_type
 
@@ -864,7 +864,7 @@ reveal_type(result)  # E: revealed type: Overloaded[list[tuple[int, str]], list[
 );
 
 testcase!(
-    test_overload_residual_into_callback_protocol,
+    test_overload_fallback_into_callback_protocol,
     r#"
 from typing import Callable, Protocol, overload, assert_type, reveal_type
 
@@ -887,7 +887,7 @@ assert_type(result("ok"), int)
 );
 
 testcase!(
-    test_await_preserves_overload_residual_in_callback_protocol,
+    test_await_preserves_overload_fallback_in_callback_protocol,
     r#"
 import asyncio
 from functools import partial
@@ -1023,11 +1023,11 @@ def bar(tmpdir):
 "#,
 );
 
-// Regression test for a panic when pruning against a residual Variable
+// Regression test for a panic when pruning against a fallback variable
 // in the case where overload analysis merged the Quantified with a partial
 // type (behavior for Recursive / Unwrap is the same).
 testcase!(
-    test_overload_residual_with_partial_quantified_var,
+    test_overload_fallback_with_partial_quantified_var,
     r#"
 from typing import overload, Callable, assert_type
 
@@ -1046,11 +1046,11 @@ assert_type(result, int)
     "#,
 );
 
-// Regression test for a panic when converting a residual Variable to a Type
+// Regression test for a panic when converting a fallback variable to a type
 // in the case where overload analysis merged the Quantified with a partial
 // type (behavior for Recursive / Unwrap is the same).
 testcase!(
-    test_overload_residual_with_partial_contained_var,
+    test_overload_fallback_with_partial_contained_var,
     r#"
 from typing import overload, Any, Callable, assert_type, reveal_type
 
@@ -1073,7 +1073,7 @@ assert_type(c, C[Any])
 );
 
 testcase!(
-    test_overload_residual_in_param_default,
+    test_overload_fallback_in_param_default,
     r#"
 from typing import Callable, assert_type
 class A(int): ...
@@ -1087,9 +1087,9 @@ assert_type(f(0), A)
 // passing a generic overloaded function (like `operator.add`) to a
 // higher-order function (like `functools.reduce`). The overload's first
 // branch (`SupportsAdd`) is applicable, but a self-referential probe var
-// leaking into the captured residual bound used to prune every branch.
+// leaking into the captured fallback bound used to prune every branch.
 testcase!(
-    test_overload_residual_generic_protocol_arg_not_pruned,
+    test_overload_fallback_generic_protocol_arg_not_pruned,
     r#"
 from typing import Callable, Iterable, TypeVar, Protocol, assert_type, overload
 
@@ -1120,7 +1120,7 @@ assert_type(y, list[str])
 );
 
 testcase!(
-    test_overload_residual_generic_protocol_rejects_mixed_union_arg,
+    test_overload_fallback_generic_protocol_rejects_mixed_union_arg,
     r#"
 from functools import reduce
 from operator import add
@@ -1440,8 +1440,8 @@ xs.append("a")
     "#,
 );
 
-// A type parameter the bound arguments left standing in a required residual parameter is the
-// residual's own, and one that survives only in the return type has nobody to determine it.
+// A type parameter the bound arguments left standing in a required parameter belongs to the
+// remaining signature, and one that survives only in the return type has nobody to determine it.
 testcase!(
     test_partial_keeps_unbound_type_parameters,
     r#"

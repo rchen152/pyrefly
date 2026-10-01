@@ -1038,7 +1038,7 @@ impl Transaction<'_> {
         });
     }
 
-    /// Get the residual subject type for a value pattern that matches the whole subject.
+    /// Get the subject type after narrowing by preceding cases for a whole-subject value pattern.
     fn expected_match_value_type(&self, handle: &Handle, nodes: &[AnyNodeRef]) -> Option<Type> {
         let value_index = nodes
             .iter()
@@ -1057,7 +1057,7 @@ impl Transaction<'_> {
                     // Cases without carried narrowing use the original subject binding.
                     return self.get_type_trace(handle, stmt_match.subject.range());
                 }
-                // A nested pattern matches a component, not the whole residual subject.
+                // A nested pattern matches a component, not the whole match subject.
                 _ => return None,
             }
         }

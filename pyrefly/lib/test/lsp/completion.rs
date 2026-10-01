@@ -2737,7 +2737,7 @@ def f(a: A):
 }
 
 #[test]
-fn completion_match_residual_type_ranking() {
+fn completion_match_prior_case_narrowing_ranking() {
     for (subject, previous, demoted) in [
         ("a", "A.AA", vec!["AA"]),
         ("a", "A.AA if flag", vec![]),
@@ -2786,7 +2786,7 @@ def f(a: A, box: Box, flag: bool):
 }
 
 #[test]
-fn completion_match_residual_type_scope() {
+fn completion_match_prior_case_narrowing_scope() {
     for current in [
         "[A.]: pass",
         "Box(value=A.): pass",

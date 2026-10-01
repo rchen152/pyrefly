@@ -2797,7 +2797,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         .ty
                 }
                 _ if let Some(ret) = self.call_builtin_enumerate(ty, x, errors) => ret,
-                // `functools.partial(func, ...)` synthesizes the residual callable instead of the
+                // `functools.partial(func, ...)` synthesizes the remaining callable instead of the
                 // opaque stub, so calls on the result are checked (see `alt::functools`).
                 _ if matches!(ty, Type::ClassDef(cls) if cls.has_toplevel_qname("functools", "partial")) =>
                 {

@@ -1534,7 +1534,7 @@ def f(foo: Foo) -> None:
 
 // Regression test for https://github.com/facebook/pyrefly/issues/4844.
 testcase!(
-    test_descriptor_concatenate_infers_residual_paramspec,
+    test_descriptor_concatenate_infers_remaining_paramspec,
     r#"
 from __future__ import annotations
 

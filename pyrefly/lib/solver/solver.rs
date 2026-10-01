@@ -1621,7 +1621,7 @@ impl Solver {
         };
         drop(e);
         drop(lock);
-        // Generic residuals are fallback-only and cannot make a concrete bound inconsistent.
+        // Generic fallback bounds cannot make a concrete bound inconsistent.
         let opposite_bound = if bound.is_placeholder() {
             None
         } else {
@@ -1712,7 +1712,7 @@ impl Solver {
     }
 
     fn solve_bounds(&self, mut bounds: Bounds) -> Option<Type> {
-        // Generic callable residuals are fallback bounds across both polarities.
+        // Generic callable bounds are fallbacks across both polarities.
         if bounds
             .lower
             .iter()
@@ -4082,7 +4082,7 @@ impl<'solver, 'subset, Ans: LookupAnswer> Subset<'solver, 'subset, Ans> {
                         let lower_bound = is_shape_extension_binding_source
                             .then(|| self.solver.get_current_bound(bounds.lower.clone()))
                             .flatten();
-                        // A fallback residual must not prevent ordinary implicit-literal promotion.
+                        // A fallback bound must not prevent ordinary implicit-literal promotion.
                         let upper_bound = self.solver.get_current_bound(
                             bounds
                                 .upper
