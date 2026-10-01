@@ -1,0 +1,52 @@
+---
+title: Stub Library Author Reference
+description: Reference for authors of shape-aware tensor library stubs.
+---
+
+{/*
+ * Copyright (c) Meta Platforms, Inc. and affiliates.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */}
+
+# Stub Library Author Reference
+
+This page documents the `shape_extensions` features used to describe tensor
+library APIs. Application authors normally need only the
+[tensor shape API reference](./tensor-shapes-reference.mdx).
+
+## How shape DSL rules run
+
+A shape rule is a function decorated with `@type_shape_dsl_function`. A public
+stub calls that function in its return annotation:
+
+```python
+import shape_extensions.dsl as dsl
+from shape_extensions import IntTuple, type_shape_dsl_function
+from torch import Tensor
+
+@type_shape_dsl_function
+def repeat_shape(shape: IntTuple, repeats: IntTuple) -> IntTuple:
+    if len(repeats) < len(shape):
+        return dsl.Invalid("repeat dimensions cannot be shorter than the input rank")
+    extra = len(repeats) - len(shape)
+    return dsl.IntTuple(
+        repeats[i] if i < extra else shape[i - extra] * repeats[i]
+        for i in range(len(repeats))
+    )
+
+def repeat[Shape: IntTuple, Repeats: IntTuple](
+    self: Tensor[Shape], *sizes: *Repeats
+) -> Tensor[repeat_shape(Shape, Repeats)]: ...
+```
+
+Calls to type-level DSL functions are valid only in return annotations. When
+Pyrefly solves a call to `repeat`, it binds `Shape` and `Repeats` from the
+arguments, immediately evaluates `repeat_shape(Shape, Repeats)`, and uses the
+result as the returned `Tensor` shape. The DSL function is not called at
+runtime; its decorator is a runtime no-op.
+
+Use a plain generic signature whenever it can express the relationship. Add a
+DSL rule only when the return shape requires computation, as in Torch
+`reshape`, NumPy `stack`, or JAX `conv_general_dilated`.

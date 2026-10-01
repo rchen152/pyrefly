@@ -245,6 +245,11 @@ let docsSidebar = [
             },
             {
                 type: 'doc' as const,
+                id: 'tensor-shapes-library-authors',
+                label: 'Stub Library Author Reference',
+            },
+            {
+                type: 'doc' as const,
                 id: 'tensor-shapes-contributing',
                 label: 'Contributing',
             },
