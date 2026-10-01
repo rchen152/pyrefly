@@ -10,8 +10,7 @@ multi-dim shape goes in DOUBLE brackets. Each dimension can be a literal
 (`D // NHead`, `2 * H - 1`, `H * W`). Single-bracket multi-dim
 (`Tensor[B, C, H, W]`) is obsolete and does not type-check. Single brackets are
 for a whole shape: `Tensor[S]` where `S: IntTuple`. NumPy and JAX arrays use the
-same ordinary-class pattern; the legacy `@shaped_array` decorator is not used by
-the current stubs.
+same ordinary-class pattern.
 
 **`Int[X]`** — bridges a runtime integer to a type-level symbol. When a
 function takes `dim: Int[D]` and receives `64`, the checker binds `D = 64`.
@@ -117,14 +116,13 @@ conditionals (`x if cond else y`), comprehensions, calls to other
 
 Hard-coded Rust logic for patterns that don't fit stubs or shape functions:
 - `nn.Sequential` chaining (`nn_module_specials.rs`)
-- Legacy `@shaped_array` attribute and indexing behavior for pinned older stubs
 - Contextual list-literal dispatch (`shape_list_literal.rs`), including integer
   value capture (`int_list_literal.rs`) through `IntTupleOrList`
 - Tuple slicing, star unpacking (`expr.rs`)
 
 Current array stubs declare the `.shape` attribute normally. Their `__getitem__`
 overloads call the `index_shape` DSL operation for integer, slice, tensor, and
-multi-axis indexing; they do not use the legacy hard-coded indexing behavior.
+multi-axis indexing.
 
 **How to check:** These are less discoverable — search the Rust source or ask.
 
