@@ -199,8 +199,7 @@ struct SelfAttrNames<'a> {
 impl<'a> SelfAttrNames<'a> {
     fn expr_lvalue(&mut self, x: &Expr) {
         Ast::expr_assignment_targets(x, &mut |target| {
-            if !target.is_within_starred
-                && let AssignmentTargetKind::Attribute(x) = target.kind
+            if let AssignmentTargetKind::Attribute(x) = target.kind
                 && let Some(attr) = Ast::expr_receiver_attr(x, self.self_name)
                 && !self.names.contains_key(&attr.id)
             {
@@ -218,6 +217,19 @@ impl<'a> SelfAttrNames<'a> {
             }
             Stmt::AnnAssign(x) => {
                 self.expr_lvalue(x.target.as_ref());
+            }
+            Stmt::AugAssign(x) => {
+                self.expr_lvalue(x.target.as_ref());
+            }
+            Stmt::For(x) => {
+                self.expr_lvalue(x.target.as_ref());
+            }
+            Stmt::With(x) => {
+                for item in &x.items {
+                    if let Some(optional_vars) = &item.optional_vars {
+                        self.expr_lvalue(optional_vars);
+                    }
+                }
             }
             _ => {}
         }
@@ -1137,7 +1149,7 @@ mod tests {
                 .keys()
                 .map(|name| name.as_str())
                 .collect::<Vec<_>>(),
-            vec!["tuple_attr", "list_attr", "repeated"]
+            vec!["tuple_attr", "list_attr", "starred_attr", "repeated"]
         );
         let repeated_start = source
             .find("self.repeated")
