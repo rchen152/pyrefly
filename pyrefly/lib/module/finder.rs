@@ -644,6 +644,7 @@ pub(crate) fn find_import_with_mode(
         path
     } else if !custom_typeshed_excluded
         && !config.disable_bundled_typeshed
+        && config.typeshed_path.is_none()
         && matches!(style_filter, Some(ModuleStyle::Interface) | None)
         && let Some(path) = typeshed().map_or_else(
             |err| {
@@ -2881,6 +2882,7 @@ mod tests {
                 "stdlib",
                 vec![
                     TestPath::file("chunk.pyi"),
+                    TestPath::file("graphlib.pyi"),
                     TestPath::file("mymod.pyi"),
                     TestPath::dir(
                         "pkg",
@@ -2977,9 +2979,8 @@ mod tests {
         ));
     }
 
-    /// A custom typeshed replaces our stdlib metadata rather than layering on it. `graphlib` is
-    /// `3.9-` in the bundled VERSIONS, so without this the bundled stub would answer for a module
-    /// the user's own typeshed declares removed.
+    /// A custom typeshed replaces the bundled stdlib metadata. `graphlib` is available through
+    /// 3.11 in the custom typeshed even though the bundled typeshed makes it available from 3.9.
     #[test]
     fn test_custom_typeshed_exclusion_is_not_overridden_by_bundled() {
         let typeshed = custom_typeshed(Some("graphlib: 3.0-3.11\n"));
