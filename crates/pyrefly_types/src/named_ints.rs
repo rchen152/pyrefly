@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-//! A closed or open collection of named integer values captured from `**kwargs`.
+//! A closed or open collection of named integer `**kwargs` for einops-like APIs.
 
 use pyrefly_derive::TypeEq;
 use pyrefly_derive::Visit;

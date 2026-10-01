@@ -182,7 +182,7 @@ class Index:
 
 
 class NamedInts:
-    """Marker bound for named integer values captured from ``**kwargs``."""
+    """Marker bound for named integer ``**kwargs`` in einops-like APIs."""
 
     pass
 
@@ -191,7 +191,7 @@ _NamedIntsT = typing.TypeVar("_NamedIntsT")
 
 
 class CaptureNamedInts(int, typing.Generic[_NamedIntsT]):
-    """Capture named integer keyword arguments in a ``NamedInts`` type parameter."""
+    """Capture einops-like axis lengths in a ``NamedInts`` type parameter."""
 
     pass
 

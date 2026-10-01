@@ -8,6 +8,9 @@ typing primitives so annotations such as `Tensor[B, T]`, `IntVar("B")`, and
 `assert_shape(x.shape, (2, 3))` can be evaluated by Python while Pyrefly uses the
 corresponding stubs for static shape checking.
 
+`NamedInts` and `CaptureNamedInts` carry named axis lengths from `**kwargs`
+into shape rules for einops-like APIs.
+
 `RegularNestedList[Shape, Domain]` represents regular (non-jagged) nested list
 literals; for example, `[[1, 2], [3, 4]]` binds `Shape` to `[2, 2]`. Unsupported
 containers and irregular literals use ordinary typing and any fallback overload

@@ -146,8 +146,10 @@ def repeat[Shape: IntTuple, Repeats: IntTuple](
 
 The DSL is intentionally small. Its main value domains are `Int` for one shape
 dimension and `IntTuple` for a complete shape. Runtime configuration values are
-connected through `Flag[...]` type parameters on public signatures. The body
-language supports common shape computations, including:
+connected through `Flag[...]` type parameters on public signatures. For
+einops-like APIs, `NamedInts` with `CaptureNamedInts[...]` carries named axis
+lengths from `**kwargs` into the DSL. The body language supports common shape
+computations, including:
 
 - `dsl.IntTuple(...)` to construct result shapes
 - `len`, indexing, slicing, and bounded generator expressions
