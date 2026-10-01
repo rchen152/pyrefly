@@ -66,7 +66,7 @@ jobs:
             // responsible for reviewing PRs. They stay in owners.json (still
             // team members for auto_assign.yml) but never receive sweep
             // assignments.
-            const NOT_ASSIGNABLE = new Set(['lolpack', 'ndmitchell', 'javabster', 'yangdanny97']);
+            const NOT_ASSIGNABLE = new Set(['lolpack', 'ndmitchell', 'javabster', 'grievejia']);
             const assignable = owners.filter((o) => !NOT_ASSIGNABLE.has(o));
             if (assignable.length === 0) {
               console.log('No assignable owners after exclusions, nothing to assign');
