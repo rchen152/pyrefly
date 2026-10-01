@@ -6,10 +6,10 @@ name: Nightly assign team owners to unassigned PRs
 # runs automatically once a day so newly-eligible PRs get picked up without
 # anyone having to trigger it.
 #
-# Selection is least-loaded (balanced against each owner's current open-PR
-# backlog). The picked owner is both assigned and requested as a reviewer (so
-# the PR shows up in their review queue), and each assignment is announced in
-# the team Discord channel.
+# Selection uses a round robin whose starting owner rotates daily. The picked
+# owner is both assigned and requested as a reviewer (so the PR shows up in
+# their review queue), and each assignment is announced in the team Discord
+# channel.
 #
 # Scheduled runs assign for real. A manual run from the Actions tab exposes a
 # "dry_run" toggle (default off) to preview without assigning.
@@ -35,7 +35,7 @@ jobs:
       issues: write # addAssignees is the issues API
       pull-requests: write
     steps:
-      - name: Assign least-loaded owner to eligible open PRs
+      - name: Assign owners to eligible open PRs by round robin
         uses: actions/github-script@v8
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_ASSIGNMENTS_WEBHOOK_URL }}
@@ -88,16 +88,12 @@ jobs:
               owner, repo, state: 'open', per_page: 100,
             });
 
-            // Seed per-owner load from PRs already assigned to each assignable
-            // owner so least-loaded balances against the standing backlog, not
-            // just this run's picks.
-            const load = new Map(assignable.map((o) => [o, 0]));
-            for (const pr of prs) {
-              for (const a of pr.assignees || []) {
-                const key = a.login.toLowerCase();
-                if (load.has(key)) load.set(key, load.get(key) + 1);
-              }
-            }
+            // Rotate the starting owner once per day so the same person does
+            // not always receive the first PR. The 08:00 UTC boundary is one
+            // hour before the scheduled run, keeping nearby dry and real runs
+            // on the same deterministic rotation without persistent state.
+            const day = Math.floor((Date.now() - 8 * 60 * 60 * 1000) / 86_400_000);
+            let next = day % assignable.length;
 
             // The CLA gate is a completed "meta-cla" check run on the PR head
             // SHA: conclusion "success" once signed, "action_required" while
@@ -190,11 +186,7 @@ jobs:
                 continue;
               }
 
-              // Least-loaded assignable owner; ties break by owners.json order.
-              const pick = assignable.reduce(
-                (best, o) => (load.get(o) < load.get(best) ? o : best),
-                assignable[0],
-              );
+              const pick = assignable[next];
 
               if (!dryRun) {
                 await github.rest.issues.addAssignees({
@@ -223,8 +215,8 @@ jobs:
                 }
               }
 
-              load.set(pick, load.get(pick) + 1);
-              console.log(`${dryRun ? '[dry-run] would assign + request review from' : '#' + pr.number + ': assigned + requested review from'} ${pick}${dryRun ? ` to #${pr.number}` : ''} (load now ${load.get(pick)})`);
+              next = (next + 1) % assignable.length;
+              console.log(`${dryRun ? '[dry-run] would assign + request review from' : '#' + pr.number + ': assigned + requested review from'} ${pick}${dryRun ? ` to #${pr.number}` : ''}`);
               await notify(pick, pr);
               assigned++;
             }
