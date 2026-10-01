@@ -24,6 +24,7 @@
 use std::num::NonZeroU32;
 use std::slice;
 
+use pyrefly_python::ast::AssignmentTargetKind;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_python::symbol_kind::SymbolKind;
@@ -152,10 +153,8 @@ pub(crate) fn assignment_kind(name: &Name, scope: ScopeKind) -> SymbolKind {
 }
 
 fn push_assignment_targets(out: &mut Vec<FlatSymbol>, target: &Expr, scope: Scope<'_>) {
-    match target {
-        Expr::Name(name)
-            if scope.kind != ScopeKind::Function && !Ast::is_synthesized_empty_name(name) =>
-        {
+    Ast::expr_assignment_targets(target, &mut |target| match target.kind {
+        AssignmentTargetKind::Name(name) if scope.kind != ScopeKind::Function => {
             push_symbol(
                 out,
                 ShortIdentifier::expr_name(name),
@@ -163,7 +162,7 @@ fn push_assignment_targets(out: &mut Vec<FlatSymbol>, target: &Expr, scope: Scop
                 scope.parent,
             );
         }
-        Expr::Attribute(attr) => {
+        AssignmentTargetKind::Attribute(attr) => {
             if let Some((receiver, class)) = scope.receiver
                 && let Some(attr) = Ast::expr_receiver_attr(attr, receiver)
             {
@@ -175,19 +174,8 @@ fn push_assignment_targets(out: &mut Vec<FlatSymbol>, target: &Expr, scope: Scop
                 );
             }
         }
-        Expr::Tuple(tuple) => {
-            for target in &tuple.elts {
-                push_assignment_targets(out, target, scope);
-            }
-        }
-        Expr::List(list) => {
-            for target in &list.elts {
-                push_assignment_targets(out, target, scope);
-            }
-        }
-        Expr::Starred(starred) => push_assignment_targets(out, &starred.value, scope),
-        _ => {}
-    }
+        AssignmentTargetKind::Name(_) | AssignmentTargetKind::Subscript(_) => {}
+    });
 }
 
 /// Walk `stmts` appending symbols to `out`.
@@ -489,6 +477,20 @@ class Example:
         assert_eq!(
             walk("for i in []: pass\nwith ctx() as value: pass\n"),
             Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn test_duplicate_assignment_declarations_are_not_merged() {
+        assert_eq!(
+            walk("value = 1\nvalue = 2\nclass C:\n  attribute = 3\n  attribute = 4\n"),
+            vec![
+                "Variable value",
+                "Variable value",
+                "Class C",
+                ".Attribute attribute",
+                ".Attribute attribute",
+            ]
         );
     }
 
