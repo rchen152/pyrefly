@@ -2622,7 +2622,7 @@ def f(x: int | str):
         raises()
     else:
         raises()
-    assert_type(x, Never)
+    assert_type(x, Never)  # E: This code is unreachable
 "#,
 );
 
@@ -3530,6 +3530,81 @@ def only_the_certain_region(x: int) -> None:
 "#,
 );
 
+// A compound statement whose every path ends in a diverging expression cannot be passed either.
+// Which paths a statement has is syntax, but whether each one diverges needs its solved type.
+testcase!(
+    test_unreachable_after_compound_divergence,
+    r#"
+import sys
+from typing import NoReturn
+
+def never() -> NoReturn: ...
+def cond() -> bool: ...
+
+def both_branches(x: int) -> None:
+    if cond():
+        never()
+    else:
+        sys.exit(1)
+    print(1)  # E: This code is unreachable
+
+def every_case(x: int) -> None:
+    match x:
+        case 1:
+            never()
+        case _:
+            never()
+    print(2)  # E: This code is unreachable
+
+# One path returns, so the statement is passed.
+def one_branch_falls_through() -> None:
+    if cond():
+        never()
+    else:
+        pass
+    print(3)
+
+# A `return` leaves no expression for the walker to judge, but it is still not a path past
+# the statement, so one arm returning and the other diverging leaves the code after it dead.
+def mixed_with_return() -> None:
+    if cond():
+        return
+    else:
+        never()
+    print(4)  # E: This code is unreachable
+"#,
+);
+
+// Two kinds of path the compound gate refuses. A branch the environment pruned decides the
+// statement under this configuration only. An exhaustive chain is dead by narrowing, which
+// `assert_never` deliberately relies on, so reporting it would condemn the idiom.
+testcase!(
+    test_no_compound_gate_for_environment_or_exhaustiveness,
+    r#"
+import sys
+from typing import Never, NoReturn, assert_never
+
+def never() -> NoReturn: ...
+
+def environment_decided() -> None:
+    if sys.version_info >= (3, 20):
+        never()
+    else:
+        never()
+    print(1)
+
+class Dog: pass
+class Cat: pass
+
+def exhaustive_chain(pet: Dog | Cat) -> None:
+    if isinstance(pet, Dog):
+        return
+    if isinstance(pet, Cat):
+        return
+    assert_never(pet)
+"#,
+);
+
 // A `Never` result does not by itself mean the statement diverged. Narrowing a receiver away
 // gives one too, and that deadness comes from narrowing, which we do not report. What separates
 // them is the callee: a callable returning `Never` against a callee that is itself `Never`.
@@ -3610,6 +3685,74 @@ class Concrete(Base):
 def use(m: Base) -> None:
     m.row_del(0)
     print(1)
+"#,
+);
+
+// The compound gate must apply the same standard as a flat statement sequence. Here every
+// path out of the `if` ends in a call whose `Never` is only inherited, so the statement does
+// not diverge and the code after it is live.
+testcase!(
+    test_compound_gate_does_not_trust_an_inherited_never,
+    r#"
+class Base:
+    def _new(self, n: int):
+        raise NotImplementedError("Subclasses must implement this.")
+
+    def row_del(self, row: int):
+        return self._new(row)
+
+class Concrete(Base):
+    def _new(self, n: int) -> "Concrete":
+        return self
+
+def use(m: Base, flag: bool) -> None:
+    if flag:
+        m.row_del(0)
+    else:
+        m.row_del(1)
+    print(1)
+"#,
+);
+
+// Reporting dead code after a `with` needs proof that nothing swallowed the exception, and a
+// manager we cannot read is not proof. Found against PyTorch, where a test whose manager did
+// not resolve to `TestCase` had the line after the `with` reported.
+testcase!(
+    test_compound_gate_needs_a_readable_context_manager,
+    r#"
+from typing import Any, NoReturn
+
+def never() -> NoReturn: ...
+def get_manager() -> Any: ...
+
+class Suppresses:
+    def __enter__(self) -> None: ...
+    def __exit__(self, *args) -> bool: ...
+
+class Propagates:
+    def __enter__(self) -> None: ...
+    def __exit__(self, *args) -> None: ...
+
+def gradual() -> None:
+    with get_manager():
+        never()
+    print(1)
+
+def unannotated(manager) -> None:
+    with manager:
+        never()
+    print(2)
+
+def may_suppress() -> None:
+    with Suppresses():
+        never()
+    print(3)
+
+# Only a manager known to propagate leaves the following code dead.
+def propagates() -> None:
+    with Propagates():
+        never()
+    print(4)  # E: This code is unreachable
 "#,
 );
 

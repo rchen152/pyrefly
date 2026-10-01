@@ -2401,6 +2401,13 @@ pub enum GateCondition {
     /// An expression statement. Control continues past it only if evaluating it returned, so
     /// the code after is dead when its type is `Never`.
     ExpressionReturns { result: Idx<Key> },
+    /// A compound statement, every path through which ends in one of these expressions. Control
+    /// continues past it only if one of them returns, so the code after is dead when they all
+    /// diverge. This is the same judgement `Binding::ReturnImplicit` makes for a whole function
+    /// body, applied to a single statement.
+    SomePathReturns {
+        last_exprs: Box<[(LastStmt, Idx<Key>)]>,
+    },
 }
 
 /// Data for the reachability of the code following a `with` statement whose body

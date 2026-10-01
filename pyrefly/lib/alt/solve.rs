@@ -417,6 +417,20 @@ struct ContextExit {
     without_exception: Type,
 }
 
+/// Why we are asking whether control gets past a statement. The two callers need different
+/// answers for the same expression, so they must say which they want.
+#[derive(Clone, Copy)]
+enum DivergenceQuestion {
+    /// Typing a function's implicit return. The resolved implementation's type is the whole
+    /// answer: if its last expression is `Never`, control does not fall off the end.
+    ImplicitReturn,
+    /// Reporting the code after the statement as dead. A `Never` is not enough on its own,
+    /// because it may come from a narrowed-away receiver or from a method that a subclass
+    /// overrides with one that returns. Only divergence we can attribute to the call itself
+    /// is worth telling a user about.
+    DeadCode,
+}
+
 impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     pub(crate) fn int_tuple_unpacked_element_type(
         &self,
@@ -2616,6 +2630,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         self.get_idx(*result).ty().is_never()
                             && self.statement_is_a_diverging_call(*result)
                     }
+                    GateCondition::SomePathReturns { last_exprs } => {
+                        self.all_paths_diverge(last_exprs, DivergenceQuestion::DeadCode)
+                    }
                 }) {
                     errors
                         .error_builder(
@@ -4293,25 +4310,49 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             .is_some_and(|callable| callable.ret.is_never())
     }
 
+    /// Whether every path ending in one of these expressions diverges, so control never gets
+    /// past them. `Binding::ReturnImplicit` asks this of a whole function body, and a
+    /// `GateCondition::SomePathReturns` asks it of a single compound statement. They want
+    /// different answers for the same expression, so `question` says which is asking.
+    fn all_paths_diverge(
+        &self,
+        last_exprs: &[(LastStmt, Idx<Key>)],
+        question: DivergenceQuestion,
+    ) -> bool {
+        last_exprs.iter().all(|(last, k)| {
+            let e = self.get_idx(*k);
+            match last {
+                LastStmt::Expr => {
+                    e.ty().is_never()
+                        && match question {
+                            DivergenceQuestion::ImplicitReturn => true,
+                            DivergenceQuestion::DeadCode => self.statement_is_a_diverging_call(*k),
+                        }
+                }
+                LastStmt::With(kind) => match question {
+                    DivergenceQuestion::ImplicitReturn => {
+                        !self.context_manager_suppresses(e.ty(), *kind)
+                    }
+                    DivergenceQuestion::DeadCode => {
+                        self.context_manager_definitely_does_not_suppress(e.ty(), *kind)
+                    }
+                },
+                LastStmt::Exhaustive(_, _) => e.ty().is_never(),
+            }
+        })
+    }
+
     /// Handle `Binding::ReturnImplicit` - compute the implicit return type.
     /// The `#[inline(never)]` annotation is intentional to reduce stack frame size.
     #[inline(never)]
     fn binding_to_type_return_implicit(&self, x: &ReturnImplicit) -> Type {
         if self.module().path().is_interface() {
             self.heap.mk_any_implicit() // .pyi file, functions don't have bodies
-        } else if x.last_exprs.as_ref().is_some_and(|xs| {
-            xs.iter().all(|(last, k)| {
-                let e = self.get_idx(*k);
-                match last {
-                    LastStmt::Expr => e.ty().is_never(),
-                    LastStmt::With(kind) => !self.context_manager_suppresses(e.ty(), *kind),
-                    LastStmt::Exhaustive(_, _) => {
-                        // Check if the Exhaustive binding at this range resolved to Never
-                        e.ty().is_never()
-                    }
-                }
-            })
-        }) {
+        } else if x
+            .last_exprs
+            .as_ref()
+            .is_some_and(|xs| self.all_paths_diverge(xs, DivergenceQuestion::ImplicitReturn))
+        {
             self.heap.mk_never()
         } else {
             self.heap.mk_none()

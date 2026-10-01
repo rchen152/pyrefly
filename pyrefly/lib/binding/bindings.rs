@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::fmt;
 use std::fmt::Debug;
 use std::fmt::Display;
+use std::slice;
 use std::sync::Arc;
 
 use dupe::Dupe;
@@ -96,6 +97,7 @@ use crate::binding::binding::TypeAliasRefBinding;
 use crate::binding::binding::TypeLevelLambdaParameter;
 use crate::binding::binding::TypeParameter;
 use crate::binding::expr::Usage;
+use crate::binding::function::function_last_expressions;
 use crate::binding::metadata::BindingsMetadata;
 use crate::binding::narrow::NarrowOp;
 use crate::binding::narrow::NarrowOps;
@@ -1383,14 +1385,51 @@ impl<'a> BindingsBuilder<'a> {
             // A `with` body can leave `last_stmt_expr` set, and the `with` arm already gates on
             // it, so only an expression statement of this suite opens a divergence gate.
             let is_expr_stmt = matches!(&x, Stmt::Expr(_));
+            // Every path through a compound statement may end in an expression, which makes the
+            // statement itself a gate. The keys are promised before binding, and the walker
+            // prunes the same statically-dead branches the binder abandons, so each one is
+            // fulfilled by binding `x` below. An empty list means every path terminates
+            // syntactically, which the flow already knows.
+            //
+            // A gate opened by the last statement of a suite is dropped unread, so finding one
+            // is wasted work. It is worth skipping rather than discarding: the walk covers the
+            // whole region reachable along `x`'s last statement, and binding descends into that
+            // same region and walks it again for each statement nested inside, so a suite whose
+            // last statement is a deep nest of compound statements is rescanned once per level.
+            let paths = (!is_expr_stmt && iter.peek().is_some())
+                .then(|| function_last_expressions(slice::from_ref(&x), self.sys_info))
+                .flatten()
+                // An answer the environment decided holds for this configuration only, and a
+                // suite dead under one configuration is live under another. An exhaustive path
+                // is refused for a different reason: its deadness comes from narrowing, which
+                // `assert_never` deliberately relies on, so reporting it condemns the idiom.
+                .filter(|paths| {
+                    !paths.decided_by_environment
+                        && !paths.exprs.is_empty()
+                        && !paths
+                            .exprs
+                            .iter()
+                            .any(|(last, _)| matches!(last, LastStmt::Exhaustive(..)))
+                })
+                .map(|paths| {
+                    paths
+                        .exprs
+                        .into_iter()
+                        .map(|(last, e)| {
+                            let idx = self.last_statement_idx_for_implicit_return(last.clone(), e);
+                            (last, idx)
+                        })
+                        .collect::<Box<[_]>>()
+                });
             self.stmt(x, parent);
             // A gate still pending was skipped by the `yield` carve-out above and must survive to
             // the statement that carve-out is holding it for. A `yield` cannot diverge anyway.
-            if is_expr_stmt
-                && self.pending_gate.is_none()
-                && let Some(result) = self.scopes.last_stmt_expr()
-            {
-                self.pending_gate = Some(GateCondition::ExpressionReturns { result });
+            if self.pending_gate.is_none() {
+                if is_expr_stmt && let Some(result) = self.scopes.last_stmt_expr() {
+                    self.pending_gate = Some(GateCondition::ExpressionReturns { result });
+                } else if let Some(last_exprs) = paths {
+                    self.pending_gate = Some(GateCondition::SomePathReturns { last_exprs });
+                }
             }
             self.adjacent_namedtuple_defaults = None;
         }
