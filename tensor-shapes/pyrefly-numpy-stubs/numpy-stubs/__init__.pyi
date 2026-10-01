@@ -377,7 +377,6 @@ from numpy.matrixlib import (
 )
 from shape_extensions import (
     broadcast as _broadcast_shape,
-    Elements,
     Flag,
     Index,
     index_shape,
@@ -496,7 +495,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     @real.setter
     def real(self, value: Any) -> None: ...
     def __len__[N: IntVar, Rest: _Shape = []](
-        self: ndarray[[N, *Elements[Rest]]],
+        self: ndarray[[N, *Rest]],
     ) -> Int[N]: ...
     @overload
     def __getitem__[
@@ -527,8 +526,8 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def __setitem__(self, key: _ArrayIndex, value: ArrayLike, /) -> None: ...
     @overload
     def __iter__[N: IntVar, M: IntVar, Rest: _Shape = []](
-        self: ndarray[[N, M, *Elements[Rest]], DType], /
-    ) -> Iterator[ndarray[[M, *Elements[Rest]], DType]]: ...
+        self: ndarray[[N, M, *Rest], DType], /
+    ) -> Iterator[ndarray[[M, *Rest], DType]]: ...
     # Iteration over one-dimensional arrays yields NumPy scalars.
     @overload
     def __iter__[N: IntVar](self: ndarray[[N], DType], /) -> Iterator[Any]: ...
@@ -542,48 +541,48 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     ) -> ndarray[[P, N], DType]: ...
     # Unpacking preserves gradual array shapes instead of using the scalar default.
     def __add__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __radd__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __sub__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __rsub__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __truediv__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __rtruediv__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __mul__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __rmul__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __floordiv__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __rfloordiv__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __mod__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __rmod__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __neg__(self) -> ndarray[Shape, DType]: ...
     def __pos__(self) -> ndarray[Shape, DType]: ...
     def __pow__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     def __rpow__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | int | float
+        self, other: ndarray[[*OtherShape]] | int | float
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), DType]: ...
     # Scalar results also satisfy Python's truth-valued comparison protocols.
     @overload
@@ -591,13 +590,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     @overload
     def __lt__[OtherShape: _Shape = []](
         self,
-        other: ndarray[[*Elements[OtherShape]]]
-        | int
-        | float
-        | complex
-        | str
-        | bytes
-        | generic,
+        other: ndarray[[*OtherShape]] | int | float | complex | str | bytes | generic,
         /,
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), _dtype[bool_]]: ...
     @overload
@@ -607,13 +600,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     @overload
     def __le__[OtherShape: _Shape = []](
         self,
-        other: ndarray[[*Elements[OtherShape]]]
-        | int
-        | float
-        | complex
-        | str
-        | bytes
-        | generic,
+        other: ndarray[[*OtherShape]] | int | float | complex | str | bytes | generic,
         /,
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), _dtype[bool_]]: ...
     @overload
@@ -623,13 +610,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     @overload
     def __gt__[OtherShape: _Shape = []](
         self,
-        other: ndarray[[*Elements[OtherShape]]]
-        | int
-        | float
-        | complex
-        | str
-        | bytes
-        | generic,
+        other: ndarray[[*OtherShape]] | int | float | complex | str | bytes | generic,
         /,
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), _dtype[bool_]]: ...
     @overload
@@ -639,13 +620,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     @overload
     def __ge__[OtherShape: _Shape = []](
         self,
-        other: ndarray[[*Elements[OtherShape]]]
-        | int
-        | float
-        | complex
-        | str
-        | bytes
-        | generic,
+        other: ndarray[[*OtherShape]] | int | float | complex | str | bytes | generic,
         /,
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), _dtype[bool_]]: ...
     @overload
@@ -655,13 +630,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     @overload
     def __eq__[OtherShape: _Shape = []](
         self,
-        other: ndarray[[*Elements[OtherShape]]]
-        | int
-        | float
-        | complex
-        | str
-        | bytes
-        | generic,
+        other: ndarray[[*OtherShape]] | int | float | complex | str | bytes | generic,
         /,
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), _dtype[bool_]]: ...
     @overload
@@ -671,35 +640,29 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     @overload
     def __ne__[OtherShape: _Shape = []](
         self,
-        other: ndarray[[*Elements[OtherShape]]]
-        | int
-        | float
-        | complex
-        | str
-        | bytes
-        | generic,
+        other: ndarray[[*OtherShape]] | int | float | complex | str | bytes | generic,
         /,
     ) -> ndarray[_broadcast_shape(Shape, OtherShape), _dtype[bool_]]: ...
     @overload
     def __ne__(self, other: ArrayLike, /) -> ndarray[IntTuple, _dtype[bool_]]: ...
     def __invert__(self) -> ndarray[Shape, DType]: ...
     def __and__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | _IndexScalar, /
+        self, other: ndarray[[*OtherShape]] | _IndexScalar, /
     ) -> ndarray[_broadcast_shape(Shape, OtherShape)]: ...
     def __or__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | _IndexScalar, /
+        self, other: ndarray[[*OtherShape]] | _IndexScalar, /
     ) -> ndarray[_broadcast_shape(Shape, OtherShape)]: ...
     def __xor__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | _IndexScalar, /
+        self, other: ndarray[[*OtherShape]] | _IndexScalar, /
     ) -> ndarray[_broadcast_shape(Shape, OtherShape)]: ...
     def __rand__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | _IndexScalar, /
+        self, other: ndarray[[*OtherShape]] | _IndexScalar, /
     ) -> ndarray[_broadcast_shape(Shape, OtherShape)]: ...
     def __ror__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | _IndexScalar, /
+        self, other: ndarray[[*OtherShape]] | _IndexScalar, /
     ) -> ndarray[_broadcast_shape(Shape, OtherShape)]: ...
     def __rxor__[OtherShape: _Shape = []](
-        self, other: ndarray[[*Elements[OtherShape]]] | _IndexScalar, /
+        self, other: ndarray[[*OtherShape]] | _IndexScalar, /
     ) -> ndarray[_broadcast_shape(Shape, OtherShape)]: ...
     def __matmul__[OtherShape: _Shape](
         self, other: ndarray[OtherShape]
