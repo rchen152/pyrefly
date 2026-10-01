@@ -4169,7 +4169,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         errors: &ErrorCollector,
     ) {
         let Some(declared_ty) = hint else { return };
-        if declared_ty.is_any() || declared_ty.is_object() {
+        if declared_ty.is_any()
+            || declared_ty.is_object()
+            || matches!(declared_ty, Type::Union(u) if u.members.iter().any(Type::is_any))
+        {
             return;
         }
         match return_ty {
