@@ -54,6 +54,7 @@ mod map_int_tuples_binding;
 mod map_int_tuples_evaluation;
 mod marshmallow;
 mod mro;
+mod named_ints;
 mod named_tuple;
 mod narrow;
 mod natural;

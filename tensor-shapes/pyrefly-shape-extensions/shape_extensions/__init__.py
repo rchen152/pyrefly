@@ -26,6 +26,8 @@ __all__ = [
     "IntVar",
     "Index",
     "MapIntTuples",
+    "NamedInts",
+    "CaptureNamedInts",
     "ProxyMethod",
     "RegularNestedList",
     "SymbolicArithExpr",
@@ -175,6 +177,21 @@ class Flag(typing.Generic[_T]):
 
 class Index:
     """Marker for an index value retained for type-level shape evaluation."""
+
+    pass
+
+
+class NamedInts:
+    """Marker bound for named integer values captured from ``**kwargs``."""
+
+    pass
+
+
+_NamedIntsT = typing.TypeVar("_NamedIntsT")
+
+
+class CaptureNamedInts(int, typing.Generic[_NamedIntsT]):
+    """Capture named integer keyword arguments in a ``NamedInts`` type parameter."""
 
     pass
 

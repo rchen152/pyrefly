@@ -58,6 +58,7 @@ use crate::literal::Lit;
 use crate::literal::LitStyle;
 use crate::literal::Literal;
 use crate::module::ModuleType;
+use crate::named_ints::NamedInts;
 use crate::param_spec::ParamSpec;
 use crate::quantified::Quantified;
 use crate::sentinel::Sentinel;
@@ -949,6 +950,8 @@ pub enum Type {
     ShapedArray(Box<ShapedArrayType>),
     /// First-class tensor shape tuple.
     IntTuple(Box<IntTuple>),
+    /// Named integer values captured by the experimental shape extensions.
+    NamedInts(Box<NamedInts>),
     /// nn.Module instance with captured constructor arguments.
     /// Wraps a ClassType + field map of init args, enabling DSL forward
     /// functions to access shape-relevant constructor parameters directly.
@@ -1068,6 +1071,7 @@ impl Visit for Type {
             Type::PartialTypedDict(x) => x.visit(f),
             Type::ShapedArray(x) => x.visit(f),
             Type::IntTuple(x) => x.visit(f),
+            Type::NamedInts(x) => x.visit(f),
             Type::NNModule(x) => x.visit(f),
             Type::DataFrame(x) => x.visit(f),
             Type::Series(x) => x.visit(f),
@@ -1131,6 +1135,7 @@ impl VisitMut for Type {
             Type::PartialTypedDict(x) => x.visit_mut(f),
             Type::ShapedArray(x) => x.visit_mut(f),
             Type::IntTuple(x) => x.visit_mut(f),
+            Type::NamedInts(x) => x.visit_mut(f),
             Type::NNModule(x) => x.visit_mut(f),
             Type::DataFrame(x) => x.visit_mut(f),
             Type::Series(x) => x.visit_mut(f),

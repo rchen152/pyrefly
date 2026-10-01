@@ -50,6 +50,7 @@ pub enum TypeParameterBound {
         range: TextRange,
     },
     ShapeIndex,
+    ShapeNamedInts,
 }
 
 impl TypeParameterBound {
@@ -732,6 +733,10 @@ impl BindingsBuilder<'_> {
                 self.ensure_expr(bound_expr, usage);
                 TypeParameterBound::ShapeIndex
             }
+            Some(SpecialExport::NamedInts) => {
+                self.ensure_expr(bound_expr, usage);
+                TypeParameterBound::ShapeNamedInts
+            }
             _ => {
                 self.ensure_type_with_usage(bound_expr, None, usage);
                 TypeParameterBound::Ordinary(bound_expr.clone())
@@ -741,10 +746,14 @@ impl BindingsBuilder<'_> {
 
     fn shape_extension_type_parameter_bound_marker(&self, expr: &Expr) -> Option<SpecialExport> {
         let provenance = self.as_special_export(expr);
-        [SpecialExport::Flag, SpecialExport::Index]
-            .into_iter()
-            .find(|special| {
-                self.is_shape_extensions_class_export_with_provenance(expr, *special, provenance)
-            })
+        [
+            SpecialExport::Flag,
+            SpecialExport::Index,
+            SpecialExport::NamedInts,
+        ]
+        .into_iter()
+        .find(|special| {
+            self.is_shape_extensions_class_export_with_provenance(expr, *special, provenance)
+        })
     }
 }

@@ -10,6 +10,7 @@ use std::mem;
 
 use itertools::Itertools;
 use pyrefly_python::dunder;
+use pyrefly_types::dimension::Int;
 use pyrefly_types::dimension::ShapeError;
 use pyrefly_types::function::FunctionKind;
 use pyrefly_types::literal::Lit;
@@ -45,8 +46,10 @@ use crate::alt::expr::ExprOptions;
 use crate::alt::expr::TypeOrExpr;
 use crate::alt::map_int_tuples::MapIntTuplesPatternArgument;
 use crate::alt::map_int_tuples::map_int_tuples_parameter_pattern;
+use crate::alt::shape_extension::NamedIntsCapture;
+use crate::alt::shape_extension::capture_named_ints_source;
+use crate::alt::shape_extension::extend_shape_extension_vars_from_targs;
 use crate::alt::shape_extension::shape_extension_vars;
-use crate::alt::shape_flag::extend_shape_flag_vars_from_targs;
 use crate::alt::solve::Iterable;
 use crate::alt::unwrap::HintRef;
 use crate::alt::unwrap::MAX_HINT_WIDTH;
@@ -788,6 +791,14 @@ enum SplatSource {
 }
 
 impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
+    fn captured_named_int(&self, ty: &Type) -> Option<Int> {
+        Int::from_type(ty).or_else(|| {
+            (ty.is_any()
+                || self.is_subset_eq(ty, &self.heap.mk_class_type(self.stdlib.int().clone())))
+            .then_some(Int::Int)
+        })
+    }
+
     /// Flag a call argument whose type is an implicit `Any` (unknown). Emitted into
     /// `arg_errors` (not `call_errors`), which is not used to decide overload/hint
     /// matches.
@@ -1373,6 +1384,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         let mut missing_named_posonly = SmallSet::new();
         let mut kwparams = OrderedMap::new();
         let mut kwargs = None;
+        let mut named_ints_capture = None;
         // Parameters with default values that are not matched to call args.
         let mut default_check = Vec::new();
         loop {
@@ -1498,6 +1510,13 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         ExtraItems::Default => Some((name.as_ref(), None)),
                     };
                 }
+                Param::Kwargs(name, ty) if let Some(source) = capture_named_ints_source(ty) => {
+                    named_ints_capture = Some(NamedIntsCapture::new(source));
+                    kwargs = Some((
+                        name.as_ref(),
+                        Some(type_owner.push(self.heap.mk_class_type(self.stdlib.int().clone()))),
+                    ));
+                }
                 Param::Kwargs(name, ty) => {
                     kwargs = Some((name.as_ref(), Some(ty)));
                 }
@@ -1536,6 +1555,23 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         // match the callee's kwargs or any of its unmatched keyword params. An
                         // anonymous TypedDict comes from a dict display, whose keys are all known.
                         let extra_items = self.typed_dict_extra_items(&typed_dict);
+                        if let Some(capture) = &mut named_ints_capture {
+                            let anonymous = typed_dict.is_anonymous();
+                            for (name, field) in fields.iter() {
+                                if !kwparams.contains_key(name)
+                                    && let Some(value) = self.captured_named_int(&field.ty)
+                                {
+                                    capture.insert(
+                                        name.clone(),
+                                        value,
+                                        anonymous || field.required,
+                                    );
+                                }
+                            }
+                            if !anonymous && !matches!(extra_items, ExtraItems::Closed) {
+                                capture.mark_open();
+                            }
+                        }
                         if !typed_dict.is_anonymous() && !matches!(extra_items, ExtraItems::Closed)
                         {
                             let open = matches!(extra_items, ExtraItems::Default);
@@ -1657,6 +1693,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                                         );
                                     };
                                     splat_kwargs.push((value, kw.range, SplatSource::MappingValue));
+                                    if let Some(capture) = &mut named_ints_capture {
+                                        capture.mark_open();
+                                    }
                                 } else {
                                     error(
                                         call_errors,
@@ -1790,6 +1829,13 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         }
                     };
                     self.maybe_error_unknown_argument_type(&arg_ty, kw.range, arg_errors);
+                    if named_ints_capture.is_some()
+                        && !has_matching_param
+                        && let Some(value) = self.captured_named_int(&arg_ty)
+                        && let Some(capture) = &mut named_ints_capture
+                    {
+                        capture.insert(id.id.clone(), value, true);
+                    }
                     record(bound_args, &id.id, unhinted_arg_ty.unwrap_or(arg_ty));
                 }
             }
@@ -1973,6 +2019,24 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 ErrorKind::BadArgumentCount,
                 format!("Expected {expected}, got {actual}"),
             );
+        }
+        if let Some(capture) = named_ints_capture {
+            let (source, captured) = capture.finish();
+            let source_context = call_context.for_shape_extension_binding_source(source);
+            let check_context = || {
+                TypeCheckContext::of_kind(TypeCheckKind::CallKwArgs(
+                    None,
+                    None,
+                    callable_name.cloned(),
+                ))
+                .with_context(context.map(|ctx| ctx()))
+            };
+            let options = TypeCheckOptions::new(call_errors, &check_context);
+            let options = match source_context.as_ref() {
+                Some(source_context) => options.with_call_context(source_context),
+                None => options,
+            };
+            self.check_type_with_options(&captured, source, arguments_range, options);
         }
         argmap
     }
@@ -2314,7 +2378,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         call_boundary.defer_quantified(remaining_callable_qs);
         if let Some(targs) = ctor_targs.as_mut() {
             let qs = self.solver().freshen_class_targs(targs, self.uniques);
-            extend_shape_flag_vars_from_targs(&mut shape_extension_vars, targs);
+            extend_shape_extension_vars_from_targs(&mut shape_extension_vars, targs);
             let mp = targs.substitution_map();
             callable.params.visit_mut(&mut |t| t.subst_mut(&mp));
             if let Some(obj) = self_obj.as_mut() {

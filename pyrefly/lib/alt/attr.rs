@@ -2813,6 +2813,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             // TODO: check to see which ones should have class representations
             Type::SpecialForm(_)
             | Type::TypeLevelDslCall(_)
+            | Type::NamedInts(_)
             | Type::Unpack(_)
             | Type::Concatenate(_, _)
             | Type::ParamSpecValue(_)

@@ -976,6 +976,27 @@ impl<'a> TypeDisplayContext<'a> {
                     output.write_str("]")
                 }
             },
+            Type::NamedInts(named) => {
+                output.write_str("NamedInts[")?;
+                for (index, entry) in named.entries().iter().enumerate() {
+                    if index > 0 {
+                        output.write_str(", ")?;
+                    }
+                    output.write_str(entry.name.as_str())?;
+                    if !entry.required {
+                        output.write_str("?")?;
+                    }
+                    output.write_str("=")?;
+                    output.write_type(&Type::Int(entry.value.clone()))?;
+                }
+                if named.is_open() {
+                    if !named.entries().is_empty() {
+                        output.write_str(", ")?;
+                    }
+                    output.write_str("...")?;
+                }
+                output.write_str("]")
+            }
             Type::ShapedArray(shaped_array) => self.fmt_shaped_array(shaped_array, output),
             Type::IntTuple(int_tuple) => {
                 if int_tuple.is_shapeless() {
