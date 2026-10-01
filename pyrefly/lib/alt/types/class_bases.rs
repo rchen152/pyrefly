@@ -147,7 +147,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         let arguments_untype = |slice: &Expr, tparams: &[Quantified], has_strict: &mut bool| {
             let args = Ast::unpack_slice(slice);
             self.parse_type_args_for_tparams_with_fallback(
-                args,
+                args.iter(),
                 tparams,
                 type_argument_context,
                 errors,

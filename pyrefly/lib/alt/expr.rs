@@ -239,6 +239,7 @@ impl<'a> TypeOrExpr<'a> {
 pub struct ExprOptions<'a, 'b, 'subset> {
     errors: &'a ErrorCollector,
     expectation: ExprExpectation<'a, 'b, 'subset>,
+    type_form_context: Option<TypeFormContext<'subset>>,
 }
 
 enum ExprExpectation<'a, 'b, 'subset> {
@@ -256,6 +257,7 @@ impl<'a, 'b, 'subset> ExprOptions<'a, 'b, 'subset> {
         Self {
             errors,
             expectation: ExprExpectation::Infer(hint),
+            type_form_context: None,
         }
     }
 
@@ -274,7 +276,13 @@ impl<'a, 'b, 'subset> ExprOptions<'a, 'b, 'subset> {
                 context,
                 call_context,
             },
+            type_form_context: None,
         }
+    }
+
+    pub fn with_type_form_context(mut self, context: Option<TypeFormContext<'subset>>) -> Self {
+        self.type_form_context = context;
+        self
     }
 }
 
@@ -484,7 +492,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     x,
                     Some(HintRef::new(want, Some(errors))),
                     options.errors,
-                    None,
+                    options.type_form_context,
                 );
                 let check_options = match call_context {
                     Some(call_context) => {
@@ -501,8 +509,12 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     got.with_ty(want.clone())
                 }
             }
-            ExprExpectation::Check { .. } => self.expr_infer_impl(x, None, options.errors, None),
-            ExprExpectation::Infer(hint) => self.expr_infer_impl(x, hint, options.errors, None),
+            ExprExpectation::Check { .. } => {
+                self.expr_infer_impl(x, None, options.errors, options.type_form_context)
+            }
+            ExprExpectation::Infer(hint) => {
+                self.expr_infer_impl(x, hint, options.errors, options.type_form_context)
+            }
         }
     }
 
@@ -537,8 +549,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             }
             Expr::Subscript(x) => {
                 // TODO: We don't deal properly with hint here, we should.
-                if let Some(ty) = type_form_context.and_then(|_| {
-                    self.parse_jaxtyping_type_form(&x.value, &x.slice, x.range(), errors)
+                if let Some(ty) = type_form_context.and_then(|context| {
+                    self.parse_shape_annotation(&x.value, &x.slice, x.range(), context, errors)
                 }) {
                     TypeInfo::of_ty(self.heap.mk_type_of(ty))
                 } else {
@@ -3438,7 +3450,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 Type::Forall(forall) => {
                     if matches!(forall.body, Forallable::TypeAlias(_)) {
                         let tys = self.parse_type_args_for_tparams(
-                            xs,
+                            xs.iter(),
                             forall.tparams.as_vec(),
                             type_form_context,
                             errors,
@@ -4827,16 +4839,16 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         if let Some(result) = class_getitem_result.or(metaclass_getitem_result) {
             result
         } else {
-            let targs = self.parse_class_type_args(cls, xs, type_form_context, errors);
+            let targs = self.parse_class_type_args(cls, xs.iter(), type_form_context, errors);
             self.heap
                 .mk_type_of(self.specialize(cls, targs, range, errors))
         }
     }
 
-    fn parse_class_type_args(
+    pub(super) fn parse_class_type_args<'a>(
         &self,
         cls: &Class,
-        args: &[Expr],
+        args: impl Iterator<Item = &'a Expr> + Clone,
         type_form_context: TypeFormContext<'_>,
         errors: &ErrorCollector,
     ) -> Vec<Type> {
@@ -4845,9 +4857,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         self.parse_type_args_for_tparams(args, tparams, type_form_context, errors)
     }
 
-    fn parse_type_args_for_tparams(
+    fn parse_type_args_for_tparams<'a>(
         &self,
-        args: &[Expr],
+        args: impl Iterator<Item = &'a Expr> + Clone,
         tparams_vec: &[Quantified],
         type_form_context: TypeFormContext<'_>,
         errors: &ErrorCollector,
@@ -4864,32 +4876,37 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
 
     /// Parse type arguments that depend on their corresponding type parameters, falling back to
     /// the caller's parser for ordinary type arguments.
-    pub(super) fn parse_type_args_for_tparams_with_fallback(
+    pub(super) fn parse_type_args_for_tparams_with_fallback<'a>(
         &self,
-        args: &[Expr],
+        args: impl Iterator<Item = &'a Expr> + Clone,
         tparams: &[Quantified],
         type_argument_context: TypeFormContext<'_>,
         errors: &ErrorCollector,
         mut fallback: impl FnMut(&Expr) -> Type,
     ) -> Vec<Type> {
         if !self.solver().config.tensor_shapes {
-            return args.iter().map(fallback).collect();
+            return args.map(fallback).collect();
         }
+        let (lower, upper) = args.size_hint();
+        let args_len = if upper == Some(lower) {
+            lower
+        } else {
+            args.clone().count()
+        };
         let variadic_idx = tparams.iter().position(|param| param.is_type_var_tuple());
         let int_type = self.stdlib.int().clone().to_type();
-        args.iter()
-            .enumerate()
+        args.enumerate()
             .map(|(idx, arg)| {
                 let param = if let Some(variadic_idx) = variadic_idx {
                     let suffix_len = tparams.len() - variadic_idx - 1;
                     if idx < variadic_idx {
                         tparams.get(idx)
-                    } else if idx + suffix_len < args.len() {
+                    } else if idx + suffix_len < args_len {
                         tparams.get(variadic_idx)
                     } else {
                         // This is one of the final `suffix_len` arguments, so
-                        // `args.len() - idx <= suffix_len < tparams.len()`.
-                        tparams.get(tparams.len() - (args.len() - idx))
+                        // `args_len - idx <= suffix_len < tparams.len()`.
+                        tparams.get(tparams.len() - (args_len - idx))
                     }
                 } else {
                     tparams.get(idx)
@@ -5040,7 +5057,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
     }
 
-    pub(super) fn parse_int_tuple_shape_args(
+    pub(crate) fn parse_int_tuple_shape_args(
         &self,
         args: &[Expr],
         type_form_context: TypeFormContext<'_>,
@@ -5361,7 +5378,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     }
 
     /// Parse Int[3], Int[N], Int[N+1] into `Type::Int(...)`.
-    fn parse_int_type(
+    pub(super) fn parse_int_type(
         &self,
         args: &[Expr],
         range: TextRange,

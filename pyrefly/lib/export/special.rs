@@ -86,6 +86,7 @@ pub enum SpecialExport {
     NamedInts,
     ShapedArray,
     StaticJaxtyping,
+    Shaped,
     ShapeVars,
     ProxyMethod,
     Sentinel,
@@ -108,6 +109,7 @@ impl SpecialExport {
             "ParamSpec" => Some(Self::ParamSpec),
             "TypeVarTuple" => Some(Self::TypeVarTuple),
             "Annotated" => Some(Self::Annotated),
+            "Shaped" => Some(Self::Shaped),
             "shape_vars" => Some(Self::ShapeVars),
             "Literal" => Some(Self::Literal),
             "Enum" => Some(Self::Enum),
@@ -259,6 +261,7 @@ impl SpecialExport {
             Self::TypeShapeDslFunction => matches!(m.as_str(), "shape_extensions"),
             Self::ShapedArray => matches!(m.as_str(), "shape_extensions"),
             Self::StaticJaxtyping => matches!(m.as_str(), "shape_extensions"),
+            Self::Shaped => matches!(m.as_str(), "shape_extensions"),
             Self::ShapeVars => matches!(m.as_str(), "shape_extensions"),
             Self::ProxyMethod => matches!(m.as_str(), "shape_extensions"),
             Self::Sentinel => matches!(m.as_str(), "typing_extensions"),
@@ -279,6 +282,7 @@ impl SpecialExport {
             Self::Union
                 | Self::Optional
                 | Self::Annotated
+                | Self::Shaped
                 | Self::Callable
                 | Self::BuiltinsDict
                 | Self::TypingDict

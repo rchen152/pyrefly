@@ -530,4 +530,17 @@ impl<Ans: LookupAnswer> AnswersSolver<'_, '_, Ans> {
             );
         }
     }
+
+    /// Parse a shape-extension annotation, leaving other `Annotated` forms alone.
+    pub fn parse_shape_annotation(
+        &self,
+        value: &Expr,
+        slice: &Expr,
+        range: TextRange,
+        type_form_context: TypeFormContext<'_>,
+        errors: &ErrorCollector,
+    ) -> Option<Type> {
+        self.parse_jaxtyping_type_form(value, slice, range, errors)
+            .or_else(|| self.parse_shaped_annotation(slice, range, type_form_context, errors))
+    }
 }

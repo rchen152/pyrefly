@@ -8,6 +8,7 @@
 use std::sync::Arc;
 
 use pyrefly_graph::index::Idx;
+use pyrefly_python::ast::Ast;
 use pyrefly_python::keywords::is_valid_identifier;
 use pyrefly_python::short_identifier::ShortIdentifier;
 use pyrefly_types::dimension::gradual_size;
@@ -26,6 +27,7 @@ use pyrefly_types::types::Type;
 use ruff_python_ast::Decorator;
 use ruff_python_ast::Expr;
 use ruff_python_ast::ExprCall;
+use ruff_python_ast::ExprTuple;
 use ruff_python_ast::Identifier;
 use ruff_python_ast::Stmt;
 use ruff_python_ast::StmtFunctionDef;
@@ -33,6 +35,7 @@ use ruff_python_ast::name::Name;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
+use starlark_map::small_map::SmallMap;
 
 use crate::binding::binding::KeyClass;
 use crate::binding::binding::LambdaKind;
@@ -138,11 +141,15 @@ impl ShapeDeclaration {
     }
 }
 
-/// Shape declarations and class boundaries used to resolve shape strings.
+/// Shape declarations and class boundaries, used to resolve shape strings and
+/// record the `Shaped` annotations whose strings were parsed.
 #[derive(Clone, Debug, Default)]
 pub struct ShapeDeclarations {
     scopes: Vec<(TextRange, Arc<ShapeDeclaration>)>,
     classes: Vec<(TextRange, Idx<KeyClass>)>,
+    /// Binding replaces shape strings with parsed syntax, so keep their original
+    /// metadata for aliases that must represent the runtime `Annotated` value.
+    shaped_annotations: SmallMap<TextRange, Box<str>>,
 }
 
 impl ShapeDeclarations {
@@ -214,6 +221,10 @@ impl ShapeDeclarations {
             .find(|(_, scope)| scope.declared_at == range)
             .map(|(_, scope)| scope.as_ref())
     }
+
+    pub fn is_shaped_annotation(&self, range: TextRange) -> bool {
+        self.shaped_annotations.contains_key(&range)
+    }
 }
 
 pub(super) struct ShapeFunctionMetadata {
@@ -259,6 +270,87 @@ impl BindingsBuilder<'_> {
                 );
             }
         }
+    }
+
+    /// Binds the metadata of `Shaped[T, "<shape>"]`, whose `Shaped` and `T` are
+    /// already bound, when the annotation is inside a `@shape_vars` scope.
+    ///
+    /// The shape string is parsed and bound in its place, with its bare names
+    /// resolving against the `@shape_vars` declarations before ordinary scopes.
+    /// Returns `false` outside a `@shape_vars` scope, or after reporting a
+    /// malformed annotation; the caller then binds `Shaped` as `Annotated`.
+    pub(super) fn bind_shape_string(
+        &mut self,
+        annotation: TextRange,
+        arguments: &mut ExprTuple,
+        tparams_builder: Option<&mut LegacyTParamCollector>,
+        usage: &mut Usage,
+    ) -> bool {
+        if !self
+            .shape_declarations
+            .contains(annotation, ShapeDeclarationKind::ShapeVars)
+        {
+            return false;
+        }
+        let shape = match arguments.elts.as_slice() {
+            [_, Expr::StringLiteral(shape)] => shape,
+            _ => {
+                self.error(
+                    arguments.range(),
+                    ErrorKind::InvalidAnnotation,
+                    "`Shaped` takes a type and a shape string, as in `Shaped[ndarray, \"[M, N]\"]`"
+                        .to_owned(),
+                );
+                return false;
+            }
+        };
+        // A shape string made of several parts would put errors inside it at the
+        // wrong position, so, as with forward references, only one part is allowed.
+        let Some(shape_literal) = shape.as_single_part_string() else {
+            self.error(
+                shape.range(),
+                ErrorKind::InvalidAnnotation,
+                "A `Shaped` shape string must be a single string literal, not several concatenated ones"
+                    .to_owned(),
+            );
+            return false;
+        };
+        let metadata = Box::<str>::from(shape_literal.as_str());
+        let Ok(parsed) = Ast::parse_type_literal(shape, self.module_info.contents()) else {
+            self.error(
+                shape.range(),
+                ErrorKind::InvalidAnnotation,
+                "Could not parse `Shaped` shape string".to_owned(),
+            );
+            return false;
+        };
+        arguments.elts[1] = parsed;
+        self.shape_declarations
+            .shaped_annotations
+            .insert(annotation, metadata);
+        let outer = self.shape_string_annotation.replace(annotation);
+        self.ensure_type_impl(
+            &mut arguments.elts[1],
+            tparams_builder,
+            true,
+            false,
+            usage,
+            false,
+        );
+        self.shape_string_annotation = outer;
+        true
+    }
+
+    /// The `@shape_vars` declaration of `name`, if it is a bare name inside a
+    /// `Shaped` shape string.
+    pub(super) fn shape_var(&self, name: &Name) -> Option<Quantified> {
+        self.shape_declarations
+            .resolve(
+                self.shape_string_annotation?,
+                ShapeDeclarationKind::ShapeVars,
+                name,
+            )
+            .cloned()
     }
 
     /// Recognizes a shape-extension class through import provenance or in its defining module.

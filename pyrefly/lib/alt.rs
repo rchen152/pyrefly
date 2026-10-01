@@ -30,6 +30,7 @@ pub mod shape_extension;
 pub mod shape_flag;
 pub mod shape_index;
 pub mod shape_list_literal;
+pub mod shaped;
 pub mod singledispatch;
 pub mod solve;
 pub mod special_calls;

@@ -16,6 +16,24 @@ import keyword
 import typing
 from dataclasses import dataclass
 
+# A shape annotation carrying its shape as string metadata. To Pyrefly, the
+# string supplies type arguments to a generic class, after any explicit ones:
+# `Shaped[Tensor, "[M, N]"]` is `Tensor[[M, N]]`, and
+# `Shaped[Encoder[Input], "Dim, Hidden"]` is `Encoder[Input, Dim, Hidden]`. On
+# `int` and on an integer tuple, the string instead replaces the type:
+# `Shaped[int, "N"]` is `Int[N]`, and `Shaped[tuple[int, int], "[M, N]"]` is
+# `IntTuple[M, N]`. Every other type checker reads the first argument alone. At
+# runtime it is an ordinary `Annotated` object. The names inside the string are
+# declared by an enclosing `shape_vars`.
+#
+# This must stay an import alias: mypy rejects `Shaped = typing.Annotated` as
+# "not valid as a type". `compatibility_tests` pins this.
+#
+# Ruff recognizes `Annotated` only under that name, so it reports the names in a
+# `Shaped` string as undefined (F821). Code that uses `Shaped` should disable
+# F821; a type checker already reports genuinely undefined names.
+from typing import Annotated as Shaped
+
 __all__ = [
     "Elements",
     "Int",
@@ -30,6 +48,7 @@ __all__ = [
     "CaptureNamedInts",
     "ProxyMethod",
     "RegularNestedList",
+    "Shaped",
     "SymbolicArithExpr",
     "assert_shape",
     "assert_raises",
@@ -512,13 +531,18 @@ def static_jaxtyping(declaration: str) -> typing.Callable[[_F], _F]:
 def shape_vars(
     declaration: str, *, required: bool = False
 ) -> typing.Callable[[_F], _F]:
-    """Declare dimension names in functions or classes for shaped annotations.
+    """Declare the dimension names a function or class may use with `Shaped`.
 
     ``declaration`` is a comma-separated list of dimension names, where a
-    leading ``*`` marks a variadic shape.
+    leading ``*`` marks a variadic shape::
+
+        @shape_vars("batch, channels, *rest")
+        def f(
+            x: Shaped[Tensor, "[batch, channels, *Elements[rest]]"],
+        ) -> Shaped[Tensor, "[*Elements[rest]]"]: ...
 
     On a class, the declared names become type parameters that follow the
-    class's own.
+    class's own, so Pyrefly reads `Shaped[Encoder, "4, 8"]` as `Encoder[4, 8]`.
     They default to gradual dimensions, so a consumer's `Encoder` or
     `GenericEncoder[Input]` still checks. With ``required=True`` they have no
     defaults, and Pyrefly rejects a specialization that leaves them out. At
