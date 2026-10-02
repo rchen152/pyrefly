@@ -101,6 +101,7 @@ struct ParsedBaseClass<'a> {
     class_object: Class,
     range: TextRange,
     metadata: &'a ClassMetadata,
+    has_dynamic_base: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -128,6 +129,7 @@ impl BaseClassParseResult<'_> {
             | BaseClassParseResult::InvalidExpr(..)
             | BaseClassParseResult::InvalidType(..)
             | BaseClassParseResult::AnyType => true,
+            BaseClassParseResult::Parsed(parsed) => parsed.has_dynamic_base,
             _ => false,
         }
     }
@@ -239,7 +241,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     // that the class has `_ProtocolMeta` only when it is defined in a source (.py) file.
                     Some((&protocol_base_name, self.stdlib.protocol_meta()))
                 }
-                (_, BaseClassParseResult::Parsed(parsed)) => parsed
+                (_, BaseClassParseResult::Parsed(parsed)) if !parsed.has_dynamic_base => parsed
                     .metadata
                     .custom_metaclass()
                     .map(|metaclass| (parsed.class_object.name(), metaclass)),
@@ -846,6 +848,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     class_object: _,
                     range,
                     metadata,
+                    ..
                 }) = base
                 {
                     if let Some(base_proto) = metadata.protocol_metadata() {
@@ -1677,6 +1680,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         class_object: base_cls.dupe(),
                         range,
                         metadata: base_class_metadata,
+                        has_dynamic_base: false,
                     }
                 })
             }
@@ -1688,6 +1692,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         class_object: tuple_obj.dupe(),
                         range,
                         metadata,
+                        has_dynamic_base: false,
                     }
                 })
             }
@@ -1704,6 +1709,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                                     class_object: class_object.dupe(),
                                     range,
                                     metadata: class_metadata,
+                                    has_dynamic_base: false,
                                 }
                             })
                         }
@@ -1721,6 +1727,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         class_object: base_cls.dupe(),
                         range,
                         metadata,
+                        has_dynamic_base: false,
                     }
                 })
             }
@@ -1732,7 +1739,44 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     class_object: type_obj.dupe(),
                     range,
                     metadata,
+                    has_dynamic_base: false,
                 })
+            }
+            Type::Union(ref union) => {
+                if is_new_type {
+                    return BaseClassParseResult::InvalidType(ty, range);
+                }
+                let mut parsed = None;
+                let mut has_dynamic_base = false;
+                for member in &union.members {
+                    if member.is_any() {
+                        has_dynamic_base = true;
+                        continue;
+                    }
+                    if parsed.is_some() {
+                        return BaseClassParseResult::InvalidType(ty, range);
+                    }
+                    parsed = Some(match member {
+                        Type::ClassType(c) => {
+                            let class_object = c.class_object();
+                            BaseClassParseResult::Parsed(ParsedBaseClass {
+                                class_object: class_object.dupe(),
+                                range,
+                                metadata: self.get_metadata_for_class(class_object),
+                                has_dynamic_base: false,
+                            })
+                        }
+                        _ => BaseClassParseResult::InvalidType(member.clone(), range),
+                    });
+                }
+                match parsed {
+                    Some(BaseClassParseResult::Parsed(mut parsed)) => {
+                        parsed.has_dynamic_base |= has_dynamic_base;
+                        BaseClassParseResult::Parsed(parsed)
+                    }
+                    Some(result) => result,
+                    None => BaseClassParseResult::AnyType,
+                }
             }
             _ => {
                 if is_new_type || !ty.is_any() {
@@ -1794,6 +1838,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             class_object: metaclass_class.dupe(),
                             range,
                             metadata: metaclass_metadata,
+                            has_dynamic_base: false,
                         })
                     }
                     Some(_) => BaseClassParseResult::InvalidType(ty, range),
@@ -1807,6 +1852,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                                     class_object: class_obj.dupe(),
                                     range,
                                     metadata,
+                                    has_dynamic_base: false,
                                 })
                             }
                             _ => BaseClassParseResult::InvalidType(ty, range),
@@ -1888,6 +1934,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     class_object,
                     range,
                     metadata,
+                    ..
                 }) => {
                     if !is_new_type
                         && (metadata.is_final()
