@@ -1807,6 +1807,12 @@ impl<'a> Transaction<'a> {
     /// but doesn't define `name`, try the other style at this hop.
     /// Together, the two layers ensure we miss `name` only when
     /// neither style defines it.
+    ///
+    /// An `__all__` entry that names nothing in its module is exported
+    /// so that importers resolve it to an error, but it is not a
+    /// definition, so the other style's definition takes precedence.
+    /// For example, the runtime `datetime.py` star-imports its classes
+    /// from a C module without a stub and lists them in `__all__`.
     fn lookup_export_location_with_pyi_fallback(
         &self,
         origin: &Handle,
@@ -1815,23 +1821,29 @@ impl<'a> Transaction<'a> {
         preference: FindPreference,
     ) -> Option<(Handle, ExportLocation)> {
         let primary = self.import_handle_with_preference(origin, m, preference)?;
-        if let Some(loc) = self.get_exports(&primary).get(name) {
-            return Some((primary, loc.clone()));
-        }
-        if preference.disable_style_fallback {
-            return None;
+        let primary_location = self.get_exports(&primary).get(name).cloned();
+        let primary_is_definition = match &primary_location {
+            Some(ExportLocation::ThisModule(export)) => self
+                .get_exports_data(&primary)
+                .dunder_all_name_at(export.location.start())
+                .is_none(),
+            Some(ExportLocation::OtherModule(..)) => true,
+            None => false,
+        };
+        if primary_is_definition || preference.disable_style_fallback {
+            return primary_location.map(|loc| (primary, loc));
         }
         let fallback_pref = FindPreference {
             prefer_pyi: !preference.prefer_pyi,
             ..preference
         };
-        let secondary = self.import_handle_with_preference(origin, m, fallback_pref)?;
-        if secondary == primary {
-            return None;
-        }
-        self.get_exports(&secondary)
-            .get(name)
-            .map(|loc| (secondary, loc.clone()))
+        self.import_handle_with_preference(origin, m, fallback_pref)
+            .filter(|secondary| *secondary != primary)
+            .and_then(|secondary| {
+                let loc = self.get_exports(&secondary).get(name)?.clone();
+                Some((secondary, loc))
+            })
+            .or_else(|| primary_location.map(|loc| (primary, loc)))
     }
 
     /// The behavior of import resolution depends on `preference.import_behavior`:

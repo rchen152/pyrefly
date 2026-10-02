@@ -3933,3 +3933,32 @@ fn definition_of_name_reexported_in_cycle_goes_to_stub() {
         );
     }
 }
+
+// The runtime `datetime` module defines nothing itself: it star-imports `_datetime`, which is a
+// C module without a stub, and lists the imported names in `__all__`.
+#[test]
+fn definition_of_name_only_listed_in_dunder_all_goes_to_stub() {
+    let code = "import datetime\ndatetime.datetime\n#        ^\n";
+    let (_root, state, handle) = state_with_interpreter_stdlib(
+        &[(
+            "datetime.py",
+            "from _datetime import *\n__all__ = (\"datetime\",)\n",
+        )],
+        code,
+    );
+    let position = extract_cursors_for_test(code)[0];
+    let definitions = state
+        .transaction()
+        .goto_definition(&handle, position)
+        .unwrap_or_default();
+    assert_eq!(definitions.len(), 1, "got {definitions:?}");
+    assert_eq!(
+        definitions[0].module.name(),
+        ModuleName::from_str("datetime")
+    );
+    assert_eq!(definitions[0].module.path().style(), ModuleStyle::Interface);
+    assert_eq!(
+        definitions[0].module.code_at(definitions[0].range),
+        "datetime"
+    );
+}
