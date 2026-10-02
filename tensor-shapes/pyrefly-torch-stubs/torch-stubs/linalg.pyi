@@ -9,7 +9,14 @@ from typing import Any, overload
 from shape_extensions import Flag, IntTuple, IntVar
 from torch import return_types, Tensor
 from torch._C import _LinAlgError as LinAlgError
-from torch._shapes import eig_shape, eigvals_shape, reduce_shape, slogdet_shape
+from torch._shapes import (
+    diagonal_shape,
+    eig_shape,
+    eigvals_shape,
+    matmul_shape,
+    reduce_shape,
+    slogdet_shape,
+)
 
 # Eigenvalue decomposition
 @overload
@@ -95,8 +102,6 @@ cholesky_ex: Any
 common_notes: Any
 cond: Any
 cross: Any
-diagonal: Any
-householder_product: Any
 inv_ex: Any
 ldl_factor: Any
 ldl_factor_ex: Any
@@ -106,7 +111,6 @@ lu: Any
 lu_factor: Any
 lu_factor_ex: Any
 lu_solve: Any
-matmul: Any
 matrix_norm: Any
 multi_dot: Any
 pinv: Any
@@ -118,6 +122,21 @@ tensorinv: Any
 tensorsolve: Any
 vander: Any
 vecdot: Any
+
+def diagonal[
+    Shape: IntTuple,
+    Offset: Flag[int] = 0,
+    Dim1: Flag[int] = -2,
+    Dim2: Flag[int] = -1,
+](
+    A: Tensor[Shape], *, offset: Offset = 0, dim1: Dim1 = -2, dim2: Dim2 = -1
+) -> Tensor[diagonal_shape(Shape, Offset, Dim1, Dim2)]: ...
+def householder_product[Batch: IntTuple, M: IntVar, N: IntVar, K: IntVar](
+    A: Tensor[[*Batch, M, N]], tau: Tensor[[*Batch, K]], *, out: Tensor | None = None
+) -> Tensor[[*Batch, M, N]]: ...
+def matmul[Left: IntTuple, Right: IntTuple](
+    input: Tensor[Left], other: Tensor[Right], *, out: Tensor | None = None
+) -> Tensor[matmul_shape(Left, Right)]: ...
 
 # Vector/matrix norm
 def norm[Shape: IntTuple, Dim: Flag[int | tuple[int, ...] | None], Keepdim: Flag[bool]](
