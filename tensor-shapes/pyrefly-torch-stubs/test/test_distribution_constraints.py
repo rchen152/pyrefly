@@ -23,6 +23,31 @@ def test_elementwise_constraint() -> None:
     ]
 
 
+def test_elementwise_bounds() -> None:
+    value = torch.tensor([[-1.0, 0.0, 0.5, 1.0, 2.0]])
+
+    assert_shape(constraints.positive.check(value).shape, (1, 5))
+    assert constraints.positive.check(value).tolist() == [
+        [False, False, True, True, True]
+    ]
+    assert_shape(constraints.nonnegative.check(value).shape, (1, 5))
+    assert constraints.nonnegative.check(value).tolist() == [
+        [False, True, True, True, True]
+    ]
+    assert_shape(constraints.positive_integer.check(value).shape, (1, 5))
+    assert constraints.positive_integer.check(value).tolist() == [
+        [False, False, False, True, True]
+    ]
+    assert_shape(constraints.nonnegative_integer.check(value).shape, (1, 5))
+    assert constraints.nonnegative_integer.check(value).tolist() == [
+        [False, True, False, True, True]
+    ]
+    assert_shape(constraints.unit_interval.check(value).shape, (1, 5))
+    assert constraints.unit_interval.check(value).tolist() == [
+        [False, True, True, True, False]
+    ]
+
+
 def test_vector_constraints() -> None:
     value = torch.tensor([[1.0, 0.0, 0.0], [0.2, 0.3, 0.5]])
 
@@ -68,6 +93,11 @@ if TYPE_CHECKING:
         matrix: Tensor[[*S, M, N]],
     ) -> None:
         assert_type(constraints.boolean.check(elementwise), Tensor[S])
+        assert_type(constraints.positive.check(elementwise), Tensor[S])
+        assert_type(constraints.nonnegative.check(elementwise), Tensor[S])
+        assert_type(constraints.positive_integer.check(elementwise), Tensor[S])
+        assert_type(constraints.nonnegative_integer.check(elementwise), Tensor[S])
+        assert_type(constraints.unit_interval.check(elementwise), Tensor[S])
         assert_type(constraints.one_hot.check(vector), Tensor[S])
         assert_type(constraints.simplex.check(vector), Tensor[S])
         assert_type(constraints.square.check(matrix), Tensor[S])

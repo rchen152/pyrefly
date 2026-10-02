@@ -67,6 +67,28 @@ class _CorrCholesky(Constraint):
 class _PositiveSemidefinite(_Symmetric): ...
 class _PositiveDefinite(_Symmetric): ...
 
+class _IntegerGreaterThan(Constraint):
+    is_discrete: bool = True
+    lower_bound: int
+
+    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
+
+class _GreaterThan(Constraint):
+    lower_bound: float
+
+    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
+
+class _GreaterThanEq(Constraint):
+    lower_bound: float
+
+    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
+
+class _Interval(Constraint):
+    lower_bound: float
+    upper_bound: float
+
+    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
+
 real: Constraint
 boolean: _Boolean
 one_hot: _OneHot
@@ -78,6 +100,11 @@ lower_cholesky: _LowerCholesky
 corr_cholesky: _CorrCholesky
 positive_semidefinite: _PositiveSemidefinite
 positive_definite: _PositiveDefinite
+positive: _GreaterThan
+nonnegative: _GreaterThanEq
+positive_integer: _IntegerGreaterThan
+nonnegative_integer: _IntegerGreaterThan
+unit_interval: _Interval
 
 def interval(lower_bound: float, upper_bound: float) -> Constraint: ...
 
@@ -94,10 +121,5 @@ integer_interval: Any
 is_dependent: Any
 less_than: Any
 multinomial: Any
-nonnegative: Any
-nonnegative_integer: Any
-positive: Any
-positive_integer: Any
 real_vector: Any
 stack: Any
-unit_interval: Any
