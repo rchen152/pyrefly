@@ -203,7 +203,7 @@ We aim to respond to all PRs in a timely manner, but please note we prioritise r
 
 After you submit a pull request, it will be assigned to a maintainer for review. They will either accept and merge the PR, or leave review comments requesting changes. When you have made the requested changes, please do the following to request another review:
 1. Acknowledge every review comment. This can be as simple as leaving a thumbs up or clicking "resolve conversation" for comments that you have resolved. Please reply to any comments that you have not fully resolved. **Do not leave any comment unacknowledged.**
-1. Tag the reviewer in a comment to request another review. (Example: "@rchen152 Ready for another review!")
+1. Request another review by clicking the "re-request review" icon in the reviewers box in the top-right corner of the conversation tab. If this isn't available, you can tag the reviewer in a comment instead. (Example: "@rchen152 Ready for another review!")
 
 ## Splitting a Pull Request
 
