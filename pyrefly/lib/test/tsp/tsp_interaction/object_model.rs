@@ -337,6 +337,19 @@ impl TestTspServer {
         }));
     }
 
+    pub fn did_close(&self, file: &'static str) {
+        let path = self.get_root_or_panic().join(file);
+        self.send_message(Message::Notification(Notification {
+            method: "textDocument/didClose".to_owned(),
+            params: serde_json::json!({
+                "textDocument": {
+                    "uri": Uri::from_file_path(&path).unwrap().to_string(),
+                },
+            }),
+            activity_key: None,
+        }));
+    }
+
     pub fn did_change_watched_files(&self, file: &'static str, change_type: &str) {
         let path = self.get_root_or_panic().join(file);
         let file_change_type = match change_type {
