@@ -1256,6 +1256,7 @@ impl<'a> Transaction<'a> {
         module: ModuleName,
         preferred_style: ModuleStyle,
         fallback_style: Option<ModuleStyle>,
+        include_interpreter_stdlib: bool,
     ) -> FindingOrError<Handle> {
         self.get_cached_loader(&self.get_module(handle).config.read())
             .find_import_including_replaced(
@@ -1263,6 +1264,7 @@ impl<'a> Transaction<'a> {
                 Some(handle.path()),
                 preferred_style,
                 fallback_style,
+                include_interpreter_stdlib,
                 Some(&self.timing),
             )
             .map(|path| Handle::new(module, path, handle.sys_info().dupe()))
@@ -1274,12 +1276,18 @@ impl<'a> Transaction<'a> {
         handle: &Handle,
         module: ModuleName,
         path: Option<&ModulePath>,
+        include_interpreter_stdlib: bool,
     ) -> FindingOrError<Handle> {
         let path = match path {
             Some(path) => FindingOrError::new_finding(path.dupe()),
             None => self
                 .get_cached_loader(&self.get_module(handle).config.read())
-                .find_import_prefer_executable(module, Some(handle.path()), Some(&self.timing)),
+                .find_import_prefer_executable(
+                    module,
+                    Some(handle.path()),
+                    include_interpreter_stdlib,
+                    Some(&self.timing),
+                ),
         };
         path.map(|path| Handle::new(module, path, handle.sys_info().dupe()))
     }

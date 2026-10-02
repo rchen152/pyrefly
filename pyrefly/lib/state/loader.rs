@@ -27,6 +27,7 @@ use crate::error::context::ErrorContext;
 use crate::module::finder::DirEntryCache;
 use crate::module::finder::FindImportOptions;
 use crate::module::finder::ImportLookupMode;
+use crate::module::finder::ImportReplacementPolicy;
 use crate::module::finder::find_import;
 use crate::module::finder::find_import_with_mode;
 use crate::module::finder::suggest_stdlib_import;
@@ -222,13 +223,16 @@ pub struct LoaderFindCache {
         (FindingOrError<ModulePath>, Arc<Vec<PathBuf>>),
     >,
     // If a python executable module (excludes .pyi) exists and differs from the imported python module, store it here
-    executable_cache: LockedMap<(ModuleName, Option<ModulePath>), Option<ModulePath>>,
+    // The `bool` in this key and the next records whether the lookup searched the interpreter's
+    // standard library.
+    executable_cache: LockedMap<(ModuleName, Option<ModulePath>, bool), Option<ModulePath>>,
     replaced_source_cache: LockedMap<
         (
             ModuleName,
             Option<ModulePath>,
             ModuleStyle,
             Option<ModuleStyle>,
+            bool,
         ),
         FindingOrError<ModulePath>,
     >,
@@ -264,10 +268,16 @@ impl LoaderFindCache {
         origin: Option<&ModulePath>,
         preferred_style: ModuleStyle,
         fallback_style: Option<ModuleStyle>,
+        include_interpreter_stdlib: bool,
         timing: Option<&TransactionTimingCounters>,
     ) -> FindingOrError<ModulePath> {
         let regular = match preferred_style {
-            ModuleStyle::Executable => self.find_import_prefer_executable(module, origin, timing),
+            ModuleStyle::Executable => self.find_import_prefer_executable(
+                module,
+                origin,
+                include_interpreter_stdlib,
+                timing,
+            ),
             ModuleStyle::Interface => self.find_import(module, origin, timing),
         };
         if !matches!(regular.dupe().error(), Some(FindError::Ignored))
@@ -286,6 +296,7 @@ impl LoaderFindCache {
             effective_origin,
             preferred_style,
             fallback_style,
+            include_interpreter_stdlib,
         );
         let source = self
             .replaced_source_cache
@@ -294,7 +305,11 @@ impl LoaderFindCache {
                     find_import_with_mode(
                         &self.config,
                         module,
-                        ImportLookupMode::style_including_replaced(style),
+                        ImportLookupMode::Style {
+                            style,
+                            replacement_policy: ImportReplacementPolicy::Bypass,
+                            include_interpreter_stdlib,
+                        },
                         FindImportOptions {
                             origin,
                             timing,
@@ -321,9 +336,10 @@ impl LoaderFindCache {
         &self,
         module: ModuleName,
         origin: Option<&ModulePath>,
+        include_interpreter_stdlib: bool,
         timing: Option<&TransactionTimingCounters>,
     ) -> FindingOrError<ModulePath> {
-        let key = (module.dupe(), origin.cloned());
+        let key = (module.dupe(), origin.cloned(), include_interpreter_stdlib);
         match self.executable_cache.get(&key) {
             Some(Some(module)) => FindingOrError::new_finding(module.dupe()),
             Some(None) => self.find_import(module, origin, timing),
@@ -331,7 +347,11 @@ impl LoaderFindCache {
                 match find_import_with_mode(
                     &self.config,
                     module,
-                    ImportLookupMode::style(ModuleStyle::Executable),
+                    ImportLookupMode::Style {
+                        style: ModuleStyle::Executable,
+                        replacement_policy: ImportReplacementPolicy::Respect,
+                        include_interpreter_stdlib,
+                    },
                     FindImportOptions {
                         origin,
                         timing,
@@ -539,6 +559,7 @@ mod tests {
                 None,
                 ModuleStyle::Executable,
                 fallback_style,
+                false,
                 None,
             )
         };
@@ -550,7 +571,13 @@ mod tests {
         assert!(
             loader
                 .replaced_source_cache
-                .get(&(regular, None, ModuleStyle::Executable, fallback_style))
+                .get(&(
+                    regular,
+                    None,
+                    ModuleStyle::Executable,
+                    fallback_style,
+                    false
+                ))
                 .is_none(),
             "ordinary imports should not enter the replaced-source cache"
         );
@@ -562,6 +589,7 @@ mod tests {
                 None,
                 ModuleStyle::Interface,
                 None,
+                false,
                 None,
             ),
             FindingOrError::Error(FindError::Ignored),
@@ -574,7 +602,13 @@ mod tests {
         assert!(
             loader
                 .replaced_source_cache
-                .get(&(replaced, None, ModuleStyle::Executable, fallback_style))
+                .get(&(
+                    replaced,
+                    None,
+                    ModuleStyle::Executable,
+                    fallback_style,
+                    false
+                ))
                 .is_some(),
             "configured replacements should cache their source lookup"
         );

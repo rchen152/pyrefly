@@ -289,6 +289,12 @@ pub struct FindPreference {
     /// cause unwanted side effects in other consumers (e.g., pysa) by pulling
     /// in additional file handles.
     pub disable_style_fallback: bool,
+    /// When true, looking for a `.py` file may also search the interpreter's
+    /// standard library. The type checker never resolves imports there, so
+    /// the files found may lie outside the project. This suits IDE features,
+    /// which can open any file, but not consumers like Glean, which must
+    /// target files inside the project.
+    pub include_interpreter_stdlib: bool,
 }
 
 impl Default for FindPreference {
@@ -299,6 +305,7 @@ impl Default for FindPreference {
             resolve_call_dunders: true,
             replacement_policy: ImportReplacementPolicy::Respect,
             disable_style_fallback: false,
+            include_interpreter_stdlib: false,
         }
     }
 }
@@ -921,6 +928,7 @@ impl<'a> Transaction<'a> {
                     module,
                     ModuleStyle::Interface,
                     (!preference.disable_style_fallback).then_some(ModuleStyle::Executable),
+                    preference.include_interpreter_stdlib,
                 )
                 .finding(),
             (ImportReplacementPolicy::Bypass, false) => self
@@ -929,13 +937,19 @@ impl<'a> Transaction<'a> {
                     module,
                     ModuleStyle::Executable,
                     (!preference.disable_style_fallback).then_some(ModuleStyle::Interface),
+                    preference.include_interpreter_stdlib,
                 )
                 .finding(),
             (ImportReplacementPolicy::Respect, true) => {
                 self.import_handle(handle, module, None).finding()
             }
             (ImportReplacementPolicy::Respect, false) => self
-                .import_handle_prefer_executable(handle, module, None)
+                .import_handle_prefer_executable(
+                    handle,
+                    module,
+                    None,
+                    preference.include_interpreter_stdlib,
+                )
                 .finding(),
         }
     }
@@ -1926,6 +1940,7 @@ impl<'a> Transaction<'a> {
                             handle,
                             attr_name,
                             &text_range_with_module_info,
+                            preference.include_interpreter_stdlib,
                         )
                 {
                     return Some((
@@ -1966,10 +1981,16 @@ impl<'a> Transaction<'a> {
         request_handle: &Handle,
         attr_name: &Name,
         pyi_definition: &TextRangeWithModule,
+        include_interpreter_stdlib: bool,
     ) -> Option<(Module, TextRange, Option<TextRange>)> {
         let context = AttributeContext::from_module(&pyi_definition.module, pyi_definition.range)?;
         let executable_handle = self
-            .import_handle_prefer_executable(request_handle, pyi_definition.module.name(), None)
+            .import_handle_prefer_executable(
+                request_handle,
+                pyi_definition.module.name(),
+                None,
+                include_interpreter_stdlib,
+            )
             .finding()?;
         if executable_handle.path().style() != ModuleStyle::Executable {
             return None;

@@ -532,6 +532,10 @@ pub(crate) enum ImportLookupMode {
     Style {
         style: ModuleStyle,
         replacement_policy: ImportReplacementPolicy,
+        /// Whether a source-style lookup may also search the interpreter's standard library.
+        /// The type checker never resolves imports there, so the files found may lie outside
+        /// the project.
+        include_interpreter_stdlib: bool,
     },
 }
 
@@ -540,13 +544,7 @@ impl ImportLookupMode {
         Self::Style {
             style,
             replacement_policy: ImportReplacementPolicy::Respect,
-        }
-    }
-
-    pub(crate) fn style_including_replaced(style: ModuleStyle) -> Self {
-        Self::Style {
-            style,
-            replacement_policy: ImportReplacementPolicy::Bypass,
+            include_interpreter_stdlib: false,
         }
     }
 
@@ -4347,7 +4345,11 @@ mod tests {
             find_import_with_mode(
                 &config,
                 module,
-                ImportLookupMode::style_including_replaced(ModuleStyle::Executable),
+                ImportLookupMode::Style {
+                    style: ModuleStyle::Executable,
+                    replacement_policy: ImportReplacementPolicy::Bypass,
+                    include_interpreter_stdlib: false,
+                },
                 FindImportOptions::new(&cache),
             ),
             FindingOrError::new_finding(ModulePath::filesystem(root.join("replaced.py")))
