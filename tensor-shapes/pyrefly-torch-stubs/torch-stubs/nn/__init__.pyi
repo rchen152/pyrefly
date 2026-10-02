@@ -7,6 +7,7 @@
 Type stubs for torch.nn module.
 """
 
+from collections.abc import Mapping
 from typing import (
     Any,
     Callable,
@@ -140,8 +141,7 @@ from .parameter import (
     UninitializedParameter as UninitializedParameter,
 )
 
-# TODO: Add a precise signature for the remaining public API.
-factory_kwargs: Any
+def factory_kwargs(kwargs: Mapping[str, Any] | None) -> dict[str, Any]: ...
 
 # Base class for all neural network modules
 class Module:
