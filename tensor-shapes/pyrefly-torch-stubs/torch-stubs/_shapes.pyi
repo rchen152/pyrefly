@@ -2141,6 +2141,70 @@ def irfft2_default_shape(shape: IntTuple) -> IntTuple:
     transformed = dsl.IntTuple((2 * (shape[-1] - 1),))
     return dsl.concat(shape[:-1], transformed)
 
+# An omitted size uses the input shape as an ignored shape-valued argument.
+@type_shape_dsl_function
+def hermitian_fft_shape(
+    shape: IntTuple,
+    s: IntTuple,
+    dim: int | tuple[int, ...] | None,
+    inverse: bool,
+    explicit_size: bool,
+) -> IntTuple:
+    rank = len(shape)
+    if dim is None:
+        if explicit_size:
+            axes = tuple((axis for axis in range(len(shape) - len(s), len(shape))))
+        else:
+            axes = tuple((axis for axis in range(len(shape))))
+    elif dsl.is_int_value(dim):
+        return dsl.Invalid("FFT dimensions must be a tuple")
+    else:
+        axes = dim
+    if len(axes) == 0:
+        return dsl.Invalid("FFT must transform at least one axis")
+    if any(axis < 0 - rank or axis >= rank for axis in axes):
+        return dsl.Invalid("FFT dimension out of range")
+    normalized_values = tuple((axis + rank if axis < 0 else axis for axis in axes))
+    if any(normalized_values.count(axis) != 1 for axis in normalized_values):
+        return dsl.Invalid("FFT dimensions must be unique")
+    if explicit_size:
+        if len(s) != len(axes):
+            return dsl.Invalid("FFT size and axes differ")
+        sizes = s
+    else:
+        sizes = dsl.IntTuple((-1 for _ in axes))
+    if any(dsl.is_concrete_int(size) and (size == 0 or size < -1) for size in sizes):
+        return dsl.Invalid("FFT size must be positive or -1")
+    resized = dsl.IntTuple(
+        (
+            shape[axis]
+            if dsl.is_concrete_int(size) and size == -1
+            else (size if dsl.is_concrete_int(size) else dsl.Int.gradual())
+            for axis, size in zip(normalized_values, sizes)
+        )
+    )
+    last_size = sizes[-1]
+    if inverse:
+        last_extent = resized[-1] // 2 + 1
+    elif not dsl.is_concrete_int(last_size):
+        last_extent = dsl.Int.gradual()
+    elif last_size == -1:
+        last_extent = 2 * (resized[-1] - 1)
+    else:
+        last_extent = last_size
+    return dsl.IntTuple(
+        (
+            shape[axis]
+            if axis not in normalized_values
+            else (
+                last_extent
+                if normalized_values.index(axis) == len(normalized_values) - 1
+                else resized[normalized_values.index(axis)]
+            )
+            for axis in range(rank)
+        )
+    )
+
 @type_shape_dsl_function
 def size_dim_shape(shape: IntTuple, dim: int) -> Int:
     if len(shape) == 0:
