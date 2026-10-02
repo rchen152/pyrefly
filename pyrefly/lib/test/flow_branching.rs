@@ -3475,6 +3475,15 @@ def f() -> None:
 // A test's value settles its branch only when declarations fix it. Each test below is typed
 // `Literal[False]`, `None`, or `Never` only by inference from an unannotated assignment or by
 // flow narrowing, and each is live at runtime.
+//
+// `flag_raised_in_try` is the case that reached us from the field, and it is the sharpest of
+// them: its narrowed value is not merely imprecise but wrong. An `except` handler is given
+// the state from before the `try` body, so `created` reads as `Literal[False]` even though
+// the exception can only have come from after it was set — see
+// `test_except_handler_narrows_to_state_before_try` in `narrow.rs`. Correcting that
+// narrowing will not make this case redundant. It stands for a branch whose test the flow
+// believes is settled while it is live at runtime, which this check must respect however
+// the value was arrived at.
 testcase!(
     test_no_report_for_test_values_only_inference_settles,
     r#"
@@ -3542,6 +3551,21 @@ class Dtype:
 def chained_equality(d: Dtype) -> None:
     if d == "int" and d != "int64":
         print(6)
+
+def may_raise() -> None:
+    raise RuntimeError
+
+def cleanup() -> None:
+    pass
+
+def flag_raised_in_try() -> None:
+    created = False
+    try:
+        created = True
+        may_raise()
+    except RuntimeError:
+        if created:
+            cleanup()
 "#,
 );
 

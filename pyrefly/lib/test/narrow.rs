@@ -4560,3 +4560,34 @@ class Env:
             self.domains = Container()  # E: Assigning to attribute `domains` on an object with type `Never`
     "#,
 );
+
+// An exception can be raised anywhere in a `try` body, including after an assignment, so a
+// handler has to account for every state the body passes through. We give it only the state
+// the body started from, which reports a variable as whatever it held on entry even where
+// that value is impossible. The `assert_type` below records what we say today, not what is
+// correct: `created` is `True` whenever `may_raise` is what raised, so the answer is `bool`.
+//
+// This reached us as a false `unreachable` on cleanup code guarded by such a flag. The
+// `flag_raised_in_try` case of `test_no_report_for_test_values_only_inference_settles` in
+// `flow_branching.rs` holds that symptom, which no longer reports, because a branch is
+// settled only by declarations. This is the cause, and it is still here: the annotated
+// assignment below is impossible at runtime and we accept it.
+testcase!(
+    bug = "An `except` handler narrows to the state before the `try`, not across it",
+    test_except_handler_narrows_to_state_before_try,
+    r#"
+from typing import Literal, assert_type
+
+def may_raise() -> None:
+    raise RuntimeError
+
+def f() -> None:
+    created = False
+    try:
+        created = True
+        may_raise()
+    except RuntimeError:
+        assert_type(created, Literal[False])
+        narrowed: Literal[False] = created
+    "#,
+);
