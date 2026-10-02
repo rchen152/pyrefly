@@ -33,6 +33,25 @@ def test_adaptive_max_pool_with_indices_shapes() -> None:
     assert_shape(indices.shape, (2, 3, 2, 3, 4))
 
 
+def test_max_pool_with_indices_shapes() -> None:
+    sequence = torch.randn((2, 3, 12))
+    values, indices = F.max_pool1d_with_indices(sequence, 2)
+    assert_shape(values.shape, (2, 3, 6))
+    assert_shape(indices.shape, (2, 3, 6))
+
+    image = torch.randn((2, 3, 8, 12))
+    values, indices = F.max_pool2d_with_indices(
+        image, (2, 3), stride=(2, 3), return_indices=False
+    )
+    assert_shape(values.shape, (2, 3, 4, 4))
+    assert_shape(indices.shape, (2, 3, 4, 4))
+
+    volume = torch.randn((2, 3, 8, 10, 12))
+    values, indices = F.max_pool3d_with_indices(volume, (2, 2, 3), (2, 2, 3))
+    assert_shape(values.shape, (2, 3, 4, 5, 4))
+    assert_shape(indices.shape, (2, 3, 4, 5, 4))
+
+
 if TYPE_CHECKING:
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
@@ -60,4 +79,22 @@ if TYPE_CHECKING:
         assert_type(
             F.adaptive_max_pool2d_with_indices(image, (4, None)),
             tuple[Tensor[[B, 3, int, int]], Tensor[[B, 3, int, int]]],
+        )
+
+    def check_max_pool_with_indices_shapes[B: IntVar](
+        sequence: Tensor[[B, 3, 12]],
+        image: Tensor[[B, 3, 8, 12]],
+        volume: Tensor[[B, 3, 8, 10, 12]],
+    ) -> None:
+        assert_type(
+            F.max_pool1d_with_indices(sequence, 2),
+            tuple[Tensor[[B, 3, 6]], Tensor[[B, 3, 6]]],
+        )
+        assert_type(
+            F.max_pool2d_with_indices(image, (2, 3), stride=(2, 3)),
+            tuple[Tensor[[B, 3, 4, 4]], Tensor[[B, 3, 4, 4]]],
+        )
+        assert_type(
+            F.max_pool3d_with_indices(volume, (2, 2, 3), (2, 2, 3)),
+            tuple[Tensor[[B, 3, 4, 5, 4]], Tensor[[B, 3, 4, 5, 4]]],
         )

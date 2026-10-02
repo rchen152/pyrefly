@@ -318,6 +318,63 @@ def conv_transpose3d[
     ...
 
 # Max pooling operations
+def max_pool1d_with_indices[
+    Shape: IntTuple,
+    Kernel: Flag[builtins.int | tuple[builtins.int]],
+    Stride: Flag[builtins.int | tuple[builtins.int] | None],
+    Padding: Flag[builtins.int | tuple[builtins.int]],
+    Dilation: Flag[builtins.int | tuple[builtins.int]],
+    CeilMode: Flag[builtins.bool],
+](
+    input: Tensor[Shape],
+    kernel_size: Kernel,
+    stride: Stride = None,
+    padding: Padding = 0,
+    dilation: Dilation = 1,
+    ceil_mode: CeilMode = False,
+    return_indices: bool = False,
+) -> tuple[
+    Tensor[pool_shape(Shape, 1, Kernel, Stride, Padding, Dilation, CeilMode)],
+    Tensor[pool_shape(Shape, 1, Kernel, Stride, Padding, Dilation, CeilMode)],
+]: ...
+def max_pool2d_with_indices[
+    Shape: IntTuple,
+    Kernel: Flag[builtins.int | tuple[builtins.int, builtins.int]],
+    Stride: Flag[builtins.int | tuple[builtins.int, builtins.int] | None],
+    Padding: Flag[builtins.int | tuple[builtins.int, builtins.int]],
+    Dilation: Flag[builtins.int | tuple[builtins.int, builtins.int]],
+    CeilMode: Flag[builtins.bool],
+](
+    input: Tensor[Shape],
+    kernel_size: Kernel,
+    stride: Stride = None,
+    padding: Padding = 0,
+    dilation: Dilation = 1,
+    ceil_mode: CeilMode = False,
+    return_indices: bool = False,
+) -> tuple[
+    Tensor[pool_shape(Shape, 2, Kernel, Stride, Padding, Dilation, CeilMode)],
+    Tensor[pool_shape(Shape, 2, Kernel, Stride, Padding, Dilation, CeilMode)],
+]: ...
+def max_pool3d_with_indices[
+    Shape: IntTuple,
+    Kernel: Flag[builtins.int | tuple[builtins.int, builtins.int, builtins.int]],
+    Stride: Flag[builtins.int | tuple[builtins.int, builtins.int, builtins.int] | None],
+    Padding: Flag[builtins.int | tuple[builtins.int, builtins.int, builtins.int]],
+    Dilation: Flag[builtins.int | tuple[builtins.int, builtins.int, builtins.int]],
+    CeilMode: Flag[builtins.bool],
+](
+    input: Tensor[Shape],
+    kernel_size: Kernel,
+    stride: Stride = None,
+    padding: Padding = 0,
+    dilation: Dilation = 1,
+    ceil_mode: CeilMode = False,
+    return_indices: bool = False,
+) -> tuple[
+    Tensor[pool_shape(Shape, 3, Kernel, Stride, Padding, Dilation, CeilMode)],
+    Tensor[pool_shape(Shape, 3, Kernel, Stride, Padding, Dilation, CeilMode)],
+]: ...
 @overload
 def max_pool1d[
     Shape: IntTuple,
@@ -1604,9 +1661,6 @@ gumbel_softmax: Any
 lp_pool1d: Any
 lp_pool2d: Any
 lp_pool3d: Any
-max_pool1d_with_indices: Any
-max_pool2d_with_indices: Any
-max_pool3d_with_indices: Any
 max_unpool1d: Any
 max_unpool2d: Any
 max_unpool3d: Any
