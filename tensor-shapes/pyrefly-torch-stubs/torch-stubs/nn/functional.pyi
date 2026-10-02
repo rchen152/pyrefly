@@ -1516,12 +1516,79 @@ def grid_sample[B: IntVar, C: IntVar, Hout: IntVar, Wout: IntVar](
     """Sample input using grid of coordinates. Output spatial dims match grid."""
     ...
 
+@overload
+def adaptive_max_pool1d_with_indices[Shape: IntTuple, O: _Int](
+    input: Tensor[Shape], output_size: O, return_indices: bool = False
+) -> tuple[
+    Tensor[adaptive_pool1d_shape(Shape, O)],
+    Tensor[adaptive_pool1d_shape(Shape, O)],
+]: ...
+@overload
+def adaptive_max_pool1d_with_indices[Shape: IntTuple, O: _Int](
+    input: Tensor[Shape], output_size: tuple[O], return_indices: bool = False
+) -> tuple[
+    Tensor[adaptive_pool1d_shape(Shape, O)],
+    Tensor[adaptive_pool1d_shape(Shape, O)],
+]: ...
+@overload
+def adaptive_max_pool1d_with_indices[Shape: IntTuple](
+    input: Tensor[Shape], output_size: int | tuple[int], return_indices: bool = False
+) -> tuple[
+    Tensor[adaptive_pool_gradual_shape(Shape, 1)],
+    Tensor[adaptive_pool_gradual_shape(Shape, 1)],
+]: ...
+@overload
+def adaptive_max_pool2d_with_indices[Shape: IntTuple, O: _Int](
+    input: Tensor[Shape], output_size: O, return_indices: bool = False
+) -> tuple[
+    Tensor[adaptive_pool2d_shape(Shape, O, O)],
+    Tensor[adaptive_pool2d_shape(Shape, O, O)],
+]: ...
+@overload
+def adaptive_max_pool2d_with_indices[Shape: IntTuple, OH: _Int, OW: _Int](
+    input: Tensor[Shape], output_size: tuple[OH, OW], return_indices: bool = False
+) -> tuple[
+    Tensor[adaptive_pool2d_shape(Shape, OH, OW)],
+    Tensor[adaptive_pool2d_shape(Shape, OH, OW)],
+]: ...
+@overload
+def adaptive_max_pool2d_with_indices[Shape: IntTuple](
+    input: Tensor[Shape],
+    output_size: int | tuple[int | None, int | None],
+    return_indices: bool = False,
+) -> tuple[
+    Tensor[adaptive_pool_gradual_shape(Shape, 2)],
+    Tensor[adaptive_pool_gradual_shape(Shape, 2)],
+]: ...
+@overload
+def adaptive_max_pool3d_with_indices[Shape: IntTuple, O: _Int](
+    input: Tensor[Shape], output_size: O, return_indices: bool = False
+) -> tuple[
+    Tensor[adaptive_pool3d_shape(Shape, O, O, O)],
+    Tensor[adaptive_pool3d_shape(Shape, O, O, O)],
+]: ...
+@overload
+def adaptive_max_pool3d_with_indices[Shape: IntTuple, OD: _Int, OH: _Int, OW: _Int](
+    input: Tensor[Shape],
+    output_size: tuple[OD, OH, OW],
+    return_indices: bool = False,
+) -> tuple[
+    Tensor[adaptive_pool3d_shape(Shape, OD, OH, OW)],
+    Tensor[adaptive_pool3d_shape(Shape, OD, OH, OW)],
+]: ...
+@overload
+def adaptive_max_pool3d_with_indices[Shape: IntTuple](
+    input: Tensor[Shape],
+    output_size: int | tuple[int | None, int | None, int | None],
+    return_indices: bool = False,
+) -> tuple[
+    Tensor[adaptive_pool_gradual_shape(Shape, 3)],
+    Tensor[adaptive_pool_gradual_shape(Shape, 3)],
+]: ...
+
 # TODO: Add precise types and signatures for the remaining public API.
 GRID_SAMPLE_INTERPOLATION_MODES: Any
 GRID_SAMPLE_PADDING_MODES: Any
-adaptive_max_pool1d_with_indices: Any
-adaptive_max_pool2d_with_indices: Any
-adaptive_max_pool3d_with_indices: Any
 affine_grid: Any
 assert_int_or_pair: Any
 ctc_loss: Any

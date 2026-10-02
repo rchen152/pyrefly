@@ -1794,7 +1794,10 @@ def adaptive_pool_gradual_shape(
             return dsl.Invalid("adaptive_pool3d requires 4D or 5D input")
     else:
         return dsl.Invalid("adaptive pooling supports one to three spatial dimensions")
-    return dsl.IntTuple.gradual()
+    return dsl.concat(
+        input_shape[: len(input_shape) - spatial_dimensions],
+        dsl.IntTuple((dsl.Int.gradual() for _ in range(spatial_dimensions))),
+    )
 
 @type_shape_dsl_function
 def interpolate_scalar_shape(

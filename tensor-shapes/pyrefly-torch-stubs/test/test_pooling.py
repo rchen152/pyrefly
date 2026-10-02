@@ -258,16 +258,23 @@ if TYPE_CHECKING:
             F.adaptive_avg_pool2d(tensor, output_pair), Tensor[[2, 3, int, int]]
         )
         assert_type(F.adaptive_avg_pool2d(open_rank, (4, 5)), Tensor[IntTuple])
-        assert_type(F.adaptive_avg_pool2d(tensor, (None, 5)), Tensor)
+        assert_type(F.adaptive_avg_pool2d(tensor, (None, 5)), Tensor[[2, 3, int, int]])
         assert_type(
             F.adaptive_max_pool2d(tensor, (4, None), return_indices=True),
-            tuple[Tensor, Tensor],
+            tuple[Tensor[[2, 3, int, int]], Tensor[[2, 3, int, int]]],
         )
-        assert_type(F.adaptive_avg_pool3d(volume, (None, 5, None)), Tensor)
-        assert_type(F.adaptive_max_pool3d(volume, (4, None, 6)), Tensor)
+        assert_type(
+            F.adaptive_avg_pool3d(volume, (None, 5, None)),
+            Tensor[[2, 3, int, int, int]],
+        )
+        assert_type(
+            F.adaptive_max_pool3d(volume, (4, None, 6)),
+            Tensor[[2, 3, int, int, int]],
+        )
         assert_type(
             F.adaptive_max_pool2d(tensor, (4, 5), return_indices=return_indices),
-            Tensor | tuple[Tensor, Tensor],
+            Tensor[[2, 3, int, int]]
+            | tuple[Tensor[[2, 3, int, int]], Tensor[[2, 3, int, int]]],
         )
 
     def check_undecidable_pool_arguments(
