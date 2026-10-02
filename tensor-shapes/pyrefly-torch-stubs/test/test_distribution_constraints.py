@@ -45,6 +45,21 @@ def test_matrix_constraints() -> None:
     assert not constraints.symmetric.check(rectangular).item()
 
 
+def test_matrix_constraint_specializations() -> None:
+    matrices = torch.stack((torch.eye(2), torch.zeros((2, 2))))
+
+    assert_shape(constraints.lower_triangular.check(matrices).shape, (2,))
+    assert constraints.lower_triangular.check(matrices).tolist() == [True, True]
+    assert_shape(constraints.lower_cholesky.check(matrices).shape, (2,))
+    assert constraints.lower_cholesky.check(matrices).tolist() == [True, False]
+    assert_shape(constraints.corr_cholesky.check(matrices).shape, (2,))
+    assert constraints.corr_cholesky.check(matrices).tolist() == [True, False]
+    assert_shape(constraints.positive_semidefinite.check(matrices).shape, (2,))
+    assert constraints.positive_semidefinite.check(matrices).tolist() == [True, True]
+    assert_shape(constraints.positive_definite.check(matrices).shape, (2,))
+    assert constraints.positive_definite.check(matrices).tolist() == [True, False]
+
+
 if TYPE_CHECKING:
 
     def check_constraint_shapes[S: IntTuple, M: IntVar, N: IntVar](
@@ -57,3 +72,8 @@ if TYPE_CHECKING:
         assert_type(constraints.simplex.check(vector), Tensor[S])
         assert_type(constraints.square.check(matrix), Tensor[S])
         assert_type(constraints.symmetric.check(matrix), Tensor[S])
+        assert_type(constraints.lower_triangular.check(matrix), Tensor[S])
+        assert_type(constraints.lower_cholesky.check(matrix), Tensor[S])
+        assert_type(constraints.corr_cholesky.check(matrix), Tensor[S])
+        assert_type(constraints.positive_semidefinite.check(matrix), Tensor[S])
+        assert_type(constraints.positive_definite.check(matrix), Tensor[S])

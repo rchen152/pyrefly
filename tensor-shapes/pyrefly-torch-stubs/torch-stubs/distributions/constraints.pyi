@@ -43,19 +43,47 @@ class _Square(Constraint):
 
 class _Symmetric(_Square): ...
 
+class _LowerTriangular(Constraint):
+    event_dim: int = 2
+
+    def check[S: IntTuple, M: IntVar, N: IntVar](
+        self, value: Tensor[[*S, M, N]]
+    ) -> Tensor[S]: ...
+
+class _LowerCholesky(Constraint):
+    event_dim: int = 2
+
+    def check[S: IntTuple, M: IntVar, N: IntVar](
+        self, value: Tensor[[*S, M, N]]
+    ) -> Tensor[S]: ...
+
+class _CorrCholesky(Constraint):
+    event_dim: int = 2
+
+    def check[S: IntTuple, M: IntVar, N: IntVar](
+        self, value: Tensor[[*S, M, N]]
+    ) -> Tensor[S]: ...
+
+class _PositiveSemidefinite(_Symmetric): ...
+class _PositiveDefinite(_Symmetric): ...
+
 real: Constraint
 boolean: _Boolean
 one_hot: _OneHot
 simplex: _Simplex
 square: _Square
 symmetric: _Symmetric
+lower_triangular: _LowerTriangular
+lower_cholesky: _LowerCholesky
+corr_cholesky: _CorrCholesky
+positive_semidefinite: _PositiveSemidefinite
+positive_definite: _PositiveDefinite
 
 def interval(lower_bound: float, upper_bound: float) -> Constraint: ...
 
 # TODO: Replace these availability stubs with precise declarations.
 MixtureSameFamilyConstraint: Any
 cat: Any
-corr_cholesky: Any
 dependent: Any
 dependent_property: Any
 greater_than: Any
@@ -65,15 +93,11 @@ independent: Any
 integer_interval: Any
 is_dependent: Any
 less_than: Any
-lower_cholesky: Any
-lower_triangular: Any
 multinomial: Any
 nonnegative: Any
 nonnegative_integer: Any
 positive: Any
-positive_definite: Any
 positive_integer: Any
-positive_semidefinite: Any
 real_vector: Any
 stack: Any
 unit_interval: Any
