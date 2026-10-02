@@ -139,12 +139,27 @@ impl<T: TspInterface> TspServer<T> {
 
     /// Validate that the client-supplied snapshot matches the server's current
     /// snapshot. Returns `Ok(())` on match or `Err(ResponseError)` on mismatch.
-    pub(crate) fn validate_snapshot(&self, client_snapshot: i32) -> Result<(), ResponseError> {
+    fn validate_snapshot(&self, client_snapshot: i32) -> Result<(), ResponseError> {
         let current = self.get_snapshot();
         if client_snapshot != current {
             Err(snapshot_outdated_error(client_snapshot, current))
         } else {
             Ok(())
+        }
+    }
+
+    /// Reply to a request that names `snapshot` with the result of `answer`,
+    /// or with the outdated error when `snapshot` is not current.
+    pub(crate) fn answer_at_snapshot<R: Serialize>(
+        &self,
+        id: RequestId,
+        reply: Reply,
+        snapshot: i32,
+        answer: impl FnOnce() -> Result<R, ResponseError>,
+    ) {
+        match self.validate_snapshot(snapshot).and_then(|()| answer()) {
+            Ok(result) => reply.ok(id, result),
+            Err(err) => reply.err(id, err),
         }
     }
 
@@ -268,8 +283,8 @@ impl<T: TspInterface> TspServer<T> {
     }
 
     /// Deserialize `serde_json::Value` params into [`GetTypeParams`], call the
-    /// handler, and send the response. Shared by getDeclaredType,
-    /// getComputedType, and getExpectedType.
+    /// handler at the snapshot that the params name, and send the response.
+    /// Shared by getDeclaredType, getComputedType, and getExpectedType.
     fn dispatch_get_type_request(
         &self,
         id: RequestId,
@@ -286,14 +301,8 @@ impl<T: TspInterface> TspServer<T> {
                 return;
             }
         };
-        match handler(params) {
-            Ok(result) => {
-                reply.ok(id, result);
-            }
-            Err(err) => {
-                reply.err(id, err);
-            }
-        }
+        let snapshot = params.snapshot;
+        self.answer_at_snapshot(id, reply, snapshot, || handler(params));
     }
 }
 
