@@ -51,6 +51,7 @@ use crate::alt::traits::Solve;
 use crate::binding::binding::AnyIdx;
 use crate::binding::binding::Exported;
 use crate::binding::binding::Key;
+use crate::binding::binding::KeyAnnotation;
 use crate::binding::binding::Keyed;
 use crate::binding::bindings::BindingEntry;
 use crate::binding::bindings::BindingTable;
@@ -1630,6 +1631,10 @@ impl Answers {
 
     pub fn get_type_at(&self, idx: Idx<Key>) -> Option<Type> {
         Some(self.get_idx(idx)?.ty().clone())
+    }
+
+    pub fn get_annotation_type_at(&self, idx: Idx<KeyAnnotation>) -> Option<Type> {
+        self.get_idx(idx)?.annotation.ty.clone()
     }
 
     pub fn get_type_trace(&self, range: TextRange) -> Option<Type> {

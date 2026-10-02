@@ -11,7 +11,8 @@
 //! are covered by `hover_on_attribute_assignment_target` in `hover.rs`.
 //!
 //! A target is not a read, so these report what is being written to the
-//! attribute rather than what reading it would return.
+//! attribute rather than what reading it would return. A target that is only
+//! declared reports its declared type, since nothing is written to it.
 
 use pretty_assertions::assert_eq;
 use pyrefly_build::handle::Handle;
@@ -92,8 +93,8 @@ Computed: `Literal[6]`
     );
 }
 
-// BUG: `self.w` is only declared, so nothing is assigned to it and it reports no
-// type. It should report its declared type.
+/// A target that is only declared has nothing assigned to it, so it reports its
+/// declared type.
 #[test]
 fn test_declared_target() {
     let code = r#"
@@ -108,8 +109,8 @@ class C:
 # main.py
 4 |         self.w: bytes
                  ^
-Hover: None
-Computed: None
+Hover: `bytes`
+Computed: `bytes`
 "#
         .trim(),
         report.trim(),
@@ -289,8 +290,8 @@ fn range_of(code: &str, needle: &str) -> TextRange {
 
 /// `getComputedType` takes a range, so cover the shapes a client can send for an
 /// attribute expression: an empty range (a point query), the whole expression, and
-/// just the attribute name. Only the whole expression carries a recorded type, so
-/// a name-only range reports nothing for a target exactly as it does for a read.
+/// just the attribute name. A type belongs to the whole expression, so a name-only
+/// range reports nothing for a target exactly as it does for a read.
 #[test]
 fn test_computed_type_at_range() {
     let code = r#"
@@ -301,6 +302,10 @@ c = C()
 c.x = 2
 d = C()
 print(d.x)
+
+class E:
+    def __init__(self) -> None:
+        self.w: bytes
 "#;
     let (handles, state) = mk_multi_file_state(&[("main", code)], Require::Exports, false);
     let handle = handles.get("main").unwrap();
@@ -314,6 +319,7 @@ print(d.x)
     };
     let store = range_of(code, "c.x");
     let read = range_of(code, "d.x");
+    let declaration = range_of(code, "self.w");
     let name_only = |range: TextRange| TextRange::at(range.end() - TextSize::new(1), 1.into());
     let mut actual = String::new();
     actual.push_str(&report("store `c.x`", store));
@@ -328,6 +334,12 @@ print(d.x)
         "read point",
         TextRange::empty(name_only(read).start()),
     ));
+    actual.push_str(&report("declaration `self.w`", declaration));
+    actual.push_str(&report("declaration `w`", name_only(declaration)));
+    actual.push_str(&report(
+        "declaration point",
+        TextRange::empty(name_only(declaration).start()),
+    ));
     assert_eq!(
         r#"
 store `c.x`: `Literal[2]`
@@ -336,6 +348,9 @@ store point: `Literal[2]`
 read `d.x`: `int`
 read `x`: None
 read point: `int`
+declaration `self.w`: `bytes`
+declaration `w`: None
+declaration point: `bytes`
 "#
         .trim(),
         actual.trim(),

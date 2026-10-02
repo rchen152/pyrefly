@@ -63,6 +63,7 @@ use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 use serde::Deserialize;
+use starlark_map::Hashed;
 use starlark_map::ordered_set::OrderedSet;
 use starlark_map::small_map::SmallMap;
 use vec1::Vec1;
@@ -75,6 +76,7 @@ use crate::alt::attr::AttrDefinition;
 use crate::alt::attr::AttrInfo;
 use crate::binding::binding::Binding;
 use crate::binding::binding::Key;
+use crate::binding::binding::KeyAnnotation;
 use crate::config::error_kind::ErrorKind;
 use crate::error::suppress::detect_line_ending;
 use crate::export::exports::Export;
@@ -854,6 +856,32 @@ impl<'a> Transaction<'a> {
         self.get_type_trace_for_surface(handle, range)
     }
 
+    /// The type recorded at `range`, or, when `range` is an attribute that is only
+    /// declared (`self.x: int`), its declared type. Nothing is ever written to such
+    /// a target, so the solver records no type for it, but the annotation says what
+    /// a write there would have to produce.
+    fn get_type_trace_or_declaration(&self, handle: &Handle, range: TextRange) -> Option<Type> {
+        if let Some(ty) = self.get_type_trace_for_surface(handle, range) {
+            return Some(ty);
+        }
+        let ast = self.get_ast(handle)?;
+        let ann_assign = Ast::locate_node(&ast, range.start())
+            .into_iter()
+            .find_map(|node| match node {
+                AnyNodeRef::StmtAnnAssign(x) => Some(x),
+                _ => None,
+            })?;
+        if ann_assign.value.is_some() || ann_assign.target.range() != range {
+            return None;
+        }
+        let answers = self.get_answers(handle)?;
+        let key = KeyAnnotation::AttrAnnotation(ann_assign.annotation.range());
+        let idx = answers
+            .bindings()
+            .key_to_idx_hashed_opt(Hashed::new(&key))?;
+        answers.get_annotation_type_at(idx)
+    }
+
     fn get_chosen_overload_trace_for_surface(
         &self,
         handle: &Handle,
@@ -1470,7 +1498,7 @@ impl<'a> Transaction<'a> {
                 {
                     Some(ret)
                 } else {
-                    self.get_type_trace_for_surface(handle, range)
+                    self.get_type_trace_or_declaration(handle, range)
                 }
             }
         }
@@ -1515,7 +1543,7 @@ impl<'a> Transaction<'a> {
             context,
         }) = self.identifier_at(handle, range.start())
         else {
-            return self.get_type_trace(handle, range);
+            return self.get_type_trace_or_declaration(handle, range);
         };
         let kind = self.classify_surface(handle, &identifier, &context);
         if identifier.range == range
@@ -1529,7 +1557,7 @@ impl<'a> Transaction<'a> {
         {
             self.type_from_resolution(handle, range.start(), &identifier, &context, kind, false)
         } else {
-            self.get_type_trace(handle, range)
+            self.get_type_trace_or_declaration(handle, range)
         }
     }
 
