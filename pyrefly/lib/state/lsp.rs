@@ -3177,6 +3177,7 @@ impl<'a> Transaction<'a> {
             FindPreference {
                 prefer_pyi: false,
                 replacement_policy: ImportReplacementPolicy::Bypass,
+                include_interpreter_stdlib: true,
                 ..Default::default()
             },
         );

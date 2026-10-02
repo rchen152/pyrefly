@@ -563,6 +563,16 @@ impl ImportLookupMode {
             } => replacement_policy,
         }
     }
+
+    fn include_interpreter_stdlib(self) -> bool {
+        match self {
+            Self::TypeChecking => false,
+            Self::Style {
+                include_interpreter_stdlib,
+                ..
+            } => include_interpreter_stdlib,
+        }
+    }
 }
 
 // TODO(connernilsen): change things so that we return all entries that match for a given
@@ -679,6 +689,15 @@ pub(crate) fn find_import_with_mode(
                         .site_package_path()
                         .any(|site_package| path.starts_with(site_package))
                 }),
+            options.module_options(style_filter, &mut namespaces_found),
+        )
+    {
+        path
+    } else if style_filter == Some(ModuleStyle::Executable)
+        && lookup_mode.include_interpreter_stdlib()
+        && let Some(path) = find_module(
+            module,
+            config.python_environment.interpreter_stdlib_path.iter(),
             options.module_options(style_filter, &mut namespaces_found),
         )
     {

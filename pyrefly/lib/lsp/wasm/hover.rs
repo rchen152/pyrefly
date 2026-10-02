@@ -660,6 +660,7 @@ fn parameter_documentation_for_callee(
             position,
             FindPreference {
                 prefer_pyi: false,
+                include_interpreter_stdlib: true,
                 ..Default::default()
             },
         )
@@ -980,6 +981,7 @@ pub fn get_hover_with_verbosity(
             position,
             FindPreference {
                 prefer_pyi: false,
+                include_interpreter_stdlib: true,
                 ..Default::default()
             },
         )

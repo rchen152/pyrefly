@@ -363,6 +363,7 @@ impl Transaction<'_> {
                 position,
                 FindPreference {
                     prefer_pyi: false,
+                    include_interpreter_stdlib: true,
                     ..Default::default()
                 },
             )
@@ -385,6 +386,7 @@ impl Transaction<'_> {
                 position,
                 FindPreference {
                     prefer_pyi: false,
+                    include_interpreter_stdlib: true,
                     ..Default::default()
                 },
             )
