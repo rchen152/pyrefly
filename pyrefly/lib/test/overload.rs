@@ -2530,3 +2530,25 @@ def g(x: Any):
     assert_type(f(x), int | Any)
     "#,
 );
+
+testcase!(
+    test_ambiguous_list_addition,
+    r#"
+from typing import Any, assert_type
+class A: ...
+def f(x: list[Any]):
+    assert_type([A()] + x, list[A | Any])
+    "#,
+);
+
+testcase!(
+    test_flatten_list_str,
+    r#"
+from itertools import chain
+from typing import assert_type
+
+def flatten(values: list[str]):
+    x = "".join(chain.from_iterable(zip(values, values)))
+    assert_type(x, str)
+    "#,
+);

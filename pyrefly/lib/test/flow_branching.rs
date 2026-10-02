@@ -3880,3 +3880,27 @@ def use() -> None:
     print(1)  # E: This code is unreachable
 "#,
 );
+
+testcase!(
+    test_ternary_with_empty_dict,
+    r#"
+from typing import Any, Mapping, assert_type
+def f(x: Mapping[Any, Any] | None):
+    y = {} if x is None else dict(x)
+    z = dict(x) if x is not None else {}
+    assert_type(y, dict[Any, Any])
+    assert_type(z, dict[Any, Any])
+    "#,
+);
+
+testcase!(
+    test_binor_with_empty_dict,
+    r#"
+from typing import Any, Mapping, assert_type
+def f(x: Mapping[Any, Any]):
+    y = {} or dict(x)
+    z = dict(x) or {}
+    assert_type(y, dict[Any, Any])
+    assert_type(z, dict[Any, Any])
+    "#,
+);

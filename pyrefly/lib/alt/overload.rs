@@ -858,7 +858,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         let mut closest_unmatched_overload: Option<CalledOverload<'c>> = None;
         for callable in overloads {
             let snapshot = self.solver().snapshot_exact_vars(&placeholder_vars);
-            let called_overload = self.call_overload(
+            let mut called_overload = self.call_overload(
                 callable,
                 metadata,
                 shape_transform,
@@ -870,6 +870,13 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 None,
                 ctor_targs,
             );
+            // Each overload's argmap should use its own var solutions.
+            for var in placeholder_vars.iter() {
+                self.solver().force_var(*var);
+            }
+            for param in called_overload.argmap.range_to_param.values_mut() {
+                self.solver().expand_mut(&mut param.ty);
+            }
             self.solver().restore_vars(snapshot);
             let n_errors = called_overload.num_match_errors();
             if n_errors == 0 {
