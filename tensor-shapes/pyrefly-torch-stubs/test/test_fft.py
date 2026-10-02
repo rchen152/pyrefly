@@ -234,6 +234,20 @@ def test_fft_shift_shapes() -> None:
     assert_shape(torch.fft.ifftshift(tensor, dim=(1, 1)).shape, (2, 3, 4))
 
 
+def test_frequency_shapes() -> None:
+    assert_shape(torch.fft.fftfreq(7).shape, (7,))
+    assert_shape(torch.fft.rfftfreq(7).shape, (4,))
+    assert_shape(torch.fft.rfftfreq(8, d=0.5).shape, (5,))
+
+
+if TYPE_CHECKING:
+
+    def check_symbolic_frequencies[N: IntVar](n: Int[N], dynamic: int) -> None:
+        assert_type(torch.fft.fftfreq(n), Tensor[[N]])
+        assert_type(torch.fft.rfftfreq(n), Tensor[[N // 2 + 1]])
+        assert_type(torch.fft.fftfreq(dynamic), Tensor[[int]])
+
+
 def test_fft_shift_rejects_invalid_dimensions() -> None:
     tensor = torch.randn((2, 3, 4))
     assert_shape(torch.fft.fftshift(tensor).shape, (2, 3, 4))

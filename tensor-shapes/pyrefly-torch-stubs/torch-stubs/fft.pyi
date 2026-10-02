@@ -6,7 +6,7 @@
 # Type stubs for torch.fft module (Phase 6: FFT Operations)
 from typing import Any, Literal, overload, TYPE_CHECKING
 
-from shape_extensions import Flag, IntTuple
+from shape_extensions import Flag, IntTuple, IntVar
 from torch import Tensor as Tensor
 from torch._shapes import (
     fft_shape,
@@ -170,9 +170,29 @@ def ifftshift[Shape: IntTuple](
 ) -> Tensor[Shape]: ...
 
 # TODO: Add precise signatures for the remaining public API.
-fftfreq: Any
+def fftfreq[N: IntVar](
+    n: _Int[N],
+    d: float = 1.0,
+    *,
+    out: Tensor | None = None,
+    dtype: Any = None,
+    layout: Any = ...,
+    device: Any = None,
+    requires_grad: bool = False,
+) -> Tensor[[N]]: ...
+
 hfft2: Any
 hfftn: Any
 ihfft2: Any
 ihfftn: Any
-rfftfreq: Any
+
+def rfftfreq[N: IntVar](
+    n: _Int[N],
+    d: float = 1.0,
+    *,
+    out: Tensor | None = None,
+    dtype: Any = None,
+    layout: Any = ...,
+    device: Any = None,
+    requires_grad: bool = False,
+) -> Tensor[[N // 2 + 1]]: ...
