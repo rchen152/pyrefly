@@ -7,7 +7,7 @@
 
 from typing import Any
 
-from shape_extensions import IntTuple, IntVar
+from shape_extensions import broadcast, IntTuple, IntVar
 from torch import Tensor
 
 class Constraint:
@@ -73,15 +73,23 @@ class _IntegerGreaterThan(Constraint):
 
     def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
 
-class _GreaterThan(Constraint):
-    lower_bound: float
+class _GreaterThan[Bounds: IntTuple = []](Constraint):
+    lower_bound: float | Tensor[Bounds]
 
-    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
+    def __init__(self, lower_bound: float | Tensor[Bounds]) -> None: ...
+    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[broadcast(S, Bounds)]: ...
 
-class _GreaterThanEq(Constraint):
-    lower_bound: float
+class _GreaterThanEq[Bounds: IntTuple = []](Constraint):
+    lower_bound: float | Tensor[Bounds]
 
-    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
+    def __init__(self, lower_bound: float | Tensor[Bounds]) -> None: ...
+    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[broadcast(S, Bounds)]: ...
+
+class _LessThan[Bounds: IntTuple = []](Constraint):
+    upper_bound: float | Tensor[Bounds]
+
+    def __init__(self, upper_bound: float | Tensor[Bounds]) -> None: ...
+    def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[broadcast(S, Bounds)]: ...
 
 class _Interval(Constraint):
     lower_bound: float
@@ -100,11 +108,14 @@ lower_cholesky: _LowerCholesky
 corr_cholesky: _CorrCholesky
 positive_semidefinite: _PositiveSemidefinite
 positive_definite: _PositiveDefinite
-positive: _GreaterThan
-nonnegative: _GreaterThanEq
+positive: _GreaterThan[[]]
+nonnegative: _GreaterThanEq[[]]
 positive_integer: _IntegerGreaterThan
 nonnegative_integer: _IntegerGreaterThan
 unit_interval: _Interval
+greater_than = _GreaterThan
+greater_than_eq = _GreaterThanEq
+less_than = _LessThan
 
 def interval(lower_bound: float, upper_bound: float) -> Constraint: ...
 
@@ -113,13 +124,10 @@ MixtureSameFamilyConstraint: Any
 cat: Any
 dependent: Any
 dependent_property: Any
-greater_than: Any
-greater_than_eq: Any
 half_open_interval: Any
 independent: Any
 integer_interval: Any
 is_dependent: Any
-less_than: Any
 multinomial: Any
 real_vector: Any
 stack: Any

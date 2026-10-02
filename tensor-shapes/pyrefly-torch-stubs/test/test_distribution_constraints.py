@@ -48,6 +48,31 @@ def test_elementwise_bounds() -> None:
     ]
 
 
+def test_threshold_factories_broadcast_bounds() -> None:
+    value = torch.tensor([[0.0, 1.0, 2.0]])
+    lower_bound = torch.tensor([[0.5], [1.5]])
+
+    assert_shape(constraints.greater_than(lower_bound).check(value).shape, (2, 3))
+    assert constraints.greater_than(lower_bound).check(value).tolist() == [
+        [False, True, True],
+        [False, False, True],
+    ]
+    assert_shape(constraints.greater_than_eq(lower_bound).check(value).shape, (2, 3))
+    assert constraints.greater_than_eq(lower_bound).check(value).tolist() == [
+        [False, True, True],
+        [False, False, True],
+    ]
+    assert_shape(constraints.less_than(lower_bound).check(value).shape, (2, 3))
+    assert constraints.less_than(lower_bound).check(value).tolist() == [
+        [True, False, False],
+        [True, True, False],
+    ]
+    assert_shape(constraints.greater_than_eq(1.0).check(value).shape, (1, 3))
+    assert constraints.greater_than_eq(1.0).check(value).tolist() == [
+        [False, True, True]
+    ]
+
+
 def test_vector_constraints() -> None:
     value = torch.tensor([[1.0, 0.0, 0.0], [0.2, 0.3, 0.5]])
 
@@ -107,3 +132,11 @@ if TYPE_CHECKING:
         assert_type(constraints.corr_cholesky.check(matrix), Tensor[S])
         assert_type(constraints.positive_semidefinite.check(matrix), Tensor[S])
         assert_type(constraints.positive_definite.check(matrix), Tensor[S])
+
+    def check_threshold_shapes[B: IntVar, N: IntVar](
+        value: Tensor[[1, N]], bound: Tensor[[B, 1]]
+    ) -> None:
+        assert_type(constraints.greater_than(bound).check(value), Tensor[[B, N]])
+        assert_type(constraints.greater_than_eq(bound).check(value), Tensor[[B, N]])
+        assert_type(constraints.less_than(bound).check(value), Tensor[[B, N]])
+        assert_type(constraints.greater_than(1.0).check(value), Tensor[[1, N]])
