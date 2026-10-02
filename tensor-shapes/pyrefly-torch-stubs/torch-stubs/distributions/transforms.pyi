@@ -7,7 +7,7 @@
 
 from typing import Any
 
-from shape_extensions import IntTuple
+from shape_extensions import IntTuple, IntVar
 from torch import Tensor
 
 class Transform:
@@ -46,6 +46,18 @@ class TanhTransform(Transform):
         self, x: Tensor[S], y: Tensor[S]
     ) -> Tensor[S]: ...
 
+class LowerCholeskyTransform(Transform): ...
+class PositiveDefiniteTransform(Transform): ...
+class SoftmaxTransform(Transform): ...
+
+class StickBreakingTransform(Transform):
+    def __call__[S: IntTuple, N: IntVar](
+        self, x: Tensor[[*S, N]]
+    ) -> Tensor[[*S, N + 1]]: ...
+    def log_abs_det_jacobian[S: IntTuple, N: IntVar](
+        self, x: Tensor[[*S, N]], y: Tensor[[*S, N + 1]]
+    ) -> Tensor[S]: ...
+
 # TODO: Replace these availability stubs with shape-aware declarations.
 AffineTransform: Any
 CatTransform: Any
@@ -53,11 +65,7 @@ ComposeTransform: Any
 CorrCholeskyTransform: Any
 CumulativeDistributionTransform: Any
 IndependentTransform: Any
-LowerCholeskyTransform: Any
-PositiveDefiniteTransform: Any
 PowerTransform: Any
 ReshapeTransform: Any
-SoftmaxTransform: Any
 StackTransform: Any
-StickBreakingTransform: Any
 identity_transform: Any
