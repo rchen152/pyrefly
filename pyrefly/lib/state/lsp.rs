@@ -1704,6 +1704,7 @@ impl<'a> Transaction<'a> {
         name: Name,
         preference: FindPreference,
     ) -> Option<(Handle, Name, Export)> {
+        let original_name = name.clone();
         let mut m = module_name;
         let mut gas = RESOLVE_EXPORT_INITIAL_GAS;
         let mut name = name;
@@ -1778,6 +1779,21 @@ impl<'a> Transaction<'a> {
                     m = module;
                 }
             }
+        }
+        // Running out of gas means the re-exports form a cycle. Preferring source files can
+        // create a cycle that the type checker never sees: `os.py` re-exports `getcwd` from
+        // `posix`, which has only a stub, and `posix.pyi` re-exports it from `os`. Preferring
+        // stubs resolves imports the way the type checker does, which avoids such cycles.
+        if !preference.prefer_pyi && !preference.disable_style_fallback {
+            return self.resolve_named_import(
+                handle,
+                module_name,
+                original_name,
+                FindPreference {
+                    prefer_pyi: true,
+                    ..preference
+                },
+            );
         }
         None
     }

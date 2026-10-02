@@ -3809,19 +3809,20 @@ import foo.bar.__recursefiles__ as files
     );
 }
 
-#[test]
-fn definition_in_interpreter_stdlib_goes_to_source() {
+/// Check a `main.py` containing `code` in a project whose interpreter standard library
+/// directory, `<root>/stdlib`, contains `stdlib_files`.
+fn state_with_interpreter_stdlib(
+    stdlib_files: &[(&str, &str)],
+    code: &str,
+) -> (TempDir, State, Handle) {
     let root = TempDir::new().unwrap();
     let stdlib = root.path().join("stdlib");
-    fs::create_dir(&stdlib).unwrap();
-    let implementation = stdlib.join("pathlib.py");
-    fs::write(
-        &implementation,
-        "class Path:\n    @classmethod\n    def home(cls): pass\n",
-    )
-    .unwrap();
+    for (path, contents) in stdlib_files {
+        let path = stdlib.join(path);
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, contents).unwrap();
+    }
     let main_path = root.path().join("main.py");
-    let code = "from pathlib import Path\nx = Path\n#   ^\nPath.home\n#     ^\n";
     fs::write(&main_path, code).unwrap();
 
     let mut config = ConfigFile::default();
@@ -3837,14 +3838,34 @@ fn definition_in_interpreter_stdlib_goes_to_source() {
         ConfigFinder::new_constant(ArcId::new(config)),
         TEST_THREAD_COUNT,
     );
-    let mut transaction = state.new_transaction(Require::Everything, None);
-    transaction.run(slice::from_ref(&handle), Require::Everything, None);
+    let mut transaction = state.new_committable_transaction(Require::Everything, None);
+    transaction
+        .as_mut()
+        .run(slice::from_ref(&handle), Require::Everything, None);
+    state.commit_transaction(transaction, None);
+    (root, state, handle)
+}
+
+#[test]
+fn definition_in_interpreter_stdlib_goes_to_source() {
+    let code = "from pathlib import Path\nx = Path\n#   ^\nPath.home\n#     ^\n";
+    let (root, state, handle) = state_with_interpreter_stdlib(
+        &[(
+            "pathlib.py",
+            "class Path:\n    @classmethod\n    def home(cls): pass\n",
+        )],
+        code,
+    );
+    let transaction = state.transaction();
     let positions = extract_cursors_for_test(code);
 
     for (position, name) in positions.iter().zip(["Path", "home"]) {
         let definitions = transaction.goto_definition(&handle, *position).unwrap();
         assert_eq!(definitions.len(), 1);
-        assert_eq!(definitions[0].module.path().as_path(), implementation);
+        assert_eq!(
+            definitions[0].module.path().as_path(),
+            root.path().join("stdlib/pathlib.py")
+        );
         assert_eq!(definitions[0].module.code_at(definitions[0].range), name);
 
         // Glean prefers source files but must target files inside the project, so a
@@ -3888,4 +3909,27 @@ fn definition_in_interpreter_stdlib_goes_to_source() {
             .code_at(type_definitions[0].range),
         "Path",
     );
+}
+
+// The runtime `os` module re-exports `getcwd` from `posix` with `from posix import *`, while
+// typeshed's `posix.pyi` re-exports `getcwd` from `os`. Following re-exports from the source
+// therefore leads back to `os.py`.
+#[test]
+fn definition_of_name_reexported_in_cycle_goes_to_stub() {
+    let code = "import os\nfrom os import getcwd\nos.getcwd\n#   ^\ngetcwd\n# ^\n";
+    let (_root, state, handle) =
+        state_with_interpreter_stdlib(&[("os.py", "from posix import *\n")], code);
+    let transaction = state.transaction();
+    for position in extract_cursors_for_test(code) {
+        let definitions = transaction
+            .goto_definition(&handle, position)
+            .unwrap_or_default();
+        assert_eq!(definitions.len(), 1, "got {definitions:?}");
+        assert_eq!(definitions[0].module.name(), ModuleName::from_str("os"));
+        assert_eq!(definitions[0].module.path().style(), ModuleStyle::Interface);
+        assert_eq!(
+            definitions[0].module.code_at(definitions[0].range),
+            "getcwd"
+        );
+    }
 }
