@@ -12,6 +12,107 @@
 use crate::test::util::TestEnv;
 use crate::testcase;
 
+// Regression test for https://github.com/facebook/pyrefly/issues/5021.
+testcase!(
+    test_factory_callable_erases_return_only_type_parameter,
+    r#"
+from collections.abc import Callable
+from typing import reveal_type
+
+def make[V](factory: Callable[[], V]) -> V:
+    return factory()
+
+reveal_type(make(list))  # E: revealed type: list[Unknown]
+reveal_type(make(set))  # E: revealed type: set[Unknown]
+reveal_type(make(dict))  # E: revealed type: dict[Unknown, Unknown]
+reveal_type(make(tuple))  # E: revealed type: tuple[Unknown, ...]
+"#,
+);
+
+// Regression test for https://github.com/facebook/pyrefly/issues/5021.
+testcase!(
+    test_defaultdict_tuple_factory_erases_return_only_type_parameter,
+    r#"
+import collections
+from typing import reveal_type
+
+col = collections.defaultdict(tuple)
+col["a"] += ("hello",)
+
+reveal_type(col)  # E: revealed type: defaultdict[str, tuple[Unknown, ...]] (_["a"]: tuple[Unknown, ...])
+
+def foo():
+    return sorted(col["a"])
+"#,
+);
+
+testcase!(
+    test_optional_generic_parameter_used_by_target,
+    r#"
+from collections.abc import Callable
+from typing import reveal_type
+
+def identity[S](f: Callable[[S], S]) -> Callable[[S], S]:
+    return f
+
+def generic[T](x: T = ...) -> T:
+    ...
+
+result = identity(generic)
+reveal_type(result)  # E: revealed type: [T](T) -> T
+"#,
+);
+
+testcase!(
+    test_paramspec_target_keeps_optional_generic_parameter,
+    r#"
+from collections.abc import Callable
+from typing import reveal_type
+
+def deco[**P, R](f: Callable[P, R]) -> Callable[P, R]: ...
+
+def generic[T](x: T = ...) -> T: ...
+
+reveal_type(deco(generic))  # E: revealed type: [R](x: R = ...) -> R
+"#,
+);
+
+testcase!(
+    test_factory_callable_erases_parameter_not_bound_by_target,
+    r#"
+from collections.abc import Callable
+from typing import reveal_type
+
+def make[V](factory: Callable[[], V]) -> V: ...
+def make1[V](factory: Callable[[int], V]) -> V: ...
+
+def optional[T](x: int, y: T | None = None) -> list[T]: ...
+def varargs[T](*args: T) -> list[T]: ...
+def kwargs[T](**kwargs: T) -> dict[str, T]: ...
+
+reveal_type(make1(optional))  # E: revealed type: list[Unknown]
+reveal_type(make(varargs))  # E: revealed type: list[Unknown]
+reveal_type(make(kwargs))  # E: revealed type: dict[str, Unknown]
+"#,
+);
+
+// A callback protocol target has no top-level signature, so every var in it is treated as a
+// parameter var, including `V`, which only appears in the return type of `__call__`.
+testcase!(
+    bug = "The return-only type parameter of `tuple` leaks through a callback protocol",
+    test_callback_protocol_factory_leaks_return_only_type_parameter,
+    r#"
+from typing import Protocol, reveal_type
+
+class Factory[V](Protocol):
+    def __call__(self) -> V: ...
+
+def make[V](factory: Factory[V]) -> V: ...
+
+reveal_type(make(tuple))  # E: revealed type: tuple[_T_co, ...]
+"#,
+);
+
 // Make sure no fallback type leaks into user output, when a fallback
 // winds up directly in a return type
 testcase!(

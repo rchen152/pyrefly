@@ -42,9 +42,11 @@ use pyrefly_types::types::Forall;
 use pyrefly_types::types::Overload;
 use pyrefly_types::types::OverloadType;
 use pyrefly_util::owner::Owner;
+use pyrefly_util::visit::Visit;
 use ruff_python_ast::name::Name;
 use ruff_text_size::TextRange;
 use starlark_map::small_map::SmallMap;
+use starlark_map::small_set::SmallSet;
 
 use crate::alt::answers::LookupAnswer;
 use crate::alt::callable::CallArg;
@@ -1526,8 +1528,7 @@ impl<'solver, 'subset, Ans: LookupAnswer> Subset<'solver, 'subset, Ans> {
         if captured_vars.is_empty() {
             return OverloadCapture::NotApplicable;
         }
-        let generic_argument_vars_in_call =
-            self.active_call_context.generic_argument_vars_in_call();
+        let free_quantified_vars_in_call = self.active_call_context.free_quantified_vars_in_call();
         let captures = branches
             .into_iter()
             .enumerate()
@@ -1539,7 +1540,7 @@ impl<'solver, 'subset, Ans: LookupAnswer> Subset<'solver, 'subset, Ans> {
                         me.solver.extract_overload_branch(
                             branch_index,
                             &captured_vars,
-                            &generic_argument_vars_in_call,
+                            &free_quantified_vars_in_call,
                         )
                     })
                 })
@@ -1787,7 +1788,33 @@ impl<'solver, 'subset, Ans: LookupAnswer> Subset<'solver, 'subset, Ans> {
             && in_call_analysis
             && let Some(argument) = maybe_argument.as_ref()
         {
-            self.active_call_context.record_generic_argument(argument);
+            // A fresh var can become a free quantified only if a parameter of `want` can still
+            // bind it, so it must be reachable from the vars in `want`'s parameter types. When
+            // `want` is not a callable (e.g. a callback protocol), we cannot tell its parameters
+            // apart, so every var in `want` counts as a parameter var.
+            // `record_generic_argument` ignores vars that are not target vars of the argument, so
+            // we collect parameter vars the same way `MatchedArgument::for_forall` collects target
+            // vars.
+            let mut param_vars = SmallSet::new();
+            let mut signatures = want.toplevel_callable_signatures().peekable();
+            if signatures.peek().is_none() {
+                param_vars.extend(want.collect_maybe_placeholder_vars());
+            }
+            for (callable, _) in signatures {
+                callable
+                    .params
+                    .visit(&mut |ty| param_vars.extend(ty.collect_maybe_placeholder_vars()));
+            }
+            let mut free_quantified_vars = self
+                .solver
+                .vars_reachable_from(&param_vars, handle.vars().iter().copied());
+            // The parameter vars themselves can also become free quantifieds, because the match
+            // may leave them unconstrained. For example, matching `(list[A]) -> list[A]` against
+            // `[T](x: T) -> T` gives `T` the lower bound `list[A]` but gives `A` no bound, and the
+            // walk does not follow bounds back from `T` to `A`.
+            free_quantified_vars.extend(param_vars);
+            self.active_call_context
+                .record_generic_argument(argument, free_quantified_vars);
         }
         let handle = if in_call_analysis {
             match self.active_call_context.defer_quantified(handle) {

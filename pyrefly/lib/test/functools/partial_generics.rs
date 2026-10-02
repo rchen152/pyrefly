@@ -135,10 +135,8 @@ def bar(f: S) -> S:
 
 // A plain-TypeVar target (`func_b`, `func_c`) is now re-scoped into a `Forall` over the partial, so
 // its genericity survives and the downstream incompatible use is flagged at the remaining param. A
-// `ParamSpec`/`TypeVarTuple` targets still defer to the stub and surface a type parameter that
-// nothing has declared; `# WANT` records the eventual erasure-to-`Any` behavior.
+// `ParamSpec`/`TypeVarTuple` target defers to the stub, and its type parameters are erased to `Any`.
 functools_testcase!(
-    bug = "ParamSpec/TypeVarTuple partial targets surface an undeclared type parameter, not Any",
     test_partial_type_var_erasure_no_leak,
     r#"
 from typing import reveal_type
@@ -168,19 +166,15 @@ def func_fn_unpack(fn: Callable[[Unpack[Ts]], Tc], b: str) -> Callable[[Unpack[T
     return fn
 reveal_type(partial(func_b, b=""))  # E: revealed type: [Tb: int | str](a: Tb, *, b: str = ...) -> Tb
 reveal_type(partial(func_c, b=""))  # E: revealed type: [Tc: (int, str)](a: Tc, *, b: str = ...) -> Tc
-# WANT: revealed type: partial[(*Any, **Any) -> Any]
-reveal_type(partial(func_fn, b=""))  # E: revealed type: partial[(ParamSpec(P)) -> Tc]
-# WANT: revealed type: partial[(*Any) -> Any]
-reveal_type(partial(func_fn_unpack, b=""))  # E: revealed type: partial[(**tuple[*Ts]) -> Tc]
+reveal_type(partial(func_fn, b=""))  # E: revealed type: partial[(...) -> Unknown]
+reveal_type(partial(func_fn_unpack, b=""))  # E: revealed type: partial[(**tuple[Unknown, ...]) -> Unknown]
 use_int_callable(partial(func_b, b=""))
 use_func_callable(partial(func_b, b=""))
 use_int_callable(partial(func_c, b=""))
 use_func_callable(partial(func_c, b=""))
-# WANT: error: partial[(*Any, **Any) -> Any] not assignable to Callable[[int], int]
-use_int_callable(partial(func_fn, b=""))  # E: Argument `partial[(ParamSpec(P)) -> Tc]` is not assignable to parameter `x` with type `(int) -> int` in function `use_int_callable`
+use_int_callable(partial(func_fn, b=""))  # E: Argument `partial[(...) -> Unknown]` is not assignable to parameter `x` with type `(int) -> int` in function `use_int_callable`
 use_func_callable(partial(func_fn, b=""))
-# WANT: error: partial[(*Any) -> Any] not assignable to Callable[[int], int]
-use_int_callable(partial(func_fn_unpack, b=""))  # E: Argument `partial[(**tuple[*Ts]) -> Tc]` is not assignable to parameter `x` with type `(int) -> int` in function `use_int_callable`
+use_int_callable(partial(func_fn_unpack, b=""))  # E: Argument `partial[(**tuple[Unknown, ...]) -> Unknown]` is not assignable to parameter `x` with type `(int) -> int` in function `use_int_callable`
 use_func_callable(partial(func_fn_unpack, b=""))
 "#,
 );
