@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import assert_type, TYPE_CHECKING
 
 import torch
-from shape_extensions import assert_raises, assert_shape, Int, IntTuple, IntVar
+from shape_extensions import assert_raises, assert_shape, Int, IntVar
 from torch import Tensor
 
 
