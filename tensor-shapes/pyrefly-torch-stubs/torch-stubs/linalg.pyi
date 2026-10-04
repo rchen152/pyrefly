@@ -6,8 +6,8 @@
 # Type stubs for torch.linalg module (Phase 4: Advanced Linear Algebra)
 from typing import Any, overload
 
-from shape_extensions import Flag, IntTuple, IntVar
-from torch import return_types, Tensor
+from shape_extensions import Flag, Int as _Int, IntTuple, IntVar
+from torch import dtype, return_types, Tensor
 from torch._C import _LinAlgError as LinAlgError
 from torch._shapes import (
     diagonal_shape,
@@ -16,6 +16,7 @@ from torch._shapes import (
     matmul_shape,
     reduce_shape,
     slogdet_shape,
+    transpose_shape,
 )
 
 # Eigenvalue decomposition
@@ -111,16 +112,13 @@ lu: Any
 lu_factor: Any
 lu_factor_ex: Any
 lu_solve: Any
-matrix_norm: Any
 multi_dot: Any
-pinv: Any
 qr: Any
 solve_ex: Any
 svd: Any
 svdvals: Any
 tensorinv: Any
 tensorsolve: Any
-vander: Any
 vecdot: Any
 
 def diagonal[
@@ -137,6 +135,54 @@ def householder_product[Batch: IntTuple, M: IntVar, N: IntVar, K: IntVar](
 def matmul[Left: IntTuple, Right: IntTuple](
     input: Tensor[Left], other: Tensor[Right], *, out: Tensor | None = None
 ) -> Tensor[matmul_shape(Left, Right)]: ...
+@overload
+def matrix_norm[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    ord: int | float | str = "fro",
+    *,
+    dtype: dtype | None = None,
+    out: Tensor | None = None,
+) -> Tensor[Batch]: ...
+@overload
+def matrix_norm[
+    Shape: IntTuple,
+    Dim: Flag[tuple[int, int]] = (-2, -1),
+    Keepdim: Flag[bool] = False,
+](
+    A: Tensor[Shape],
+    ord: int | float | str = "fro",
+    dim: Dim = (-2, -1),
+    keepdim: Keepdim = False,
+    *,
+    dtype: dtype | None = None,
+    out: Tensor | None = None,
+) -> Tensor[reduce_shape(Shape, Dim, Keepdim)]: ...
+@overload
+def pinv[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    *,
+    atol: float | Tensor | None = None,
+    rtol: float | Tensor | None = None,
+    hermitian: bool = False,
+    out: Tensor | None = None,
+) -> Tensor[[*Batch, N, M]]: ...
+@overload
+def pinv[Shape: IntTuple](
+    A: Tensor[Shape],
+    *,
+    atol: float | Tensor | None = None,
+    rtol: float | Tensor | None = None,
+    hermitian: bool = False,
+    out: Tensor | None = None,
+) -> Tensor[transpose_shape(Shape, -2, -1)]: ...
+@overload
+def vander[Batch: IntTuple, N: IntVar](
+    x: Tensor[[*Batch, N]], N: None = None
+) -> Tensor[[*Batch, N, N]]: ...
+@overload
+def vander[Batch: IntTuple, N: IntVar, Columns: IntVar](
+    x: Tensor[[*Batch, N]], N: _Int[Columns]
+) -> Tensor[[*Batch, N, Columns]]: ...
 
 # Vector/matrix norm
 def norm[Shape: IntTuple, Dim: Flag[int | tuple[int, ...] | None], Keepdim: Flag[bool]](

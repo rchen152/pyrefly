@@ -21,6 +21,11 @@ def test_linalg_tensor_operations() -> None:
     assert_shape(
         torch.linalg.householder_product(torch.eye(3), torch.ones(3)).shape, (3, 3)
     )
+    assert_shape(torch.linalg.matrix_norm(matrix).shape, ())
+    assert_shape(torch.linalg.matrix_norm(matrix, keepdim=True).shape, (1, 1))
+    assert_shape(torch.linalg.pinv(matrix).shape, (4, 3))
+    assert_shape(torch.linalg.vander(torch.ones((2, 3))).shape, (2, 3, 3))
+    assert_shape(torch.linalg.vander(torch.ones((2, 3)), N=4).shape, (2, 3, 4))
 
 
 if TYPE_CHECKING:
@@ -39,3 +44,7 @@ if TYPE_CHECKING:
         assert_type(
             torch.linalg.householder_product(matrix, tau), Tensor[[*Batch, M, N]]
         )
+        assert_type(torch.linalg.matrix_norm(matrix), Tensor[Batch])
+        assert_type(torch.linalg.pinv(matrix), Tensor[[*Batch, N, M]])
+        assert_type(torch.linalg.vander(tau), Tensor[[*Batch, K, K]])
+        assert_type(torch.linalg.vander(tau, N=2), Tensor[[*Batch, K, 2]])
