@@ -92,6 +92,19 @@ def test_ndarray_ordering_and_flattening_methods() -> None:
     assert_shape(a.shape, (2, 3))
 
 
+def test_ndarray_matrix_transpose_and_swapaxes() -> None:
+    array = np.ones((2, 3, 4))
+
+    assert_shape(array.mT.shape, (2, 4, 3))
+    assert_shape(array.swapaxes(0, -1).shape, (4, 3, 2))
+    assert_shape(array.swapaxes(1, 1).shape, (2, 3, 4))
+    assert_type(array.mT.dtype, np.dtype[np.float64])
+
+    if TYPE_CHECKING:
+        np.ones((3,)).mT  # E: swapaxes axis out of bounds
+        array.swapaxes(0, 3)  # E: swapaxes axis out of bounds
+
+
 def test_ndarray_mutating_methods() -> None:
     a = np.ones((2, 3))
 

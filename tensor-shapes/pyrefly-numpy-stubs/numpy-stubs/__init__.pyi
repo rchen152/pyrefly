@@ -188,6 +188,7 @@ from numpy._shapes import (
     matvec_shape,
     reduce_shape,
     stack_shape,
+    swapaxes_shape,
     vecdot_shape,
     vecmat_shape,
 )
@@ -879,13 +880,16 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     diagonal: Any
     dot: Any
     flat: Any
-    mT: Any
+    @property
+    def mT(self) -> ndarray[swapaxes_shape(Shape, -1, -2), DType]: ...
     nonzero: Any
     repeat: Any
     reshape: Any
     searchsorted: Any
     squeeze: Any
-    swapaxes: Any
+    def swapaxes[First: Flag[int], Second: Flag[int]](
+        self, axis1: First, axis2: Second, /
+    ) -> ndarray[swapaxes_shape(Shape, First, Second), DType]: ...
     take: Any
     trace: Any
     transpose: Any

@@ -142,3 +142,27 @@ def expand_dims_shape(shape: IntTuple, axis: int) -> IntTuple:
             for index in range(output_rank)
         )
     )
+
+@type_shape_dsl_function
+def swapaxes_shape(shape: IntTuple, axis1: int, axis2: int) -> IntTuple:
+    rank = len(shape)
+    if axis1 < 0 - rank or axis1 >= rank or axis2 < 0 - rank or axis2 >= rank:
+        return dsl.Invalid("swapaxes axis out of bounds")
+    if axis1 < 0:
+        first = axis1 + rank
+    else:
+        first = axis1 + 0
+    if axis2 < 0:
+        second = axis2 + rank
+    else:
+        second = axis2 + 0
+    return dsl.IntTuple(
+        (
+            shape[second]
+            if index == first
+            else shape[first]
+            if index == second
+            else shape[index]
+            for index in range(rank)
+        )
+    )
