@@ -7,8 +7,9 @@
 
 from typing import Any
 
-from shape_extensions import IntTuple, IntVar
+from shape_extensions import broadcast, IntTuple, IntVar
 from torch import Tensor
+from torch.distributions import Distribution
 
 class Transform:
     """Base class for invertible transforms with computable log det Jacobians."""
@@ -58,14 +59,35 @@ class StickBreakingTransform(Transform):
         self, x: Tensor[[*S, N]], y: Tensor[[*S, N + 1]]
     ) -> Tensor[S]: ...
 
+class AffineTransform[Loc: IntTuple = [], Scale: IntTuple = []](Transform):
+    def __init__(
+        self,
+        loc: Tensor[Loc] | float,
+        scale: Tensor[Scale] | float,
+        event_dim: int = 0,
+        cache_size: int = 0,
+    ) -> None: ...
+    def __call__[S: IntTuple](
+        self, x: Tensor[S]
+    ) -> Tensor[broadcast(broadcast(S, Loc), Scale)]: ...
+
+class PowerTransform[Exponent: IntTuple](Transform):
+    def __init__(self, exponent: Tensor[Exponent], cache_size: int = 0) -> None: ...
+    def __call__[S: IntTuple](self, x: Tensor[S]) -> Tensor[broadcast(S, Exponent)]: ...
+
+class CumulativeDistributionTransform[DistShape: IntTuple](Transform):
+    def __init__(
+        self, distribution: Distribution[DistShape], cache_size: int = 0
+    ) -> None: ...
+    def __call__[S: IntTuple](
+        self, x: Tensor[S]
+    ) -> Tensor[broadcast(S, DistShape)]: ...
+
 # TODO: Replace these availability stubs with shape-aware declarations.
-AffineTransform: Any
 CatTransform: Any
 ComposeTransform: Any
 CorrCholeskyTransform: Any
-CumulativeDistributionTransform: Any
 IndependentTransform: Any
-PowerTransform: Any
 ReshapeTransform: Any
 StackTransform: Any
 identity_transform: Any

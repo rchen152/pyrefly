@@ -10,11 +10,15 @@ from typing import assert_type, TYPE_CHECKING
 import torch
 from shape_extensions import assert_shape, IntVar
 from torch import Tensor
+from torch.distributions import Normal
 from torch.distributions.transforms import (
     AbsTransform,
+    AffineTransform,
+    CumulativeDistributionTransform,
     ExpTransform,
     LowerCholeskyTransform,
     PositiveDefiniteTransform,
+    PowerTransform,
     SigmoidTransform,
     SoftmaxTransform,
     SoftplusTransform,
@@ -53,6 +57,16 @@ def test_vector_and_matrix_transform_shapes() -> None:
     assert_shape(PositiveDefiniteTransform()(matrix).shape, (3, 2, 2))
 
 
+def test_broadcast_transform_shapes() -> None:
+    value = torch.ones((1, 3))
+    assert_shape(
+        AffineTransform(torch.zeros((2, 1)), torch.ones((1, 3)))(value).shape, (2, 3)
+    )
+    assert_shape(PowerTransform(torch.ones((2, 1)))(value).shape, (2, 3))
+    normal = Normal(torch.zeros((2, 1)), torch.ones((2, 1)))
+    assert_shape(CumulativeDistributionTransform(normal)(value).shape, (2, 3))
+
+
 if TYPE_CHECKING:
 
     def check_symbolic_elementwise_transform_shapes[N: IntVar, M: IntVar](
@@ -80,3 +94,11 @@ if TYPE_CHECKING:
         )
         assert_type(LowerCholeskyTransform()(matrix), Tensor[[B, N, N]])
         assert_type(PositiveDefiniteTransform()(matrix), Tensor[[B, N, N]])
+
+    def check_broadcast_transforms[B: IntVar, N: IntVar](
+        value: Tensor[[1, N]], bound: Tensor[[B, 1]]
+    ) -> None:
+        assert_type(AffineTransform(bound, 1.0)(value), Tensor[[B, N]])
+        assert_type(PowerTransform(bound)(value), Tensor[[B, N]])
+        normal = Normal(bound, bound)
+        assert_type(CumulativeDistributionTransform(normal)(value), Tensor[[B, N]])
