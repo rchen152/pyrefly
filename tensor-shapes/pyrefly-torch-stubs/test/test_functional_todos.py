@@ -52,6 +52,30 @@ def test_max_pool_with_indices_shapes() -> None:
     assert_shape(indices.shape, (2, 3, 4, 5, 4))
 
 
+def test_max_unpool_shapes() -> None:
+    sequence = torch.randn((2, 3, 11))
+    values, indices = F.max_pool1d_with_indices(sequence, 2)
+    assert_shape(
+        F.max_unpool1d(values, indices, 2, output_size=(11,)).shape, (2, 3, 11)
+    )
+
+    image = torch.randn((2, 3, 9, 11))
+    values, indices = F.max_pool2d_with_indices(image, 2)
+    assert_shape(
+        F.max_unpool2d(values, indices, 2, output_size=(2, 3, 9, 11)).shape,
+        (2, 3, 9, 11),
+    )
+    even_values, even_indices = F.max_pool2d_with_indices(torch.randn((2, 3, 8, 10)), 2)
+    assert tuple(F.max_unpool2d(even_values, even_indices, 2).shape) == (2, 3, 8, 10)
+
+    volume = torch.randn((2, 3, 9, 11, 13))
+    values, indices = F.max_pool3d_with_indices(volume, 2)
+    assert_shape(
+        F.max_unpool3d(values, indices, 2, output_size=(9, 11, 13)).shape,
+        (2, 3, 9, 11, 13),
+    )
+
+
 if TYPE_CHECKING:
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
@@ -97,4 +121,34 @@ if TYPE_CHECKING:
         assert_type(
             F.max_pool3d_with_indices(volume, (2, 2, 3), (2, 2, 3)),
             tuple[Tensor[[B, 3, 4, 5, 4]], Tensor[[B, 3, 4, 5, 4]]],
+        )
+
+    def check_max_unpool_shapes[B: IntVar](
+        sequence: Tensor[[B, 3, 5]],
+        sequence_indices: Tensor[[B, 3, 5]],
+        image: Tensor[[B, 3, 4, 5]],
+        image_indices: Tensor[[B, 3, 4, 5]],
+        volume: Tensor[[B, 3, 4, 5, 6]],
+        volume_indices: Tensor[[B, 3, 4, 5, 6]],
+        output_size: tuple[int, ...],
+    ) -> None:
+        assert_type(
+            F.max_unpool1d(sequence, sequence_indices, 2, output_size=(11,)),
+            Tensor[[B, 3, 11]],
+        )
+        assert_type(
+            F.max_unpool2d(image, image_indices, 2, output_size=(B, 3, 9, 11)),
+            Tensor[[B, 3, 9, 11]],
+        )
+        assert_type(
+            F.max_unpool3d(volume, volume_indices, 2, output_size=(9, 11, 13)),
+            Tensor[[B, 3, 9, 11, 13]],
+        )
+        assert_type(
+            F.max_unpool2d(image, image_indices, 2),
+            Tensor[[B, 3, int, int]],
+        )
+        assert_type(
+            F.max_unpool3d(volume, volume_indices, 2, output_size=output_size),
+            Tensor[[B, 3, int, int, int]],
         )

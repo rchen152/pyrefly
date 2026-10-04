@@ -376,6 +376,147 @@ def max_pool3d_with_indices[
     Tensor[pool_shape(Shape, 3, Kernel, Stride, Padding, Dilation, CeilMode)],
 ]: ...
 @overload
+def max_unpool1d[Batch: IntTuple, Input: IntVar](
+    input: Tensor[[*Batch, Input]],
+    indices: Tensor[[*Batch, Input]],
+    kernel_size: int | tuple[int],
+    stride: int | tuple[int] | None = None,
+    padding: int | tuple[int] = 0,
+    output_size: None = None,
+) -> Tensor[[*Batch, int]]: ...
+@overload
+def max_unpool1d[Batch: IntTuple, Input: IntVar, Output: IntVar](
+    input: Tensor[[*Batch, Input]],
+    indices: Tensor[[*Batch, Input]],
+    kernel_size: int | tuple[int],
+    stride: int | tuple[int] | None = None,
+    padding: int | tuple[int] = 0,
+    output_size: tuple[_Int[Output]] = ...,
+) -> Tensor[[*Batch, Output]]: ...
+@overload
+def max_unpool1d[Batch: IntTuple, Input: IntVar, Output: IntVar](
+    input: Tensor[[*Batch, Input]],
+    indices: Tensor[[*Batch, Input]],
+    kernel_size: int | tuple[int],
+    stride: int | tuple[int] | None = None,
+    padding: int | tuple[int] = 0,
+    output_size: tuple[object, object, _Int[Output]] = ...,
+) -> Tensor[[*Batch, Output]]: ...
+
+# TODO(stroxler): Reject incorrectly sized fixed tuples in the 1D/2D/3D
+# output_size fallbacks while retaining support for dynamically sized tuples.
+# A direct DSL rank check currently loses the known batch/channel dimensions
+# for a dynamic tuple, and IntTuple/Flag binding does not reject wrong literals.
+@overload
+def max_unpool1d[Batch: IntTuple, Input: IntVar](
+    input: Tensor[[*Batch, Input]],
+    indices: Tensor[[*Batch, Input]],
+    kernel_size: int | tuple[int],
+    stride: int | tuple[int] | None = None,
+    padding: int | tuple[int] = 0,
+    output_size: tuple[int, ...] = ...,
+) -> Tensor[[*Batch, int]]: ...
+@overload
+def max_unpool2d[Batch: IntTuple, Height: IntVar, Width: IntVar](
+    input: Tensor[[*Batch, Height, Width]],
+    indices: Tensor[[*Batch, Height, Width]],
+    kernel_size: int | tuple[int, int],
+    stride: int | tuple[int, int] | None = None,
+    padding: int | tuple[int, int] = 0,
+    output_size: None = None,
+) -> Tensor[[*Batch, int, int]]: ...
+@overload
+def max_unpool2d[
+    Batch: IntTuple,
+    Height: IntVar,
+    Width: IntVar,
+    OutH: IntVar,
+    OutW: IntVar,
+](
+    input: Tensor[[*Batch, Height, Width]],
+    indices: Tensor[[*Batch, Height, Width]],
+    kernel_size: int | tuple[int, int],
+    stride: int | tuple[int, int] | None = None,
+    padding: int | tuple[int, int] = 0,
+    output_size: tuple[_Int[OutH], _Int[OutW]] = ...,
+) -> Tensor[[*Batch, OutH, OutW]]: ...
+@overload
+def max_unpool2d[
+    Batch: IntTuple,
+    Height: IntVar,
+    Width: IntVar,
+    OutH: IntVar,
+    OutW: IntVar,
+](
+    input: Tensor[[*Batch, Height, Width]],
+    indices: Tensor[[*Batch, Height, Width]],
+    kernel_size: int | tuple[int, int],
+    stride: int | tuple[int, int] | None = None,
+    padding: int | tuple[int, int] = 0,
+    output_size: tuple[object, object, _Int[OutH], _Int[OutW]] = ...,
+) -> Tensor[[*Batch, OutH, OutW]]: ...
+@overload
+def max_unpool2d[Batch: IntTuple, Height: IntVar, Width: IntVar](
+    input: Tensor[[*Batch, Height, Width]],
+    indices: Tensor[[*Batch, Height, Width]],
+    kernel_size: int | tuple[int, int],
+    stride: int | tuple[int, int] | None = None,
+    padding: int | tuple[int, int] = 0,
+    output_size: tuple[int, ...] = ...,
+) -> Tensor[[*Batch, int, int]]: ...
+@overload
+def max_unpool3d[Batch: IntTuple, Depth: IntVar, Height: IntVar, Width: IntVar](
+    input: Tensor[[*Batch, Depth, Height, Width]],
+    indices: Tensor[[*Batch, Depth, Height, Width]],
+    kernel_size: int | tuple[int, int, int],
+    stride: int | tuple[int, int, int] | None = None,
+    padding: int | tuple[int, int, int] = 0,
+    output_size: None = None,
+) -> Tensor[[*Batch, int, int, int]]: ...
+@overload
+def max_unpool3d[
+    Batch: IntTuple,
+    Depth: IntVar,
+    Height: IntVar,
+    Width: IntVar,
+    OutD: IntVar,
+    OutH: IntVar,
+    OutW: IntVar,
+](
+    input: Tensor[[*Batch, Depth, Height, Width]],
+    indices: Tensor[[*Batch, Depth, Height, Width]],
+    kernel_size: int | tuple[int, int, int],
+    stride: int | tuple[int, int, int] | None = None,
+    padding: int | tuple[int, int, int] = 0,
+    output_size: tuple[_Int[OutD], _Int[OutH], _Int[OutW]] = ...,
+) -> Tensor[[*Batch, OutD, OutH, OutW]]: ...
+@overload
+def max_unpool3d[
+    Batch: IntTuple,
+    Depth: IntVar,
+    Height: IntVar,
+    Width: IntVar,
+    OutD: IntVar,
+    OutH: IntVar,
+    OutW: IntVar,
+](
+    input: Tensor[[*Batch, Depth, Height, Width]],
+    indices: Tensor[[*Batch, Depth, Height, Width]],
+    kernel_size: int | tuple[int, int, int],
+    stride: int | tuple[int, int, int] | None = None,
+    padding: int | tuple[int, int, int] = 0,
+    output_size: tuple[object, object, _Int[OutD], _Int[OutH], _Int[OutW]] = ...,
+) -> Tensor[[*Batch, OutD, OutH, OutW]]: ...
+@overload
+def max_unpool3d[Batch: IntTuple, Depth: IntVar, Height: IntVar, Width: IntVar](
+    input: Tensor[[*Batch, Depth, Height, Width]],
+    indices: Tensor[[*Batch, Depth, Height, Width]],
+    kernel_size: int | tuple[int, int, int],
+    stride: int | tuple[int, int, int] | None = None,
+    padding: int | tuple[int, int, int] = 0,
+    output_size: tuple[int, ...] = ...,
+) -> Tensor[[*Batch, int, int, int]]: ...
+@overload
 def max_pool1d[
     Shape: IntTuple,
     Kernel: Flag[builtins.int | tuple[builtins.int]],
@@ -1661,9 +1802,6 @@ gumbel_softmax: Any
 lp_pool1d: Any
 lp_pool2d: Any
 lp_pool3d: Any
-max_unpool1d: Any
-max_unpool2d: Any
-max_unpool3d: Any
 multi_head_attention_forward: Any
 multi_margin_loss: Any
 multilabel_margin_loss: Any
