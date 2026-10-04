@@ -97,6 +97,39 @@ class _Interval(Constraint):
 
     def check[S: IntTuple](self, value: Tensor[S]) -> Tensor[S]: ...
 
+class _IntegerInterval[Lower: IntTuple = [], Upper: IntTuple = []](Constraint):
+    is_discrete: bool = True
+    lower_bound: int | Tensor[Lower]
+    upper_bound: int | Tensor[Upper]
+
+    def __init__(
+        self, lower_bound: int | Tensor[Lower], upper_bound: int | Tensor[Upper]
+    ) -> None: ...
+    def check[S: IntTuple](
+        self, value: Tensor[S]
+    ) -> Tensor[broadcast(broadcast(S, Lower), Upper)]: ...
+
+class _HalfOpenInterval[Lower: IntTuple = [], Upper: IntTuple = []](Constraint):
+    lower_bound: float | Tensor[Lower]
+    upper_bound: float | Tensor[Upper]
+
+    def __init__(
+        self, lower_bound: float | Tensor[Lower], upper_bound: float | Tensor[Upper]
+    ) -> None: ...
+    def check[S: IntTuple](
+        self, value: Tensor[S]
+    ) -> Tensor[broadcast(broadcast(S, Lower), Upper)]: ...
+
+class _Multinomial[Bounds: IntTuple = []](Constraint):
+    is_discrete: bool = True
+    event_dim: int = 1
+    upper_bound: int | Tensor[Bounds]
+
+    def __init__(self, upper_bound: int | Tensor[Bounds]) -> None: ...
+    def check[S: IntTuple, N: IntVar](
+        self, value: Tensor[[*S, N]]
+    ) -> Tensor[broadcast(S, Bounds)]: ...
+
 real: Constraint
 boolean: _Boolean
 one_hot: _OneHot
@@ -116,6 +149,9 @@ unit_interval: _Interval
 greater_than = _GreaterThan
 greater_than_eq = _GreaterThanEq
 less_than = _LessThan
+integer_interval = _IntegerInterval
+half_open_interval = _HalfOpenInterval
+multinomial = _Multinomial
 
 def interval(lower_bound: float, upper_bound: float) -> Constraint: ...
 
@@ -124,10 +160,7 @@ MixtureSameFamilyConstraint: Any
 cat: Any
 dependent: Any
 dependent_property: Any
-half_open_interval: Any
 independent: Any
-integer_interval: Any
 is_dependent: Any
-multinomial: Any
 real_vector: Any
 stack: Any

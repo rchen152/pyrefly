@@ -73,6 +73,37 @@ def test_threshold_factories_broadcast_bounds() -> None:
     ]
 
 
+def test_interval_factories_broadcast_bounds() -> None:
+    value = torch.tensor([[0.0, 1.0, 2.0]])
+    lower = torch.tensor([[0.0], [1.0]])
+    upper = torch.tensor([[1.0], [2.0]])
+
+    assert_shape(constraints.integer_interval(lower, upper).check(value).shape, (2, 3))
+    assert constraints.integer_interval(lower, upper).check(value).tolist() == [
+        [True, True, False],
+        [False, True, True],
+    ]
+    assert_shape(
+        constraints.half_open_interval(lower, upper).check(value).shape, (2, 3)
+    )
+    assert constraints.half_open_interval(lower, upper).check(value).tolist() == [
+        [True, False, False],
+        [False, True, False],
+    ]
+    assert_shape(constraints.integer_interval(0, 2).check(value).shape, (1, 3))
+    assert_shape(constraints.half_open_interval(0.0, 2.0).check(value).shape, (1, 3))
+
+
+def test_multinomial_constraint_bounds() -> None:
+    counts = torch.tensor([[2.0, 1.0, 0.0], [1.0, 0.0, 1.0]])
+    bound = torch.tensor([2.0, 3.0])
+
+    assert_shape(constraints.multinomial(bound).check(counts).shape, (2,))
+    assert constraints.multinomial(bound).check(counts).tolist() == [False, True]
+    assert_shape(constraints.multinomial(3).check(counts).shape, (2,))
+    assert constraints.multinomial(3).check(counts).tolist() == [True, True]
+
+
 def test_vector_constraints() -> None:
     value = torch.tensor([[1.0, 0.0, 0.0], [0.2, 0.3, 0.5]])
 
@@ -140,3 +171,21 @@ if TYPE_CHECKING:
         assert_type(constraints.greater_than_eq(bound).check(value), Tensor[[B, N]])
         assert_type(constraints.less_than(bound).check(value), Tensor[[B, N]])
         assert_type(constraints.greater_than(1.0).check(value), Tensor[[1, N]])
+
+    def check_bounded_constraint_shapes[B: IntVar, N: IntVar](
+        values: Tensor[[1, N]],
+        lower: Tensor[[B, 1]],
+        upper: Tensor[[1, N]],
+        counts: Tensor[[B, N]],
+        count_bound: Tensor[[B]],
+    ) -> None:
+        assert_type(
+            constraints.integer_interval(lower, upper).check(values),
+            Tensor[[B, N]],
+        )
+        assert_type(
+            constraints.half_open_interval(lower, upper).check(values),
+            Tensor[[B, N]],
+        )
+        assert_type(constraints.multinomial(count_bound).check(counts), Tensor[[B]])
+        assert_type(constraints.multinomial(3).check(counts), Tensor[[B]])
