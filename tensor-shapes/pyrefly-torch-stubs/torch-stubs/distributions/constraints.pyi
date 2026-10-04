@@ -5,6 +5,7 @@
 
 """Type stubs for torch.distributions.constraints."""
 
+from collections.abc import Sequence
 from typing import Any
 
 from shape_extensions import broadcast, IntTuple, IntVar
@@ -130,6 +131,28 @@ class _Multinomial[Bounds: IntTuple = []](Constraint):
         self, value: Tensor[[*S, N]]
     ) -> Tensor[broadcast(S, Bounds)]: ...
 
+class _Cat(Constraint):
+    """Apply constraints to adjacent slices along a tensor dimension."""
+
+    cseq: list[Constraint]
+    lengths: list[int]
+    dim: int
+
+    def __init__(
+        self,
+        cseq: Sequence[Constraint],
+        dim: int = 0,
+        lengths: Sequence[int] | None = None,
+    ) -> None: ...
+
+class _Stack(Constraint):
+    """Apply constraints to the slices of a stacked tensor."""
+
+    cseq: list[Constraint]
+    dim: int
+
+    def __init__(self, cseq: Sequence[Constraint], dim: int = 0) -> None: ...
+
 real: Constraint
 boolean: _Boolean
 one_hot: _OneHot
@@ -152,15 +175,15 @@ less_than = _LessThan
 integer_interval = _IntegerInterval
 half_open_interval = _HalfOpenInterval
 multinomial = _Multinomial
+cat = _Cat
+stack = _Stack
 
 def interval(lower_bound: float, upper_bound: float) -> Constraint: ...
 
 # TODO: Replace these availability stubs with precise declarations.
 MixtureSameFamilyConstraint: Any
-cat: Any
 dependent: Any
 dependent_property: Any
 independent: Any
 is_dependent: Any
 real_vector: Any
-stack: Any

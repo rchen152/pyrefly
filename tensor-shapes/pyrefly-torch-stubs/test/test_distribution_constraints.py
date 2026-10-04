@@ -104,6 +104,37 @@ def test_multinomial_constraint_bounds() -> None:
     assert constraints.multinomial(3).check(counts).tolist() == [True, True]
 
 
+def test_concatenated_constraint() -> None:
+    value = torch.tensor([[0.0, 1.0, -1.0], [1.0, 2.0, 3.0]])
+    constraint = constraints.cat(
+        [constraints.boolean, constraints.positive], dim=1, lengths=[1, 2]
+    )
+
+    assert_shape(constraint.check(value).shape, IntTuple, runtime=(2, 3))
+    assert constraint.check(value).tolist() == [
+        [True, True, False],
+        [True, True, True],
+    ]
+    assert constraint.lengths == [1, 2]
+
+
+def test_stacked_constraint() -> None:
+    value = torch.tensor(
+        [
+            [[0.0, 1.0, 0.0], [1.0, 0.0, 1.0]],
+            [[2.0, 3.0, 4.0], [5.0, 0.0, -1.0]],
+        ]
+    )
+    constraint = constraints.stack([constraints.boolean, constraints.positive])
+
+    assert_shape(constraint.check(value).shape, IntTuple, runtime=(2, 2, 3))
+    assert constraint.check(value).tolist() == [
+        [[True, True, True], [True, True, True]],
+        [[True, True, True], [True, False, False]],
+    ]
+    assert constraint.dim == 0
+
+
 def test_vector_constraints() -> None:
     value = torch.tensor([[1.0, 0.0, 0.0], [0.2, 0.3, 0.5]])
 
@@ -189,3 +220,14 @@ if TYPE_CHECKING:
         )
         assert_type(constraints.multinomial(count_bound).check(counts), Tensor[[B]])
         assert_type(constraints.multinomial(3).check(counts), Tensor[[B]])
+
+    def check_composed_constraints(value: Tensor[[2, 3]]) -> None:
+        concat = constraints.cat(
+            [constraints.boolean, constraints.positive], lengths=[1, 2]
+        )
+        stacked = constraints.stack((constraints.boolean, constraints.positive))
+
+        assert_type(concat.check(value), Tensor[IntTuple])
+        assert_type(stacked.check(value), Tensor[IntTuple])
+        assert_type(concat.cseq, list[constraints.Constraint])
+        assert_type(stacked.cseq, list[constraints.Constraint])
