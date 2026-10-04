@@ -26,6 +26,22 @@ def test_linalg_tensor_operations() -> None:
     assert_shape(torch.linalg.pinv(matrix).shape, (4, 3))
     assert_shape(torch.linalg.vander(torch.ones((2, 3))).shape, (2, 3, 3))
     assert_shape(torch.linalg.vander(torch.ones((2, 3)), N=4).shape, (2, 3, 4))
+    assert_shape(torch.linalg.cond(torch.eye(3).expand((2, 3, 3))).shape, (2,))
+    assert_shape(
+        torch.linalg.cross(torch.ones((2, 1, 3)), torch.ones((1, 4, 3))).shape,
+        (2, 4, 3),
+    )
+    assert_shape(
+        torch.linalg.vecdot(torch.ones((2, 1, 3)), torch.ones((1, 4, 3))).shape, (2, 4)
+    )
+    assert_shape(
+        torch.linalg.cross(torch.ones((2, 3, 1)), torch.ones((1, 3, 4)), dim=1).shape,
+        (2, 3, 4),
+    )
+    assert_shape(
+        torch.linalg.vecdot(torch.ones((2, 3, 1)), torch.ones((1, 3, 4)), dim=1).shape,
+        (2, 4),
+    )
 
 
 if TYPE_CHECKING:
@@ -48,3 +64,32 @@ if TYPE_CHECKING:
         assert_type(torch.linalg.pinv(matrix), Tensor[[*Batch, N, M]])
         assert_type(torch.linalg.vander(tau), Tensor[[*Batch, K, K]])
         assert_type(torch.linalg.vander(tau, N=2), Tensor[[*Batch, K, 2]])
+        assert_type(torch.linalg.cond(matrix), Tensor[Batch])
+        assert_type(torch.linalg.cross(tau, tau), Tensor[[*Batch, K]])
+        assert_type(torch.linalg.vecdot(tau, tau), Tensor[Batch])
+        assert_type(
+            torch.linalg.cross(torch.ones((3, 2)), torch.ones((3, 1)), dim=0),
+            Tensor[[3, 2]],
+        )
+        assert_type(
+            torch.linalg.vecdot(torch.ones((2, 3)), torch.ones((2, 1)), dim=-2),
+            Tensor[[3]],
+        )
+        torch.linalg.vecdot(  # E: gufunc
+            torch.ones((2, 3)), torch.ones((4, 3)), dim=0
+        )
+        torch.linalg.cross(  # E: Cannot broadcast dimension
+            torch.ones((2, 3)), torch.ones((4, 3))
+        )
+        torch.linalg.cross(  # E: cross vector dimension must have length 3
+            torch.ones((2, 4)), torch.ones((1, 4))
+        )
+        torch.linalg.cross(  # E: cross vector dimension must have length 3
+            torch.ones((4, 2)), torch.ones((4, 1)), dim=0
+        )
+        torch.linalg.cross(  # E: cross vector dimension must have length 3
+            torch.ones((3, 2)), torch.ones((4, 2)), dim=0
+        )
+        torch.linalg.vecdot(  # E: dimension out of range
+            torch.ones((2, 3)), torch.ones((2, 3)), dim=2
+        )

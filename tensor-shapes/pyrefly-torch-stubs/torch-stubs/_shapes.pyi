@@ -1449,6 +1449,74 @@ def matmul_shape(left: IntTuple, right: IntTuple) -> IntTuple:
     return gufunc_broadcast(spec, operands)
 
 @type_shape_dsl_function
+def vecdot_shape(left: IntTuple, right: IntTuple, dim: int) -> IntTuple:
+    if dim == -1:
+        operands = dsl.IntTuples((left, right))
+        spec = "(n),(n)->()"
+        return gufunc_broadcast(spec, operands)
+    if dim < 0 - len(left) or dim >= len(left):
+        return dsl.Invalid("vecdot dimension out of range for the first operand")
+    if dim < 0 - len(right) or dim >= len(right):
+        return dsl.Invalid("vecdot dimension out of range for the second operand")
+    if dim < 0:
+        left_axis = dim + len(left)
+    else:
+        left_axis = dim + 0
+    if dim < 0:
+        right_axis = dim + len(right)
+    else:
+        right_axis = dim + 0
+    left_batch = dsl.concat(left[:left_axis], left[left_axis + 1 :])
+    right_batch = dsl.concat(right[:right_axis], right[right_axis + 1 :])
+    moved_left = dsl.concat(left_batch, left[left_axis : left_axis + 1])
+    moved_right = dsl.concat(right_batch, right[right_axis : right_axis + 1])
+    operands = dsl.IntTuples((moved_left, moved_right))
+    spec = "(n),(n)->()"
+    return gufunc_broadcast(spec, operands)
+
+@type_shape_dsl_function
+def cross_shape(left: IntTuple, right: IntTuple, dim: int) -> IntTuple:
+    # TODO(stroxler): Require equal input ranks once a rank comparison preserves
+    # symbolic batch shapes instead of turning them into gradual shapes.
+    if dim == -1:
+        left_extent = left[-1]
+        right_extent = right[-1]
+        if dsl.is_concrete_int(left_extent) and left_extent != 3:
+            return dsl.Invalid("cross vector dimension must have length 3")
+        if dsl.is_concrete_int(right_extent) and right_extent != 3:
+            return dsl.Invalid("cross vector dimension must have length 3")
+        operands = dsl.IntTuples((left, right))
+        spec = "(d),(d)->(d)"
+        return gufunc_broadcast(spec, operands)
+    if dim < 0 - len(left) or dim >= len(left):
+        return dsl.Invalid("cross dimension out of range for the first operand")
+    if dim < 0 - len(right) or dim >= len(right):
+        return dsl.Invalid("cross dimension out of range for the second operand")
+    if dim < 0:
+        left_axis = dim + len(left)
+    else:
+        left_axis = dim + 0
+    if dim < 0:
+        right_axis = dim + len(right)
+    else:
+        right_axis = dim + 0
+    left_extent = left[left_axis]
+    right_extent = right[right_axis]
+    if dsl.is_concrete_int(left_extent) and left_extent != 3:
+        return dsl.Invalid("cross vector dimension must have length 3")
+    if dsl.is_concrete_int(right_extent) and right_extent != 3:
+        return dsl.Invalid("cross vector dimension must have length 3")
+    left_batch = dsl.concat(left[:left_axis], left[left_axis + 1 :])
+    right_batch = dsl.concat(right[:right_axis], right[right_axis + 1 :])
+    moved_left = dsl.concat(left_batch, left[left_axis : left_axis + 1])
+    moved_right = dsl.concat(right_batch, right[right_axis : right_axis + 1])
+    operands = dsl.IntTuples((moved_left, moved_right))
+    spec = "(d),(d)->(d)"
+    result = gufunc_broadcast(spec, operands)
+    front = dsl.concat(result[:left_axis], result[-1:])
+    return dsl.concat(front, result[left_axis:-1])
+
+@type_shape_dsl_function
 def meshgrid_shapes(shapes: IntTuples, indexing: str | None) -> IntTuples:
     if len(shapes) == 0:
         return dsl.Invalid("meshgrid expects at least one tensor")

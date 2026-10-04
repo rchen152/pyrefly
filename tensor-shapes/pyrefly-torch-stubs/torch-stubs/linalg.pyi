@@ -4,12 +4,13 @@
 # LICENSE file in the root directory of this source tree.
 
 # Type stubs for torch.linalg module (Phase 4: Advanced Linear Algebra)
-from typing import Any, overload
+from typing import Any, Literal, overload
 
-from shape_extensions import Flag, Int as _Int, IntTuple, IntVar
+from shape_extensions import Flag, gufunc_broadcast, Int as _Int, IntTuple, IntVar
 from torch import dtype, return_types, Tensor
 from torch._C import _LinAlgError as LinAlgError
 from torch._shapes import (
+    cross_shape,
     diagonal_shape,
     eig_shape,
     eigvals_shape,
@@ -17,6 +18,7 @@ from torch._shapes import (
     reduce_shape,
     slogdet_shape,
     transpose_shape,
+    vecdot_shape,
 )
 
 # Eigenvalue decomposition
@@ -101,8 +103,6 @@ def matrix_rank[Batch: IntTuple, M: IntVar, N: IntVar](
 # TODO: Add precise types and signatures for the remaining public API.
 cholesky_ex: Any
 common_notes: Any
-cond: Any
-cross: Any
 inv_ex: Any
 ldl_factor: Any
 ldl_factor_ex: Any
@@ -119,8 +119,32 @@ svd: Any
 svdvals: Any
 tensorinv: Any
 tensorsolve: Any
-vecdot: Any
 
+@overload
+def cond[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    p: int | float | str | None = None,
+    *,
+    out: Tensor | None = None,
+) -> Tensor[Batch]: ...
+@overload
+def cond[Shape: IntTuple](
+    A: Tensor[Shape], p: int | float | str | None = None, *, out: Tensor | None = None
+) -> Tensor[slogdet_shape(Shape)]: ...
+def cross[InputShape: IntTuple, OtherShape: IntTuple, Dim: Flag[int] = -1](
+    input: Tensor[InputShape],
+    other: Tensor[OtherShape],
+    *,
+    dim: Dim = -1,
+    out: Tensor | None = None,
+) -> Tensor[cross_shape(InputShape, OtherShape, Dim)]: ...
+def vecdot[InputShape: IntTuple, OtherShape: IntTuple, Dim: Flag[int] = -1](
+    x: Tensor[InputShape],
+    y: Tensor[OtherShape],
+    *,
+    dim: Dim = -1,
+    out: Tensor | None = None,
+) -> Tensor[vecdot_shape(InputShape, OtherShape, Dim)]: ...
 def diagonal[
     Shape: IntTuple,
     Offset: Flag[int] = 0,
