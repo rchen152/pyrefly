@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Any, assert_type, Literal, TYPE_CHECKING
 
 import numpy as np
-from shape_extensions import assert_shape
+from shape_extensions import assert_shape, IntTuple, IntVar
 
 
 def test_ndarray_properties_and_shape_preserving_methods() -> None:
@@ -149,6 +149,30 @@ def test_ndarray_flat_iterator_and_ctypes() -> None:
         assert_type(array.flat, np.flatiter[np.ndarray[[2, 3], np.dtype[np.float64]]])
         array.ctypes = None  # E: read-only property
         array.flat = None  # E: read-only property
+
+
+def test_ndarray_squeeze() -> None:
+    array = np.ones((2, 1, 3, 1))
+
+    assert_shape(array.squeeze().shape, (2, 3))
+    assert_shape(array.squeeze(1).shape, (2, 3, 1))
+    assert_shape(array.squeeze(axis=1).shape, (2, 3, 1))
+    assert_shape(array.squeeze((1, -1)).shape, (2, 3))
+    assert_shape(np.ones(()).squeeze(0).shape, ())
+    assert_shape(np.ones(()).squeeze(axis=-1).shape, ())
+    assert_shape(np.ones((1,)).squeeze().shape, ())
+    assert_shape(array.squeeze(()).shape, (2, 1, 3, 1))
+
+    if TYPE_CHECKING:
+        array.squeeze(4)  # E: squeeze axis out of bounds
+        array.squeeze(2)  # E: squeeze axis must have length 1
+        array.squeeze((1, 1))  # E: squeeze axes must be unique
+        np.ones((1,)).squeeze(-2)  # E: squeeze axis out of bounds
+
+        def check_squeeze[Batch: IntTuple, N: IntVar](
+            value: np.ndarray[[*Batch, 1, N]],
+        ) -> None:
+            assert_type(value.squeeze(-2), np.ndarray[[*Batch, N]])
 
 
 def test_ndarray_mutating_methods() -> None:

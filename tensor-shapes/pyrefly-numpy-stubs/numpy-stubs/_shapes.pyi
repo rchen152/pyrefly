@@ -200,3 +200,34 @@ def nonzero_shapes(shape: IntTuple) -> IntTuples:
     return dsl.IntTuples(
         (dsl.IntTuple((dsl.Int.gradual(),)) for _ in range(len(shape)))
     )
+
+@type_shape_dsl_function
+def squeeze_shape(shape: IntTuple, axis: int | tuple[int, ...] | None) -> IntTuple:
+    if axis is None:
+        return dsl.IntTuple((extent for extent in shape if extent != 1))
+    if dsl.is_int_value(axis):
+        if axis == -2:
+            tail = shape[-2:]
+            if len(tail) < 2:
+                return dsl.Invalid("squeeze axis out of bounds")
+            extent = shape[-2]
+            if extent == 1:
+                return dsl.concat(shape[:-2], shape[-1:])
+            if dsl.is_concrete_int(extent):
+                return dsl.Invalid("squeeze axis must have length 1")
+        if axis == 0 or axis == -1:
+            if len(shape) == 0:
+                return shape
+        axes = (axis,)
+    else:
+        axes = axis
+    if any(item < 0 - len(shape) or item >= len(shape) for item in axes):
+        return dsl.Invalid("squeeze axis out of bounds")
+    normalized = tuple(item + len(shape) if item < 0 else item for item in axes)
+    if any(normalized.count(item) > 1 for item in normalized):
+        return dsl.Invalid("squeeze axes must be unique")
+    if any(shape[item] != 1 for item in normalized):
+        return dsl.Invalid("squeeze axis must have length 1")
+    return dsl.IntTuple(
+        (shape[index] for index in range(len(shape)) if index not in normalized)
+    )

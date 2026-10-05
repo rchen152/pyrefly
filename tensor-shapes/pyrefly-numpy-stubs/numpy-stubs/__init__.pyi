@@ -190,6 +190,7 @@ from numpy._shapes import (
     nonzero_shapes,
     reduce_shape,
     reverse_shape,
+    squeeze_shape,
     stack_shape,
     swapaxes_shape,
     transpose_shape,
@@ -894,7 +895,9 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     repeat: Any
     reshape: Any
     searchsorted: Any
-    squeeze: Any
+    def squeeze[Axis: Flag[_Axis]](
+        self, axis: Axis = None
+    ) -> ndarray[squeeze_shape(Shape, Axis), DType]: ...
     def swapaxes[First: Flag[int], Second: Flag[int]](
         self, axis1: First, axis2: Second, /
     ) -> ndarray[swapaxes_shape(Shape, First, Second), DType]: ...
