@@ -1882,6 +1882,19 @@ def pool_shape(
         return dsl.concat(input[:2], spatial)
 
 @type_shape_dsl_function
+def fractional_pool_extent(output_size: int | tuple[int, ...] | None, axis: int) -> Int:
+    if output_size is None:
+        return dsl.Int.gradual()
+    elif dsl.is_int_value(output_size):
+        output_dims = (output_size, output_size, output_size)
+    else:
+        if axis >= len(output_size):
+            return dsl.Invalid("fractional pooling output size has incorrect rank")
+        output_dims = output_size
+    dims = dsl.IntTuple((extent for extent in output_dims))
+    return dims[axis]
+
+@type_shape_dsl_function
 def adaptive_pool1d_shape(input_shape: IntTuple, output: Int) -> IntTuple:
     if len(input_shape) != 2 and len(input_shape) != 3:
         return dsl.Invalid("adaptive_pool1d requires 2D or 3D input")

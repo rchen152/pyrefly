@@ -69,6 +69,7 @@ from torch._shapes import (
     conv_transpose_shape,
     cosine_embedding_score_shape,
     cosine_similarity_shape,
+    fractional_pool_extent,
     interpolate_scalar_shape,
     interpolate_scale_shape,
     interpolate_size_shape,
@@ -374,6 +375,60 @@ def max_pool3d_with_indices[
 ) -> tuple[
     Tensor[pool_shape(Shape, 3, Kernel, Stride, Padding, Dilation, CeilMode)],
     Tensor[pool_shape(Shape, 3, Kernel, Stride, Padding, Dilation, CeilMode)],
+]: ...
+
+# Fractional output ratios yield gradual spatial dimensions; explicit sizes are exact.
+# Torch's 2D implementation requires a pair for output_ratio.
+def fractional_max_pool2d_with_indices[
+    Batch: IntTuple,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int] | None],
+](
+    input: Tensor[[*Batch, H, W]],
+    kernel_size: int | tuple[int, int],
+    output_size: Output = None,
+    output_ratio: tuple[float, float] | None = None,
+    return_indices: bool = False,
+    _random_samples: Tensor | None = None,
+) -> tuple[
+    Tensor[
+        [*Batch, fractional_pool_extent(Output, 0), fractional_pool_extent(Output, 1)]
+    ],
+    Tensor[
+        [*Batch, fractional_pool_extent(Output, 0), fractional_pool_extent(Output, 1)]
+    ],
+]: ...
+def fractional_max_pool3d_with_indices[
+    Batch: IntTuple,
+    D: IntVar,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int, int] | None],
+](
+    input: Tensor[[*Batch, D, H, W]],
+    kernel_size: int | tuple[int, int, int],
+    output_size: Output = None,
+    output_ratio: float | tuple[float, float, float] | None = None,
+    return_indices: bool = False,
+    _random_samples: Tensor | None = None,
+) -> tuple[
+    Tensor[
+        [
+            *Batch,
+            fractional_pool_extent(Output, 0),
+            fractional_pool_extent(Output, 1),
+            fractional_pool_extent(Output, 2),
+        ]
+    ],
+    Tensor[
+        [
+            *Batch,
+            fractional_pool_extent(Output, 0),
+            fractional_pool_extent(Output, 1),
+            fractional_pool_extent(Output, 2),
+        ]
+    ],
 ]: ...
 @overload
 def max_unpool1d[Batch: IntTuple, Input: IntVar](
@@ -1871,9 +1926,7 @@ ctc_loss: Any
 embedding_bag: Any
 fold: Any
 fractional_max_pool2d: Any
-fractional_max_pool2d_with_indices: Any
 fractional_max_pool3d: Any
-fractional_max_pool3d_with_indices: Any
 gaussian_nll_loss: Any
 grouped_mm: Any
 gumbel_softmax: Any
