@@ -106,9 +106,7 @@ def matrix_rank[Batch: IntTuple, M: IntVar, N: IntVar](
 ) -> Tensor[Batch]: ...
 
 # TODO: Add precise types and signatures for the remaining public API.
-cholesky_ex: Any
-common_notes: Any
-inv_ex: Any
+common_notes: dict[str, str]
 ldl_factor: Any
 ldl_factor_ex: Any
 lstsq: Any
@@ -116,9 +114,65 @@ lu: Any
 lu_factor: Any
 lu_factor_ex: Any
 qr: Any
-solve_ex: Any
 svd: Any
 
+@overload
+def cholesky_ex[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    *,
+    upper: bool = False,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_cholesky_ex[[*Batch, N, N], Batch]: ...
+@overload
+def cholesky_ex[Shape: IntTuple](
+    A: Tensor[Shape],
+    *,
+    upper: bool = False,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_cholesky_ex[Shape, slogdet_shape(Shape)]: ...
+@overload
+def inv_ex[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    *,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_inv_ex[[*Batch, N, N], Batch]: ...
+@overload
+def inv_ex[Shape: IntTuple](
+    A: Tensor[Shape],
+    *,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_inv_ex[Shape, slogdet_shape(Shape)]: ...
+@overload
+def solve_ex[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    B: Tensor[[*Batch, N]],
+    *,
+    left: Literal[True] = True,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_solve_ex[[*Batch, N], Batch]: ...
+@overload
+def solve_ex[Batch: IntTuple, N: IntVar, K: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    B: Tensor[[*Batch, N, K]],
+    *,
+    left: Literal[True] = True,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_solve_ex[[*Batch, N, K], Batch]: ...
+@overload
+def solve_ex[Shape: IntTuple](
+    A: Tensor[Shape],
+    B: Tensor,
+    *,
+    left: bool = True,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_solve_ex[IntTuple, slogdet_shape(Shape)]: ...
 @overload
 def multi_dot[M: IntVar, N: IntVar, K: IntVar](
     tensors: tuple[Tensor[[M, N]], Tensor[[N, K]]], *, out: Tensor | None = None

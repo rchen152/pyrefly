@@ -13,10 +13,7 @@ from torch import return_types, Tensor
 
 
 def test_cholesky_ex_named_result() -> None:
-    result = cast(
-        "return_types.linalg_cholesky_ex[[2, 3, 3], [2]]",
-        torch.linalg.cholesky_ex(torch.eye(3).expand((2, 3, 3))),
-    )
+    result = torch.linalg.cholesky_ex(torch.eye(3).expand((2, 3, 3)))
     factor, info = result
     assert_shape(factor.shape, (2, 3, 3))
     assert_shape(info.shape, (2,))
@@ -25,10 +22,7 @@ def test_cholesky_ex_named_result() -> None:
 
 
 def test_inv_ex_named_result() -> None:
-    result = cast(
-        "return_types.linalg_inv_ex[[2, 3, 3], [2]]",
-        torch.linalg.inv_ex(torch.eye(3).expand((2, 3, 3))),
-    )
+    result = torch.linalg.inv_ex(torch.eye(3).expand((2, 3, 3)))
     inverse, info = result
     assert_shape(inverse.shape, (2, 3, 3))
     assert_shape(info.shape, (2,))
@@ -37,9 +31,8 @@ def test_inv_ex_named_result() -> None:
 
 
 def test_solve_ex_named_result() -> None:
-    result = cast(
-        "return_types.linalg_solve_ex[[2, 3, 4], [2]]",
-        torch.linalg.solve_ex(torch.eye(3).expand((2, 3, 3)), torch.ones((2, 3, 4))),
+    result = torch.linalg.solve_ex(
+        torch.eye(3).expand((2, 3, 3)), torch.ones((2, 3, 4))
     )
     solution, info = result
     assert_shape(solution.shape, (2, 3, 4))

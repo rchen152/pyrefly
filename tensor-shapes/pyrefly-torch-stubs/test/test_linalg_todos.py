@@ -81,6 +81,16 @@ def test_linalg_tensor_operations() -> None:
         torch.linalg.tensorsolve(inverse_input, torch.ones((3, 2)), dims=(0, 1)).shape,
         (2, 3),
     )
+    batch_matrix = torch.eye(3).expand((2, 3, 3))
+    chol = torch.linalg.cholesky_ex(batch_matrix)
+    assert_shape(chol.L.shape, (2, 3, 3))
+    assert_shape(chol.info.shape, (2,))
+    inverse = torch.linalg.inv_ex(batch_matrix)
+    assert_shape(inverse.inverse.shape, (2, 3, 3))
+    assert_shape(inverse.info.shape, (2,))
+    solution = torch.linalg.solve_ex(batch_matrix, torch.ones((2, 3, 4)))
+    assert_shape(solution.result.shape, (2, 3, 4))
+    assert_shape(solution.info.shape, (2,))
 
 
 if TYPE_CHECKING:
@@ -134,6 +144,7 @@ if TYPE_CHECKING:
         )
         assert_type(torch.linalg.svdvals(matrix), Tensor[[*Batch, int]])
         assert_type(torch.linalg.svdvals(torch.eye(3)), Tensor[[3]])
+        assert_type(torch.linalg.common_notes, dict[str, str])
 
     def check_linalg_solvers[Batch: IntTuple, N: IntVar, K: IntVar](
         factor: Tensor[[*Batch, N, N]],
@@ -152,6 +163,18 @@ if TYPE_CHECKING:
         )
         torch.linalg.lu_solve(  # E: gufunc
             torch.ones((3, 3)), torch.ones((2,)), torch.ones((2, 3)), left=False
+        )
+        assert_type(
+            torch.linalg.cholesky_ex(factor),
+            torch.return_types.linalg_cholesky_ex[[*Batch, N, N], Batch],
+        )
+        assert_type(
+            torch.linalg.inv_ex(factor),
+            torch.return_types.linalg_inv_ex[[*Batch, N, N], Batch],
+        )
+        assert_type(
+            torch.linalg.solve_ex(factor, rhs),
+            torch.return_types.linalg_solve_ex[[*Batch, N, K], Batch],
         )
 
     def check_linalg_tensor_equations[
