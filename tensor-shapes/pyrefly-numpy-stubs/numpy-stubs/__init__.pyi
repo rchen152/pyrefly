@@ -186,6 +186,7 @@ from numpy._shapes import (
     expand_dims_shape,
     matmul_shape,
     matvec_shape,
+    nonzero_shapes,
     reduce_shape,
     reverse_shape,
     stack_shape,
@@ -884,7 +885,9 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     flat: Any
     @property
     def mT(self) -> ndarray[swapaxes_shape(Shape, -1, -2), DType]: ...
-    nonzero: Any
+    def nonzero(
+        self,
+    ) -> MapIntTuples[lambda S: ndarray[S, dtype[intp]], nonzero_shapes(Shape)]: ...
     repeat: Any
     reshape: Any
     searchsorted: Any

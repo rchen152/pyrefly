@@ -121,6 +121,22 @@ def test_ndarray_transpose() -> None:
         array.transpose(())  # E: transpose axes must match the array rank
 
 
+def test_ndarray_nonzero_indices() -> None:
+    indices = np.ones((2, 3)).nonzero()
+
+    assert_type(
+        indices,
+        tuple[
+            np.ndarray[[int], np.dtype[np.intp]], np.ndarray[[int], np.dtype[np.intp]]
+        ],
+    )
+    assert_shape(indices[0].shape, (int,), runtime=(6,))
+    assert_shape(indices[1].shape, (int,), runtime=(6,))
+
+    if TYPE_CHECKING:
+        np.ones(()).nonzero()  # E: nonzero requires at least one dimension
+
+
 def test_ndarray_mutating_methods() -> None:
     a = np.ones((2, 3))
 

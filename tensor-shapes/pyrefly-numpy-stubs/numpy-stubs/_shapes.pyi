@@ -192,3 +192,11 @@ def transpose_shape(shape: IntTuple, axes: IntTuple) -> IntTuple:
     if any(duplicate == 1 for duplicate in duplicates):
         return dsl.Invalid("transpose axes must be unique")
     return dsl.IntTuple((shape[axis] for axis in normalized))
+
+@type_shape_dsl_function
+def nonzero_shapes(shape: IntTuple) -> IntTuples:
+    if len(shape) == 0:
+        return dsl.Invalid("nonzero requires at least one dimension")
+    return dsl.IntTuples(
+        (dsl.IntTuple((dsl.Int.gradual(),)) for _ in range(len(shape)))
+    )
