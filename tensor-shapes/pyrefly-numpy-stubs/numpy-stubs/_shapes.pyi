@@ -166,3 +166,29 @@ def swapaxes_shape(shape: IntTuple, axis1: int, axis2: int) -> IntTuple:
             for index in range(rank)
         )
     )
+
+@type_shape_dsl_function
+def reverse_shape(shape: IntTuple) -> IntTuple:
+    rank = len(shape)
+    return dsl.IntTuple((shape[rank - index - 1] for index in range(rank)))
+
+@type_shape_dsl_function
+def transpose_shape(shape: IntTuple, axes: IntTuple) -> IntTuple:
+    if len(axes) != len(shape):
+        return dsl.Invalid("transpose axes must match the array rank")
+    if any(axis < 0 - len(shape) or axis >= len(shape) for axis in axes):
+        return dsl.Invalid("transpose axis out of bounds")
+    normalized = dsl.IntTuple(
+        (axis + len(shape) if axis < 0 else axis for axis in axes)
+    )
+    duplicates = dsl.IntTuple(
+        (
+            1
+            if any(normalized[index] == normalized[other] for other in range(index))
+            else 0
+            for index in range(len(shape))
+        )
+    )
+    if any(duplicate == 1 for duplicate in duplicates):
+        return dsl.Invalid("transpose axes must be unique")
+    return dsl.IntTuple((shape[axis] for axis in normalized))

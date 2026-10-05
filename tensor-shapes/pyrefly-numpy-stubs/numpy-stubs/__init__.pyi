@@ -187,8 +187,10 @@ from numpy._shapes import (
     matmul_shape,
     matvec_shape,
     reduce_shape,
+    reverse_shape,
     stack_shape,
     swapaxes_shape,
+    transpose_shape,
     vecdot_shape,
     vecmat_shape,
 )
@@ -892,7 +894,18 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     ) -> ndarray[swapaxes_shape(Shape, First, Second), DType]: ...
     take: Any
     trace: Any
-    transpose: Any
+    @overload
+    def transpose(
+        self, axes: None = None, /
+    ) -> ndarray[reverse_shape(Shape), DType]: ...
+    @overload
+    def transpose[Axes: IntTuple](
+        self, axes: Axes, /
+    ) -> ndarray[transpose_shape(Shape, Axes), DType]: ...
+    @overload
+    def transpose[Axes: IntTuple](
+        self, *axes: *Axes
+    ) -> ndarray[transpose_shape(Shape, Axes), DType]: ...
     view: Any
 
 class ufunc:

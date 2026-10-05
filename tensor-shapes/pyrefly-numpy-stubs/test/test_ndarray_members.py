@@ -105,6 +105,22 @@ def test_ndarray_matrix_transpose_and_swapaxes() -> None:
         array.swapaxes(0, 3)  # E: swapaxes axis out of bounds
 
 
+def test_ndarray_transpose() -> None:
+    array = np.ones((2, 3, 4))
+
+    assert_shape(array.transpose().shape, (4, 3, 2))
+    assert_shape(array.transpose(None).shape, (4, 3, 2))
+    assert_shape(array.transpose((2, 0, 1)).shape, (4, 2, 3))
+    assert_shape(array.transpose(1, 2, 0).shape, (3, 4, 2))
+    assert_shape(array.transpose((-1, 0, 1)).shape, (4, 2, 3))
+
+    if TYPE_CHECKING:
+        array.transpose((0, 1))  # E: transpose axes must match the array rank
+        array.transpose(0, 0, 1)  # E: transpose axes must be unique
+        array.transpose((0, 1, 3))  # E: transpose axis out of bounds
+        array.transpose(())  # E: transpose axes must match the array rank
+
+
 def test_ndarray_mutating_methods() -> None:
     a = np.ones((2, 3))
 
