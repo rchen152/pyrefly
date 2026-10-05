@@ -126,6 +126,47 @@ class linalg_lu_factor_ex[Factor: IntTuple, Pivots: IntTuple, Info: IntTuple](
     @property
     def info(self) -> Tensor[Info]: ...
 
+class linalg_lu[P: IntTuple, L: IntTuple, U: IntTuple](
+    tuple[Tensor[P], Tensor[L], Tensor[U]]
+):
+    @property
+    def P(self) -> Tensor[P]: ...
+    @property
+    def L(self) -> Tensor[L]: ...
+    @property
+    def U(self) -> Tensor[U]: ...
+
+class linalg_qr[Q: IntTuple, R: IntTuple](tuple[Tensor[Q], Tensor[R]]):
+    @property
+    def Q(self) -> Tensor[Q]: ...
+    @property
+    def R(self) -> Tensor[R]: ...
+
+class linalg_svd[U: IntTuple, S: IntTuple, Vh: IntTuple](
+    tuple[Tensor[U], Tensor[S], Tensor[Vh]]
+):
+    @property
+    def U(self) -> Tensor[U]: ...
+    @property
+    def S(self) -> Tensor[S]: ...
+    @property
+    def Vh(self) -> Tensor[Vh]: ...
+
+class linalg_lstsq[
+    Solution: IntTuple,
+    Residuals: IntTuple,
+    Rank: IntTuple,
+    SingularValues: IntTuple,
+](tuple[Tensor[Solution], Tensor[Residuals], Tensor[Rank], Tensor[SingularValues]]):
+    @property
+    def solution(self) -> Tensor[Solution]: ...
+    @property
+    def residuals(self) -> Tensor[Residuals]: ...
+    @property
+    def rank(self) -> Tensor[Rank]: ...
+    @property
+    def singular_values(self) -> Tensor[SingularValues]: ...
+
 class linalg_solve_ex[Result: IntTuple, Info: IntTuple](
     tuple[Tensor[Result], Tensor[Info]]
 ):

@@ -93,6 +93,64 @@ def test_lu_factor_ex_named_result() -> None:
     assert_shape(result.info.shape, (2,))
 
 
+def test_lu_named_result() -> None:
+    result = cast(
+        "return_types.linalg_lu[[2, 4, 4], [2, 4, 3], [2, 3, 3]]",
+        torch.linalg.lu(torch.eye(4, 3).expand((2, 4, 3))),
+    )
+    permutation, lower, upper = result
+    assert_shape(permutation.shape, (2, 4, 4))
+    assert_shape(lower.shape, (2, 4, 3))
+    assert_shape(upper.shape, (2, 3, 3))
+    assert_shape(result.P.shape, (2, 4, 4))
+    assert_shape(result.L.shape, (2, 4, 3))
+    assert_shape(result.U.shape, (2, 3, 3))
+
+
+def test_qr_named_result() -> None:
+    result = cast(
+        "return_types.linalg_qr[[2, 4, 3], [2, 3, 3]]",
+        torch.linalg.qr(torch.eye(4, 3).expand((2, 4, 3)), mode="reduced"),
+    )
+    orthogonal, triangular = result
+    assert_shape(orthogonal.shape, (2, 4, 3))
+    assert_shape(triangular.shape, (2, 3, 3))
+    assert_shape(result.Q.shape, (2, 4, 3))
+    assert_shape(result.R.shape, (2, 3, 3))
+
+
+def test_svd_named_result() -> None:
+    result = cast(
+        "return_types.linalg_svd[[2, 4, 3], [2, 3], [2, 3, 3]]",
+        torch.linalg.svd(torch.eye(4, 3).expand((2, 4, 3)), full_matrices=False),
+    )
+    left, singular, right = result
+    assert_shape(left.shape, (2, 4, 3))
+    assert_shape(singular.shape, (2, 3))
+    assert_shape(right.shape, (2, 3, 3))
+    assert_shape(result.U.shape, (2, 4, 3))
+    assert_shape(result.S.shape, (2, 3))
+    assert_shape(result.Vh.shape, (2, 3, 3))
+
+
+def test_lstsq_named_result() -> None:
+    a = torch.eye(4, 3).expand((2, 4, 3))
+    b = torch.ones((2, 4, 2))
+    result = cast(
+        "return_types.linalg_lstsq[[2, 3, 2], [2, 2], [2], [2, 3]]",
+        torch.linalg.lstsq(a, b, driver="gelsd"),
+    )
+    solution, residuals, rank, singular_values = result
+    assert_shape(solution.shape, (2, 3, 2))
+    assert_shape(residuals.shape, (2, 2))
+    assert_shape(rank.shape, (2,))
+    assert_shape(singular_values.shape, (2, 3))
+    assert_shape(result.solution.shape, (2, 3, 2))
+    assert_shape(result.residuals.shape, (2, 2))
+    assert_shape(result.rank.shape, (2,))
+    assert_shape(result.singular_values.shape, (2, 3))
+
+
 if TYPE_CHECKING:
 
     def check_ex_named_results[Matrix: IntTuple, Batch: IntTuple, RHS: IntTuple](
@@ -143,3 +201,48 @@ if TYPE_CHECKING:
         assert_type(lu_ex.LU, Tensor[Matrix])
         assert_type(lu_ex.pivots, Tensor[Pivots])
         assert_type(lu_ex.info, Tensor[Batch])
+
+    def check_decomposition_named_results[
+        P: IntTuple,
+        L: IntTuple,
+        U: IntTuple,
+        Q: IntTuple,
+        R: IntTuple,
+        S: IntTuple,
+        Vh: IntTuple,
+    ](
+        lu: return_types.linalg_lu[P, L, U],
+        qr: return_types.linalg_qr[Q, R],
+        svd: return_types.linalg_svd[U, S, Vh],
+    ) -> None:
+        assert_type(lu[0], Tensor[P])
+        assert_type(lu[1], Tensor[L])
+        assert_type(lu[2], Tensor[U])
+        assert_type(lu.P, Tensor[P])
+        assert_type(lu.L, Tensor[L])
+        assert_type(lu.U, Tensor[U])
+        assert_type(qr[0], Tensor[Q])
+        assert_type(qr[1], Tensor[R])
+        assert_type(qr.Q, Tensor[Q])
+        assert_type(qr.R, Tensor[R])
+        assert_type(svd[0], Tensor[U])
+        assert_type(svd[1], Tensor[S])
+        assert_type(svd[2], Tensor[Vh])
+        assert_type(svd.U, Tensor[U])
+        assert_type(svd.S, Tensor[S])
+        assert_type(svd.Vh, Tensor[Vh])
+
+    def check_lstsq_named_result[
+        Solution: IntTuple,
+        Residuals: IntTuple,
+        Rank: IntTuple,
+        Singular: IntTuple,
+    ](result: return_types.linalg_lstsq[Solution, Residuals, Rank, Singular]) -> None:
+        assert_type(result[0], Tensor[Solution])
+        assert_type(result[1], Tensor[Residuals])
+        assert_type(result[2], Tensor[Rank])
+        assert_type(result[3], Tensor[Singular])
+        assert_type(result.solution, Tensor[Solution])
+        assert_type(result.residuals, Tensor[Residuals])
+        assert_type(result.rank, Tensor[Rank])
+        assert_type(result.singular_values, Tensor[Singular])
