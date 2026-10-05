@@ -4,6 +4,7 @@
 # LICENSE file in the root directory of this source tree.
 
 # Type stubs for torch.linalg module (Phase 4: Advanced Linear Algebra)
+from collections.abc import Sequence
 from typing import Any, Literal, overload
 
 from shape_extensions import Flag, gufunc_broadcast, Int as _Int, IntTuple, IntVar
@@ -18,6 +19,9 @@ from torch._shapes import (
     matmul_shape,
     reduce_shape,
     slogdet_shape,
+    tensorinv_shape,
+    tensorsolve_moved_shape,
+    tensorsolve_shape,
     transpose_shape,
     vecdot_shape,
 )
@@ -111,13 +115,44 @@ lstsq: Any
 lu: Any
 lu_factor: Any
 lu_factor_ex: Any
-multi_dot: Any
 qr: Any
 solve_ex: Any
 svd: Any
-tensorinv: Any
-tensorsolve: Any
 
+@overload
+def multi_dot[M: IntVar, N: IntVar, K: IntVar](
+    tensors: tuple[Tensor[[M, N]], Tensor[[N, K]]], *, out: Tensor | None = None
+) -> Tensor[[M, K]]: ...
+@overload
+def multi_dot[M: IntVar, N: IntVar, K: IntVar, P: IntVar](
+    tensors: tuple[Tensor[[M, N]], Tensor[[N, K]], Tensor[[K, P]]],
+    *,
+    out: Tensor | None = None,
+) -> Tensor[[M, P]]: ...
+
+# TODO(stroxler): Validate longer matrix chains once the IntTuples DSL retains
+# exact shape inference while checking adjacent contracting dimensions.
+@overload
+def multi_dot(tensors: Sequence[Tensor], *, out: Tensor | None = None) -> Tensor: ...
+def tensorinv[Shape: IntTuple, Ind: Flag[int] = 2](
+    A: Tensor[Shape], ind: Ind = 2, *, out: Tensor | None = None
+) -> Tensor[tensorinv_shape(Shape, Ind)]: ...
+@overload
+def tensorsolve[A: IntTuple, B: IntTuple](
+    A: Tensor[A],
+    B: Tensor[B],
+    dims: None = None,
+    *,
+    out: Tensor | None = None,
+) -> Tensor[tensorsolve_shape(A, B)]: ...
+@overload
+def tensorsolve[A: IntTuple, B: IntTuple, Dims: Flag[tuple[int, ...]]](
+    A: Tensor[A],
+    B: Tensor[B],
+    dims: Dims,
+    *,
+    out: Tensor | None = None,
+) -> Tensor[tensorsolve_moved_shape(A, B, Dims)]: ...
 def ldl_solve[LD: IntTuple, Pivots: IntTuple, RHS: IntTuple](
     LD: Tensor[LD],
     pivots: Tensor[Pivots],

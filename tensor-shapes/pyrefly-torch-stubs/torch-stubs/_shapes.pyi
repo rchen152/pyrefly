@@ -1528,6 +1528,49 @@ def lu_solve_shape(
     return gufunc_broadcast(spec, operands)
 
 @type_shape_dsl_function
+def tensorinv_shape(shape: IntTuple, ind: int) -> IntTuple:
+    if ind < 1 or ind > len(shape):
+        return dsl.Invalid("tensorinv ind must be positive and at most the input rank")
+    left = shape[:ind]
+    right = shape[ind:]
+    left_size = dsl.prod(left)
+    right_size = dsl.prod(right)
+    if dsl.is_concrete_int(left_size) and dsl.is_concrete_int(right_size):
+        if left_size != right_size:
+            return dsl.Invalid("tensorinv input products must match")
+    return dsl.concat(right, left)
+
+@type_shape_dsl_function
+def tensorsolve_shape(operator: IntTuple, rhs: IntTuple) -> IntTuple:
+    if len(rhs) > len(operator):
+        return dsl.Invalid("tensorsolve right-hand side rank exceeds operator rank")
+    prefix = dsl.prod(operator[: len(rhs)])
+    suffix = dsl.prod(operator[len(rhs) :])
+    total = dsl.prod(rhs)
+    if dsl.is_concrete_int(prefix) and dsl.is_concrete_int(suffix):
+        if prefix != suffix:
+            return dsl.Invalid("tensorsolve operator products must match")
+    if dsl.is_concrete_int(prefix) and dsl.is_concrete_int(total):
+        if prefix != total:
+            return dsl.Invalid("tensorsolve right-hand side size must match")
+    return operator[len(rhs) :]
+
+@type_shape_dsl_function
+def tensorsolve_moved_shape(
+    operator: IntTuple, rhs: IntTuple, dims: tuple[int, ...]
+) -> IntTuple:
+    rank = len(operator)
+    if any(axis < 0 or axis >= rank for axis in dims):
+        return dsl.Invalid("tensorsolve dimension out of range")
+    if any(dims.count(axis) > 1 for axis in dims):
+        return dsl.Invalid("tensorsolve dimensions must be unique")
+    moved = dsl.concat(
+        dsl.IntTuple((operator[i] for i in range(rank) if i not in dims)),
+        dsl.IntTuple((operator[i] for i in dims)),
+    )
+    return tensorsolve_shape(moved, rhs)
+
+@type_shape_dsl_function
 def meshgrid_shapes(shapes: IntTuples, indexing: str | None) -> IntTuples:
     if len(shapes) == 0:
         return dsl.Invalid("meshgrid expects at least one tensor")

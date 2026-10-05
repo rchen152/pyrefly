@@ -64,6 +64,23 @@ def test_linalg_tensor_operations() -> None:
         (2, 3),
     )
     assert_shape(torch.linalg.svdvals(torch.eye(3)).shape, (3,))
+    assert_shape(
+        torch.linalg.multi_dot(
+            (torch.ones((2, 3)), torch.ones((3, 4)), torch.ones((4, 5)))
+        ).shape,
+        (2, 5),
+    )
+    inverse_input = torch.eye(6).reshape((2, 3, 3, 2))
+    assert_shape(torch.linalg.tensorinv(inverse_input).shape, (3, 2, 2, 3))
+    identity = torch.eye(3).reshape((3, 3))
+    assert_shape(torch.linalg.tensorinv(identity, ind=1).shape, (3, 3))
+    assert_shape(
+        torch.linalg.tensorsolve(inverse_input, torch.ones((2, 3))).shape, (3, 2)
+    )
+    assert_shape(
+        torch.linalg.tensorsolve(inverse_input, torch.ones((3, 2)), dims=(0, 1)).shape,
+        (2, 3),
+    )
 
 
 if TYPE_CHECKING:
@@ -135,4 +152,43 @@ if TYPE_CHECKING:
         )
         torch.linalg.lu_solve(  # E: gufunc
             torch.ones((3, 3)), torch.ones((2,)), torch.ones((2, 3)), left=False
+        )
+
+    def check_linalg_tensor_equations[
+        Rows: IntVar,
+        Cols: IntVar,
+        InnerRows: IntVar,
+        InnerCols: IntVar,
+    ](
+        operator: Tensor[[Rows, Cols, InnerRows, InnerCols]],
+        right_hand_side: Tensor[[Rows, Cols]],
+    ) -> None:
+        assert_type(
+            torch.linalg.tensorinv(operator),
+            Tensor[[InnerRows, InnerCols, Rows, Cols]],
+        )
+        torch.linalg.tensorinv(  # E: tensorinv input products must match
+            torch.ones((2, 3, 4, 5))
+        )
+        torch.linalg.tensorinv(  # E: tensorinv ind must be positive
+            torch.ones((2, 3)), ind=0
+        )
+        assert_type(
+            torch.linalg.tensorsolve(operator, right_hand_side),
+            Tensor[[InnerRows, InnerCols]],
+        )
+        assert_type(
+            torch.linalg.tensorsolve(
+                torch.ones((2, 3, 3, 2)), torch.ones((3, 2)), dims=(0, 1)
+            ),
+            Tensor[[2, 3]],
+        )
+        torch.linalg.tensorsolve(  # E: tensorsolve operator products must match
+            torch.ones((2, 3, 4, 5)), torch.ones((2, 3))
+        )
+        torch.linalg.tensorsolve(  # E: tensorsolve right-hand side size must match
+            torch.ones((2, 3, 3, 2)), torch.ones((5, 1))
+        )
+        torch.linalg.tensorsolve(  # E: tensorsolve dimension out of range
+            torch.ones((2, 3, 3, 2)), torch.ones((2, 3)), dims=(4,)
         )
