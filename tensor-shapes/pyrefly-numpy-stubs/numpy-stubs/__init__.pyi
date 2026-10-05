@@ -18,6 +18,7 @@ from numpy._array_api_info import (
 from numpy._core._asarray import (
     require as require,
 )
+from numpy._core._internal import _ctypes
 from numpy._core._type_aliases import (
     sctypeDict as sctypeDict,
 )
@@ -879,10 +880,12 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     # TODO(stroxler): Replace these placeholders with shape-aware declarations.
     choose: Any
     compress: Any
-    ctypes: Any
+    @property
+    def ctypes(self) -> _ctypes[int]: ...
     diagonal: Any
     dot: Any
-    flat: Any
+    @property
+    def flat(self) -> flatiter[ndarray[Shape, DType]]: ...
     @property
     def mT(self) -> ndarray[swapaxes_shape(Shape, -1, -2), DType]: ...
     def nonzero(

@@ -137,6 +137,20 @@ def test_ndarray_nonzero_indices() -> None:
         np.ones(()).nonzero()  # E: nonzero requires at least one dimension
 
 
+def test_ndarray_flat_iterator_and_ctypes() -> None:
+    array = np.ones((2, 3))
+
+    assert_type(array.ctypes.data, int)
+    assert isinstance(array.flat, np.flatiter)
+    assert_shape(array.flat.base.shape, (2, 3))
+    assert array.flat[0] == 1.0
+
+    if TYPE_CHECKING:
+        assert_type(array.flat, np.flatiter[np.ndarray[[2, 3], np.dtype[np.float64]]])
+        array.ctypes = None  # E: read-only property
+        array.flat = None  # E: read-only property
+
+
 def test_ndarray_mutating_methods() -> None:
     a = np.ones((2, 3))
 
