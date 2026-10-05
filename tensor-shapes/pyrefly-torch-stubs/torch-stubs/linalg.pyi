@@ -107,15 +107,73 @@ def matrix_rank[Batch: IntTuple, M: IntVar, N: IntVar](
 
 # TODO: Add precise types and signatures for the remaining public API.
 common_notes: dict[str, str]
-ldl_factor: Any
-ldl_factor_ex: Any
 lstsq: Any
 lu: Any
-lu_factor: Any
-lu_factor_ex: Any
 qr: Any
 svd: Any
 
+@overload
+def ldl_factor[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    *,
+    hermitian: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_ldl_factor[[*Batch, N, N], [*Batch, N]]: ...
+@overload
+def ldl_factor[Shape: IntTuple](
+    A: Tensor[Shape],
+    *,
+    hermitian: bool = False,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_ldl_factor[Shape, eig_shape(Shape)]: ...
+@overload
+def ldl_factor_ex[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    *,
+    hermitian: bool = False,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_ldl_factor_ex[[*Batch, N, N], [*Batch, N], Batch]: ...
+@overload
+def ldl_factor_ex[Shape: IntTuple](
+    A: Tensor[Shape],
+    *,
+    hermitian: bool = False,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_ldl_factor_ex[
+    Shape, eig_shape(Shape), slogdet_shape(Shape)
+]: ...
+@overload
+def lu_factor[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    *,
+    pivot: bool = True,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_lu_factor[[*Batch, N, N], [*Batch, N]]: ...
+@overload
+def lu_factor[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    *,
+    pivot: bool = True,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_lu_factor[[*Batch, M, N], [*Batch, int]]: ...
+@overload
+def lu_factor_ex[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    *,
+    pivot: bool = True,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_lu_factor_ex[[*Batch, N, N], [*Batch, N], Batch]: ...
+@overload
+def lu_factor_ex[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    *,
+    pivot: bool = True,
+    check_errors: bool = False,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_lu_factor_ex[[*Batch, M, N], [*Batch, int], Batch]: ...
 @overload
 def cholesky_ex[Batch: IntTuple, N: IntVar](
     A: Tensor[[*Batch, N, N]],

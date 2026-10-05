@@ -42,10 +42,7 @@ def test_solve_ex_named_result() -> None:
 
 
 def test_ldl_factor_named_result() -> None:
-    result = cast(
-        "return_types.linalg_ldl_factor[[2, 3, 3], [2, 3]]",
-        torch.linalg.ldl_factor(torch.eye(3).expand((2, 3, 3))),
-    )
+    result = torch.linalg.ldl_factor(torch.eye(3).expand((2, 3, 3)))
     factor, pivots = result
     assert_shape(factor.shape, (2, 3, 3))
     assert_shape(pivots.shape, (2, 3))
@@ -54,10 +51,7 @@ def test_ldl_factor_named_result() -> None:
 
 
 def test_ldl_factor_ex_named_result() -> None:
-    result = cast(
-        "return_types.linalg_ldl_factor_ex[[2, 3, 3], [2, 3], [2]]",
-        torch.linalg.ldl_factor_ex(torch.eye(3).expand((2, 3, 3))),
-    )
+    result = torch.linalg.ldl_factor_ex(torch.eye(3).expand((2, 3, 3)))
     factor, pivots, info = result
     assert_shape(factor.shape, (2, 3, 3))
     assert_shape(pivots.shape, (2, 3))

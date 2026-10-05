@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import assert_type, cast, TYPE_CHECKING
+from typing import assert_type, TYPE_CHECKING
 
 import torch
 from shape_extensions import assert_shape, IntTuple, IntVar
@@ -43,24 +43,17 @@ def test_linalg_tensor_operations() -> None:
         (2, 4),
     )
     ld, pivots, _ = torch.linalg.ldl_factor_ex(torch.eye(3))
-    # Factorization returns are not yet typed in these stubs.
     assert_shape(
-        torch.linalg.ldl_solve(
-            cast("Tensor[[3, 3]]", ld), cast("Tensor[[3]]", pivots), torch.ones((3, 2))
-        ).shape,
+        torch.linalg.ldl_solve(ld, pivots, torch.ones((3, 2))).shape,
         (3, 2),
     )
     lu, lu_pivots = torch.linalg.lu_factor(torch.eye(3))
-    lu_matrix = cast("Tensor[[3, 3]]", lu)
-    lu_pivots = cast("Tensor[[3]]", lu_pivots)
     assert_shape(
-        torch.linalg.lu_solve(lu_matrix, lu_pivots, torch.ones((3, 2))).shape,
+        torch.linalg.lu_solve(lu, lu_pivots, torch.ones((3, 2))).shape,
         (3, 2),
     )
     assert_shape(
-        torch.linalg.lu_solve(
-            lu_matrix, lu_pivots, torch.ones((2, 3)), left=False
-        ).shape,
+        torch.linalg.lu_solve(lu, lu_pivots, torch.ones((2, 3)), left=False).shape,
         (2, 3),
     )
     assert_shape(torch.linalg.svdvals(torch.eye(3)).shape, (3,))
@@ -91,6 +84,17 @@ def test_linalg_tensor_operations() -> None:
     solution = torch.linalg.solve_ex(batch_matrix, torch.ones((2, 3, 4)))
     assert_shape(solution.result.shape, (2, 3, 4))
     assert_shape(solution.info.shape, (2,))
+    ldl = torch.linalg.ldl_factor(batch_matrix)
+    assert_shape(ldl.LD.shape, (2, 3, 3))
+    assert_shape(ldl.pivots.shape, (2, 3))
+    ldl_ex = torch.linalg.ldl_factor_ex(batch_matrix)
+    assert_shape(ldl_ex.info.shape, (2,))
+    rectangular = torch.eye(4, 3).expand((2, 4, 3))
+    lu = torch.linalg.lu_factor(rectangular)
+    assert_shape(lu.LU.shape, (2, 4, 3))
+    assert lu.pivots.shape == (2, 3)
+    lu_ex = torch.linalg.lu_factor_ex(rectangular)
+    assert_shape(lu_ex.info.shape, (2,))
 
 
 if TYPE_CHECKING:
@@ -145,6 +149,7 @@ if TYPE_CHECKING:
         assert_type(torch.linalg.svdvals(matrix), Tensor[[*Batch, int]])
         assert_type(torch.linalg.svdvals(torch.eye(3)), Tensor[[3]])
         assert_type(torch.linalg.common_notes, dict[str, str])
+        assert_type(torch.linalg.lu_factor(matrix).pivots, Tensor[[*Batch, int]])
 
     def check_linalg_solvers[Batch: IntTuple, N: IntVar, K: IntVar](
         factor: Tensor[[*Batch, N, N]],
@@ -175,6 +180,22 @@ if TYPE_CHECKING:
         assert_type(
             torch.linalg.solve_ex(factor, rhs),
             torch.return_types.linalg_solve_ex[[*Batch, N, K], Batch],
+        )
+        assert_type(
+            torch.linalg.ldl_factor(factor),
+            torch.return_types.linalg_ldl_factor[[*Batch, N, N], [*Batch, N]],
+        )
+        assert_type(
+            torch.linalg.ldl_factor_ex(factor),
+            torch.return_types.linalg_ldl_factor_ex[[*Batch, N, N], [*Batch, N], Batch],
+        )
+        assert_type(
+            torch.linalg.lu_factor(factor),
+            torch.return_types.linalg_lu_factor[[*Batch, N, N], [*Batch, N]],
+        )
+        assert_type(
+            torch.linalg.lu_factor_ex(factor),
+            torch.return_types.linalg_lu_factor_ex[[*Batch, N, N], [*Batch, N], Batch],
         )
 
     def check_linalg_tensor_equations[
