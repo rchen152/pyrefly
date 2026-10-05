@@ -90,6 +90,22 @@ def test_lp_pool_shapes() -> None:
     )
 
 
+def test_margin_loss_shapes() -> None:
+    scores = torch.randn((2, 3))
+    classes = torch.tensor([0, 2])
+    labels = torch.tensor([[0, 2, -1], [1, -1, -1]])
+
+    assert_shape(F.multi_margin_loss(scores, classes, reduction="none").shape, (2,))
+    assert_shape(F.multi_margin_loss(scores, classes).shape, ())
+    assert_shape(F.multilabel_margin_loss(scores, labels, reduction="none").shape, (2,))
+    assert_shape(F.multilabel_margin_loss(scores, labels).shape, ())
+    assert_shape(
+        F.soft_margin_loss(scores, torch.ones((2, 3)), reduction="none").shape,
+        (2, 3),
+    )
+    assert_shape(F.soft_margin_loss(scores, torch.ones((2, 3))).shape, ())
+
+
 if TYPE_CHECKING:
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
@@ -184,3 +200,19 @@ if TYPE_CHECKING:
             F.lp_pool3d(volume, 2, (2, 2, 3), stride=(2, 2, 3)),
             Tensor[[B, 3, 4, 5, 4]],
         )
+
+    def check_margin_loss_shapes[B: IntVar, C: IntVar](
+        scores: Tensor[[B, C]],
+        classes: Tensor[[B]],
+        labels: Tensor[[B, C]],
+    ) -> None:
+        assert_type(F.multi_margin_loss(scores, classes, reduction="none"), Tensor[[B]])
+        assert_type(F.multi_margin_loss(scores, classes), Tensor[[]])
+        assert_type(
+            F.multilabel_margin_loss(scores, labels, reduction="none"), Tensor[[B]]
+        )
+        assert_type(F.multilabel_margin_loss(scores, labels), Tensor[[]])
+        assert_type(
+            F.soft_margin_loss(scores, labels, reduction="none"), Tensor[[B, C]]
+        )
+        assert_type(F.soft_margin_loss(scores, labels), Tensor[[]])

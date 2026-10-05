@@ -1588,6 +1588,46 @@ def hinge_embedding_loss[
     """Hinge embedding loss. Shape inference via type-level DSL."""
     ...
 
+def multi_margin_loss[
+    InputShape: IntTuple,
+    SizeAverage: Flag[bool | None],
+    Reduce: Flag[bool | None],
+    Reduction: Flag[str],
+](
+    input: Tensor[InputShape],
+    target: Tensor,
+    p: int = 1,
+    margin: float = 1.0,
+    weight: Tensor | None = None,
+    size_average: SizeAverage = None,
+    reduce: Reduce = None,
+    reduction: Reduction = "mean",
+) -> Tensor[classification_loss_shape(InputShape, Reduction, SizeAverage, Reduce)]: ...
+def multilabel_margin_loss[
+    InputShape: IntTuple,
+    SizeAverage: Flag[bool | None],
+    Reduce: Flag[bool | None],
+    Reduction: Flag[str],
+](
+    input: Tensor[InputShape],
+    target: Tensor[InputShape],
+    size_average: SizeAverage = None,
+    reduce: Reduce = None,
+    reduction: Reduction = "mean",
+) -> Tensor[classification_loss_shape(InputShape, Reduction, SizeAverage, Reduce)]: ...
+def soft_margin_loss[
+    InputShape: IntTuple,
+    SizeAverage: Flag[bool | None],
+    Reduce: Flag[bool | None],
+    Reduction: Flag[str],
+](
+    input: Tensor[InputShape],
+    target: Tensor[InputShape],
+    size_average: SizeAverage = None,
+    reduce: Reduce = None,
+    reduction: Reduction = "mean",
+) -> Tensor[loss_shape(InputShape, Reduction, SizeAverage, Reduce)]: ...
+
 # Padding operation
 @overload
 def pad[Shape: IntTuple, Pad: Flag[tuple[builtins.int, ...]]](
@@ -1838,12 +1878,9 @@ gaussian_nll_loss: Any
 grouped_mm: Any
 gumbel_softmax: Any
 multi_head_attention_forward: Any
-multi_margin_loss: Any
-multilabel_margin_loss: Any
 multilabel_soft_margin_loss: Any
 scaled_grouped_mm: Any
 scaled_mm: Any
-soft_margin_loss: Any
 triplet_margin_with_distance_loss: Any
 unfold: Any
 upsample_bilinear: Any
