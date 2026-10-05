@@ -90,6 +90,42 @@ class linalg_inv_ex[Result: IntTuple, Info: IntTuple](
     @property
     def info(self) -> Tensor[Info]: ...
 
+class linalg_ldl_factor[Factor: IntTuple, Pivots: IntTuple](
+    tuple[Tensor[Factor], Tensor[Pivots]]
+):
+    @property
+    def LD(self) -> Tensor[Factor]: ...
+    @property
+    def pivots(self) -> Tensor[Pivots]: ...
+
+class linalg_ldl_factor_ex[Factor: IntTuple, Pivots: IntTuple, Info: IntTuple](
+    tuple[Tensor[Factor], Tensor[Pivots], Tensor[Info]]
+):
+    @property
+    def LD(self) -> Tensor[Factor]: ...
+    @property
+    def pivots(self) -> Tensor[Pivots]: ...
+    @property
+    def info(self) -> Tensor[Info]: ...
+
+class linalg_lu_factor[Factor: IntTuple, Pivots: IntTuple](
+    tuple[Tensor[Factor], Tensor[Pivots]]
+):
+    @property
+    def LU(self) -> Tensor[Factor]: ...
+    @property
+    def pivots(self) -> Tensor[Pivots]: ...
+
+class linalg_lu_factor_ex[Factor: IntTuple, Pivots: IntTuple, Info: IntTuple](
+    tuple[Tensor[Factor], Tensor[Pivots], Tensor[Info]]
+):
+    @property
+    def LU(self) -> Tensor[Factor]: ...
+    @property
+    def pivots(self) -> Tensor[Pivots]: ...
+    @property
+    def info(self) -> Tensor[Info]: ...
+
 class linalg_solve_ex[Result: IntTuple, Info: IntTuple](
     tuple[Tensor[Result], Tensor[Info]]
 ):
