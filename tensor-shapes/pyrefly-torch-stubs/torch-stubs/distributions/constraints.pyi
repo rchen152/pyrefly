@@ -6,7 +6,7 @@
 """Type stubs for torch.distributions.constraints."""
 
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Literal, overload
 
 from shape_extensions import broadcast, IntTuple, IntVar
 from torch import Tensor
@@ -153,6 +153,29 @@ class _Stack(Constraint):
 
     def __init__(self, cseq: Sequence[Constraint], dim: int = 0) -> None: ...
 
+class _IndependentConstraint[EventDim: int = int](Constraint):
+    """Aggregate a base constraint over its trailing event dimensions."""
+
+    base_constraint: Constraint
+    reinterpreted_batch_ndims: int
+
+    def __init__(
+        self, base_constraint: Constraint, reinterpreted_batch_ndims: int
+    ) -> None: ...
+    @overload
+    def check[S: IntTuple, N: IntVar](
+        self: _IndependentConstraint[Literal[1]], value: Tensor[[*S, N]]
+    ) -> Tensor[S]: ...
+    @overload
+    def check(self, value: Tensor) -> Tensor: ...
+
+class MixtureSameFamilyConstraint(Constraint):
+    """Check a value against every component constraint in a mixture."""
+
+    base_constraint: Constraint
+
+    def __init__(self, base_constraint: Constraint) -> None: ...
+
 real: Constraint
 boolean: _Boolean
 one_hot: _OneHot
@@ -177,13 +200,12 @@ half_open_interval = _HalfOpenInterval
 multinomial = _Multinomial
 cat = _Cat
 stack = _Stack
+independent = _IndependentConstraint
+real_vector: _IndependentConstraint[Literal[1]]
 
 def interval(lower_bound: float, upper_bound: float) -> Constraint: ...
 
 # TODO: Replace these availability stubs with precise declarations.
-MixtureSameFamilyConstraint: Any
 dependent: Any
 dependent_property: Any
-independent: Any
 is_dependent: Any
-real_vector: Any
