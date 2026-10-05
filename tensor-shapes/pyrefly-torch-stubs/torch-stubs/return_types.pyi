@@ -74,6 +74,30 @@ class topk[Shape: IntTuple](tuple[Tensor[Shape], Tensor[Shape]]):
     @property
     def indices(self) -> Tensor[Shape]: ...
 
+class linalg_cholesky_ex[Result: IntTuple, Info: IntTuple](
+    tuple[Tensor[Result], Tensor[Info]]
+):
+    @property
+    def L(self) -> Tensor[Result]: ...
+    @property
+    def info(self) -> Tensor[Info]: ...
+
+class linalg_inv_ex[Result: IntTuple, Info: IntTuple](
+    tuple[Tensor[Result], Tensor[Info]]
+):
+    @property
+    def inverse(self) -> Tensor[Result]: ...
+    @property
+    def info(self) -> Tensor[Info]: ...
+
+class linalg_solve_ex[Result: IntTuple, Info: IntTuple](
+    tuple[Tensor[Result], Tensor[Info]]
+):
+    @property
+    def result(self) -> Tensor[Result]: ...
+    @property
+    def info(self) -> Tensor[Info]: ...
+
 class linalg_slogdet[Shape: IntTuple](tuple[Tensor[Shape], Tensor[Shape]]):
     @property
     def sign(self) -> Tensor[Shape]: ...
