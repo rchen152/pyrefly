@@ -126,6 +126,23 @@ def test_fractional_max_pool_with_indices_shapes() -> None:
     assert_shape(indices.shape, (2, 3, 4, 5, 6))
 
 
+def test_fractional_max_pool_dispatch_shapes() -> None:
+    image = torch.randn((2, 3, 8, 10))
+    assert_shape(F.fractional_max_pool2d(image, 2, (4, 5)).shape, (2, 3, 4, 5))
+    values, indices = F.fractional_max_pool2d(image, 2, 3, return_indices=True)
+    assert_shape(values.shape, (2, 3, 3, 3))
+    assert_shape(indices.shape, (2, 3, 3, 3))
+    assert_shape(F.fractional_max_pool2d(image[0], 2, (4, 5)).shape, (3, 4, 5))
+
+    volume = torch.randn((2, 3, 8, 10, 12))
+    assert_shape(F.fractional_max_pool3d(volume, 2, 3).shape, (2, 3, 3, 3, 3))
+    values, indices = F.fractional_max_pool3d(
+        volume, 2, output_ratio=0.5, return_indices=True
+    )
+    assert tuple(values.shape) == (2, 3, 4, 5, 6)
+    assert tuple(indices.shape) == (2, 3, 4, 5, 6)
+
+
 if TYPE_CHECKING:
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
@@ -266,4 +283,42 @@ if TYPE_CHECKING:
         assert_type(
             F.fractional_max_pool3d_with_indices(volume[0], 2, depth),
             tuple[Tensor[[3, int, int, int]], Tensor[[3, int, int, int]]],
+        )
+
+    def check_fractional_max_pool_dispatch_shapes[B: IntVar](
+        image: Tensor[[B, 3, 8, 10]],
+        volume: Tensor[[B, 3, 8, 10, 12]],
+        return_indices: bool,
+        size: tuple[int, int],
+        depth: int,
+    ) -> None:
+        assert_type(F.fractional_max_pool2d(image, 2, (4, 5)), Tensor[[B, 3, 4, 5]])
+        assert_type(
+            F.fractional_max_pool2d(image, 2, (4, 5), return_indices=True),
+            tuple[Tensor[[B, 3, 4, 5]], Tensor[[B, 3, 4, 5]]],
+        )
+        assert_type(
+            F.fractional_max_pool2d(image, 2, output_ratio=(0.5, 0.5)),
+            Tensor[[B, 3, int, int]],
+        )
+        assert_type(F.fractional_max_pool3d(volume, 2, 3), Tensor[[B, 3, 3, 3, 3]])
+        assert_type(
+            F.fractional_max_pool3d(volume, 2, (4, 5, 6), return_indices=True),
+            tuple[Tensor[[B, 3, 4, 5, 6]], Tensor[[B, 3, 4, 5, 6]]],
+        )
+        assert_type(
+            F.fractional_max_pool3d(
+                volume, 2, output_ratio=0.5, return_indices=return_indices
+            ),
+            Tensor[[B, 3, int, int, int]]
+            | tuple[Tensor[[B, 3, int, int, int]], Tensor[[B, 3, int, int, int]]],
+        )
+        assert_type(
+            F.fractional_max_pool2d(image, 2, size, return_indices=return_indices),
+            Tensor[[B, 3, int, int]]
+            | tuple[Tensor[[B, 3, int, int]], Tensor[[B, 3, int, int]]],
+        )
+        assert_type(
+            F.fractional_max_pool3d(volume[0], 2, depth),
+            Tensor[[3, int, int, int]],
         )

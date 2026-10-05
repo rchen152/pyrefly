@@ -379,6 +379,77 @@ def max_pool3d_with_indices[
 
 # Fractional output ratios yield gradual spatial dimensions; explicit sizes are exact.
 # Torch's 2D implementation requires a pair for output_ratio.
+@overload
+def fractional_max_pool2d[
+    Batch: IntTuple,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int] | None],
+](
+    input: Tensor[[*Batch, H, W]],
+    kernel_size: int | tuple[int, int],
+    output_size: Output = None,
+    output_ratio: tuple[float, float] | None = None,
+    return_indices: Literal[False] = False,
+    _random_samples: Tensor | None = None,
+) -> Tensor[
+    [*Batch, fractional_pool_extent(Output, 0), fractional_pool_extent(Output, 1)]
+]: ...
+@overload
+def fractional_max_pool2d[
+    Batch: IntTuple,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int] | None],
+](
+    input: Tensor[[*Batch, H, W]],
+    kernel_size: int | tuple[int, int],
+    output_size: Output = None,
+    output_ratio: tuple[float, float] | None = None,
+    return_indices: Literal[True] = True,
+    _random_samples: Tensor | None = None,
+) -> tuple[
+    Tensor[
+        [*Batch, fractional_pool_extent(Output, 0), fractional_pool_extent(Output, 1)]
+    ],
+    Tensor[
+        [*Batch, fractional_pool_extent(Output, 0), fractional_pool_extent(Output, 1)]
+    ],
+]: ...
+@overload
+def fractional_max_pool2d[
+    Batch: IntTuple,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int] | None],
+](
+    input: Tensor[[*Batch, H, W]],
+    kernel_size: int | tuple[int, int],
+    output_size: Output = None,
+    output_ratio: tuple[float, float] | None = None,
+    return_indices: bool = ...,
+    _random_samples: Tensor | None = None,
+) -> (
+    Tensor[
+        [*Batch, fractional_pool_extent(Output, 0), fractional_pool_extent(Output, 1)]
+    ]
+    | tuple[
+        Tensor[
+            [
+                *Batch,
+                fractional_pool_extent(Output, 0),
+                fractional_pool_extent(Output, 1),
+            ]
+        ],
+        Tensor[
+            [
+                *Batch,
+                fractional_pool_extent(Output, 0),
+                fractional_pool_extent(Output, 1),
+            ]
+        ],
+    ]
+): ...
 def fractional_max_pool2d_with_indices[
     Batch: IntTuple,
     H: IntVar,
@@ -399,6 +470,102 @@ def fractional_max_pool2d_with_indices[
         [*Batch, fractional_pool_extent(Output, 0), fractional_pool_extent(Output, 1)]
     ],
 ]: ...
+@overload
+def fractional_max_pool3d[
+    Batch: IntTuple,
+    D: IntVar,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int, int] | None],
+](
+    input: Tensor[[*Batch, D, H, W]],
+    kernel_size: int | tuple[int, int, int],
+    output_size: Output = None,
+    output_ratio: float | tuple[float, float, float] | None = None,
+    return_indices: Literal[False] = False,
+    _random_samples: Tensor | None = None,
+) -> Tensor[
+    [
+        *Batch,
+        fractional_pool_extent(Output, 0),
+        fractional_pool_extent(Output, 1),
+        fractional_pool_extent(Output, 2),
+    ]
+]: ...
+@overload
+def fractional_max_pool3d[
+    Batch: IntTuple,
+    D: IntVar,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int, int] | None],
+](
+    input: Tensor[[*Batch, D, H, W]],
+    kernel_size: int | tuple[int, int, int],
+    output_size: Output = None,
+    output_ratio: float | tuple[float, float, float] | None = None,
+    return_indices: Literal[True] = True,
+    _random_samples: Tensor | None = None,
+) -> tuple[
+    Tensor[
+        [
+            *Batch,
+            fractional_pool_extent(Output, 0),
+            fractional_pool_extent(Output, 1),
+            fractional_pool_extent(Output, 2),
+        ]
+    ],
+    Tensor[
+        [
+            *Batch,
+            fractional_pool_extent(Output, 0),
+            fractional_pool_extent(Output, 1),
+            fractional_pool_extent(Output, 2),
+        ]
+    ],
+]: ...
+@overload
+def fractional_max_pool3d[
+    Batch: IntTuple,
+    D: IntVar,
+    H: IntVar,
+    W: IntVar,
+    Output: Flag[int | tuple[int, int, int] | None],
+](
+    input: Tensor[[*Batch, D, H, W]],
+    kernel_size: int | tuple[int, int, int],
+    output_size: Output = None,
+    output_ratio: float | tuple[float, float, float] | None = None,
+    return_indices: bool = ...,
+    _random_samples: Tensor | None = None,
+) -> (
+    Tensor[
+        [
+            *Batch,
+            fractional_pool_extent(Output, 0),
+            fractional_pool_extent(Output, 1),
+            fractional_pool_extent(Output, 2),
+        ]
+    ]
+    | tuple[
+        Tensor[
+            [
+                *Batch,
+                fractional_pool_extent(Output, 0),
+                fractional_pool_extent(Output, 1),
+                fractional_pool_extent(Output, 2),
+            ]
+        ],
+        Tensor[
+            [
+                *Batch,
+                fractional_pool_extent(Output, 0),
+                fractional_pool_extent(Output, 1),
+                fractional_pool_extent(Output, 2),
+            ]
+        ],
+    ]
+): ...
 def fractional_max_pool3d_with_indices[
     Batch: IntTuple,
     D: IntVar,
@@ -1925,8 +2092,6 @@ assert_int_or_pair: Any
 ctc_loss: Any
 embedding_bag: Any
 fold: Any
-fractional_max_pool2d: Any
-fractional_max_pool3d: Any
 gaussian_nll_loss: Any
 grouped_mm: Any
 gumbel_softmax: Any
