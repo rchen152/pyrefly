@@ -108,10 +108,85 @@ def matrix_rank[Batch: IntTuple, M: IntVar, N: IntVar](
 # TODO: Add precise types and signatures for the remaining public API.
 common_notes: dict[str, str]
 lstsq: Any
-lu: Any
-qr: Any
-svd: Any
 
+@overload
+def lu[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    *,
+    pivot: bool = True,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_lu[[*Batch, N, N], [*Batch, N, N], [*Batch, N, N]]: ...
+@overload
+def lu[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    *,
+    pivot: bool = True,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_lu[[*Batch, M, M], [*Batch, M, int], [*Batch, int, N]]: ...
+@overload
+def qr[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    mode: Literal["reduced", "complete"] = "reduced",
+    *,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_qr[[*Batch, N, N], [*Batch, N, N]]: ...
+@overload
+def qr[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    mode: Literal["complete"],
+    *,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_qr[[*Batch, M, M], [*Batch, M, N]]: ...
+@overload
+def qr[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    mode: Literal["r"],
+    *,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_qr[[0], [*Batch, int, N]]: ...
+@overload
+def qr[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    mode: Literal["reduced"] = "reduced",
+    *,
+    out: tuple[Tensor, Tensor] | None = None,
+) -> return_types.linalg_qr[[*Batch, M, int], [*Batch, int, N]]: ...
+@overload
+def qr(
+    A: Tensor, mode: str, *, out: tuple[Tensor, Tensor] | None = None
+) -> return_types.linalg_qr[IntTuple, IntTuple]: ...
+@overload
+def svd[Batch: IntTuple, N: IntVar](
+    A: Tensor[[*Batch, N, N]],
+    full_matrices: bool = True,
+    *,
+    driver: str | None = None,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_svd[[*Batch, N, N], [*Batch, N], [*Batch, N, N]]: ...
+@overload
+def svd[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    full_matrices: Literal[True] = True,
+    *,
+    driver: str | None = None,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_svd[[*Batch, M, M], [*Batch, int], [*Batch, N, N]]: ...
+@overload
+def svd[Batch: IntTuple, M: IntVar, N: IntVar](
+    A: Tensor[[*Batch, M, N]],
+    full_matrices: Literal[False],
+    *,
+    driver: str | None = None,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_svd[[*Batch, M, int], [*Batch, int], [*Batch, int, N]]: ...
+@overload
+def svd(
+    A: Tensor,
+    full_matrices: bool,
+    *,
+    driver: str | None = None,
+    out: tuple[Tensor, Tensor, Tensor] | None = None,
+) -> return_types.linalg_svd[IntTuple, IntTuple, IntTuple]: ...
 @overload
 def ldl_factor[Batch: IntTuple, N: IntVar](
     A: Tensor[[*Batch, N, N]],

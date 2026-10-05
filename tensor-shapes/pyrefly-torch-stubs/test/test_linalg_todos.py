@@ -95,6 +95,21 @@ def test_linalg_tensor_operations() -> None:
     assert lu.pivots.shape == (2, 3)
     lu_ex = torch.linalg.lu_factor_ex(rectangular)
     assert_shape(lu_ex.info.shape, (2,))
+    full_lu = torch.linalg.lu(batch_matrix)
+    assert_shape(full_lu.P.shape, (2, 3, 3))
+    assert_shape(full_lu.L.shape, (2, 3, 3))
+    assert_shape(full_lu.U.shape, (2, 3, 3))
+    qr = torch.linalg.qr(batch_matrix)
+    assert_shape(qr.Q.shape, (2, 3, 3))
+    assert_shape(qr.R.shape, (2, 3, 3))
+    assert_shape(torch.linalg.qr(rectangular, mode="complete").Q.shape, (2, 4, 4))
+    assert_shape(torch.linalg.qr(rectangular, mode="r").Q.shape, (0,))
+    decomposition = torch.linalg.svd(batch_matrix)
+    assert_shape(decomposition.U.shape, (2, 3, 3))
+    assert_shape(decomposition.S.shape, (2, 3))
+    assert_shape(decomposition.Vh.shape, (2, 3, 3))
+    assert_shape(torch.linalg.svd(rectangular).U.shape, (2, 4, 4))
+    assert_shape(torch.linalg.svd(rectangular).Vh.shape, (2, 3, 3))
 
 
 if TYPE_CHECKING:
@@ -196,6 +211,20 @@ if TYPE_CHECKING:
         assert_type(
             torch.linalg.lu_factor_ex(factor),
             torch.return_types.linalg_lu_factor_ex[[*Batch, N, N], [*Batch, N], Batch],
+        )
+        assert_type(
+            torch.linalg.lu(factor),
+            torch.return_types.linalg_lu[
+                [*Batch, N, N], [*Batch, N, N], [*Batch, N, N]
+            ],
+        )
+        assert_type(
+            torch.linalg.qr(factor),
+            torch.return_types.linalg_qr[[*Batch, N, N], [*Batch, N, N]],
+        )
+        assert_type(
+            torch.linalg.svd(factor, full_matrices=False),
+            torch.return_types.linalg_svd[[*Batch, N, N], [*Batch, N], [*Batch, N, N]],
         )
 
     def check_linalg_tensor_equations[
