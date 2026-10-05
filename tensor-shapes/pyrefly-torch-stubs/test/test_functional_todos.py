@@ -152,6 +152,30 @@ def test_grid_sample_modes_and_int_pair() -> None:
         F.assert_int_or_pair([2], "size", "invalid {}")
 
 
+def test_gumbel_softmax_and_embedding_bag_shapes() -> None:
+    logits = torch.randn((2, 3, 4))
+    assert_shape(F.gumbel_softmax(logits).shape, (2, 3, 4))
+    assert_shape(F.gumbel_softmax(logits, hard=True, dim=1).shape, (2, 3, 4))
+
+    weight = torch.randn((8, 4))
+    bags = torch.tensor([[0, 1, 2], [3, 4, 5]])
+    assert_shape(F.embedding_bag(bags, weight).shape, (2, 4))
+    flattened = torch.tensor([0, 1, 2, 3, 4, 5])
+    assert_shape(
+        F.embedding_bag(flattened, weight, torch.tensor([0, 3])).shape,
+        (2, 4),
+    )
+    assert_shape(
+        F.embedding_bag(
+            flattened,
+            weight,
+            torch.tensor([0, 3, 6]),
+            include_last_offset=True,
+        ).shape,
+        (2, 4),
+    )
+
+
 if TYPE_CHECKING:
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
@@ -336,3 +360,25 @@ if TYPE_CHECKING:
         assert_type(F.GRID_SAMPLE_INTERPOLATION_MODES, dict[str, int])
         assert_type(F.GRID_SAMPLE_PADDING_MODES, dict[str, int])
         assert_type(F.assert_int_or_pair(2, "size", "invalid {}"), None)
+
+    def check_gumbel_softmax_and_embedding_bag_shapes[B: IntVar, N: IntVar, D: IntVar](
+        logits: Tensor[[B, N, D]],
+        bags: Tensor[[B, N]],
+        flat: Tensor[[N]],
+        offsets: Tensor[[B]],
+        weight: Tensor[[8, D]],
+        include_last_offset: bool,
+    ) -> None:
+        assert_type(F.gumbel_softmax(logits, hard=True), Tensor[[B, N, D]])
+        assert_type(F.embedding_bag(bags, weight), Tensor[[B, D]])
+        assert_type(F.embedding_bag(flat, weight, offsets), Tensor[[B, D]])
+        assert_type(
+            F.embedding_bag(flat, weight, offsets, include_last_offset=True),
+            Tensor[[B - 1, D]],
+        )
+        assert_type(
+            F.embedding_bag(
+                flat, weight, offsets, include_last_offset=include_last_offset
+            ),
+            Tensor[[int, D]],
+        )

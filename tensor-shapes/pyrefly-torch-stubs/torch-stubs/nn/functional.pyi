@@ -1887,6 +1887,13 @@ def pad(
     ...
 
 # Softmax activation
+def gumbel_softmax[Shape: IntTuple](
+    logits: Tensor[Shape],
+    tau: float = 1,
+    hard: bool = False,
+    eps: float = 1e-10,
+    dim: int = -1,
+) -> Tensor[Shape]: ...
 def softmax[Shape: IntTuple](
     input: Tensor[Shape], dim: int | None = None, dtype: int | None = None
 ) -> Tensor[Shape]:
@@ -1941,6 +1948,62 @@ def embedding[B: IntVar, T: IntVar, V: IntVar, D: IntVar](
     scale_grad_by_freq: bool = False,
     sparse: bool = False,
 ) -> Tensor[[B, T, D]]: ...
+@overload
+def embedding_bag[B: IntVar, N: IntVar, V: IntVar, D: IntVar](
+    input: Tensor[[B, N]],
+    weight: Tensor[[V, D]],
+    offsets: None = None,
+    max_norm: float | None = None,
+    norm_type: float = 2,
+    scale_grad_by_freq: bool = False,
+    mode: str = "mean",
+    sparse: bool = False,
+    per_sample_weights: Tensor[[B, N]] | None = None,
+    include_last_offset: bool = False,
+    padding_idx: int | None = None,
+) -> Tensor[[B, D]]: ...
+@overload
+def embedding_bag[N: IntVar, B: IntVar, V: IntVar, D: IntVar](
+    input: Tensor[[N]],
+    weight: Tensor[[V, D]],
+    offsets: Tensor[[B]],
+    max_norm: float | None = None,
+    norm_type: float = 2,
+    scale_grad_by_freq: bool = False,
+    mode: str = "mean",
+    sparse: bool = False,
+    per_sample_weights: Tensor[[N]] | None = None,
+    include_last_offset: Literal[False] = False,
+    padding_idx: int | None = None,
+) -> Tensor[[B, D]]: ...
+@overload
+def embedding_bag[N: IntVar, B: IntVar, V: IntVar, D: IntVar](
+    input: Tensor[[N]],
+    weight: Tensor[[V, D]],
+    offsets: Tensor[[B]],
+    max_norm: float | None = None,
+    norm_type: float = 2,
+    scale_grad_by_freq: bool = False,
+    mode: str = "mean",
+    sparse: bool = False,
+    per_sample_weights: Tensor[[N]] | None = None,
+    include_last_offset: Literal[True] = True,
+    padding_idx: int | None = None,
+) -> Tensor[[B - 1, D]]: ...
+@overload
+def embedding_bag[N: IntVar, B: IntVar, V: IntVar, D: IntVar](
+    input: Tensor[[N]],
+    weight: Tensor[[V, D]],
+    offsets: Tensor[[B]],
+    max_norm: float | None = None,
+    norm_type: float = 2,
+    scale_grad_by_freq: bool = False,
+    mode: str = "mean",
+    sparse: bool = False,
+    per_sample_weights: Tensor[[N]] | None = None,
+    include_last_offset: bool = ...,
+    padding_idx: int | None = None,
+) -> Tensor[[int, D]]: ...
 
 # ==============================================================================
 # Normalization (additional)
@@ -2093,11 +2156,9 @@ def adaptive_max_pool3d_with_indices[Shape: IntTuple](
 # TODO: Add precise types and signatures for the remaining public API.
 affine_grid: Any
 ctc_loss: Any
-embedding_bag: Any
 fold: Any
 gaussian_nll_loss: Any
 grouped_mm: Any
-gumbel_softmax: Any
 multi_head_attention_forward: Any
 multilabel_soft_margin_loss: Any
 scaled_grouped_mm: Any
