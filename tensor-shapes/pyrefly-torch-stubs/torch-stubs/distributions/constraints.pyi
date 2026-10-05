@@ -6,7 +6,7 @@
 """Type stubs for torch.distributions.constraints."""
 
 from collections.abc import Sequence
-from typing import Any, Literal, overload
+from typing import Any, Callable, Literal, Never, overload, TypeIs
 
 from shape_extensions import broadcast, IntTuple, IntVar
 from torch import Tensor
@@ -176,6 +176,31 @@ class MixtureSameFamilyConstraint(Constraint):
 
     def __init__(self, base_constraint: Constraint) -> None: ...
 
+class _Dependent(Constraint):
+    """Mark support that cannot be checked without other distribution values."""
+
+    @property
+    def is_discrete(self) -> bool: ...
+    @property
+    def event_dim(self) -> int: ...
+    def __init__(self, *, is_discrete: bool = ..., event_dim: int = ...) -> None: ...
+    def __call__(
+        self, *, is_discrete: bool = ..., event_dim: int = ...
+    ) -> _Dependent: ...
+    def check(self, value: Tensor) -> Never: ...
+
+class _DependentProperty(property, _Dependent):
+    """Expose dependent support on a class and a property on its instances."""
+
+    def __init__(
+        self,
+        fn: Callable[..., Any] | None = None,
+        *,
+        is_discrete: bool | None = ...,
+        event_dim: int | None = ...,
+    ) -> None: ...
+    def __call__(self, fn: Callable[..., Any]) -> _DependentProperty: ...
+
 real: Constraint
 boolean: _Boolean
 one_hot: _OneHot
@@ -202,10 +227,8 @@ cat = _Cat
 stack = _Stack
 independent = _IndependentConstraint
 real_vector: _IndependentConstraint[Literal[1]]
+dependent: _Dependent
+dependent_property = _DependentProperty
 
 def interval(lower_bound: float, upper_bound: float) -> Constraint: ...
-
-# TODO: Replace these availability stubs with precise declarations.
-dependent: Any
-dependent_property: Any
-is_dependent: Any
+def is_dependent(constraint: Constraint) -> TypeIs[_Dependent]: ...

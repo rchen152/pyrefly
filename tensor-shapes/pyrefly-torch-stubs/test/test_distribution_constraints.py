@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import assert_type, TYPE_CHECKING
 
 import torch
-from shape_extensions import assert_shape, IntTuple, IntVar
+from shape_extensions import assert_raises, assert_shape, IntTuple, IntVar
 from torch import Tensor
 from torch.distributions import constraints
 
@@ -162,6 +162,38 @@ def test_mixture_constraint_checks_every_component() -> None:
     assert mixture.base_constraint is component
 
 
+def test_dependent_constraint() -> None:
+    dependent = constraints.dependent(is_discrete=True, event_dim=1)
+
+    assert dependent.is_discrete
+    assert dependent.event_dim == 1
+    assert constraints.is_dependent(dependent)
+    assert not constraints.is_dependent(constraints.boolean)
+    with assert_raises(ValueError):
+        dependent.check(torch.ones(3))
+    with assert_raises(NotImplementedError):
+        _ = constraints.dependent.event_dim
+
+
+def test_dependent_property() -> None:
+    class WithSupport:
+        @constraints.dependent_property(is_discrete=False, event_dim=0)
+        def support(self) -> constraints.Constraint:
+            return constraints.positive
+
+        @constraints.dependent_property
+        def unspecified_support(self) -> constraints.Constraint:
+            return constraints.boolean
+
+    value = WithSupport()
+    assert constraints.is_dependent(WithSupport.support)
+    assert WithSupport.support.event_dim == 0
+    assert value.support is constraints.positive
+    assert value.unspecified_support is constraints.boolean
+    with assert_raises(NotImplementedError):
+        _ = WithSupport.unspecified_support.event_dim
+
+
 def test_vector_constraints() -> None:
     value = torch.tensor([[1.0, 0.0, 0.0], [0.2, 0.3, 0.5]])
 
@@ -266,3 +298,8 @@ if TYPE_CHECKING:
 
         assert_type(independent.check(value), Tensor[IntTuple])
         assert_type(mixture.check(value), Tensor[IntTuple])
+
+    def check_dependent_metadata() -> None:
+        dependent = constraints.dependent(is_discrete=True, event_dim=1)
+        assert_type(dependent.is_discrete, bool)
+        assert_type(dependent.event_dim, int)
