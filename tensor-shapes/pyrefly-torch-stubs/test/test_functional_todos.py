@@ -9,7 +9,7 @@ from typing import assert_type, TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
-from shape_extensions import assert_shape, IntVar
+from shape_extensions import assert_raises, assert_shape, IntVar
 from torch import Tensor
 
 
@@ -141,6 +141,15 @@ def test_fractional_max_pool_dispatch_shapes() -> None:
     )
     assert tuple(values.shape) == (2, 3, 4, 5, 6)
     assert tuple(indices.shape) == (2, 3, 4, 5, 6)
+
+
+def test_grid_sample_modes_and_int_pair() -> None:
+    assert F.GRID_SAMPLE_INTERPOLATION_MODES["bilinear"] == 0
+    assert F.GRID_SAMPLE_PADDING_MODES["reflection"] == 2
+    F.assert_int_or_pair(2, "size", "invalid {}")
+    F.assert_int_or_pair((2, 3), "size", "invalid {}")
+    with assert_raises(AssertionError):
+        F.assert_int_or_pair([2], "size", "invalid {}")
 
 
 if TYPE_CHECKING:
@@ -322,3 +331,8 @@ if TYPE_CHECKING:
             F.fractional_max_pool3d(volume[0], 2, depth),
             Tensor[[3, int, int, int]],
         )
+
+    def check_grid_sample_modes_and_int_pair() -> None:
+        assert_type(F.GRID_SAMPLE_INTERPOLATION_MODES, dict[str, int])
+        assert_type(F.GRID_SAMPLE_PADDING_MODES, dict[str, int])
+        assert_type(F.assert_int_or_pair(2, "size", "invalid {}"), None)

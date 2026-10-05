@@ -2004,6 +2004,9 @@ def cosine_similarity[S1: IntTuple, S2: IntTuple, Dim: Flag[builtins.int]](
     """Cosine similarity: dot product along dim, normalized."""
     ...
 
+GRID_SAMPLE_INTERPOLATION_MODES: dict[str, int]
+GRID_SAMPLE_PADDING_MODES: dict[str, int]
+
 def grid_sample[B: IntVar, C: IntVar, Hout: IntVar, Wout: IntVar](
     input: Tensor[[B, C, *IntTuple]],
     grid: Tensor[[B, Hout, Wout, 2]],
@@ -2014,6 +2017,9 @@ def grid_sample[B: IntVar, C: IntVar, Hout: IntVar, Wout: IntVar](
     """Sample input using grid of coordinates. Output spatial dims match grid."""
     ...
 
+def assert_int_or_pair(
+    arg: int | list[int] | tuple[int, int], arg_name: str, message: str
+) -> None: ...
 @overload
 def adaptive_max_pool1d_with_indices[Shape: IntTuple, O: _Int](
     input: Tensor[Shape], output_size: O, return_indices: bool = False
@@ -2085,10 +2091,7 @@ def adaptive_max_pool3d_with_indices[Shape: IntTuple](
 ]: ...
 
 # TODO: Add precise types and signatures for the remaining public API.
-GRID_SAMPLE_INTERPOLATION_MODES: Any
-GRID_SAMPLE_PADDING_MODES: Any
 affine_grid: Any
-assert_int_or_pair: Any
 ctc_loss: Any
 embedding_bag: Any
 fold: Any
