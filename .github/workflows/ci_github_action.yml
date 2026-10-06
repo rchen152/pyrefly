@@ -15,6 +15,10 @@ on:
     paths:
       - "action.yml"
       - ".github/workflows/ci_github_action.yml"
+  # The action installs the latest Pyrefly release, so a new release can break
+  # it without any change to the files above.
+  schedule:
+    - cron: "0 12 * * 1" # 12pm Monday
   workflow_dispatch:
 
 permissions:
@@ -35,9 +39,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Create test file with type error
+      # Without a config file, Pyrefly uses the `basic` preset, which does not
+      # report `bad-assignment`. An empty `pyrefly.toml` enables the default preset.
+      - name: Create test project with type error
         run: |
-          cat > /tmp/test_type_error.py << 'EOF'
+          mkdir /tmp/action_test
+          touch /tmp/action_test/pyrefly.toml
+          cat > /tmp/action_test/test_type_error.py << 'EOF'
           def add(x: int, y: int) -> int:
               return x + y
 
@@ -48,7 +56,7 @@ jobs:
         id: pyrefly
         uses: ./
         with:
-          working-directory: /tmp
+          working-directory: /tmp/action_test
           args: "test_type_error.py"
         continue-on-error: true
 
@@ -62,7 +70,7 @@ jobs:
 
       - name: Verify error is a type error (not an install/runtime failure)
         run: |
-          OUTPUT=$(pyrefly check --output-format=github /tmp/test_type_error.py 2>&1 || true)
+          OUTPUT=$(pyrefly check --output-format=github /tmp/action_test/test_type_error.py 2>&1 || true)
           echo "$OUTPUT"
           if ! echo "$OUTPUT" | grep -q "::error"; then
             echo "Expected a type error annotation (::error) in Pyrefly output."
