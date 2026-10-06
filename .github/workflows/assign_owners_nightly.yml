@@ -64,7 +64,7 @@ jobs:
             // Round-robin pool = owners minus intentionally non-assignable
             // members: managers, hands-off maintainers, and anyone not
             // responsible for reviewing PRs. They stay in owners.json (still
-            // team members for auto_assign.yml) but never receive sweep
+            // team members for new_pr.yml) but never receive sweep
             // assignments.
             const NOT_ASSIGNABLE = new Set(['lolpack', 'ndmitchell', 'javabster', 'grievejia']);
             const assignable = owners.filter((o) => !NOT_ASSIGNABLE.has(o));
