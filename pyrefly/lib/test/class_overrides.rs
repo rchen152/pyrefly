@@ -2466,9 +2466,7 @@ def test_func():
 "#,
 );
 
-// The override check must consider every overload accepted by a descriptor setter.
 testcase!(
-    bug = "Descriptor overrides check only the first setter overload",
     test_override_overloaded_descriptor_setter,
     r#"
 from typing import overload
@@ -2499,14 +2497,14 @@ class Base:
     x: BaseDescriptor = BaseDescriptor()
 
 class ChildNarrow(Base):
-    x: NarrowDescriptor = NarrowDescriptor()
+    x: NarrowDescriptor = NarrowDescriptor()  # E: `ChildNarrow.x` has type `int`, which is not assignable from `int | str`, the type of `Base.x`
 
 class ChildReordered(Base):
-    x: ReorderedDescriptor = ReorderedDescriptor()  # E: Class member `ChildReordered.x` overrides parent class `Base` in an inconsistent manner
+    x: ReorderedDescriptor = ReorderedDescriptor()
 
 class ChildProperty(Base):
     @property
-    def x(self) -> int: ...
+    def x(self) -> int: ...  # E: The property setter for `ChildProperty.x` has type `(value: int) -> None`, which is not assignable from `int | str`, the type of `Base.x`
     @x.setter
     def x(self, value: int) -> None: ...
 

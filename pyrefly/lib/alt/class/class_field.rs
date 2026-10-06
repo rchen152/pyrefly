@@ -6057,18 +6057,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         } else {
             self.heap.mk_class_type(desc.cls.clone())
         };
-        let setter_val = if let Some(setter) =
-            self.resolve_descriptor_setter(&dunder::SET, desc, &error_swallower)
-        {
-            setter
-                .toplevel_callable_signatures()
-                .next()
-                .and_then(|(sig, _)| sig.strip_first_param())
-                .and_then(|sig| sig.strip_first_param())
-                .and_then(|sig| sig.get_first_param().cloned())
-        } else {
-            None
-        };
+        let setter_val = self
+            .resolve_descriptor_setter(&dunder::SET, desc, &error_swallower)
+            .map(|setter| self.get_descriptor_setter_value(&setter));
         (read_ty, setter_val)
     }
 
