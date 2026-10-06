@@ -1,6 +1,7 @@
 name: Build shape stubs
 
 on:
+  pull_request:
   workflow_dispatch:
   workflow_call:
 
