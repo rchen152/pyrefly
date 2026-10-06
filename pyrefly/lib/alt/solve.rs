@@ -6526,11 +6526,33 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             Binding::ClassDef(x, decorators) => match &self.get_idx(*x).0 {
                 None => self.heap.mk_any_implicit(),
                 Some(cls) => {
-                    for idx in decorators.iter() {
-                        if matches!(
-                            &self.get_idx(*idx).ty,
+                    // A class decorator obscures the class if its own type is `Any`, or if it
+                    // returns an unknown type. Class decorators are not applied below, so the
+                    // result is read from the decorator's signatures rather than by calling it.
+                    // Like for functions, only the first decorator (in application order) that
+                    // makes the result unknown is blamed for it.
+                    let returns_unknown = |callable: &Type| {
+                        let mut signatures = callable.toplevel_callable_signatures().peekable();
+                        signatures.peek().is_some()
+                            && signatures.all(|(sig, _)| sig.ret.has_top_level_implicit_any())
+                    };
+                    let mut obscured = false;
+                    for idx in decorators.iter().rev() {
+                        let decorator_ty = &self.get_idx(*idx).ty;
+                        let decorator_is_any = matches!(
+                            decorator_ty,
                             Type::Any(AnyStyle::Implicit | AnyStyle::Explicit)
-                        ) {
+                        );
+                        if decorator_is_any
+                            || (!obscured
+                                && match decorator_ty {
+                                    Type::ClassType(instance) => self
+                                        .instance_as_dunder_call(instance)
+                                        .is_some_and(|call| returns_unknown(&call)),
+                                    _ => returns_unknown(decorator_ty),
+                                })
+                        {
+                            obscured = true;
                             self.error(
                                 errors,
                                 self.bindings().idx_to_key(*idx).range(),
@@ -6542,7 +6564,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             );
                         }
                     }
-                    // TODO: analyze the class decorators beyond the `Any` check above. We don't
+                    // TODO: analyze the class decorators beyond the unknown-type check above. We don't
                     // support general type-level analysis of class decorators (the ones we do
                     // support, like dataclass-related ones, are handled via custom bindings).
                     //

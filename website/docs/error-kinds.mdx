@@ -2384,7 +2384,7 @@ x = 1 + "oops"  # `+` is not supported between `int` and `str` [unsupported-oper
 
 Default severity: `ignore`
 
-A class decorator whose own type is `Any` may modify the class in unexpected ways.
+A class decorator may modify the class in unexpected ways, either because the decorator's own type is `Any` or because it returns an unknown type. This mirrors pyright's `reportUntypedClassDecorator`, except that fully unannotated decorators are also reported, as with [untyped-function-decorator](#untyped-function-decorator). A decorator annotated to return an explicit `Any` is treated as intentional and is not reported.
 
 ```python
 from typing import Any
@@ -2393,6 +2393,12 @@ my_decorator: Any = lambda cls: cls
 
 @my_decorator  # `my_decorator` is `Any`, so the type of `A` is lost [untyped-class-decorator]
 class A: ...
+
+def unannotated(cls):  # returns an implicit `Any`
+    return cls
+
+@unannotated  # the result is unknown [untyped-class-decorator]
+class B: ...
 ```
 
 ## untyped-function-decorator

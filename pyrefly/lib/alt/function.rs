@@ -992,23 +992,14 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         })
         .forall(tparams);
         ty = self.move_return_tparams_of_type(ty);
-        // Like pyright, only an implicit `Any` at the top level or as a union member counts as
-        // unknown; types that merely contain one somewhere deeper do not.
-        let is_unknown = |ty: &Type| match ty {
-            Type::Union(u) => u
-                .members
-                .iter()
-                .any(|m| matches!(m, Type::Any(AnyStyle::Implicit))),
-            _ => matches!(ty, Type::Any(AnyStyle::Implicit)),
-        };
         for (decorator, range) in def.decorators.iter().rev() {
             // Blame only the decorator that turns a known type into an unknown one. A decorator
             // whose own type is `Any` is reported where the decorators are collected, and a
             // decorator applied to an already-unknown type did not cause it.
-            let was_known = !ty.is_any() && !is_unknown(&ty);
+            let was_known = !ty.is_any() && !ty.has_top_level_implicit_any();
             ty =
                 self.apply_function_decorator(decorator.clone(), ty, &def.metadata, *range, errors);
-            if was_known && !decorator.is_any() && is_unknown(&ty) {
+            if was_known && !decorator.is_any() && ty.has_top_level_implicit_any() {
                 self.error(
                     errors,
                     *range,
