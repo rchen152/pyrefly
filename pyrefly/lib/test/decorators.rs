@@ -1112,17 +1112,93 @@ class C:
 "#,
 );
 
+// Pyright exempts fully unannotated decorators because it keeps the undecorated type, but
+// pyrefly does not, so the decorated function really is unknown.
 testcase!(
-    test_unannotated_function_decorator_no_error,
+    test_unannotated_function_decorator,
     TestEnv::new().enable_untyped_function_decorator_error(),
     r#"
-# An unannotated decorator function's own type is a callable, not `Any`, so it does not
-# fire (matching the class-decorator rule).
 def my_decorator(f):
     return f
 
-@my_decorator
+@my_decorator  # E: Untyped function decorator obscures the type of function `g`
 def g() -> int:
+    return 1
+
+class C:
+    @my_decorator  # E: Untyped function decorator obscures the type of function `m`
+    def m(self) -> int:
+        return 1
+"#,
+);
+
+testcase!(
+    test_function_decorator_returns_unknown,
+    TestEnv::new().enable_untyped_function_decorator_error(),
+    r#"
+from typing import Callable
+
+def untyped(x):
+    return x
+
+def returns_unknown(f: Callable[[], int]):
+    return untyped(f)
+
+def returns_unknown_or_none(f: Callable[[], int], flag: bool = True):
+    return untyped(f) if flag else None
+
+@returns_unknown  # E: Untyped function decorator obscures the type of function `g`
+def g() -> int:
+    return 1
+
+@returns_unknown_or_none  # E: Untyped function decorator obscures the type of function `h`
+def h() -> int:
+    return 1
+"#,
+);
+
+testcase!(
+    test_function_decorator_partially_unknown_no_error,
+    TestEnv::new().enable_untyped_function_decorator_error(),
+    r#"
+# The result is a callable with unknown parameters, which is only partially unknown.
+def wrapping(f):
+    def wrapper(*args, **kwargs):
+        return f(*args, **kwargs)
+    return wrapper
+
+@wrapping
+def g() -> int:
+    return 1
+"#,
+);
+
+testcase!(
+    test_stacked_function_decorators_blame_first_unknown,
+    TestEnv::new().enable_untyped_function_decorator_error(),
+    r#"
+from typing import Any, TypeVar
+
+T = TypeVar("T")
+
+def typed(f: T) -> T:
+    return f
+
+def untyped(f):
+    return f
+
+my_decorator: Any = lambda f: f
+
+# Only the decorator that made the type unknown is reported, not the typed one applied after it.
+@typed
+@untyped  # E: Untyped function decorator obscures the type of function `g`
+def g() -> int:
+    return 1
+
+# A decorator whose own type is `Any` is reported once, not again for its result.
+@typed
+@my_decorator  # E: Untyped function decorator obscures the type of function `h`
+def h() -> int:
     return 1
 "#,
 );

@@ -2399,7 +2399,7 @@ class A: ...
 
 Default severity: `ignore`
 
-A function or method decorator whose own type is `Any` obscures the decorated function's type.
+A function or method decorator obscures the decorated function's type, either because the decorator's own type is `Any` or because applying it produces an unknown type. This mirrors pyright's `reportUntypedFunctionDecorator`, except that fully unannotated decorators are also reported: pyright keeps the undecorated type for them, while Pyrefly does not. A decorator annotated to return an explicit `Any` is treated as intentional and is not reported.
 
 ```python
 from typing import Any
@@ -2408,6 +2408,13 @@ my_decorator: Any = lambda f: f
 
 @my_decorator  # `my_decorator` is `Any`, so the type of `g` is lost [untyped-function-decorator]
 def g() -> int:
+    return 1
+
+def unannotated(f):  # returns an implicit `Any`
+    return f
+
+@unannotated  # the result is unknown, so the type of `h` is lost [untyped-function-decorator]
+def h() -> int:
     return 1
 ```
 
