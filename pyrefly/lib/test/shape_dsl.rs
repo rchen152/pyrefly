@@ -15511,7 +15511,7 @@ testcase!(
     shape_extensions_env(),
     r#"
 import shape_extensions.dsl as dsl
-from shape_extensions import IntTuple, IntTuples, type_shape_dsl_function
+from shape_extensions import Int, IntTuple, IntTuples, IntVar, type_shape_dsl_function
 
 class ShapeBox[Shape: IntTuple]: ...
 
@@ -15523,11 +15523,18 @@ def malformed() -> ShapeBox[gufunc("(m,n),(n,p)-(m,p)", tuple[IntTuple[2, 3], In
 def wrong_count() -> ShapeBox[gufunc("(m,n),(n,p)->(m,p)", tuple[IntTuple[2, 3]])]: ...
 def wrong_rank() -> ShapeBox[gufunc("(m,n),(n,p)->(m,p)", tuple[IntTuple[2], IntTuple[3, 5]])]: ...
 def core_conflict() -> ShapeBox[gufunc("(n),(n)->()", tuple[IntTuple[1], IntTuple[5]])]: ...
+def symbolic_conflict[N: IntVar](n: Int[N]) -> ShapeBox[gufunc("(m,n),(n,p)->(m,p)", tuple[IntTuple[2, 3], IntTuple[N, 6]])]: ...
+def distinct_symbols[N: IntVar, M: IntVar](n: Int[N], m: Int[M]) -> ShapeBox[gufunc("(n),(n)->()", tuple[IntTuple[N], IntTuple[M]])]: ...
+def symbolic_plus_one[N: IntVar](n: Int[N]) -> ShapeBox[gufunc("(m,n),(n,p)->(m,p)", tuple[IntTuple[2, N], IntTuple[N + 1, 3]])]: ...
 
 malformed()  # E: Cannot evaluate type-level shape DSL call: gufunc: signature must contain exactly one '->', got 0
 wrong_count()  # E: Cannot evaluate type-level shape DSL call: gufunc: expected 2 operands, got 1
 wrong_rank()  # E: Cannot evaluate type-level shape DSL call: gufunc: operand 0 requires at least rank 2, got 1
 core_conflict()  # E: Cannot evaluate type-level shape DSL call: gufunc: core dimension 'n' has conflicting extents 1 and 5
+def check_symbolic[N: IntVar, M: IntVar](n: Int[N], m: Int[M]) -> None:
+    symbolic_conflict(n)  # E: Cannot evaluate type-level shape DSL call: gufunc: core dimension 'n' has conflicting extents
+    distinct_symbols(n, m)  # E: Cannot evaluate type-level shape DSL call: gufunc: core dimension 'n' has conflicting extents
+    symbolic_plus_one(n)  # E: Cannot evaluate type-level shape DSL call: gufunc: core dimension 'n' has conflicting extents N and N + 1
 "#,
 );
 
