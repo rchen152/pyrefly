@@ -28,7 +28,9 @@ from shape_extensions import (
     Flag,
     gufunc_broadcast,
     Int as _Int,
+    IntListLiteral,
     IntTuple,
+    IntTupleOrList,
     IntVar,
 )
 from torch import (
@@ -64,11 +66,14 @@ from torch._shapes import (
     adaptive_pool2d_shape,
     adaptive_pool3d_shape,
     adaptive_pool_gradual_shape,
+    affine_grid_shape,
     classification_loss_shape,
     conv_shape,
     conv_transpose_shape,
     cosine_embedding_score_shape,
     cosine_similarity_shape,
+    fold_list_shape,
+    fold_shape,
     fractional_pool_extent,
     interpolate_scalar_shape,
     interpolate_scale_shape,
@@ -2070,6 +2075,24 @@ def cosine_similarity[S1: IntTuple, S2: IntTuple, Dim: Flag[builtins.int]](
 GRID_SAMPLE_INTERPOLATION_MODES: dict[str, int]
 GRID_SAMPLE_PADDING_MODES: dict[str, int]
 
+@overload
+def affine_grid[Theta: IntTuple, Size: IntTuple](
+    theta: Tensor[Theta],
+    size: Size | IntListLiteral[Size],
+    align_corners: bool | None = None,
+) -> Tensor[affine_grid_shape(Theta, Size)]: ...
+@overload
+def affine_grid[B: IntVar](
+    theta: Tensor[[B, 2, 3]],
+    size: list[int],
+    align_corners: bool | None = None,
+) -> Tensor[[B, int, int, 2]]: ...
+@overload
+def affine_grid[B: IntVar](
+    theta: Tensor[[B, 3, 4]],
+    size: list[int],
+    align_corners: bool | None = None,
+) -> Tensor[[B, int, int, int, 3]]: ...
 def grid_sample[B: IntVar, C: IntVar, Hout: IntVar, Wout: IntVar](
     input: Tensor[[B, C, *IntTuple]],
     grid: Tensor[[B, Hout, Wout, 2]],
@@ -2153,10 +2176,60 @@ def adaptive_max_pool3d_with_indices[Shape: IntTuple](
     Tensor[adaptive_pool_gradual_shape(Shape, 3)],
 ]: ...
 
+# Fold takes its spatial dimensions from output_size and divides channels by the kernel area.
+@overload
+def fold[Shape: IntTuple, Output: Flag[int | tuple[int, int]], Kernel: IntVar](
+    input: Tensor[Shape],
+    output_size: Output,
+    kernel_size: _Int[Kernel],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[fold_shape(Shape, Output, _Int[Kernel] * _Int[Kernel])]: ...
+@overload
+def fold[
+    Shape: IntTuple,
+    Output: Flag[int | tuple[int, int]],
+    KernelH: IntVar,
+    KernelW: IntVar,
+](
+    input: Tensor[Shape],
+    output_size: Output,
+    kernel_size: IntTupleOrList[IntTuple[KernelH, KernelW]],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[fold_shape(Shape, Output, _Int[KernelH] * _Int[KernelW])]: ...
+@overload
+def fold[Shape: IntTuple, Output: IntTuple, Kernel: IntVar](
+    input: Tensor[Shape],
+    output_size: Output | IntListLiteral[Output],
+    kernel_size: _Int[Kernel],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[fold_list_shape(Shape, Output, _Int[Kernel] * _Int[Kernel])]: ...
+@overload
+def fold[Shape: IntTuple, Output: IntTuple, KernelH: IntVar, KernelW: IntVar](
+    input: Tensor[Shape],
+    output_size: Output | IntListLiteral[Output],
+    kernel_size: IntTupleOrList[IntTuple[KernelH, KernelW]],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[fold_list_shape(Shape, Output, _Int[KernelH] * _Int[KernelW])]: ...
+@overload
+def fold[Batch: IntTuple](
+    input: Tensor[[*Batch, int, int]],
+    output_size: list[int],
+    kernel_size: int | tuple[int, int] | list[int],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[[*Batch, int, int, int]]: ...
+
 # TODO: Add precise types and signatures for the remaining public API.
-affine_grid: Any
 ctc_loss: Any
-fold: Any
 gaussian_nll_loss: Any
 grouped_mm: Any
 multi_head_attention_forward: Any

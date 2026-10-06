@@ -9,7 +9,7 @@ from typing import assert_type, TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
-from shape_extensions import assert_raises, assert_shape, IntVar
+from shape_extensions import assert_raises, assert_shape, Int, IntVar
 from torch import Tensor
 
 
@@ -174,6 +174,46 @@ def test_gumbel_softmax_and_embedding_bag_shapes() -> None:
         ).shape,
         (2, 4),
     )
+
+
+def test_affine_grid_and_fold_shapes() -> None:
+    theta_2d = torch.randn((2, 2, 3))
+    assert_shape(F.affine_grid(theta_2d, (2, 3, 4, 5), False).shape, (2, 4, 5, 2))
+    assert tuple(F.affine_grid(theta_2d, [2, 3, 4, 5], False).shape) == (2, 4, 5, 2)
+    with assert_raises(ValueError):
+        F.affine_grid(  # E: affine_grid size must match theta rank
+            theta_2d, (2, 3, 4, 5, 6), False
+        )
+    with assert_raises(ValueError):
+        F.affine_grid(  # E: affine_grid size must match theta rank
+            theta_2d, [2, 3, 4, 5, 6], False
+        )
+
+    theta_3d = torch.randn((2, 3, 4))
+    assert_shape(
+        F.affine_grid(theta_3d, (2, 3, 4, 5, 6), False).shape,
+        (2, 4, 5, 6, 3),
+    )
+    with assert_raises(ValueError):
+        F.affine_grid(  # E: affine_grid size must match theta rank
+            theta_3d, (2, 3, 4, 5), False
+        )
+
+    columns = torch.randn((2, 12, 20))
+    assert_shape(F.fold(columns, (8, 10), 2, stride=2).shape, (2, 3, 8, 10))
+    assert tuple(F.fold(columns, [8, 10], [2, 2], stride=2).shape) == (2, 3, 8, 10)
+    assert tuple(F.fold(columns, (8, 10), [2, 2], stride=2).shape) == (2, 3, 8, 10)
+    assert_shape(
+        F.fold(columns[0], (8, 10), (2, 2), stride=2).shape,
+        (3, 8, 10),
+    )
+    with assert_raises(RuntimeError):
+        F.fold(  # E: fold input channels must be divisible
+            torch.randn((2, 5, 20)), (8, 10), 2, stride=2
+        )
+    square_columns = torch.randn((2, 12, 16))
+    assert_shape(F.fold(square_columns, 8, 2, stride=2).shape, (2, 3, 8, 8))
+    assert_shape(F.fold(square_columns[0], 8, 2, stride=2).shape, (3, 8, 8))
 
 
 if TYPE_CHECKING:
@@ -381,4 +421,57 @@ if TYPE_CHECKING:
                 flat, weight, offsets, include_last_offset=include_last_offset
             ),
             Tensor[[int, D]],
+        )
+
+    def check_affine_grid_and_fold_shapes[B: IntVar](
+        theta_2d: Tensor[[B, 2, 3]],
+        theta_3d: Tensor[[B, 3, 4]],
+        columns: Tensor[[B, 12, 20]],
+        square_columns: Tensor[[B, 12, 16]],
+        batch: Int[B],
+        size: list[int],
+        kernel_size: int,
+        kernel_list: list[int],
+    ) -> None:
+        assert_type(F.affine_grid(theta_2d, (batch, 3, 4, 5)), Tensor[[B, 4, 5, 2]])
+        assert_type(F.affine_grid(theta_2d, [batch, 3, 4, 5]), Tensor[[B, 4, 5, 2]])
+        assert_type(
+            F.affine_grid(theta_3d, (batch, 3, 4, 5, 6)), Tensor[[B, 4, 5, 6, 3]]
+        )
+        assert_type(
+            F.affine_grid(theta_3d, [batch, 3, 4, 5, 6]), Tensor[[B, 4, 5, 6, 3]]
+        )
+        assert_type(F.affine_grid(theta_2d, size), Tensor[[B, int, int, 2]])
+        assert_type(F.fold(columns, (8, 10), 2, stride=2), Tensor[[B, 3, 8, 10]])
+        assert_type(
+            F.fold(columns, [8, 10], [2, 2], stride=2),
+            Tensor[[B, 3, 8, 10]],
+        )
+        assert_type(
+            F.fold(columns, (8, 10), [2, 2], stride=2),
+            Tensor[[B, 3, 8, 10]],
+        )
+        assert_type(F.fold(columns, [8, 10], 2, stride=2), Tensor[[B, 3, 8, 10]])
+        assert_type(F.fold(columns, size, 2, stride=2), Tensor[[B, int, int, int]])
+        assert_type(
+            F.fold(columns, (8, 10), kernel_list, stride=2),
+            Tensor[[B, int, 8, 10]],
+        )
+        assert_type(F.fold(columns[0], (8, 10), (2, 2), stride=2), Tensor[[3, 8, 10]])
+        assert_type(
+            F.fold(columns, (8, 10), kernel_size, stride=2),
+            Tensor[[B, int, 8, 10]],
+        )
+        assert_type(
+            F.fold(columns[0], (8, 10), kernel_size, stride=2),
+            Tensor[[int, 8, 10]],
+        )
+        assert_type(F.fold(square_columns, 8, 2, stride=2), Tensor[[B, 3, 8, 8]])
+        assert_type(
+            F.fold(square_columns, 8, kernel_size, stride=2),
+            Tensor[[B, int, 8, 8]],
+        )
+        assert_type(
+            F.fold(square_columns[0], 8, kernel_size, stride=2),
+            Tensor[[int, 8, 8]],
         )
