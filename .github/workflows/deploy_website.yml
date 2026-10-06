@@ -8,9 +8,10 @@ on:
     - cron: '0 14 * * *'
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
-  # Allow this workflow to be called by other workflows
-  workflow_call:
     inputs:
+      # This workflow can also rollback the website to a previous build if there's an issue with the current website.
+      # We bypass the build step here, and simply pick a previous website build to rollback to.
+      # Note that we only keep builds from the last 30 days.
       is_rollback:
         description: 'Whether this is a rollback deployment'
         required: false
@@ -48,6 +49,16 @@ jobs:
         run: echo "date=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
       - name: Checkout
         uses: actions/checkout@v6
+      - name: Validate rollback inputs
+        if: ${{ inputs.is_rollback }}
+        env:
+          ARTIFACT_DATE: ${{ inputs.artifact_date }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          if [ -z "$ARTIFACT_DATE" ] || [ -z "$RUN_ID" ]; then
+            echo "artifact_date and run_id are required for a rollback" >&2
+            exit 1
+          fi
       # For regular deployments, download today's artifacts
       - name: Download build artifacts (regular deployment)
         if: ${{ !inputs.is_rollback }}

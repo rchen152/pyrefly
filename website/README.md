@@ -145,7 +145,7 @@ For details on how to manually trigger a github workflow, see [this link](https:
 
 ## Rollback
 
-If there's a major issue on the website and you want to quickly roll it back to a stable state, you can Run the [rollback website workflow](https://github.com/facebook/pyrefly/actions/workflows/rollback_website.yml) with the "Use workflow from" dropdown set to the branch you made the changes on. This will prompt you with the date and run ID To rollback to. You can find the run ID by going to the [Deploy Website workflow](https://github.com/facebook/pyrefly/actions/workflows/deploy_website.yml), clicking into a run and taking the number from the URL. For example, if the URL is `https://github.com/facebook/pyrefly/actions/runs/123456789`, then the run ID is `123456789`.
+If there's a major issue on the website and you want to quickly roll it back to a stable state, you can run the [Deploy Website workflow](https://github.com/facebook/pyrefly/actions/workflows/deploy_website.yml) with the "Use workflow from" dropdown set to the branch you made the changes on and `is_rollback` enabled. This will prompt you with the date and run ID to rollback to. You can find the run ID by going to the [Deploy Website workflow](https://github.com/facebook/pyrefly/actions/workflows/deploy_website.yml), clicking into a run and taking the number from the URL. For example, if the URL is `https://github.com/facebook/pyrefly/actions/runs/123456789`, then the run ID is `123456789`.
 
 **Internal Docs Site (for Meta Employees)**
 The internal docs page is deployed whenever diffs that touches the site lands. A manual deploy can also be triggered using the static docs hub: https://www.internalfb.com/staticdocs/hub.
