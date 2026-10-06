@@ -1,6 +1,6 @@
 # Simple workflow for Building and Testing the Pyrefly Website
 # If upload_artifacts is true, the build artifacts will be uploadeded.
-name: Build and Test Pyrefly Website
+name: "CI: Website"
 on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
@@ -16,11 +16,11 @@ on:
     branches: [ main ]
     paths:
       - 'website/**'
-      - '.github/workflows/build_and_test_website.yml'
+      - '.github/workflows/ci_website.yml'
   pull_request:
     paths:
       - 'website/**'
-      - '.github/workflows/build_and_test_website.yml'
+      - '.github/workflows/ci_website.yml'
 
 # GitHub sets `head_ref` only for a pull request. A new push to a pull request
 # cancels the previous run. All other events use the unique `run_id`. Each of

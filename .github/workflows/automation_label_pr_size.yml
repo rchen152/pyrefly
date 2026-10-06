@@ -1,4 +1,4 @@
-name: Label PR size
+name: "Automation: Label PR size"
 
 on: [pull_request_target]
 

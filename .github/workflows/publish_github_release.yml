@@ -1,10 +1,10 @@
-name: Create GitHub Release
+name: "Publish: Create GitHub release"
 
 # This workflow creates a GitHub Release with release notes after a new
 # version is published to PyPI and a tag is pushed.
 #
 # It is called by publish_to_pypi.yml after the tag push succeeds.
-# Creating the release will in turn trigger release_binaries.yml
+# Creating the release will in turn trigger publish_upload_binaries.yml
 # (which fires on release published events) to build and upload
 # platform binaries.
 

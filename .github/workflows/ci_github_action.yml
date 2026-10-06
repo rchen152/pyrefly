@@ -3,18 +3,18 @@
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
 
-name: Test Pyrefly Action
+name: "CI: GitHub Action"
 
 on:
   push:
     branches: [main]
     paths:
       - "action.yml"
-      - ".github/workflows/test_action.yml"
+      - ".github/workflows/ci_github_action.yml"
   pull_request:
     paths:
       - "action.yml"
-      - ".github/workflows/test_action.yml"
+      - ".github/workflows/ci_github_action.yml"
   workflow_dispatch:
 
 permissions:

@@ -1,4 +1,4 @@
-name: Run mypy_primer
+name: "CI: mypy primer run"
 
 on:
   # Only run on PR, since we diff against master
@@ -6,7 +6,7 @@ on:
     paths:
     - 'pyrefly/lib/**'
     - 'pyrefly/third_party/**'
-    - '.github/workflows/mypy_primer.yml'
+    - '.github/workflows/ci_mypy_primer_run.yml'
 
 permissions:
   contents: read

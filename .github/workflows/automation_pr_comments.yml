@@ -1,4 +1,4 @@
-name: Assign imported PR to importer
+name: "Automation: PR comments"
 
 on:
   issue_comment:

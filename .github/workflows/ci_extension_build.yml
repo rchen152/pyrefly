@@ -1,4 +1,4 @@
-name: build_extension
+name: "CI: Extension build"
 on:
   workflow_dispatch:
   workflow_call:

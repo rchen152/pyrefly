@@ -1,6 +1,6 @@
-name: check_publish
+name: "Publish: Check eligibility"
 
-# Gate shared by publish_to_pypi.yml and deploy_extension.yml. For `push`
+# Gate shared by publish_to_pypi.yml and publish_extension.yml. For `push`
 # events: publish from `main` only for dev versions (M.m.p-dev.N). Stable
 # version bumps land on main to keep trunk's version current and to keep
 # release notes in trunk history, but the artifact that actually publishes

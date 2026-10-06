@@ -1,4 +1,4 @@
-name: Build shape stubs
+name: "CI: Shape stubs"
 
 on:
   pull_request:

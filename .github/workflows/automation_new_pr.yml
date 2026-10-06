@@ -1,4 +1,4 @@
-name: New PR
+name: "Automation: New PR"
 
 on:
   pull_request_target:

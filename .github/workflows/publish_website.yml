@@ -1,6 +1,6 @@
 # Simple workflow for deploying static content to GitHub Pages. This deploy workflow
 # first triggers a build, then downloads the built artifacts and deploys them to GitHub Pages.
-name: Deploy Website
+name: "Publish: Website"
 on:
   # Run every morning at 9am EST (14:00 UTC)
   # Documentation: https://docs.github.com/en/actions/writing-workflows/choosing-when-your-workflow-runs/events-that-trigger-workflows#schedule
@@ -29,7 +29,7 @@ on:
 jobs:
   # Build job - only run for regular deployments, not rollbacks
   build:
-    uses: ./.github/workflows/build_and_test_website.yml
+    uses: ./.github/workflows/ci_website.yml
     with:
       upload_artifacts: true
     if: ${{ !inputs.is_rollback }}

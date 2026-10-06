@@ -1,4 +1,4 @@
-name: Mark stale assigned issues and pull requests
+name: "Automation: Mark stale items"
 
 on:
   schedule:

@@ -1,4 +1,4 @@
-name: Build binaries
+name: "Publish: Build packages"
 
 on:
   # publish_to_pypi.yml calls this workflow to build the release wheels.

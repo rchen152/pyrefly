@@ -1,4 +1,4 @@
-name: Release binaries
+name: "Publish: Upload binaries"
 
 on:
   release:

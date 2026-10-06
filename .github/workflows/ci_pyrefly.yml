@@ -1,11 +1,11 @@
-name: pyrefly
+name: "CI: Pyrefly"
 on:
   push:
     branches: [ main ]
     paths:
       - '**/*'
       - '!.*'
-      - '.github/workflows/pyrefly.yml'
+      - '.github/workflows/ci_pyrefly.yml'
   pull_request:
   schedule:
   - cron: '0 12 * * 1' # 12pm Monday
@@ -14,7 +14,7 @@ on:
 # GitHub sets `head_ref` only for a pull request. A new push to a pull request
 # cancels the previous run. All other events use the unique `run_id`. Each of
 # these runs gets its own group, and no run cancels a different run. This is
-# important for publish_to_pypi.yml and deploy_extension.yml, which call this
+# important for publish_to_pypi.yml and publish_extension.yml, which call this
 # workflow to make a release.
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
@@ -48,7 +48,7 @@ jobs:
       if: ${{ matrix.os == 'ubuntu-latest' }}
     # The VS Code extension's binary finder is a standalone stdlib script, run
     # by the user's own interpreter rather than by the extension host, so it is
-    # tested here instead of in test_extension.yml: this workflow runs on pull
+    # tested here instead of in ci_extension_test.yml: this workflow runs on pull
     # requests, and its three operating systems are exactly the ones whose
     # `sysconfig` install schemes differ. It needs nothing that Cargo builds, so
     # it runs before the Rust steps.

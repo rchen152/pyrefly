@@ -1,4 +1,4 @@
-name: CodSpeed
+name: "CI: CodSpeed"
 on:
   push:
     branches: [ main ]
