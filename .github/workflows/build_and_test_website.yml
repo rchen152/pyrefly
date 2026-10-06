@@ -14,8 +14,10 @@ on:
         type: boolean
   push:
     branches: [ main ]
+    paths:
+      - 'website/**'
+      - '.github/workflows/build_and_test_website.yml'
   pull_request:
-    types: [opened]
     paths:
       - 'website/**'
       - '.github/workflows/build_and_test_website.yml'
