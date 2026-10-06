@@ -2334,6 +2334,11 @@ impl<'a> Transaction<'a> {
         let _ = self.run_internal(handles, require, custom_thread_pool);
     }
 
+    /// Discard eager follow-up steps queued by queries after a completed run.
+    pub(crate) fn discard_queued_steps(&mut self) {
+        self.data.todo.clear();
+    }
+
     pub(crate) fn ad_hoc_solve<R: Sized, F: FnOnce(AnswersSolver<TransactionHandle>) -> R>(
         &self,
         handle: &Handle,
