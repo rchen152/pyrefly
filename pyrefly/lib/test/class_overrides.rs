@@ -2465,3 +2465,52 @@ def test_func():
             assert False, "via __class__"
 "#,
 );
+
+// The override check must consider every overload accepted by a descriptor setter.
+testcase!(
+    bug = "Descriptor overrides check only the first setter overload",
+    test_override_overloaded_descriptor_setter,
+    r#"
+from typing import overload
+
+class BaseDescriptor:
+    def __get__(self, instance: object, owner: type | None = None) -> int: ...
+
+    @overload
+    def __set__(self, instance: object, value: int) -> None: ...
+    @overload
+    def __set__(self, instance: object, value: str) -> None: ...
+    def __set__(self, instance: object, value: int | str) -> None: ...
+
+class NarrowDescriptor:
+    def __get__(self, instance: object, owner: type | None = None) -> int: ...
+    def __set__(self, instance: object, value: int) -> None: ...
+
+class ReorderedDescriptor:
+    def __get__(self, instance: object, owner: type | None = None) -> int: ...
+
+    @overload
+    def __set__(self, instance: object, value: str) -> None: ...
+    @overload
+    def __set__(self, instance: object, value: int) -> None: ...
+    def __set__(self, instance: object, value: int | str) -> None: ...
+
+class Base:
+    x: BaseDescriptor = BaseDescriptor()
+
+class ChildNarrow(Base):
+    x: NarrowDescriptor = NarrowDescriptor()
+
+class ChildReordered(Base):
+    x: ReorderedDescriptor = ReorderedDescriptor()  # E: Class member `ChildReordered.x` overrides parent class `Base` in an inconsistent manner
+
+class ChildProperty(Base):
+    @property
+    def x(self) -> int: ...
+    @x.setter
+    def x(self, value: int) -> None: ...
+
+def assign_through_base(instance: Base) -> None:
+    instance.x = "accepted by the base setter"
+"#,
+);
