@@ -2226,6 +2226,40 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             self.pin_all_placeholder_types(ty, true, range, errors);
             self.expand_mut(ty);
         });
+        // Flag an unannotated variable bound by a loop, unpacking, `with` or comprehension
+        // whose inferred type is an implicit `Any` (unknown). Plain assignments are reported
+        // where they are solved. These binding kinds also serve as anonymous intermediates
+        // (a whole unpacked tuple, a `with` item without `as`, a subscript or attribute
+        // target), so only a binding keyed as a name definition at `range` is a variable.
+        // A comprehension target forwards to its iteration binding, which is keyed at the
+        // iterable, so that binding carries the target's range instead. A target in a class
+        // body defines a class attribute, which is reported as `unknown-attribute-type` like
+        // a plain class-body assignment.
+        let target_range = match binding {
+            Binding::IterableValueLoop(None, _, _, false)
+            | Binding::ContextValue(None, _, _, _, false) => Some(range),
+            Binding::UnpackedValue(x) if x.annotation.is_none() && !x.in_class_body => Some(range),
+            Binding::IterableValueComprehension(_, _, target_range) => Some(*target_range),
+            _ => None,
+        };
+        if let Some(target_range) = target_range
+            && matches!(type_info.ty(), Type::Any(AnyStyle::Implicit))
+            && self
+                .bindings()
+                .is_valid_key(&Key::Definition(ShortIdentifier::from_text_range(
+                    target_range,
+                )))
+        {
+            self.error(
+                errors,
+                target_range,
+                ErrorKind::UnknownVariableType,
+                format!(
+                    "The type of `{}` is unknown; it is inferred as an implicit `Any`",
+                    self.module().code_at(target_range)
+                ),
+            );
+        }
         SolveResult::Answer(type_info)
     }
 
@@ -6467,10 +6501,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             Binding::IterableValueComprehension(e, is_async, _) => {
                 self.binding_to_type_iterable_value(None, e, *is_async, errors)
             }
-            Binding::IterableValueLoop(ann, e, is_async) => {
+            Binding::IterableValueLoop(ann, e, is_async, _) => {
                 self.binding_to_type_iterable_value(*ann, e, *is_async, errors)
             }
-            Binding::ContextValue(ann, e, range, kind) => {
+            Binding::ContextValue(ann, e, range, kind, _) => {
                 self.binding_to_type_context_value(*ann, *e, *range, *kind, errors)
             }
             Binding::UnpackedValue(value) => self.binding_to_type_unpacked_value(

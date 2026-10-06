@@ -2052,7 +2052,7 @@ f(untyped(1))  # the argument's type is unknown [unknown-argument-type]
 
 Default severity: `ignore`
 
-An unannotated attribute is assigned a value whose type is unknown, so the attribute is inferred as `Any`. Add an explicit attribute annotation or fix the right-hand side so Pyrefly can infer a concrete type.
+An unannotated attribute is assigned a value whose type is unknown, so the attribute is inferred as `Any`. This includes class attributes bound in the class body by unpacking, a `for` loop, or `with ... as`. Add an explicit attribute annotation or fix the right-hand side so Pyrefly can infer a concrete type.
 
 This is not a sub-kind of [implicit-any](#implicit-any): suppressing `implicit-any` does not suppress this error.
 
@@ -2091,12 +2091,18 @@ Default severity: `ignore`
 
 A variable assigned a value of unknown type without an explicit annotation is inferred as `Any`, which hides type errors wherever it is used. Adding an annotation gives the variable a concrete type.
 
+This covers plain assignments as well as `for` loop targets, unpacking targets, `with ... as` targets, and comprehension targets. Loop, unpacking, and `with ... as` targets in a class body define class attributes, so they are reported as [unknown-attribute-type](#unknown-attribute-type) instead.
+
 ```python
 def untyped(x):  # unannotated: returns an implicit `Any`
     return x
 
 y = untyped(1)  # downstream users don't know what type `y` is
 y2: int = untyped(1)  # downstream users treat `y2` as `int`
+
+for item in untyped(1):  # the type of `item` is unknown
+    pass
+a, b = untyped(1)  # the types of `a` and `b` are unknown
 ```
 
 ## unnecessary-comparison

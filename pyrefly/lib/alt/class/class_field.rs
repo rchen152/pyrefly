@@ -2015,6 +2015,28 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     value_storage.push(ExprOrBinding::Binding(Binding::Forward(*definition)));
                 let (value_ty, annotation, is_inherited) =
                     self.analyze_class_field_value(value, class, name, None, false, range, errors);
+                // A class-body name bound by unpacking, a `for` loop or `with` is a class
+                // attribute, so an unknown type is reported like a plain class-body assignment,
+                // at the binding that produced it. Imports, walrus targets and match captures
+                // also end up here and are not reported, as at other scopes. So is a name whose
+                // final value merges several bindings, which is only checked as a whole here.
+                let is_reported_target = matches!(
+                    self.bindings().get(*definition),
+                    Binding::IterableValueLoop(..)
+                        | Binding::ContextValue(..)
+                        | Binding::UnpackedValue(..)
+                );
+                if is_reported_target
+                    && annotation.is_none()
+                    && matches!(value_ty, Type::Any(AnyStyle::Implicit))
+                {
+                    self.error(
+                        errors,
+                        self.bindings().idx_to_key(*definition).range(),
+                        ErrorKind::UnknownAttributeType,
+                        "This expression is implicitly inferred to be `Any`. Please provide an explicit type annotation.".to_owned(),
+                    );
+                }
                 (
                     initialization,
                     false,
