@@ -138,9 +138,9 @@ jobs:
         with:
           sparse-checkout: |
             scripts/issue_ranker
-            scripts/primer_classifier
             scripts/compare_typecheckers.py
             scripts/llm_transport.py
+            scripts/ssl_utils.py
             scripts/projects.py
           persist-credentials: false
 
@@ -328,7 +328,7 @@ jobs:
           sparse-checkout: |
             scripts/issue_ranker
             scripts/llm_transport.py
-            scripts/primer_classifier
+            scripts/ssl_utils.py
           persist-credentials: false
 
       - uses: actions/setup-python@v6

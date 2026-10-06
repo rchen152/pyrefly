@@ -7,8 +7,7 @@
 """Shared LLM transport layer for calling language model APIs.
 
 Provides backend detection, API dispatch, text extraction, and JSON
-parsing.  Used by both primer_classifier and issue_ranker so that neither
-package depends on the other's internals.
+parsing for the issue-ranking tools.
 
 Supports two backends:
 1. Meta's Llama API (native format at api.llama.com)
@@ -32,7 +31,7 @@ import urllib.request
 from typing import Optional
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from primer_classifier.ssl_utils import get_ssl_context
+from ssl_utils import get_ssl_context
 
 # ── retry / rate-limit constants ─────────────────────────────────────
 MAX_RETRIES = 4

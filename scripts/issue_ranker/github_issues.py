@@ -21,7 +21,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from primer_classifier.ssl_utils import get_ssl_context
+from ssl_utils import get_ssl_context
 
 GITHUB_GRAPHQL_URL = "https://api.github.com/graphql"
 OWNER = "facebook"

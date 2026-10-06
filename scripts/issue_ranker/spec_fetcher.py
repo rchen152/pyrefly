@@ -19,7 +19,7 @@ import urllib.error
 import urllib.request
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from primer_classifier.ssl_utils import get_ssl_context
+from ssl_utils import get_ssl_context
 
 # Map of error kinds to relevant typing spec pages.
 _SPEC_URLS: dict[str, str] = {
