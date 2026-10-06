@@ -11,6 +11,8 @@ use pyrefly_python::module_path::ModulePath;
 use pyrefly_python::sys_info::PythonVersion;
 use pyrefly_util::fs_anyhow;
 
+use crate::binding::binding::Key;
+use crate::binding::binding::KeyExport;
 use crate::test::util::TestEnv;
 use crate::testcase;
 
@@ -2695,3 +2697,45 @@ x = myproject
 y = some
 "#,
 );
+
+// An empty name in `__all__` is reported where it is written, and does not
+// become part of the module's export surface: re-exporting it through a
+// wildcard would promise an export no importer can ever resolve.
+fn env_empty_dunder_all_name() -> TestEnv {
+    let mut t = TestEnv::new();
+    t.add(
+        "inner",
+        r#"__all__ = [""]  # E: Name `` is listed in `__all__` but is not defined in the module"#,
+    );
+    t.add("middle", "from inner import *");
+    t
+}
+
+testcase!(
+    test_wildcard_reexport_of_empty_dunder_all_name,
+    env_empty_dunder_all_name(),
+    r#"
+from middle import *
+"#,
+);
+
+#[test]
+fn test_empty_dunder_all_name_has_no_synthetic_binding() {
+    let (state, handle) = TestEnv::one("main", r#"__all__ = ["", "missing"]"#).to_state();
+    let transaction = state.transaction();
+    let answers = transaction.get_answers(&handle("main")).unwrap();
+    let bindings = answers.bindings();
+    assert!(!bindings.keys::<Key>().any(|idx| {
+        matches!(bindings.idx_to_key(idx), Key::Import(import) if import.0.is_empty())
+    }));
+    assert!(
+        bindings
+            .keys::<KeyExport>()
+            .all(|idx| !bindings.idx_to_key(idx).0.is_empty())
+    );
+    assert!(
+        bindings
+            .keys::<KeyExport>()
+            .any(|idx| bindings.idx_to_key(idx).0 == "missing")
+    );
+}
