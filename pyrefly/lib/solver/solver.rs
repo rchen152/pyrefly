@@ -2982,14 +2982,12 @@ pub enum ArgumentSide {
     NotAnalyzingACall,
 }
 
-/// Which argument of the call being checked is in hand.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub struct ArgumentKey(u32);
-
-impl ArgumentKey {
-    pub fn new(index: usize) -> Self {
-        Self(index as u32)
-    }
+/// Which argument of the call being checked is in hand. Positional arguments are numbered with
+/// the `self` argument (if any) first, and keyword arguments are numbered separately.
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
+pub enum ArgumentKey {
+    Positional(usize),
+    Keyword(usize),
 }
 
 impl ArgumentSide {

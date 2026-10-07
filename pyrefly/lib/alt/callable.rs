@@ -1063,7 +1063,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             .chain(args.iter().map(|arg| (arg, false)))
             .enumerate()
         {
-            let argument = ArgumentKey::new(argument_index);
+            let argument = ArgumentKey::Positional(argument_index);
             let call_context = &call_context.clone().with_argument(argument);
             let mut arg_pre = arg.pre_eval(self, arg_errors);
             while arg_pre.step() {
@@ -1540,11 +1540,10 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             }
         };
         let mut splat_kwargs: Vec<(Type, TextRange, SplatSource)> = Vec::new();
-        let keyword_argument_offset = usize::from(self_arg.is_some()) + args.len();
         for (keyword_index, kw) in keywords.iter().enumerate() {
             let call_context = &call_context
                 .clone()
-                .with_argument(ArgumentKey::new(keyword_argument_offset + keyword_index));
+                .with_argument(ArgumentKey::Keyword(keyword_index));
             match kw.arg {
                 None => {
                     let ty = kw.value.infer(self, arg_errors);
