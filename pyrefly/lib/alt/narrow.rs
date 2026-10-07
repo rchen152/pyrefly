@@ -1121,7 +1121,24 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
     }
 
-    /// Narrow a union by keeping only members whose facet is identity-compatible with `right`.
+    /// Distribute facet filtering while preserving union and overload structure.
+    fn distribute_over_facet_members(&self, base: &Type, f: &impl Fn(&Type) -> Type) -> Type {
+        self.distribute_over_union(base, |member| {
+            if let Type::Overloaded(branches) = member {
+                let remaining = branches
+                    .iter()
+                    .map(|branch| self.distribute_over_facet_members(branch, f))
+                    .filter(|branch| !branch.is_never())
+                    .collect();
+                Type::combine_overload_results(remaining, self.heap)
+                    .unwrap_or_else(|| self.heap.mk_never())
+            } else {
+                f(member)
+            }
+        })
+    }
+
+    /// Narrow unions and overloads by keeping only members whose facet is identity-compatible with `right`.
     fn narrow_facet_is(
         &self,
         base: &Type,
@@ -1129,7 +1146,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         facet: &FacetKind,
         range: TextRange,
     ) -> Type {
-        self.distribute_over_union(base, |t| {
+        self.distribute_over_facet_members(base, &|t| {
             let base_info = TypeInfo::of_ty(t.clone());
             let facet_ty = self.get_facet_chain_type(
                 &base_info,
@@ -1144,7 +1161,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         })
     }
 
-    /// Narrow a union by removing members whose facet is identity-equal to `right`.
+    /// Narrow unions and overloads by removing members whose facet is identity-equal to `right`.
     fn narrow_facet_is_not(
         &self,
         base: &Type,
@@ -1152,7 +1169,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         facet: &FacetKind,
         range: TextRange,
     ) -> Type {
-        self.distribute_over_union(base, |t| {
+        self.distribute_over_facet_members(base, &|t| {
             let base_info = TypeInfo::of_ty(t.clone());
             let facet_ty = self.get_facet_chain_type(
                 &base_info,
@@ -1209,7 +1226,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             }
             AtomicNarrowOp::Eq(v) => {
                 let right = self.expr_infer(v, errors);
-                Some(self.distribute_over_union(base, |t| {
+                Some(self.distribute_over_facet_members(base, &|t| {
                     let base_info = TypeInfo::of_ty(t.clone());
                     let facet_ty = self.get_facet_chain_type(
                         &base_info,
@@ -1225,7 +1242,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             }
             AtomicNarrowOp::NotEq(v) => {
                 let right = self.expr_infer(v, errors);
-                Some(self.distribute_over_union(base, |t| {
+                Some(self.distribute_over_facet_members(base, &|t| {
                     let base_info = TypeInfo::of_ty(t.clone());
                     let facet_ty = self.get_facet_chain_type(
                         &base_info,
@@ -1245,7 +1262,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             AtomicNarrowOp::In(v) | AtomicNarrowOp::NotIn(v)
                 if self.literal_membership_exprs(v, errors).is_some() =>
             {
-                Some(self.distribute_over_union(base, |t| {
+                Some(self.distribute_over_facet_members(base, &|t| {
                     let base_info = TypeInfo::of_ty(t.clone());
                     let facet_ty = self.get_facet_chain_type(
                         &base_info,
@@ -1260,13 +1277,15 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     }
                 }))
             }
-            // If `allow_never_collapse` is not set, we only filter members of a union
+            // If `allow_never_collapse` is not set, we only filter union or overload members
             // to avoid inferring `Never` excessively
             AtomicNarrowOp::IsInstance(_, _) | AtomicNarrowOp::IsNotInstance(_, _)
-                if base.is_union() || allow_never_collapse =>
+                if base.is_union()
+                    || matches!(base, Type::Overloaded(_))
+                    || allow_never_collapse =>
             {
                 let suppress_errors = self.error_swallower();
-                Some(self.distribute_over_union(base, |t| {
+                Some(self.distribute_over_facet_members(base, &|t| {
                     let base_info = TypeInfo::of_ty(t.clone());
                     let facet_ty = self.get_facet_chain_type(
                         &base_info,

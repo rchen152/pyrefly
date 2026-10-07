@@ -1730,6 +1730,42 @@ assert_type(make(g), list[str])
 );
 
 testcase!(
+    test_narrow_overloaded_by_facet,
+    r#"
+from typing import Callable, assert_type, overload, reveal_type
+
+def pair[A, R](f: Callable[[A], R]) -> tuple[A, R]: ...
+
+@overload
+def h(x: int) -> None: ...
+@overload
+def h(x: str) -> str: ...
+@overload
+def h(x: bytes) -> bytes: ...
+def h(x: int | str | bytes) -> str | bytes | None: ...
+
+p = pair(h)
+if p[1] is not None:
+    reveal_type(p)  # E: revealed type: Overloaded[tuple[str, str], tuple[bytes, bytes]] (_[1]: bytes | str)
+else:
+    assert_type(p, tuple[int, None])
+if isinstance(p[1], str):
+    assert_type(p, tuple[str, str])
+
+def check_union(flag: bool) -> None:
+    p = pair(h) if flag else (1.0, None)
+    if p[1] is not None:
+        assert_type(p[0], str | bytes)
+    else:
+        assert_type(p, tuple[int, None] | tuple[float, None])
+    if p[1] != None:
+        assert_type(p[0], str | bytes)
+    if isinstance(p[1], str):
+        assert_type(p, tuple[str, str])
+    "#,
+);
+
+testcase!(
     test_branches_a_gradual_var_cannot_tell_apart_are_ambiguous,
     r#"
 from typing import Any, overload, reveal_type
