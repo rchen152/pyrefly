@@ -114,6 +114,21 @@ def test_ndarray_view() -> None:
         array.view(42)  # E: No matching overload
 
 
+def test_ndarray_compress_and_repeat() -> None:
+    array = np.arange(6).reshape((2, 3))
+
+    assert_shape(array.compress([True, False, True]).shape, (int,), runtime=(2,))
+    assert_type(array.compress([True, False], axis=0).dtype, np.dtype[np.intp])
+    assert_shape(array.repeat(2).shape, (int,), runtime=(12,))
+    assert_type(array.repeat(2, axis=1).dtype, np.dtype[np.intp])
+    assert array.compress([True, False], axis=0).shape == (1, 3)
+    assert array.repeat(2, axis=1).shape == (2, 6)
+
+    if TYPE_CHECKING:
+        array.repeat("twice")  # E: Argument `Literal['twice']` is not assignable
+        array.compress([1], axis="first")  # E: No matching overload
+
+
 def test_ndarray_matrix_transpose_and_swapaxes() -> None:
     array = np.ones((2, 3, 4))
 

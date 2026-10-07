@@ -886,9 +886,31 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def tofile(self, fid: Any, sep: str = "", format: str = "%s") -> None: ...
     def tolist(self) -> Any: ...
 
-    # TODO(stroxler): Replace these placeholders with shape-aware declarations.
+    # TODO(stroxler): Complete the shape rules for the remaining methods.
     choose: Any
-    compress: Any
+    @overload
+    def compress(
+        self, condition: Sequence[int] | ndarray, axis: None = None, out: None = None
+    ) -> ndarray[[int], DType]: ...
+    @overload
+    def compress(
+        self, condition: Sequence[int] | ndarray, axis: int, out: None = None
+    ) -> ndarray[IntTuple, DType]: ...
+    @overload
+    def compress[Out: ndarray](
+        self,
+        condition: Sequence[int] | ndarray,
+        axis: int | None,
+        out: Out,
+    ) -> Out: ...
+    @overload
+    def compress[Out: ndarray](
+        self,
+        condition: Sequence[int] | ndarray,
+        axis: int | None = None,
+        *,
+        out: Out,
+    ) -> Out: ...
     @property
     def ctypes(self) -> _ctypes[int]: ...
     diagonal: Any
@@ -900,7 +922,15 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def nonzero(
         self,
     ) -> MapIntTuples[lambda S: ndarray[S, dtype[intp]], nonzero_shapes(Shape)]: ...
-    repeat: Any
+    @overload
+    def repeat(
+        self, repeats: int | Sequence[int] | ndarray, /, axis: None = None
+    ) -> ndarray[[int], DType]: ...
+    @overload
+    def repeat(
+        self, repeats: int | Sequence[int] | ndarray, /, axis: int
+    ) -> ndarray[IntTuple, DType]: ...
+    # TODO(stroxler): Preserve non-repeated axes and calculate repeated extents.
     @overload
     def reshape(
         self,
