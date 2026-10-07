@@ -175,6 +175,19 @@ def test_ndarray_squeeze() -> None:
             assert_type(value.squeeze(-2), np.ndarray[[*Batch, N]])
 
 
+def test_ndarray_searchsorted() -> None:
+    sorted_array = np.array([1, 3, 5])
+
+    assert_type(sorted_array.searchsorted(3), np.intp)
+    assert_shape(sorted_array.searchsorted(np.ones((2, 3))).shape, (2, 3))
+    assert_shape(sorted_array.searchsorted([[0, 2], [5, 6]]).shape, (2, 2))
+    assert sorted_array.searchsorted(3, side="right") == 2
+
+    if TYPE_CHECKING:
+        np.ones((2, 3)).searchsorted(2)  # E: No matching overload
+        sorted_array.searchsorted(3, side="middle")  # E: No matching overload
+
+
 def test_ndarray_mutating_methods() -> None:
     a = np.ones((2, 3))
 

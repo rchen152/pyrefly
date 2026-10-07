@@ -894,7 +894,30 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     ) -> MapIntTuples[lambda S: ndarray[S, dtype[intp]], nonzero_shapes(Shape)]: ...
     repeat: Any
     reshape: Any
-    searchsorted: Any
+    @overload
+    def searchsorted[N: IntVar](
+        self: ndarray[[N]],
+        v: _ArrayScalar | ndarray[[]],
+        /,
+        side: Literal["left", "right"] = "left",
+        sorter: ndarray[[N], _dtype[intp]] | Sequence[int] | None = None,
+    ) -> intp: ...
+    @overload
+    def searchsorted[N: IntVar, Values: _Shape](
+        self: ndarray[[N]],
+        v: ndarray[Values],
+        /,
+        side: Literal["left", "right"] = "left",
+        sorter: ndarray[[N], _dtype[intp]] | Sequence[int] | None = None,
+    ) -> ndarray[Values, _dtype[intp]]: ...
+    @overload
+    def searchsorted[N: IntVar, Values: _Shape](
+        self: ndarray[[N]],
+        v: RegularNestedList[Values, _ArrayScalar],
+        /,
+        side: Literal["left", "right"] = "left",
+        sorter: ndarray[[N], _dtype[intp]] | Sequence[int] | None = None,
+    ) -> ndarray[Values, _dtype[intp]]: ...
     def squeeze[Axis: Flag[_Axis]](
         self, axis: Axis = None
     ) -> ndarray[squeeze_shape(Shape, Axis), DType]: ...
