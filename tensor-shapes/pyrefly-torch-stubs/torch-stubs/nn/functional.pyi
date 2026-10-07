@@ -2228,6 +2228,61 @@ def fold[Batch: IntTuple](
     stride: int | tuple[int, int] = 1,
 ) -> Tensor[[*Batch, int, int, int]]: ...
 
+# Torch accepts unbatched 3D input as well as batched 4D input.
+@overload
+def unfold[B: IntVar, C: IntVar, H: IntVar, W: IntVar, K: IntVar](
+    input: Tensor[[B, C, H, W]],
+    kernel_size: _Int[K],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[[B, C * K * K, int]]: ...
+@overload
+def unfold[B: IntVar, C: IntVar, H: IntVar, W: IntVar, KH: IntVar, KW: IntVar](
+    input: Tensor[[B, C, H, W]],
+    kernel_size: tuple[_Int[KH], _Int[KW]],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[[B, C * KH * KW, int]]: ...
+@overload
+def unfold[C: IntVar, H: IntVar, W: IntVar, K: IntVar](
+    input: Tensor[[C, H, W]],
+    kernel_size: _Int[K],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[[C * K * K, int]]: ...
+@overload
+def unfold[C: IntVar, H: IntVar, W: IntVar, KH: IntVar, KW: IntVar](
+    input: Tensor[[C, H, W]],
+    kernel_size: tuple[_Int[KH], _Int[KW]],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[[C * KH * KW, int]]: ...
+
+# TODO(stroxler): Replace the dynamic-kernel overloads with a shape rule that
+# rejects invalid kernel/stride/dilation/padding geometry while preserving the
+# precise channel products above. A Flag-based scalar/tuple DSL dispatch currently
+# loses those products and lets this gradual branch accept invalid literal calls.
+@overload
+def unfold[B: IntVar, C: IntVar, H: IntVar, W: IntVar](
+    input: Tensor[[B, C, H, W]],
+    kernel_size: int | tuple[int, int],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[[B, int, int]]: ...
+@overload
+def unfold[C: IntVar, H: IntVar, W: IntVar](
+    input: Tensor[[C, H, W]],
+    kernel_size: int | tuple[int, int],
+    dilation: int | tuple[int, int] = 1,
+    padding: int | tuple[int, int] = 0,
+    stride: int | tuple[int, int] = 1,
+) -> Tensor[[int, int]]: ...
+
 # TODO: Add precise types and signatures for the remaining public API.
 ctc_loss: Any
 gaussian_nll_loss: Any
@@ -2237,6 +2292,5 @@ multilabel_soft_margin_loss: Any
 scaled_grouped_mm: Any
 scaled_mm: Any
 triplet_margin_with_distance_loss: Any
-unfold: Any
 upsample_bilinear: Any
 upsample_nearest: Any

@@ -216,7 +216,22 @@ def test_affine_grid_and_fold_shapes() -> None:
     assert_shape(F.fold(square_columns[0], 8, 2, stride=2).shape, (3, 8, 8))
 
 
-if TYPE_CHECKING:
+def test_unfold_channel_and_window_shapes() -> None:
+    image = torch.randn((2, 3, 8, 10))
+    columns = F.unfold(image, 2, stride=2)
+    assert_shape(columns.shape[:2], (2, 12))
+    assert tuple(columns.shape) == (2, 12, 20)
+
+    columns = F.unfold(image, (2, 3), stride=(2, 3))
+    assert_shape(columns.shape[:2], (2, 18))
+    assert tuple(columns.shape) == (2, 18, 12)
+
+    unbatched = F.unfold(image[0], 2, stride=2)
+    assert_shape(unbatched.shape[:1], (12,))
+    assert tuple(unbatched.shape) == (12, 20)
+
+
+if TYPE_CHECKING:  # noqa: C901
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
         sequence: Tensor[[B, 3, 12]],
@@ -475,3 +490,11 @@ if TYPE_CHECKING:
             F.fold(square_columns[0], 8, kernel_size, stride=2),
             Tensor[[int, 8, 8]],
         )
+
+    def check_unfold_shapes[B: IntVar](
+        image: Tensor[[B, 3, 8, 10]], kernel_size: int
+    ) -> None:
+        assert_type(F.unfold(image, 2, stride=2), Tensor[[B, 12, int]])
+        assert_type(F.unfold(image, (2, 3), stride=(2, 3)), Tensor[[B, 18, int]])
+        assert_type(F.unfold(image[0], 2, stride=2), Tensor[[12, int]])
+        assert_type(F.unfold(image, kernel_size), Tensor[[B, int, int]])
