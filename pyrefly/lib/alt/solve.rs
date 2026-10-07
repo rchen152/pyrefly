@@ -1193,6 +1193,12 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 .iter()
                 .flat_map(|t| self.iterate(t, range, errors, orig_context))
                 .collect(),
+            Type::Overloaded(branches)
+                if let Some(iterable) =
+                    self.iterate_overloaded_tuples(branches, range, errors, orig_context) =>
+            {
+                vec![iterable]
+            }
             _ => {
                 let ty = self
                     .unwrap_iterable(iterable)
@@ -1214,6 +1220,117 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     });
                 vec![Iterable::OfType(ty)]
             }
+        }
+    }
+
+    /// Iterate tuple branches with the same layout position by position. `None` if they differ.
+    fn iterate_overloaded_tuples(
+        &self,
+        branches: &Vec1<Type>,
+        range: TextRange,
+        errors: &ErrorCollector,
+        orig_context: Option<&dyn Fn() -> ErrorContext>,
+    ) -> Option<Iterable> {
+        // Iterate checking if every branch is a tuple that produces a single iterable.
+        let iterables = {
+            let iterables = branches
+                .iter()
+                .map(|branch| {
+                    let Type::Tuple(_) = branch else {
+                        return None;
+                    };
+                    let [iterable] = <[Iterable; 1]>::try_from(self.iterate(
+                        branch,
+                        range,
+                        errors,
+                        orig_context,
+                    ))
+                    .ok()?;
+                    Some(iterable)
+                })
+                .collect::<Option<Vec<_>>>()?;
+            Vec1::try_from(iterables)
+                .expect("each branch in the nonempty collection produces one iterable")
+        };
+
+        let combine = |types: Vec1<Type>| {
+            Type::combine_overload_results(types.into_vec(), self.heap)
+                .expect("a nonempty collection of results can always be combined")
+        };
+        let combine_positions = |positions_by_branch: Vec1<&Vec<Type>>| {
+            let position_count = positions_by_branch.first().len();
+            if positions_by_branch
+                .iter()
+                .any(|positions| positions.len() != position_count)
+            {
+                return None;
+            }
+            Some(
+                (0..position_count)
+                    .map(|position| {
+                        let alternatives =
+                            positions_by_branch.mapped_ref(|positions| positions[position].clone());
+                        combine(alternatives)
+                    })
+                    .collect(),
+            )
+        };
+        fn try_map_remaining<'a, T>(
+            first: T,
+            iterables: &'a Vec1<Iterable>,
+            mapper: impl Fn(&'a Iterable) -> Option<T>,
+        ) -> Option<Vec1<T>> {
+            let mut res = Vec1::new(first);
+            res.extend(
+                iterables
+                    .iter()
+                    .skip(1)
+                    .map(mapper)
+                    .collect::<Option<Vec<_>>>()?,
+            );
+            Some(res)
+        }
+
+        // Combine if every iterable has the same layout.
+        match iterables.first() {
+            Iterable::OfType(first_type) => {
+                let types =
+                    try_map_remaining(first_type.clone(), &iterables, |iterable| match iterable {
+                        Iterable::OfType(ty) => Some(ty.clone()),
+                        _ => None,
+                    })?;
+                Some(Iterable::OfType(combine(types)))
+            }
+            Iterable::FixedLen(first_positions) => {
+                let positions_by_branch =
+                    try_map_remaining(first_positions, &iterables, |iterable| match iterable {
+                        Iterable::FixedLen(positions) => Some(positions),
+                        _ => None,
+                    })?;
+                combine_positions(positions_by_branch).map(Iterable::FixedLen)
+            }
+            Iterable::Unpacked {
+                prefix,
+                middle,
+                suffix,
+            } => {
+                let parts = try_map_remaining((prefix, middle, suffix), &iterables, |iterable| {
+                    match iterable {
+                        Iterable::Unpacked {
+                            prefix,
+                            middle,
+                            suffix,
+                        } => Some((prefix, middle, suffix)),
+                        _ => None,
+                    }
+                })?;
+                Some(Iterable::Unpacked {
+                    prefix: combine_positions(parts.mapped_ref(|(prefix, _, _)| *prefix))?,
+                    middle: combine(parts.mapped_ref(|(_, middle, _)| (*middle).clone())),
+                    suffix: combine_positions(parts.mapped_ref(|(_, _, suffix)| *suffix))?,
+                })
+            }
+            Iterable::OfTypeVarTuple(_) => None,
         }
     }
 

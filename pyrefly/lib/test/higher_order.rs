@@ -1615,6 +1615,67 @@ reveal_type(1 in xs)  # E: revealed type: bool
 );
 
 testcase!(
+    test_unpack_overloaded_tuple_by_position,
+    r#"
+from typing import Callable, assert_type, overload, reveal_type
+
+def ret[A, R](f: Callable[[A], R]) -> R: ...
+
+@overload
+def f(x: int) -> tuple[int, list[str], str]: ...
+@overload
+def f(x: str) -> tuple[int, list[bytes], bytes]: ...
+def f(x: int | str) -> tuple[int, list[str] | list[bytes], str | bytes]: ...
+
+a, b, c = ret(f)
+assert_type(a, int)
+reveal_type(b)  # E: revealed type: Overloaded[list[str], list[bytes]]
+assert_type(c, str | bytes)
+match ret(f):
+    case (x, _, _):
+        assert_type(x, int)
+    "#,
+);
+
+testcase!(
+    test_unpack_overloaded_variadic_tuple_by_position,
+    r#"
+from typing import Callable, assert_type, overload
+
+def ret[A, R](f: Callable[[A], R]) -> R: ...
+
+@overload
+def g(x: int) -> tuple[int, *tuple[str, ...]]: ...
+@overload
+def g(x: str) -> tuple[int, *tuple[bytes, ...]]: ...
+def g(x: int | str) -> tuple[int, *tuple[str | bytes, ...]]: ...
+
+d, e, *rest = ret(g)
+assert_type(d, int)
+assert_type(e, str | bytes)
+    "#,
+);
+
+testcase!(
+    test_unpack_overloaded_tuple_different_lengths,
+    r#"
+from typing import Callable, overload
+
+def ret[A, R](f: Callable[[A], R]) -> R: ...
+
+@overload
+def h(x: int) -> tuple[int, int]: ...
+@overload
+def h(x: str) -> tuple[int, int, int]: ...
+def h(x: int | str) -> tuple[int, ...]: ...
+
+# Different branch lengths fall back to the iterator protocol, so two targets are
+# accepted even though one branch has three elements.
+y, z = ret(h)
+    "#,
+);
+
+testcase!(
     test_branches_a_gradual_var_cannot_tell_apart_are_ambiguous,
     r#"
 from typing import Any, overload, reveal_type
