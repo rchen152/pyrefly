@@ -6,7 +6,7 @@
 from builtins import bool as py_bool
 from collections.abc import Iterator, Sequence
 from types import EllipsisType
-from typing import Any, Final, Literal, overload, SupportsIndex
+from typing import Any, Final, Literal, Never, overload, SupportsIndex
 
 import shape_extensions
 from numpy.__config__ import (
@@ -856,8 +856,13 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     ) -> None: ...
     def put(self, indices: Any, values: Any, mode: str = "raise") -> None: ...
     def ravel(self, order: str = "C") -> ndarray[[int], DType]: ...
-    # TODO(stroxler): Model receiver invalidation for shape-changing mutation.
-    resize: Any
+    def resize(self, *, not_usable_with_shape_types: Never) -> None:
+        """Unsupported: resizing changes the receiver's shape in place.
+
+        A statically typed array cannot acquire a new shape type after a method call.
+        Create a new array instead of resizing an existing one.
+        """
+        ...
     def round(self, decimals: int = 0, out: Any = None) -> ndarray[Shape, DType]: ...
     def setfield(self, val: Any, dtype: Any, offset: int = 0) -> None: ...
     def setflags(

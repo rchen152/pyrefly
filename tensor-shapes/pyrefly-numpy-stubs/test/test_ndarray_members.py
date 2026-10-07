@@ -92,6 +92,16 @@ def test_ndarray_ordering_and_flattening_methods() -> None:
     assert_shape(a.shape, (2, 3))
 
 
+def test_ndarray_resize() -> None:
+    array = np.ones((2, 3))
+
+    assert_shape(array.shape, (2, 3))
+
+    if TYPE_CHECKING:
+        array.resize()  # E: not_usable_with_shape_types
+        array.resize((3, 2))  # E: not_usable_with_shape_types
+
+
 def test_ndarray_matrix_transpose_and_swapaxes() -> None:
     array = np.ones((2, 3, 4))
 
@@ -214,7 +224,6 @@ def test_ndarray_mutating_methods() -> None:
     assert_type(a.fill(2.0), None)
     assert_type(a.partition(1), None)
     assert_type(a.put([0], [3.0]), None)
-    assert_type(a.resize, Any)
     assert_type(a.setfield(1.0, np.float64), None)
     assert_type(a.setflags(write=True), None)
     assert_type(a.sort(), None)
