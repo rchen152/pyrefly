@@ -2354,6 +2354,23 @@ A(1)     # E: Missing argument `y`
 "#,
 );
 
+// Parse-error recovery turns the missing first target of `[, y]` into an empty
+// name, which binds nothing. The specifier unpacked into it is still evaluated
+// exactly once, so its undefined name is reported once.
+attrs_testcase!(
+    test_attrs_unpacked_specifier_into_missing_target,
+    r#"
+import attr
+
+@attr.s
+class A:
+    [, y] = attr.ib(default=undefined), attr.ib()  # E: Parse error: Expected an expression  # E: Could not find name `undefined`
+
+A(1)  # OK
+A()   # E: Missing argument `y`
+"#,
+);
+
 // The right-hand side may itself be a list literal of specifiers.
 attrs_testcase!(
     test_attrs_unpacked_specifiers_list_rhs,

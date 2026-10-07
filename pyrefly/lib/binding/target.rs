@@ -659,10 +659,14 @@ impl<'a> BindingsBuilder<'a> {
         ensure_assigned: bool,
     ) -> Option<Idx<KeyAnnotation>> {
         if Ast::is_synthesized_empty_identifier(name) {
-            let range = value.range();
-            let mut user = self.declare_current_idx(Key::Anon(range));
-            self.ensure_expr(&mut value, user.usage());
-            self.insert_binding_current(user, Binding::Expr(None, Box::new(*value)));
+            // An empty name from parse-error recovery binds nothing, so only its
+            // value is resolved.
+            if ensure_assigned {
+                let range = value.range();
+                let mut user = self.declare_current_idx(Key::Anon(range));
+                self.ensure_expr(&mut value, user.usage());
+                self.insert_binding_current(user, Binding::Expr(None, Box::new(*value)));
+            }
             return None;
         }
         let identifier = ShortIdentifier::new(name);
