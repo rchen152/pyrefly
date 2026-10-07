@@ -102,6 +102,18 @@ def test_ndarray_resize() -> None:
         array.resize((3, 2))  # E: not_usable_with_shape_types
 
 
+def test_ndarray_view() -> None:
+    array = np.ones((2, 3))
+
+    assert_shape(array.view().shape, (2, 3))
+    assert_type(array.view(np.int32).dtype, np.dtype[np.int32])
+    assert_type(array.view(np.dtype(np.int64)).dtype, np.dtype[np.int64])
+    assert array.view(np.uint8).shape == (2, 24)
+
+    if TYPE_CHECKING:
+        array.view(42)  # E: No matching overload
+
+
 def test_ndarray_matrix_transpose_and_swapaxes() -> None:
     array = np.ones((2, 3, 4))
 

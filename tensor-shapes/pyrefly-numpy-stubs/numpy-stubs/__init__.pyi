@@ -971,7 +971,17 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def transpose[Axes: IntTuple](
         self, *axes: *Axes
     ) -> ndarray[transpose_shape(Shape, Axes), DType]: ...
-    view: Any
+    # TODO(stroxler): Reinterpretation can change the final dimension's size.
+    @overload
+    def view(self, /) -> ndarray[Shape, DType]: ...
+    @overload
+    def view[ArrayT: ndarray](self, /, *, type: type[ArrayT]) -> ArrayT: ...
+    @overload
+    def view[ScalarT: generic](
+        self, dtype: type[ScalarT] | _dtype[ScalarT], /
+    ) -> ndarray[IntTuple, _dtype[ScalarT]]: ...
+    @overload
+    def view(self, dtype: str, /) -> ndarray[IntTuple]: ...
 
 class ufunc:
     __name__: str
