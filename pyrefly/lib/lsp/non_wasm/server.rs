@@ -449,6 +449,13 @@ pub trait TspInterface: Send + Sync + 'static {
 
     fn stop_recheck_queue(&self);
 
+    /// Drain the queue that rebuilds the build system's source database. Without
+    /// it, opening a file only queues the rebuild, so imports resolved through the
+    /// build system fall back to search-path heuristics.
+    fn run_sourcedb_queue(&self, telemetry: &dyn Telemetry);
+
+    fn stop_sourcedb_queue(&self);
+
     fn dispatch_lsp_events(&self, reader: &mut MessageReader);
 
     /// Process an LSP event and return the next step
@@ -7413,6 +7420,14 @@ impl TspInterface for Server {
 
     fn stop_recheck_queue(&self) {
         self.recheck_queue.stop();
+    }
+
+    fn run_sourcedb_queue(&self, telemetry: &dyn Telemetry) {
+        self.sourcedb_queue.run_until_stopped(self, telemetry);
+    }
+
+    fn stop_sourcedb_queue(&self) {
+        self.sourcedb_queue.stop();
     }
 
     fn process_event<'a>(

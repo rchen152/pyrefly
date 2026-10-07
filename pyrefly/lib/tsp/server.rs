@@ -645,6 +645,7 @@ pub fn tsp_loop(
 
     std::thread::scope(|scope| {
         scope.spawn(|| server.inner.run_recheck_queue(telemetry));
+        scope.spawn(|| server.inner.run_sourcedb_queue(telemetry));
 
         scope.spawn(|| {
             server.inner.dispatch_lsp_events(&mut reader);
@@ -701,6 +702,7 @@ pub fn tsp_loop(
         }
 
         server.inner.stop_recheck_queue();
+        server.inner.stop_sourcedb_queue();
         Ok(())
     })
 }
