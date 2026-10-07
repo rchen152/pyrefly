@@ -1703,6 +1703,33 @@ class C:
 );
 
 testcase!(
+    test_overloaded_branches_are_deduplicated,
+    r#"
+from typing import Callable, assert_type, overload, reveal_type
+
+def make[A, R](f: Callable[[A], R]) -> list[R]: ...
+
+@overload
+def h(x: int) -> str: ...
+@overload
+def h(x: bytes) -> str: ...
+@overload
+def h(x: str) -> int: ...
+def h(x: int | bytes | str) -> str | int: ...
+
+reveal_type(make(h))  # E: revealed type: Overloaded[list[str], list[int]]
+
+@overload
+def g(x: int) -> str: ...
+@overload
+def g(x: bytes) -> str: ...
+def g(x: int | bytes) -> str: ...
+
+assert_type(make(g), list[str])
+    "#,
+);
+
+testcase!(
     test_branches_a_gradual_var_cannot_tell_apart_are_ambiguous,
     r#"
 from typing import Any, overload, reveal_type
