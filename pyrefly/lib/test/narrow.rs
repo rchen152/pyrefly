@@ -3719,6 +3719,18 @@ def f(other):
     "#,
 );
 
+// Parse-error recovery leaves the missing right operand of `and` (or `or`) and the
+// missing `else` branch at the same zero-width location, which must not give two
+// narrows of `x` the same key.
+testcase!(
+    test_narrow_at_missing_expressions,
+    r#"
+def f(x: int | None) -> None:
+    0 if x and  # E: Parse error: Expected an expression
+    0 if x or  # E: Parse error: Expected an expression
+    "#,
+);
+
 // Both ternaries reuse the same aliased narrow at the inner expression's range.
 testcase!(
     test_nested_ternaries_reuse_narrow,

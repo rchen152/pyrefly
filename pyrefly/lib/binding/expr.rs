@@ -685,6 +685,17 @@ impl<'a> BindingsBuilder<'a> {
         ))
     }
 
+    /// Bind `narrow_ops` for evaluating `branch`, an operand of a conditional or boolean
+    /// expression that runs only when the narrows hold. A missing expression from
+    /// parse-error recovery reads no names, so it needs no narrows, and two of them can
+    /// share one empty range, which would give their narrows the same key.
+    fn bind_narrow_ops_for_branch(&mut self, narrow_ops: &NarrowOps, branch: &Expr, usage: &Usage) {
+        if matches!(branch, Expr::Name(name) if Ast::is_synthesized_empty_name(name)) {
+            return;
+        }
+        self.bind_narrow_ops(narrow_ops, NarrowUseLocation::Span(branch.range()), usage);
+    }
+
     fn record_yield(&mut self, mut x: ExprYield) {
         let mut yield_link = self.declare_current_idx(Key::YieldLink(x.range));
         let idx = self.idx_for_promise(KeyYield(x.range));
@@ -842,11 +853,7 @@ impl<'a> BindingsBuilder<'a> {
                         if Ast::expr_contains_yield(&x.orelse) {
                             self.scopes.mark_has_yield_in_dead_code();
                         }
-                        self.bind_narrow_ops(
-                            &narrow_ops,
-                            NarrowUseLocation::Span(x.body.range()),
-                            usage,
-                        );
+                        self.bind_narrow_ops_for_branch(&narrow_ops, &x.body, usage);
                         self.ensure_expr(&mut x.body, usage);
                         self.finish_branch();
                     }
@@ -856,29 +863,17 @@ impl<'a> BindingsBuilder<'a> {
                         }
                         self.abandon_branch();
                         self.start_branch();
-                        self.bind_narrow_ops(
-                            &narrow_ops.negate(),
-                            NarrowUseLocation::Span(x.orelse.range()),
-                            usage,
-                        );
+                        self.bind_narrow_ops_for_branch(&narrow_ops.negate(), &x.orelse, usage);
                         self.ensure_expr(&mut x.orelse, usage);
                         self.finish_branch();
                     }
                     None => {
-                        self.bind_narrow_ops(
-                            &narrow_ops,
-                            NarrowUseLocation::Span(x.body.range()),
-                            usage,
-                        );
+                        self.bind_narrow_ops_for_branch(&narrow_ops, &x.body, usage);
                         self.ensure_expr(&mut x.body, usage);
                         // Negate the narrow ops for the `orelse`, then merge the Flows.
                         // TODO(stroxler): We eventually want to drop all narrows but merge values.
                         self.next_branch();
-                        self.bind_narrow_ops(
-                            &narrow_ops.negate(),
-                            NarrowUseLocation::Span(x.orelse.range()),
-                            usage,
-                        );
+                        self.bind_narrow_ops_for_branch(&narrow_ops.negate(), &x.orelse, usage);
                         self.ensure_expr(&mut x.orelse, usage);
                         self.finish_branch();
                     }
@@ -920,11 +915,7 @@ impl<'a> BindingsBuilder<'a> {
                         self.scopes.set_definitely_unreachable(true);
                     }
                     for value in values {
-                        self.bind_narrow_ops(
-                            &narrow_ops,
-                            NarrowUseLocation::Span(value.range()),
-                            usage,
-                        );
+                        self.bind_narrow_ops_for_branch(&narrow_ops, value, usage);
                         self.ensure_expr(value, &mut Usage::non_pinning_value_from(usage));
                         let new_narrow_ops = get_narrow_ops(self, value, *op);
                         narrow_ops.and_all(new_narrow_ops);
