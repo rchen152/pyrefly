@@ -703,7 +703,7 @@ impl MatchedParam {
 
 #[derive(Debug, Clone)]
 pub struct ArgMap {
-    pub range_to_param: HashMap<TextRange, MatchedParam>,
+    pub arg_to_param: HashMap<ArgumentKey, MatchedParam>,
     /// Required parameters that were left unmatched
     pub unmatched_params: SmallSet<Option<Name>>,
 }
@@ -711,14 +711,19 @@ pub struct ArgMap {
 impl ArgMap {
     pub fn new() -> Self {
         Self {
-            range_to_param: HashMap::new(),
+            arg_to_param: HashMap::new(),
             unmatched_params: SmallSet::new(),
         }
     }
 
-    fn insert(&mut self, range: TextRange, ty: Type, name: Option<Name>) -> Option<MatchedParam> {
-        self.range_to_param
-            .insert(range, MatchedParam::new(ty, name))
+    fn insert(
+        &mut self,
+        argument: ArgumentKey,
+        ty: Type,
+        name: Option<Name>,
+    ) -> Option<MatchedParam> {
+        self.arg_to_param
+            .insert(argument, MatchedParam::new(ty, name))
     }
 }
 
@@ -900,7 +905,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
 
     // See comment on `callable_infer` about `arg_errors` and `call_errors`.
     /// Match arguments against parameters, type-check each argument, and return
-    /// a map from each argument's source range to the parameter type it was
+    /// a map from each argument's position to the parameter type it was
     /// matched against.
     fn callable_infer_params(
         &self,
@@ -1122,7 +1127,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             // We ignore positional-only parameters because they can't be passed in by name.
                             seen_names.insert(name, (ty, NameOrigin::Param, true));
                         }
-                        argmap.insert(arg.range(), ty.clone(), name.cloned());
+                        argmap.insert(argument, ty.clone(), name.cloned());
                         let unhinted_arg_ty = bound_args
                             .as_ref()
                             .map(|_| arg_pre.inferred_type(self, arg_errors));
@@ -1166,7 +1171,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     }) => {
                         // Store args that get matched to an unpacked *args param
                         // Matched args are typechecked separately later
-                        argmap.insert(arg.range(), ty.clone(), name.cloned());
+                        argmap.insert(argument, ty.clone(), name.cloned());
                         unpacked_vararg = Some((name, ty));
                         unpacked_vararg_matched_args.push((arg_pre.clone(), arg.range()));
                         arg_pre.post_skip();
@@ -1176,7 +1181,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         name,
                         kind: PosParamKind::Variadic,
                     }) => {
-                        argmap.insert(arg.range(), ty.clone(), name.cloned());
+                        argmap.insert(argument, ty.clone(), name.cloned());
                         let unhinted_arg_ty = bound_args
                             .as_ref()
                             .map(|_| arg_pre.inferred_type(self, arg_errors));
@@ -1541,9 +1546,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         };
         let mut splat_kwargs: Vec<(Type, TextRange, SplatSource)> = Vec::new();
         for (keyword_index, kw) in keywords.iter().enumerate() {
-            let call_context = &call_context
-                .clone()
-                .with_argument(ArgumentKey::Keyword(keyword_index));
+            let argument = ArgumentKey::Keyword(keyword_index);
+            let call_context = &call_context.clone().with_argument(argument);
             match kw.arg {
                 None => {
                     let ty = kw.value.infer(self, arg_errors);
@@ -1761,7 +1765,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             NameOrigin::Param => Some(id.id.clone()),
                             NameOrigin::UnpackedKwargs(kwargs_name) => kwargs_name.cloned(),
                         };
-                        argmap.insert(kw.range, (*expected).clone(), name);
+                        argmap.insert(argument, (*expected).clone(), name);
                     }
                     let unhinted_arg_ty = bound_args
                         .as_ref()
@@ -2218,7 +2222,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     // for overload matching.
     //
     // Returns: (return_type, specialization_errors, return_type_errors, argmap, defaults_used,
-    // overload_table), where argmap maps each argument's source range to the parameter it was
+    // overload_table), where argmap maps each argument's position to the parameter it was
     // matched against and defaults_used contains type parameters that reached their declared
     // default during finishing.
     pub fn callable_infer(

@@ -2552,3 +2552,28 @@ def flatten(values: list[str]):
     assert_type(x, str)
     "#,
 );
+
+testcase!(
+    test_parameter_filter_in_descriptor,
+    r#"
+from typing import Any, assert_type, overload
+
+class Pandas: ...
+
+class D:
+    @overload
+    def __get__(self, instance: Frame[Any], owner: type[Frame[Pandas]]) -> int: ...
+    @overload
+    def __get__(self, instance: object, owner: type[Frame[Pandas]]) -> str: ...
+    def __get__(self, instance: Any, owner: Any) -> Any: ...
+
+class Frame[T]:
+    x: T
+    impl: D = D()
+
+def f(any_frame: Frame[Any], owner: type[Frame[Any]]) -> None:
+    # We should avoid materialization for `owner` because it has the same type in both overloads.
+    assert_type(D().__get__(any_frame, owner), int)
+    assert_type(any_frame.impl, int)
+    "#,
+);
