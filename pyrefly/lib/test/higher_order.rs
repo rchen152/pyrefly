@@ -1676,6 +1676,33 @@ y, z = ret(h)
 );
 
 testcase!(
+    test_assign_to_overloaded_attribute,
+    r#"
+from typing import Any, Callable, assert_type, overload, reveal_type
+
+def make[A, R](f: Callable[[A], R]) -> list[R]: ...
+
+@overload
+def h(x: int) -> str: ...
+@overload
+def h(x: str) -> int: ...
+def h(x: int | str) -> str | int: ...
+
+class C:
+    def __init__(self) -> None:
+        self.xs = make(h)
+        reveal_type(self.xs)  # E: revealed type: Overloaded[list[str], list[int]]
+
+    def reset(self, ints: list[int], floats: list[float]) -> None:
+        self.xs = ints
+        assert_type(self.xs, list[int])
+        self.xs = []
+        assert_type(self.xs, list[Any])
+        self.xs = floats  # E: `list[float]` is not assignable to attribute `xs` with type `Overloaded[list[str], list[int]]`
+    "#,
+);
+
+testcase!(
     test_branches_a_gradual_var_cannot_tell_apart_are_ambiguous,
     r#"
 from typing import Any, overload, reveal_type

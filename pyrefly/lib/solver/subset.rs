@@ -2184,6 +2184,13 @@ impl<'solver, 'subset, Ans: LookupAnswer> Subset<'solver, 'subset, Ans> {
                     Err(error.unwrap_or(SubsetError::Other))
                 }
             }
+            // Matches if any branch does. We don't know which applies, so no branch solves vars.
+            (l, Type::Overloaded(branches)) => {
+                let vars = l.collect_maybe_placeholder_vars();
+                any(branches.iter(), |branch| {
+                    self.probe(&vars, |me| me.is_subset_eq(l, branch))
+                })
+            }
             (l, Type::Overload(overload)) => {
                 let l_gradual = sig_is_gradual_variadic(l);
                 let result = all(overload.signatures.iter(), |u| {
