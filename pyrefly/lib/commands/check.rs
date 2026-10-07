@@ -320,6 +320,9 @@ struct OutputArgs {
     /// Generate a Glean-compatible JSON file for each module
     #[arg(long, value_name = "OUTPUT_FILE")]
     report_glean: Option<PathBuf>,
+    /// Make each module's file the Glean ownership unit of its facts in the Glean report.
+    #[arg(long, requires = "report_glean")]
+    report_glean_ownership: bool,
     /// Generate a Pysa-compatible JSON file for each module
     #[arg(long, value_name = "OUTPUT_FILE")]
     report_pysa: Option<PathBuf>,
@@ -488,6 +491,7 @@ impl OutputArgs {
             dependency_graph,
             report_timings,
             report_glean,
+            report_glean_ownership,
             report_pysa,
             report_pysa_format,
             report_demand_tree,
@@ -531,6 +535,7 @@ impl OutputArgs {
             || dependency_graph.is_some()
             || report_timings.is_some()
             || report_glean.is_some()
+            || *report_glean_ownership
             || report_pysa.is_some()
             || !matches!(report_pysa_format, report::pysa::PysaFormat::Capnp)
             || report_demand_tree.is_some()
@@ -2253,7 +2258,7 @@ impl CheckArgs {
                 let module_hash = blake3::hash(handle.path().to_string().as_bytes());
                 fs_anyhow::write(
                     &glean.join(format!("{}.json", module_hash)),
-                    report::glean::glean(transaction, handle),
+                    report::glean::glean(transaction, handle, self.output.report_glean_ownership),
                 )?;
             }
         }
