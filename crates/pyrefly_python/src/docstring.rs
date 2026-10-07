@@ -292,13 +292,12 @@ fn strip_one_trailing_colon(line: &str) -> String {
     format!("{before_colon}{trailing}")
 }
 
-/// Drop a fixed number of leading spaces for lines inside code fences.
+/// Drop up to `indent` leading spaces for lines inside code fences.
 fn strip_code_indent(line: &str, indent: usize) -> String {
     if line.trim().is_empty() {
         return String::new();
     }
-    let start = indent.min(line.len());
-    line[start..].to_owned()
+    strip_leading_spaces(line, indent).to_owned()
 }
 
 /// Dedent a docstring line while keeping the first line intact.
@@ -306,7 +305,14 @@ fn dedent_docstring_line<'a>(line: &'a str, min_indent: usize, is_first: bool) -
     if is_first {
         return line;
     }
-    &line[min_indent.min(line.len())..]
+    strip_leading_spaces(line, min_indent)
+}
+
+/// Remove at most `max` leading spaces. A line may have fewer leading spaces than the indentation
+/// being removed (e.g. a code block line that is less indented than the line that opened the
+/// block), and since spaces are single-byte, the cut always lands on a char boundary.
+fn strip_leading_spaces(line: &str, max: usize) -> &str {
+    &line[leading_space_count(line).min(max)..]
 }
 
 /// Format a non-code line by handling blockquotes and preserving leading spaces.
@@ -679,6 +685,22 @@ mod tests {
     #[test]
     fn test_docstring_panic() {
         Docstring::clean(" F\n\u{85}");
+    }
+
+    #[test]
+    fn test_docstring_code_block_line_less_indented_than_fence_starts_with_multibyte_char() {
+        assert_eq!(
+            Docstring::clean("\"\"\"Tree::\n\n      root\n    ├── a\"\"\"").as_str(),
+            "Tree:  \n  \n```  \nroot  \n├── a  \n```"
+        );
+    }
+
+    #[test]
+    fn test_docstring_whitespace_only_line_with_multibyte_whitespace() {
+        assert_eq!(
+            Docstring::clean("\"\"\"x\n    a\n  \u{3000}\"\"\"").as_str(),
+            "x  \na  \n\u{3000}"
+        );
     }
 
     #[test]
