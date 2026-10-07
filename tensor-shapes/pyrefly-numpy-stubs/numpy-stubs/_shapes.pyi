@@ -231,3 +231,49 @@ def squeeze_shape(shape: IntTuple, axis: int | tuple[int, ...] | None) -> IntTup
     return dsl.IntTuple(
         (shape[index] for index in range(len(shape)) if index not in normalized)
     )
+
+@type_shape_dsl_function
+def reshape_shape(shape: IntTuple, target: IntTuple) -> IntTuple:
+    inferred = tuple(
+        (
+            1
+            for dimension in target
+            if dsl.is_concrete_int(dimension) and dimension == -1
+        )
+    )
+    if len(inferred) > 1:
+        return dsl.Invalid("reshape allows only one inferred dimension")
+    if any(dsl.is_concrete_int(dimension) and dimension < -1 for dimension in target):
+        return dsl.Invalid("reshape dimensions must be at least -1")
+    known_shape = dsl.IntTuple(
+        (
+            dimension
+            for dimension in target
+            if not (dsl.is_concrete_int(dimension) and dimension == -1)
+        )
+    )
+    known = dsl.prod(known_shape)
+    total = dsl.prod(shape)
+    if len(inferred) == 0:
+        if dsl.is_concrete_int(total) and dsl.is_concrete_int(known) and total != known:
+            return dsl.Invalid("reshape target element count does not match the input")
+        return target
+    if dsl.is_concrete_int(known):
+        if known == 0:
+            return dsl.Invalid("reshape cannot infer a dimension from zero elements")
+        if dsl.is_concrete_int(total) and total % known != 0:
+            return dsl.Invalid("reshape cannot infer an integral dimension")
+    return dsl.IntTuple(
+        (
+            total // known
+            if dsl.is_concrete_int(dimension) and dimension == -1
+            else dimension
+            for dimension in target
+        )
+    )
+
+@type_shape_dsl_function
+def reshape_varargs_shape(shape: IntTuple, target: IntTuple) -> IntTuple:
+    if len(target) == 0:
+        return dsl.Invalid("reshape expects at least one dimension")
+    return reshape_shape(shape, target)

@@ -189,6 +189,8 @@ from numpy._shapes import (
     matvec_shape,
     nonzero_shapes,
     reduce_shape,
+    reshape_shape,
+    reshape_varargs_shape,
     reverse_shape,
     squeeze_shape,
     stack_shape,
@@ -388,6 +390,7 @@ from shape_extensions import (
     index_shape,
     Int,
     IntTuple,
+    IntTupleOrList,
     IntTuples,
     IntVar,
     MapIntTuples,
@@ -893,7 +896,32 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         self,
     ) -> MapIntTuples[lambda S: ndarray[S, dtype[intp]], nonzero_shapes(Shape)]: ...
     repeat: Any
-    reshape: Any
+    @overload
+    def reshape(
+        self,
+        shape: None,
+        /,
+        *,
+        order: Literal["C", "F", "A"] = "C",
+        copy: py_bool | None = None,
+    ) -> ndarray[Shape, DType]: ...
+    @overload
+    def reshape[Target: IntTuple](
+        self,
+        shape: IntTupleOrList[Target],
+        /,
+        *,
+        order: Literal["C", "F", "A"] = "C",
+        copy: py_bool | None = None,
+    ) -> ndarray[reshape_shape(Shape, Target), DType]: ...
+    @overload
+    def reshape[Target: IntTuple](
+        self,
+        /,
+        *shape: *Target,
+        order: Literal["C", "F", "A"] = "C",
+        copy: py_bool | None = None,
+    ) -> ndarray[reshape_varargs_shape(Shape, Target), DType]: ...
     @overload
     def searchsorted[N: IntVar](
         self: ndarray[[N]],

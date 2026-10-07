@@ -188,6 +188,26 @@ def test_ndarray_searchsorted() -> None:
         sorted_array.searchsorted(3, side="middle")  # E: No matching overload
 
 
+def test_ndarray_reshape() -> None:
+    array = np.ones((2, 3))
+
+    assert_shape(array.reshape((3, 2)).shape, (3, 2))
+    assert_shape(array.reshape([3, 2]).shape, (3, 2))
+    assert_shape(array.reshape(3, 2).shape, (3, 2))
+    assert_shape(array.reshape(6).shape, (6,))
+    assert_shape(array.reshape((-1, 2)).shape, (3, 2))
+    assert_shape(array.reshape(3, -1).shape, (3, 2))
+    assert_shape(array.reshape(None).shape, (2, 3))
+    assert_shape(array.reshape((3, 2), order="F", copy=True).shape, (3, 2))
+
+    if TYPE_CHECKING:
+        array.reshape()  # E: reshape expects at least one dimension
+        array.reshape((5, 2))  # E: reshape target element count
+        array.reshape((-1, -1))  # E: reshape allows only one inferred dimension
+        array.reshape((-2, 3))  # E: reshape dimensions must be at least -1
+        array.reshape((0, -1))  # E: reshape cannot infer a dimension
+
+
 def test_ndarray_mutating_methods() -> None:
     a = np.ones((2, 3))
 
