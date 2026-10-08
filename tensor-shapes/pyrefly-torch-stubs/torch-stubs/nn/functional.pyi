@@ -2415,9 +2415,36 @@ def grouped_mm[G: IntVar, M: IntVar, K1: IntVar, K2: IntVar, N: IntVar](
     bias: Tensor | None = None,
     out_dtype: DType | None = None,
 ) -> Tensor[[G, M, N]]: ...
-
-multi_head_attention_forward: Any
-
+def multi_head_attention_forward[QueryShape: IntTuple, ProjectionShape: IntTuple](
+    query: Tensor[QueryShape],
+    key: Tensor,
+    value: Tensor,
+    embed_dim_to_check: int,
+    num_heads: int,
+    in_proj_weight: Tensor | None,
+    in_proj_bias: Tensor | None,
+    bias_k: Tensor | None,
+    bias_v: Tensor | None,
+    add_zero_attn: bool,
+    dropout_p: float,
+    out_proj_weight: Tensor[ProjectionShape],
+    out_proj_bias: Tensor | None,
+    training: bool = True,
+    key_padding_mask: Tensor | None = None,
+    need_weights: bool = True,
+    attn_mask: Tensor | None = None,
+    use_separate_proj_weight: bool = False,
+    q_proj_weight: Tensor | None = None,
+    k_proj_weight: Tensor | None = None,
+    v_proj_weight: Tensor | None = None,
+    static_k: Tensor | None = None,
+    static_v: Tensor | None = None,
+    average_attn_weights: bool = True,
+    is_causal: bool = False,
+) -> tuple[
+    Tensor[gufunc_broadcast("(e),(o,e)->(o)", tuple[QueryShape, ProjectionShape])],
+    Tensor | None,
+]: ...
 @overload
 def multilabel_soft_margin_loss[
     Batch: IntTuple,

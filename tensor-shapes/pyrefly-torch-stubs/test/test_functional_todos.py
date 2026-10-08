@@ -450,7 +450,107 @@ def test_scaled_mm_cpu_shapes() -> None:
     )
 
 
+def test_multi_head_attention_forward_shapes() -> None:
+    query = torch.ones((3, 2, 8))
+    key = torch.ones((5, 2, 8))
+    in_proj_weight = torch.cat((torch.eye(8),) * 3)
+    out_proj_weight = torch.ones((6, 8))
+
+    output, averaged = F.multi_head_attention_forward(
+        query,
+        key,
+        key,
+        8,
+        2,
+        in_proj_weight,
+        None,
+        None,
+        None,
+        False,
+        0.0,
+        out_proj_weight,
+        None,
+        training=False,
+    )
+    assert_shape(output.shape, (3, 2, 6))
+    assert averaged is not None
+    assert averaged.shape == (2, 3, 5)
+
+    output, per_head = F.multi_head_attention_forward(
+        torch.ones((3, 8)),
+        torch.ones((5, 8)),
+        torch.ones((5, 8)),
+        8,
+        2,
+        in_proj_weight,
+        None,
+        None,
+        None,
+        False,
+        0.0,
+        out_proj_weight,
+        None,
+        training=False,
+        average_attn_weights=False,
+    )
+    assert_shape(output.shape, (3, 6))
+    assert per_head is not None
+    assert per_head.shape == (2, 3, 5)
+
+    output, weights = F.multi_head_attention_forward(
+        query,
+        key,
+        key,
+        8,
+        2,
+        in_proj_weight,
+        None,
+        None,
+        None,
+        False,
+        0.0,
+        out_proj_weight,
+        None,
+        training=False,
+        need_weights=False,
+    )
+    assert_shape(output.shape, (3, 2, 6))
+    assert weights is None
+
+
 if TYPE_CHECKING:  # noqa: C901
+
+    def check_multi_head_attention_forward_shapes[
+        Target: IntVar,
+        Batch: IntVar,
+        Embedding: IntVar,
+        Source: IntVar,
+        Output: IntVar,
+    ](
+        query: Tensor[[Target, Batch, Embedding]],
+        key: Tensor[[Source, Batch, Embedding]],
+        in_proj_weight: Tensor,
+        out_proj_weight: Tensor[[Output, Embedding]],
+        embedding_dim: int,
+        heads: int,
+    ) -> None:
+        output, weights = F.multi_head_attention_forward(
+            query,
+            key,
+            key,
+            embedding_dim,
+            heads,
+            in_proj_weight,
+            None,
+            None,
+            None,
+            False,
+            0.0,
+            out_proj_weight,
+            None,
+        )
+        assert_type(output, Tensor[[Target, Batch, Output]])
+        assert_type(weights, Tensor | None)
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
         sequence: Tensor[[B, 3, 12]],
