@@ -476,7 +476,7 @@ type _ArrayIndex = (
     | ndarray
     | tuple[_BasicIndex | _IndexScalar | _IndexSequence | ndarray, ...]
 )
-type _ArrayScalar = None | bool | int | float | complex | str | bytes | generic
+type _ArrayScalar = None | py_bool | int | float | complex | str | bytes | generic
 
 __version__: Final[str]
 e: Final[float]
@@ -1496,9 +1496,9 @@ def array[Shape: _Shape, DType](
     object: ndarray[Shape, DType],
     dtype: None = None,
     *,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     order: str | None = None,
-    subok: bool = ...,
+    subok: py_bool = ...,
     ndmin: Literal[0] = 0,
     like: None = None,
 ) -> ndarray[Shape, DType]: ...
@@ -1507,9 +1507,9 @@ def array[Shape: _Shape](
     object: ndarray[Shape, Any],
     dtype: Any,
     *,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     order: str | None = None,
-    subok: bool = ...,
+    subok: py_bool = ...,
     ndmin: Literal[0] = 0,
     like: None = None,
 ) -> ndarray[Shape]: ...
@@ -1518,9 +1518,9 @@ def array[Shape: _Shape = []](
     object: _ArrayScalar | RegularNestedList[Shape, _ArrayScalar],
     dtype: Any = ...,
     *,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     order: str | None = None,
-    subok: bool = ...,
+    subok: py_bool = ...,
     ndmin: Literal[0] = 0,
     like: None = None,
 ) -> ndarray[Shape]: ...
@@ -1529,9 +1529,9 @@ def array(
     object: Any,
     dtype: Any = ...,
     *,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     order: str | None = None,
-    subok: bool = ...,
+    subok: py_bool = ...,
     ndmin: int = ...,
     like: None = None,
 ) -> ndarray[IntTuple]: ...
@@ -1540,9 +1540,9 @@ def array(
     object: Any,
     dtype: Any = ...,
     *,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     order: str | None = None,
-    subok: bool = ...,
+    subok: py_bool = ...,
     ndmin: int = ...,
     like: Any,
 ) -> Any: ...
@@ -1553,7 +1553,7 @@ def asarray[Shape: _Shape, DType](
     order: str | None = None,
     *,
     device: Any = ...,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     like: None = None,
 ) -> ndarray[Shape, DType]: ...
 @overload
@@ -1563,7 +1563,7 @@ def asarray[Shape: _Shape](
     order: str | None = None,
     *,
     device: Any = ...,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     like: None = None,
 ) -> ndarray[Shape]: ...
 @overload
@@ -1573,7 +1573,7 @@ def asarray[Shape: _Shape = []](
     order: str | None = None,
     *,
     device: Any = ...,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     like: None = None,
 ) -> ndarray[Shape]: ...
 @overload
@@ -1583,7 +1583,7 @@ def asarray(
     order: str | None = None,
     *,
     device: Any = ...,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     like: None = None,
 ) -> ndarray[IntTuple]: ...
 @overload
@@ -1593,7 +1593,7 @@ def asarray(
     order: str | None = None,
     *,
     device: Any = ...,
-    copy: bool | None = ...,
+    copy: py_bool | None = ...,
     like: Any,
 ) -> Any: ...
 def round[Shape: _Shape](x: ndarray[Shape]) -> ndarray[Shape]: ...
@@ -1860,10 +1860,22 @@ def identity[N: IntVar](
     n: Int[N], dtype: Any, *, like: Any = ...
 ) -> ndarray[[N, N]]: ...
 
-# TODO(stroxler): Complete the remaining scalar branches and aliases.
+bool = bool_
 
-bool: Any
-broadcast: Any
+class broadcast:
+    def __new__(cls, *args: ArrayLike) -> broadcast: ...
+    def __init__(self, *args: ArrayLike) -> None: ...
+    index: int
+    iters: tuple[flatiter[Any], ...]
+    nd: int
+    ndim: int
+    numiter: int
+    shape: tuple[int, ...]
+    size: int
+    def __iter__(self) -> broadcast: ...
+    def __next__(self) -> tuple[Any, ...]: ...
+    def reset(self) -> None: ...
+
 byte = int8
 cdouble = complex128
 csingle = complex64

@@ -67,6 +67,21 @@ def test_flexible_and_datetime_scalar_hierarchy() -> None:
     assert issubclass(np.timedelta64, np.signedinteger)
 
 
+def test_bool_alias_and_broadcast_iterator() -> None:
+    left = np.ones((2, 1))
+    right = np.ones((1, 3))
+    result = np.broadcast(left, right)
+
+    assert_shape(left.shape, (2, 1))
+    assert_type(np.bool, type[np.bool_])
+    assert np.bool is np.bool_
+    assert_type(result.shape, tuple[int, ...])
+    assert result.shape == (2, 3)
+    assert result.size == 6
+    assert len(next(result)) == 2
+    assert_type(result.reset(), None)
+
+
 def test_ones_supports_other_ranks() -> None:
     assert_shape(np.ones(()).shape, ())
     assert_shape(np.ones((2, 3, 4)).shape, (2, 3, 4))
