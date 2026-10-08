@@ -80,6 +80,7 @@ class Array[Shape: _Shape = _Shape]:
     @overload
     # JAX accepts array operands. The structural, tuple, and list-literal arms also provide
     # gradual compatibility for values that JAX may reject at runtime.
+    # TODO(stroxler): Reject invalid index dtypes and incompatible advanced-index shapes.
     def __getitem__(
         self,
         index: _BasicIndex | _ArrayIndex | tuple[_BasicIndex | _ArrayIndex, ...],
@@ -323,6 +324,7 @@ class Array[Shape: _Shape = _Shape]:
         *,
         total_repeat_length: None = None,
     ) -> Array[repeat_shape(Shape, Repeats, Axis)]: ...
+    # TODO(stroxler): Separate dynamic repeat counts from invalid concrete counts and axes.
     @overload
     def repeat(
         self,
@@ -605,6 +607,7 @@ class Array[Shape: _Shape = _Shape]:
         axis1: Axis1 = 0,
         axis2: Axis2 = 1,
     ) -> Array[diagonal_shape(Shape, Offset, Axis1, Axis2)]: ...
+    # TODO(stroxler): Check whether this fallback masks invalid concrete axes.
     @overload
     def diagonal(
         self,
@@ -625,6 +628,7 @@ class Array[Shape: _Shape = _Shape]:
         dtype: DTypeLike | None = None,
         out: None = None,
     ) -> Array[trace_shape(Shape, Offset, Axis1, Axis2)]: ...
+    # TODO(stroxler): Check whether this fallback masks invalid concrete axes.
     @overload
     def trace(
         self,
@@ -725,6 +729,7 @@ class Array[Shape: _Shape = _Shape]:
         out: Any = None,
         mode: str = "raise",
     ) -> Array[Shape]: ...
+    # TODO(stroxler): Model broadcast choices without admitting incompatible shapes.
     @overload
     def choose(
         self,
@@ -758,6 +763,7 @@ class Array[Shape: _Shape = _Shape]:
         indices_are_sorted: bool = False,
         fill_value: Any = None,
     ) -> Array[take_shape(Shape, IdxShape, Axis)]: ...
+    # TODO(stroxler): Narrow the catchall so invalid known axes and indices stay visible.
     @overload
     def take(
         self,
@@ -779,6 +785,7 @@ class Array[Shape: _Shape = _Shape]:
         size: Size,
         fill_value: Any = 0,
     ) -> Array[compress_shape(Shape, Size, Axis)]: ...
+    # TODO(stroxler): Preserve unaffected axes when size is unknown and validate the axis.
     @overload
     def compress(
         self,

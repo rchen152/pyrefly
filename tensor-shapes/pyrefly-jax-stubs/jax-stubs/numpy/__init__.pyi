@@ -968,6 +968,8 @@ def diagonal[
     axis1: Axis1 = 0,
     axis2: Axis2 = 1,
 ) -> _Array[diagonal_shape(Shape, Offset, Axis1, Axis2)]: ...
+
+# TODO(stroxler): Check whether this fallback masks invalid concrete axes.
 @overload
 def diagonal(
     a: _ArrayLike[Any],
@@ -1071,6 +1073,8 @@ def trace[
     dtype: DTypeLike | None = None,
     out: None = None,
 ) -> _Array[trace_shape(Shape, Offset, Axis1, Axis2)]: ...
+
+# TODO(stroxler): Check whether this fallback masks invalid concrete axes.
 @overload
 def trace(
     a: _ArrayLike[Any],
@@ -1242,6 +1246,8 @@ def concatenate[Shapes: IntTuples, Axis: Flag[int] = 0](
     axis: Axis = 0,
     dtype: DTypeLike | None = None,
 ) -> _Array[concatenate_shape(Shapes, Axis)]: ...
+
+# TODO(stroxler): Support dynamic sequences without hiding known shape mismatches.
 @overload
 def concatenate(
     arrays: Sequence[_ArrayLike[Any]] | _ArrayLike[Any],
@@ -1255,6 +1261,8 @@ def concat[Shapes: IntTuples, Axis: Flag[int] = 0](
     *,
     axis: Axis = 0,
 ) -> _Array[concatenate_shape(Shapes, Axis)]: ...
+
+# TODO(stroxler): Support dynamic sequences without hiding known shape mismatches.
 @overload
 def concat(
     arrays: Sequence[_ArrayLike[Any]] | _Array[Any] | np.ndarray[Any],
@@ -1461,6 +1469,8 @@ def repeat[
     *,
     total_repeat_length: None = None,
 ) -> _Array[repeat_shape(Shape, Repeats, Axis)]: ...
+
+# TODO(stroxler): Separate dynamic repeat counts from invalid concrete counts and axes.
 @overload
 def repeat(
     a: _ArrayLike[Any],
@@ -2688,6 +2698,8 @@ def choose[Shape: _Shape = []](
     out: Any = None,
     mode: str = "raise",
 ) -> _Array[Shape]: ...
+
+# TODO(stroxler): Model broadcast choices without admitting incompatible shapes.
 @overload
 def choose(
     a: _ArrayLike[Any],
@@ -2921,6 +2933,8 @@ def compress[Size: Flag[int], Shape: _Shape = [], Axis: Flag[int | None] = None]
     fill_value: Any = 0,
     out: None = None,
 ) -> _Array[compress_shape(Shape, Size, Axis)]: ...
+
+# TODO(stroxler): Preserve unaffected axes when size is unknown and validate the axis.
 @overload
 def compress[Shape: _Shape = [], Axis: Flag[int | None] = None](
     condition: _ArrayLike[Any],
