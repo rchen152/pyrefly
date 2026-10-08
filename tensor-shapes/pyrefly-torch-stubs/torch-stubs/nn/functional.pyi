@@ -2380,7 +2380,79 @@ def gaussian_nll_loss[Input: IntTuple, Target: IntTuple, Reduction: Flag[str] = 
 
 grouped_mm: Any
 multi_head_attention_forward: Any
-multilabel_soft_margin_loss: Any
+
+@overload
+def multilabel_soft_margin_loss[
+    Batch: IntTuple,
+    Classes: IntVar,
+    SizeAverage: Flag[bool | None],
+    Reduce: Flag[bool | None],
+    Reduction: Flag[str],
+](
+    input: Tensor[[*Batch, Classes]],
+    target: Tensor[[*Batch, Classes]],
+    weight: Tensor[[Classes]] | Tensor[[*Batch, Classes]] | None = None,
+    size_average: SizeAverage = None,
+    reduce: Reduce = None,
+    reduction: Reduction = "mean",
+) -> Tensor[loss_shape(Batch, Reduction, SizeAverage, Reduce)]: ...
+
+# TODO(stroxler): Check input, target, and weight shapes in the dynamic fallback;
+# a broad Tensor overload otherwise accepts incompatible concrete dimensions.
+@overload
+def multilabel_soft_margin_loss[
+    SizeAverage: Flag[bool | None],
+    Reduce: Flag[bool | None],
+    Reduction: Flag[str],
+](
+    input: Tensor,
+    target: Tensor,
+    weight: Tensor | None = None,
+    size_average: SizeAverage = None,
+    reduce: Reduce = None,
+    reduction: Reduction = "mean",
+) -> Tensor[loss_shape(IntTuple, Reduction, SizeAverage, Reduce)]: ...
+
 scaled_grouped_mm: Any
 scaled_mm: Any
-triplet_margin_with_distance_loss: Any
+
+@overload
+def triplet_margin_with_distance_loss[
+    Anchor: IntTuple,
+    Positive: IntTuple,
+    Negative: IntTuple,
+    Reduction: Flag[str],
+](
+    anchor: Tensor[Anchor],
+    positive: Tensor[Positive],
+    negative: Tensor[Negative],
+    *,
+    distance_function: None = None,
+    margin: float = 1.0,
+    swap: bool = False,
+    reduction: Reduction = "mean",
+) -> Tensor[
+    loss_shape(
+        broadcast(
+            pairwise_distance_shape(Anchor, Positive, broadcast(Anchor, Positive)),
+            pairwise_distance_shape(Anchor, Negative, broadcast(Anchor, Negative)),
+        ),
+        Reduction,
+        None,
+        None,
+    )
+]: ...
+
+# TODO(stroxler): Model the callback result shape so a custom distance can be
+# reduced without a gradual Tensor overload that hides operand shape errors.
+@overload
+def triplet_margin_with_distance_loss[Reduction: Flag[str] = "mean"](
+    anchor: Tensor,
+    positive: Tensor,
+    negative: Tensor,
+    *,
+    distance_function: Callable[[Tensor, Tensor], Tensor],
+    margin: float = 1.0,
+    swap: bool = False,
+    reduction: Reduction = "mean",
+) -> Tensor[loss_shape(IntTuple, Reduction, None, None)]: ...

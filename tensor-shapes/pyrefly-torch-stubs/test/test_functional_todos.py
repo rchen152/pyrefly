@@ -282,6 +282,89 @@ def test_gaussian_nll_loss_reductions() -> None:
     )
 
 
+def test_multilabel_soft_margin_loss_reductions() -> None:
+    scores = torch.ones((2, 4, 3))
+    labels = torch.zeros((2, 4, 3))
+    weight = torch.ones(3)
+
+    assert_shape(
+        F.multilabel_soft_margin_loss(scores, labels, weight, reduction="none").shape,
+        (2, 4),
+    )
+    assert_shape(F.multilabel_soft_margin_loss(scores, labels).shape, ())
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        assert_shape(
+            F.multilabel_soft_margin_loss(
+                scores, labels, weight, reduce=False, reduction="sum"
+            ).shape,
+            (2, 4),
+        )
+        assert_shape(
+            F.multilabel_soft_margin_loss(
+                scores,
+                labels,
+                weight,
+                size_average=False,
+                reduce=True,
+                reduction="none",
+            ).shape,
+            (),
+        )
+    assert_shape(
+        F.multilabel_soft_margin_loss(
+            scores[0, 0], labels[0, 0], reduction="none"
+        ).shape,
+        (),
+    )
+    assert_shape(
+        F.multilabel_soft_margin_loss(
+            scores[:, 0, :], labels[:, 0, :], torch.ones((4, 2, 3)), reduction="none"
+        ).shape,
+        IntTuple,
+        runtime=(4, 3),
+    )
+
+
+def test_triplet_margin_with_distance_loss_reductions() -> None:
+    anchor = torch.ones((2, 4, 3))
+    positive = torch.ones((2, 4, 3))
+    negative = torch.zeros((2, 4, 3))
+
+    assert_shape(
+        F.triplet_margin_with_distance_loss(
+            anchor, positive, negative, reduction="none"
+        ).shape,
+        (2, 4),
+    )
+    assert_shape(
+        F.triplet_margin_with_distance_loss(anchor, positive, negative).shape, ()
+    )
+    assert_shape(
+        F.triplet_margin_with_distance_loss(
+            anchor, positive, negative, reduction="sum"
+        ).shape,
+        (),
+    )
+    assert_shape(
+        F.triplet_margin_with_distance_loss(
+            anchor[0, 0], positive[0, 0], negative[0, 0], reduction="none"
+        ).shape,
+        (),
+    )
+    assert_shape(
+        F.triplet_margin_with_distance_loss(
+            anchor,
+            positive,
+            negative,
+            distance_function=lambda x, y: (x - y).abs(),
+            reduction="none",
+        ).shape,
+        IntTuple,
+        runtime=(2, 4, 3),
+    )
+
+
 def test_deprecated_upsample_shapes() -> None:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", UserWarning)
@@ -629,6 +712,81 @@ if TYPE_CHECKING:  # noqa: C901
         )
         F.gaussian_nll_loss(  # E: loss reduction must be 'none', 'mean', or 'sum'
             prediction, target, 1.0, reduction="median"
+        )
+
+    def check_multilabel_soft_margin_loss_shapes[B: IntVar, C: IntVar](
+        scores: Tensor[[B, 4, C]],
+        labels: Tensor[[B, 4, C]],
+        class_weights: Tensor[[C]],
+        extra_weight: Tensor[[5, B, 4, C]],
+        reduction: str,
+    ) -> None:
+        assert_type(
+            F.multilabel_soft_margin_loss(
+                scores, labels, class_weights, reduction="none"
+            ),
+            Tensor[[B, 4]],
+        )
+        assert_type(F.multilabel_soft_margin_loss(scores, labels), Tensor[[]])
+        assert_type(
+            F.multilabel_soft_margin_loss(
+                scores, labels, reduce=False, reduction="sum"
+            ),
+            Tensor[[B, 4]],
+        )
+        assert_type(
+            F.multilabel_soft_margin_loss(
+                scores, labels, class_weights, reduction=reduction
+            ),
+            Tensor[IntTuple],
+        )
+        assert_type(
+            F.multilabel_soft_margin_loss(
+                scores, labels, extra_weight, reduction="none"
+            ),
+            Tensor[IntTuple],
+        )
+        F.multilabel_soft_margin_loss(  # E: loss reduction must be 'none', 'mean', or 'sum'
+            scores, labels, extra_weight, reduction="median"
+        )
+
+    def check_triplet_margin_with_distance_shapes[B: IntVar, C: IntVar](
+        anchor: Tensor[[B, 4, C]],
+        positive: Tensor[[B, 4, C]],
+        negative: Tensor[[B, 4, C]],
+        reduction: str,
+    ) -> None:
+        assert_type(
+            F.triplet_margin_with_distance_loss(
+                anchor, positive, negative, reduction="none"
+            ),
+            Tensor[[B, 4]],
+        )
+        assert_type(
+            F.triplet_margin_with_distance_loss(anchor, positive, negative), Tensor[[]]
+        )
+        assert_type(
+            F.triplet_margin_with_distance_loss(
+                anchor, positive, negative, reduction=reduction
+            ),
+            Tensor[IntTuple],
+        )
+        assert_type(
+            F.triplet_margin_with_distance_loss(
+                anchor,
+                positive,
+                negative,
+                distance_function=lambda x, y: (x - y).abs(),
+                reduction="none",
+            ),
+            Tensor[IntTuple],
+        )
+        F.triplet_margin_with_distance_loss(  # E: loss reduction must be 'none', 'mean', or 'sum'
+            anchor,
+            positive,
+            negative,
+            distance_function=lambda x, y: (x - y).abs(),
+            reduction="median",
         )
 
     def check_deprecated_upsample_shapes[B: IntVar](
