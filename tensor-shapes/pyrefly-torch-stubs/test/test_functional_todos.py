@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import warnings
 from typing import assert_type, TYPE_CHECKING
 
 import torch
@@ -279,6 +280,30 @@ def test_gaussian_nll_loss_reductions() -> None:
         ).shape,
         (),
     )
+
+
+def test_deprecated_upsample_shapes() -> None:
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        sequence = torch.randn((2, 3, 4))
+        assert_shape(F.upsample_nearest(sequence, size=8).shape, (2, 3, 8))
+
+        image = torch.randn((2, 3, 4, 5))
+        assert_shape(F.upsample_nearest(image, size=(8, 9)).shape, (2, 3, 8, 9))
+        assert_shape(F.upsample_bilinear(image, size=(8, 9)).shape, (2, 3, 8, 9))
+        assert_shape(F.upsample_bilinear(image, scale_factor=2).shape, (2, 3, 8, 10))
+        assert tuple(F.upsample_bilinear(image, scale_factor=2.0).shape) == (
+            2,
+            3,
+            8,
+            10,
+        )
+
+        volume = torch.randn((2, 3, 4, 5, 6))
+        assert_shape(
+            F.upsample_nearest(volume, scale_factor=2).shape,
+            (2, 3, 8, 10, 12),
+        )
 
 
 if TYPE_CHECKING:  # noqa: C901
@@ -604,4 +629,33 @@ if TYPE_CHECKING:  # noqa: C901
         )
         F.gaussian_nll_loss(  # E: loss reduction must be 'none', 'mean', or 'sum'
             prediction, target, 1.0, reduction="median"
+        )
+
+    def check_deprecated_upsample_shapes[B: IntVar](
+        sequence: Tensor[[B, 3, 4]],
+        image: Tensor[[B, 3, 4, 5]],
+        volume: Tensor[[B, 3, 4, 5, 6]],
+    ) -> None:
+        assert_type(F.upsample_nearest(sequence, size=8), Tensor[[B, 3, 8]])
+        assert_type(F.upsample_nearest(image, size=(8, 9)), Tensor[[B, 3, 8, 9]])
+        assert_type(
+            F.upsample_nearest(image, scale_factor=2.0), Tensor[[B, 3, int, int]]
+        )
+        assert_type(F.upsample_bilinear(image, size=(8, 9)), Tensor[[B, 3, 8, 9]])
+        assert_type(F.upsample_bilinear(image, scale_factor=2), Tensor[[B, 3, 8, 10]])
+        assert_type(
+            F.upsample_bilinear(image, scale_factor=2.0), Tensor[[B, 3, int, int]]
+        )
+        assert_type(
+            F.upsample_nearest(volume, scale_factor=2),
+            Tensor[[B, 3, 8, 10, 12]],
+        )
+        F.upsample_nearest(image)  # E: interpolate requires size or scale_factor
+        F.upsample_nearest(image, size=8, scale_factor=2.0)  # E: No matching overload
+        F.upsample_bilinear(image, size=8, scale_factor=2.0)  # E: No matching overload
+        F.upsample_nearest(  # E: interpolate requires rank 3, 4, or 5
+            torch.ones((3, 4)), size=8
+        )
+        F.upsample_nearest(  # E: interpolate size must match the spatial rank
+            image, size=(2, 3, 4)
         )

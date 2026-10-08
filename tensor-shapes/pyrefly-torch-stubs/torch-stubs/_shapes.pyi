@@ -2002,6 +2002,16 @@ def adaptive_pool_gradual_shape(
     )
 
 @type_shape_dsl_function
+def upsample_fallback_shape(input_shape: IntTuple) -> IntTuple:
+    rank = len(input_shape)
+    if rank < 3 or rank > 5:
+        return dsl.Invalid("upsample_nearest requires 3D, 4D, or 5D input")
+    return dsl.concat(
+        input_shape[:2],
+        dsl.IntTuple((dsl.Int.gradual() for _ in range(rank - 2))),
+    )
+
+@type_shape_dsl_function
 def interpolate_scalar_shape(
     input: IntTuple, size: Int | None, scale_factor: Int | None
 ) -> IntTuple:

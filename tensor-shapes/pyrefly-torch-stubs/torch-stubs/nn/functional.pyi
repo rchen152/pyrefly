@@ -85,6 +85,7 @@ from torch._shapes import (
     pad_shape,
     pairwise_distance_shape,
     pool_shape,
+    upsample_fallback_shape,
 )
 from torch._torch_docs import (
     reproducibility_notes as reproducibility_notes,
@@ -1272,6 +1273,78 @@ def upsample(
     mode: str = "nearest",
     align_corners: bool | None = None,
 ) -> Tensor: ...
+@overload
+def upsample_nearest[
+    Shape: IntTuple,
+    Size: _Int | None = None,
+    Scale: _Int | None = None,
+](
+    input: Tensor[Shape], size: Size = None, scale_factor: Scale = None
+) -> Tensor[interpolate_scalar_shape(Shape, Size, Scale)]: ...
+@overload
+def upsample_nearest[Shape: IntTuple, Size: IntTuple](
+    input: Tensor[Shape], size: Size, scale_factor: None = None
+) -> Tensor[interpolate_size_shape(Shape, Size)]: ...
+@overload
+def upsample_nearest[Shape: IntTuple, Scale: IntTuple](
+    input: Tensor[Shape], size: None = None, scale_factor: Scale = ...
+) -> Tensor[interpolate_scale_shape(Shape, Scale)]: ...
+@overload
+def upsample_nearest[
+    Shape: IntTuple,
+](
+    input: Tensor[Shape],
+    size: int | list[int],
+    scale_factor: None = None,
+) -> Tensor[upsample_fallback_shape(Shape)]: ...
+@overload
+def upsample_nearest[
+    Shape: IntTuple,
+](
+    input: Tensor[Shape],
+    size: None = None,
+    scale_factor: int | float | tuple[int | float, ...] | list[float] = ...,
+) -> Tensor[upsample_fallback_shape(Shape)]: ...
+@overload
+def upsample_bilinear[B: IntVar, C: IntVar, H: IntVar, W: IntVar, O: IntVar](
+    input: Tensor[[B, C, H, W]], size: _Int[O], scale_factor: None = None
+) -> Tensor[[B, C, O, O]]: ...
+@overload
+def upsample_bilinear[
+    B: IntVar,
+    C: IntVar,
+    H: IntVar,
+    W: IntVar,
+    OutH: IntVar,
+    OutW: IntVar,
+](
+    input: Tensor[[B, C, H, W]],
+    size: tuple[_Int[OutH], _Int[OutW]],
+    scale_factor: None = None,
+) -> Tensor[[B, C, OutH, OutW]]: ...
+@overload
+def upsample_bilinear[B: IntVar, C: IntVar, H: IntVar, W: IntVar, S: IntVar](
+    input: Tensor[[B, C, H, W]], size: None = None, scale_factor: _Int[S] = ...
+) -> Tensor[[B, C, H * S, W * S]]: ...
+@overload
+def upsample_bilinear[B: IntVar, C: IntVar, H: IntVar, W: IntVar](
+    input: Tensor[[B, C, H, W]],
+    size: int | tuple[int, int] | list[int],
+    scale_factor: None = None,
+) -> Tensor[[B, C, int, int]]: ...
+
+# TODO(stroxler): Validate that either size or scale_factor is supplied and
+# enforce the two spatial dimensions of dynamic size and scale sequences.
+@overload
+def upsample_bilinear[B: IntVar, C: IntVar, H: IntVar, W: IntVar](
+    input: Tensor[[B, C, H, W]],
+    size: None = None,
+    scale_factor: int
+    | float
+    | tuple[int | float, int | float]
+    | list[float]
+    | None = None,
+) -> Tensor[[B, C, int, int]]: ...
 
 # Phase 2: Activation functions
 def relu[Shape: IntTuple](input: Tensor[Shape], inplace: bool = False) -> Tensor[Shape]:
@@ -2311,5 +2384,3 @@ multilabel_soft_margin_loss: Any
 scaled_grouped_mm: Any
 scaled_mm: Any
 triplet_margin_with_distance_loss: Any
-upsample_bilinear: Any
-upsample_nearest: Any
