@@ -30,6 +30,36 @@ def diag_extent(n: Int, k: int) -> Int:
     return n + k
 
 @type_shape_dsl_function
+def diagonal_shape(shape: IntTuple, axis1: int, axis2: int) -> IntTuple:
+    if len(shape) < 2:
+        return dsl.Invalid("diagonal requires at least two dimensions")
+    if (
+        axis1 < 0 - len(shape)
+        or axis1 >= len(shape)
+        or axis2 < 0 - len(shape)
+        or axis2 >= len(shape)
+    ):
+        return dsl.Invalid("diagonal axis out of bounds")
+    if axis1 < 0:
+        first = axis1 + len(shape)
+    else:
+        first = axis1 + 0
+    if axis2 < 0:
+        second = axis2 + len(shape)
+    else:
+        second = axis2 + 0
+    if first == second:
+        return dsl.Invalid("diagonal axes must be distinct")
+    outer = dsl.IntTuple(
+        (
+            shape[index]
+            for index in range(len(shape))
+            if index != first and index != second
+        )
+    )
+    return dsl.concat(outer, dsl.IntTuple((dsl.Int.gradual(),)))
+
+@type_shape_dsl_function
 def matmul_shape(left: IntTuple, right: IntTuple) -> IntTuple:
     if len(left) == 0 or len(right) == 0:
         return dsl.Invalid("matmul expects at least 1-D arrays")

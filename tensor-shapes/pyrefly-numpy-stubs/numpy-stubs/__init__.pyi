@@ -184,6 +184,7 @@ from numpy._core.shape_base import (
 from numpy._pytesttester import PytestTester
 from numpy._shapes import (
     diag_extent,
+    diagonal_shape,
     expand_dims_shape,
     matmul_shape,
     matvec_shape,
@@ -926,7 +927,10 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     ) -> Out: ...
     @property
     def ctypes(self) -> _ctypes[int]: ...
-    diagonal: Any
+    # TODO(stroxler): Compute the final extent from the axes and offset.
+    def diagonal[First: Flag[int], Second: Flag[int]](
+        self, offset: int = 0, axis1: First = 0, axis2: Second = 1
+    ) -> ndarray[diagonal_shape(Shape, First, Second), DType]: ...
     dot: Any
     @property
     def flat(self) -> flatiter[ndarray[Shape, DType]]: ...
