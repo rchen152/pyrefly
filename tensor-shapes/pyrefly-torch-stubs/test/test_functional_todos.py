@@ -390,24 +390,24 @@ def test_deprecated_upsample_shapes() -> None:
 
 
 def test_grouped_mm_cpu_shapes() -> None:
-    mat_a_2d = torch.ones((16, 16), dtype=torch.bfloat16)
-    mat_b_2d = torch.ones((16, 16), dtype=torch.bfloat16)
-    mat_a_3d = torch.ones((2, 16, 16), dtype=torch.bfloat16)
-    mat_b_3d = torch.ones((2, 16, 16), dtype=torch.bfloat16)
+    mat_a_2d = torch.ones((16, 32), dtype=torch.bfloat16)
+    mat_b_2d = torch.ones((32, 48), dtype=torch.bfloat16)
+    mat_a_3d = torch.ones((2, 16, 32), dtype=torch.bfloat16)
+    mat_b_3d = torch.ones((2, 32, 48), dtype=torch.bfloat16)
     offs = torch.tensor([8, 15], dtype=torch.int32)
 
-    assert_shape(F.grouped_mm(mat_a_3d, mat_b_3d).shape, (2, 16, 16))
+    assert_shape(F.grouped_mm(mat_a_3d, mat_b_3d).shape, (2, 16, 48))
     assert_shape(
         F.grouped_mm(mat_a_2d, mat_b_3d, offs=offs).shape,
-        (16, 16),
+        (16, 48),
     )
     assert_shape(
         F.grouped_mm(mat_a_3d, mat_b_2d, offs=offs).shape,
-        (16, 16),
+        (16, 48),
     )
     assert_shape(
         F.grouped_mm(mat_a_2d, mat_b_2d, offs=offs).shape,
-        (2, 16, 16),
+        (2, 16, 48),
     )
 
 

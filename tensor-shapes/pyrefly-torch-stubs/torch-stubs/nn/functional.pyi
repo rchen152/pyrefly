@@ -2357,8 +2357,6 @@ def unfold[C: IntVar, H: IntVar, W: IntVar](
     padding: int | tuple[int, int] = 0,
     stride: int | tuple[int, int] = 1,
 ) -> Tensor[[int, int]]: ...
-
-# TODO: Add precise types and signatures for the remaining public API.
 def ctc_loss[Shape: IntTuple, Reduction: Flag[str] = "mean"](
     log_probs: Tensor[Shape],
     targets: Tensor,
