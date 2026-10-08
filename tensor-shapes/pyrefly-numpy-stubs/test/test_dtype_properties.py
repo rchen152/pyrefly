@@ -57,6 +57,16 @@ def test_floating_and_complex_scalar_hierarchy() -> None:
     assert np.cdouble is np.complex128
 
 
+def test_flexible_and_datetime_scalar_hierarchy() -> None:
+    assert_shape(np.zeros((2,), dtype=np.object_).shape, (2,))
+    assert_type(np.flexible, type[np.flexible])
+    assert issubclass(np.bytes_, np.character)
+    assert issubclass(np.str_, np.flexible)
+    assert issubclass(np.void, np.generic)
+    assert issubclass(np.datetime64, np.generic)
+    assert issubclass(np.timedelta64, np.signedinteger)
+
+
 def test_ones_supports_other_ranks() -> None:
     assert_shape(np.ones(()).shape, ())
     assert_shape(np.ones((2, 3, 4)).shape, (2, 3, 4))
