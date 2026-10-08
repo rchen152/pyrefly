@@ -2450,8 +2450,71 @@ def multilabel_soft_margin_loss[
     reduction: Reduction = "mean",
 ) -> Tensor[loss_shape(IntTuple, Reduction, SizeAverage, Reduce)]: ...
 
-scaled_grouped_mm: Any
-
+# Grouped output rank follows the operand-rank combination.
+@overload
+def scaled_grouped_mm[G: IntVar, M: IntVar, K: IntVar, N: IntVar](
+    mat_a: Tensor[[G, M, K]],
+    mat_b: Tensor[[G, K, N]],
+    scale_a: Tensor | list[Tensor],
+    scale_recipe_a: ScalingType | list[ScalingType],
+    scale_b: Tensor | list[Tensor],
+    scale_recipe_b: ScalingType | list[ScalingType],
+    swizzle_a: SwizzleType | list[SwizzleType] | None = None,
+    swizzle_b: SwizzleType | list[SwizzleType] | None = None,
+    bias: Tensor | None = None,
+    offs: None = None,
+    output_dtype: DType | None = torch.bfloat16,
+    contraction_dim: list[int] | tuple[int, ...] = (),
+    use_fast_accum: bool = False,
+) -> Tensor[[G, M, N]]: ...
+@overload
+def scaled_grouped_mm[G: IntVar, M: IntVar, K: IntVar, N: IntVar](
+    mat_a: Tensor[[M, K]],
+    mat_b: Tensor[[G, K, N]],
+    scale_a: Tensor | list[Tensor],
+    scale_recipe_a: ScalingType | list[ScalingType],
+    scale_b: Tensor | list[Tensor],
+    scale_recipe_b: ScalingType | list[ScalingType],
+    swizzle_a: SwizzleType | list[SwizzleType] | None = None,
+    swizzle_b: SwizzleType | list[SwizzleType] | None = None,
+    bias: Tensor | None = None,
+    offs: Tensor[[G]] = ...,
+    output_dtype: DType | None = torch.bfloat16,
+    contraction_dim: list[int] | tuple[int, ...] = (),
+    use_fast_accum: bool = False,
+) -> Tensor[[M, N]]: ...
+@overload
+def scaled_grouped_mm[G: IntVar, M: IntVar, K: IntVar, N: IntVar](
+    mat_a: Tensor[[G, M, K]],
+    mat_b: Tensor[[K, N]],
+    scale_a: Tensor | list[Tensor],
+    scale_recipe_a: ScalingType | list[ScalingType],
+    scale_b: Tensor | list[Tensor],
+    scale_recipe_b: ScalingType | list[ScalingType],
+    swizzle_a: SwizzleType | list[SwizzleType] | None = None,
+    swizzle_b: SwizzleType | list[SwizzleType] | None = None,
+    bias: Tensor | None = None,
+    offs: Tensor[[G]] = ...,
+    output_dtype: DType | None = torch.bfloat16,
+    contraction_dim: list[int] | tuple[int, ...] = (),
+    use_fast_accum: bool = False,
+) -> Tensor[[M, N]]: ...
+@overload
+def scaled_grouped_mm[G: IntVar, M: IntVar, K: IntVar, L: IntVar, N: IntVar](
+    mat_a: Tensor[[M, K]],
+    mat_b: Tensor[[L, N]],
+    scale_a: Tensor | list[Tensor],
+    scale_recipe_a: ScalingType | list[ScalingType],
+    scale_b: Tensor | list[Tensor],
+    scale_recipe_b: ScalingType | list[ScalingType],
+    swizzle_a: SwizzleType | list[SwizzleType] | None = None,
+    swizzle_b: SwizzleType | list[SwizzleType] | None = None,
+    bias: Tensor | None = None,
+    offs: Tensor[[G]] = ...,
+    output_dtype: DType | None = torch.bfloat16,
+    contraction_dim: list[int] | tuple[int, ...] = (),
+    use_fast_accum: bool = False,
+) -> Tensor[[G, M, N]]: ...
 def scaled_mm[M: IntVar, K: IntVar, N: IntVar](
     mat_a: Tensor[[M, K]],
     mat_b: Tensor[[K, N]],

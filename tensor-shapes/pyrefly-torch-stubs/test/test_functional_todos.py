@@ -920,3 +920,57 @@ if TYPE_CHECKING:  # noqa: C901
             F.scaled_mm(mat_a, mat_b, [scale], [recipe], [scale], [recipe]),
             Tensor[[M, N]],
         )
+
+    def check_scaled_grouped_mm_shapes[
+        G: IntVar,
+        M: IntVar,
+        K: IntVar,
+        L: IntVar,
+        N: IntVar,
+    ](
+        mat_a_2d: Tensor[[M, K]],
+        mat_b_2d: Tensor[[K, N]],
+        mat_b_jagged: Tensor[[L, N]],
+        mat_a_3d: Tensor[[G, M, K]],
+        mat_b_3d: Tensor[[G, K, N]],
+        offs: Tensor[[G]],
+        scale: Tensor,
+        recipe: F.ScalingType,
+        bias: Tensor[[N]],
+    ) -> None:
+        assert_type(
+            F.scaled_grouped_mm(
+                mat_a_3d,
+                mat_b_3d,
+                [scale],
+                [recipe],
+                [scale],
+                [recipe],
+                swizzle_a=None,
+                swizzle_b=None,
+                bias=bias,
+                offs=None,
+                output_dtype=torch.float32,
+                contraction_dim=(),
+                use_fast_accum=False,
+            ),
+            Tensor[[G, M, N]],
+        )
+        assert_type(
+            F.scaled_grouped_mm(
+                mat_a_2d, mat_b_3d, scale, recipe, scale, recipe, offs=offs
+            ),
+            Tensor[[M, N]],
+        )
+        assert_type(
+            F.scaled_grouped_mm(
+                mat_a_3d, mat_b_2d, scale, recipe, scale, recipe, offs=offs
+            ),
+            Tensor[[M, N]],
+        )
+        assert_type(
+            F.scaled_grouped_mm(
+                mat_a_2d, mat_b_jagged, scale, recipe, scale, recipe, offs=offs
+            ),
+            Tensor[[G, M, N]],
+        )
