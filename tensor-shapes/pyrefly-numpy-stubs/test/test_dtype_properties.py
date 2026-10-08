@@ -35,6 +35,16 @@ def test_signed_scalar_hierarchy() -> None:
     assert np.short is np.int16
 
 
+def test_unsigned_scalar_hierarchy() -> None:
+    assert_shape(np.zeros((2,), dtype=np.uint16).shape, (2,))
+    assert_type(np.unsignedinteger, type[np.unsignedinteger])
+    assert issubclass(np.uint8, np.unsignedinteger)
+    assert issubclass(np.uintp, np.integer)
+    assert np.ubyte is np.uint8
+    assert np.uintc is np.uint32
+    assert np.ushort is np.uint16
+
+
 def test_ones_supports_other_ranks() -> None:
     assert_shape(np.ones(()).shape, ())
     assert_shape(np.ones((2, 3, 4)).shape, (2, 3, 4))
