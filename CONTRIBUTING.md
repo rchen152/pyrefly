@@ -12,7 +12,7 @@ Welcome! We’re excited that you’re interested in contributing to Pyrefly. Wh
 
 To get started with contributing to Pyrefly:
 
-1. [Find](#choosing-what-to-work-on) and [claim](#repository-automation) an issue that you would like to fix. If you have encountered a problem with Pyrefly, it's perfectly acceptable to open and then claim your own issue! We recommend choosing a bug fix rather than a feature request and not claiming more than one issue to start.
+1. [Find](#choosing-what-to-work-on) and [claim](#repository-automation) an issue that you would like to fix. If you have encountered a problem with Pyrefly, it's perfectly acceptable to open and then claim your own issue! We recommend choosing a bug fix rather than a feature request for your first issue. If it's your first time contributing to Pyrefly, the issue claim bot will only allow you to hold one open issue at a time. This restriction is removed once you've had a contribution merged.
 1. As you work on the issue, feel free to hop over to the `#dev` channel in our [Discord](https://discord.com/invite/Cf7mFQtW7W) if you have any questions.
 1. If you find yourself needing to make multiple fixes or improvements, we strongly recommend [splitting your work](#splitting-a-pull-request) for faster reviews.
 1. When you're ready, follow our [pull request checklist](#making-a-pull-request) to submit your code for review.
@@ -47,11 +47,12 @@ To pick up an issue, comment `#claim` on it and the bot will assign it to you. W
 How it works:
 - `#claim` only works on **unassigned** issues. If the issue is already claimed by someone else, the bot leaves the existing assignee in place and tells you to coordinate with them — it won't reassign the issue to you. If it's already assigned to you, it just confirms that.
 - `#unclaim` only removes *your own* assignment, and only if you're currently assigned.
+- You can only hold one `good first issue` at a time. Until you've had a pull request merged, you can only hold one issue of any kind at a time.
 - Both commands are case-insensitive and can appear anywhere in a comment (e.g. "I'd like to work on this, #claim").
 - If the bot can't assign you automatically (GitHub only allows assigning users with repository access), it leaves a comment so a maintainer can assign you manually.
 - If you'd like to work on an already-`#claim`ed issue, please post a comment on the issue mentioning a maintainer. You may message us in the `#dev` channel of our Discord server if we don't respond to your issue comment after a few days. We generally ask that you wait until two weeks after the issue is claimed by the current contributor, and that there's little activity indicating progress on the issue before request reassignment.
 
-**Please note:** Claiming issues helps other contributors and maintainers see what is being worked on. If you do not claim an issue you're working on, multiple people may work on the same issue at the same time. This can lead to multiple PRs for the same task and increased review burden on maintainers. In cases where multiple PRs are opened for the same task, maintainers will prioritise reviewing the PR from the author who #claim-ed the issue. For issues marked with the `good-first-issue` tag, please only claim and work on one issue at a time to allow other newcomers to also work on issues.
+**Please note:** Claiming issues helps other contributors and maintainers see what is being worked on. If you do not claim an issue you're working on, multiple people may work on the same issue at the same time. This can lead to multiple PRs for the same task and increased review burden on maintainers. In cases where multiple PRs are opened for the same task, maintainers will prioritise reviewing the PR from the author who #claim-ed the issue. For issues marked with the `good first issue` tag, please only claim and work on one issue at a time to allow other newcomers to also work on issues.
 
 ## Developing Pyrefly
 
