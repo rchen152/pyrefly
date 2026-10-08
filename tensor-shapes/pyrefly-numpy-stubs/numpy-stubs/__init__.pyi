@@ -183,6 +183,7 @@ from numpy._core.shape_base import (
 )
 from numpy._pytesttester import PytestTester
 from numpy._shapes import (
+    compress_shape,
     diag_extent,
     diag_matrix_shape,
     diagonal_shape,
@@ -926,7 +927,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def tofile(self, fid: Any, sep: str = "", format: str = "%s") -> None: ...
     def tolist(self) -> Any: ...
 
-    # TODO(stroxler): Complete the shape rules for the remaining methods.
+    # TODO(stroxler): Model broadcast choices and condition-dependent compress lengths.
     @overload
     def choose(
         self,
@@ -942,13 +943,9 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         mode: Literal["raise", "wrap", "clip"] = "raise",
     ) -> Out: ...
     @overload
-    def compress(
-        self, condition: Sequence[int] | ndarray, axis: None = None, out: None = None
-    ) -> ndarray[[int], DType]: ...
-    @overload
-    def compress(
-        self, condition: Sequence[int] | ndarray, axis: int, out: None = None
-    ) -> ndarray[IntTuple, DType]: ...
+    def compress[Axis: Flag[int | None]](
+        self, condition: Sequence[int] | ndarray, axis: Axis = None, out: None = None
+    ) -> ndarray[compress_shape(Shape, Axis), DType]: ...
     @overload
     def compress[Out: ndarray](
         self,

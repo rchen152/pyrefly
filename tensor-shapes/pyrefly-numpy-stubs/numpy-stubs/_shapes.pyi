@@ -113,6 +113,16 @@ def take_shape(shape: IntTuple, indices: IntTuple, axis: int | None) -> IntTuple
     return dsl.Invalid("axis must be an integer or None")
 
 @type_shape_dsl_function
+def compress_shape(shape: IntTuple, axis: int | None) -> IntTuple:
+    indices = dsl.IntTuple((dsl.Int.gradual(),))
+    if axis is None:
+        return indices
+    if dsl.is_int_value(axis):
+        if len(shape) == 0 and (axis == 0 or axis == -1):
+            return indices
+    return take_shape(shape, indices, axis)
+
+@type_shape_dsl_function
 def diagonal_shape(
     shape: IntTuple, axis1: int, axis2: int, keep_diagonal: bool, offset: int
 ) -> IntTuple:

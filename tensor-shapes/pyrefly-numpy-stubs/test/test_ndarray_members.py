@@ -118,7 +118,27 @@ def test_ndarray_compress_and_repeat() -> None:
     array = np.arange(6).reshape((2, 3))
 
     assert_shape(array.compress([True, False, True]).shape, (int,), runtime=(2,))
+    assert_shape(array.compress([True, False], axis=0).shape, (int, 3), runtime=(1, 3))
+    assert_shape(array.compress([True, False], axis=-1).shape, (2, int), runtime=(2, 1))
+    assert_shape(array.compress([], axis=1).shape, (2, int), runtime=(2, 0))
+    assert_shape(np.array(7).compress([True], axis=0).shape, (int,), runtime=(1,))
+    assert_shape(np.array(7).compress([True], axis=-1).shape, (int,), runtime=(1,))
     assert_type(array.compress([True, False], axis=0).dtype, np.dtype[np.intp])
+    row_out = np.empty((1, 3), dtype=np.intp)
+    flat_out = np.empty((2,), dtype=np.intp)
+    assert_type(
+        array.compress([True, False], 0, row_out),
+        np.ndarray[[1, 3], np.dtype[np.intp]],
+    )
+    assert_type(
+        array.compress([True, False, True], out=flat_out),
+        np.ndarray[[2], np.dtype[np.intp]],
+    )
+
+    def dynamic_condition(condition: list[int]) -> None:
+        assert_shape(array.compress(condition, axis=1).shape, (2, int))
+        assert_shape(array.compress(condition).shape, (int,))
+
     assert_shape(array.repeat(2).shape, (12,))
     assert_type(array.repeat(2, axis=1).dtype, np.dtype[np.intp])
     assert array.compress([True, False], axis=0).shape == (1, 3)
@@ -142,6 +162,7 @@ def test_ndarray_compress_and_repeat() -> None:
         array.repeat([1, 2], axis=1)  # E: repeats must match the selected axis
         array.repeat([1, -1, 1], axis=1)  # E: repeats may not contain negative values
         array.compress([1], axis="first")  # E: No matching overload
+        array.compress([1], axis=2)  # E: axis out of bounds
 
 
 def test_ndarray_choose_and_take() -> None:
