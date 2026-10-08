@@ -965,10 +965,9 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     ) -> Out: ...
     @property
     def ctypes(self) -> _ctypes[int]: ...
-    # TODO(stroxler): Compute the final extent from the axes and offset.
-    def diagonal[First: Flag[int], Second: Flag[int]](
-        self, offset: int = 0, axis1: First = 0, axis2: Second = 1
-    ) -> ndarray[diagonal_shape(Shape, First, Second, True), DType]: ...
+    def diagonal[Offset: Flag[int], First: Flag[int], Second: Flag[int]](
+        self, offset: Offset = 0, axis1: First = 0, axis2: Second = 1
+    ) -> ndarray[diagonal_shape(Shape, First, Second, True, Offset), DType]: ...
     @overload
     def dot[N: IntVar](
         self: ndarray[[N], DType], b: ndarray[[N]], /, out: None = None
@@ -1159,7 +1158,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         axis2: Second = 1,
         dtype: Any = None,
         out: None = None,
-    ) -> ndarray[diagonal_shape(Shape, First, Second, False)]: ...
+    ) -> ndarray[diagonal_shape(Shape, First, Second, False, 0)]: ...
     @overload
     def trace[Out: ndarray](
         self,

@@ -177,9 +177,12 @@ def test_ndarray_choose_and_take() -> None:
 def test_ndarray_diagonal() -> None:
     array = np.ones((2, 3, 4))
 
-    assert_shape(array.diagonal().shape, (4, int), runtime=(4, 2))
-    assert_shape(array.diagonal(1, 1, 2).shape, (2, int), runtime=(2, 3))
-    assert_shape(array.diagonal(-1, 0, -1).shape, (3, int), runtime=(3, 1))
+    assert_shape(array.diagonal().shape, (4, 2))
+    assert_shape(array.diagonal(1, 1, 2).shape, (2, 3))
+    assert_shape(array.diagonal(-1, 0, -1).shape, (3, 1))
+    assert_shape(array.diagonal(3, 1, 2).shape, (2, 1))
+    assert_shape(array.diagonal(5, 1, 2).shape, (2, 0))
+    assert_shape(array.diagonal(1, 2, 1).shape, (2, 2))
     assert_type(array.diagonal().dtype, np.dtype[np.float64])
 
     if TYPE_CHECKING:

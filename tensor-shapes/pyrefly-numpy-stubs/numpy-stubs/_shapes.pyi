@@ -114,7 +114,7 @@ def take_shape(shape: IntTuple, indices: IntTuple, axis: int | None) -> IntTuple
 
 @type_shape_dsl_function
 def diagonal_shape(
-    shape: IntTuple, axis1: int, axis2: int, keep_diagonal: bool
+    shape: IntTuple, axis1: int, axis2: int, keep_diagonal: bool, offset: int
 ) -> IntTuple:
     if len(shape) < 2:
         return dsl.Invalid("diagonal requires at least two dimensions")
@@ -142,9 +142,44 @@ def diagonal_shape(
             if index != first and index != second
         )
     )
-    if keep_diagonal:
+    if not keep_diagonal:
+        return outer
+
+    first_extent = shape[first]
+    second_extent = shape[second]
+    zero_tuple = dsl.IntTuple((0,))
+    zero = zero_tuple[0]
+    offset_tuple = dsl.IntTuple((offset + 0,))
+    offset_extent = offset_tuple[0]
+    if offset == 0:
+        if first_extent == second_extent:
+            return dsl.concat(outer, dsl.IntTuple((first_extent,)))
+        if dsl.is_concrete_int(first_extent) and dsl.is_concrete_int(second_extent):
+            if first_extent < second_extent:
+                return dsl.concat(outer, dsl.IntTuple((first_extent,)))
+            return dsl.concat(outer, dsl.IntTuple((second_extent,)))
         return dsl.concat(outer, dsl.IntTuple((dsl.Int.gradual(),)))
-    return outer
+    if offset > 0:
+        limit = second_extent - offset_extent
+        if first_extent == limit:
+            return dsl.concat(outer, dsl.IntTuple((first_extent,)))
+        if dsl.is_concrete_int(first_extent) and dsl.is_concrete_int(limit):
+            if limit < zero:
+                return dsl.concat(outer, dsl.IntTuple((zero,)))
+            if first_extent < limit:
+                return dsl.concat(outer, dsl.IntTuple((first_extent,)))
+            return dsl.concat(outer, dsl.IntTuple((limit,)))
+        return dsl.concat(outer, dsl.IntTuple((dsl.Int.gradual(),)))
+    limit = first_extent + offset_extent
+    if limit == second_extent:
+        return dsl.concat(outer, dsl.IntTuple((second_extent,)))
+    if dsl.is_concrete_int(limit) and dsl.is_concrete_int(second_extent):
+        if limit < zero:
+            return dsl.concat(outer, dsl.IntTuple((zero,)))
+        if limit < second_extent:
+            return dsl.concat(outer, dsl.IntTuple((limit,)))
+        return dsl.concat(outer, dsl.IntTuple((second_extent,)))
+    return dsl.concat(outer, dsl.IntTuple((dsl.Int.gradual(),)))
 
 @type_shape_dsl_function
 def matmul_shape(left: IntTuple, right: IntTuple) -> IntTuple:
