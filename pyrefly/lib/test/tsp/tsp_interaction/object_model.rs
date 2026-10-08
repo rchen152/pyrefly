@@ -573,6 +573,11 @@ pub struct TspInteraction {
 
 impl TspInteraction {
     pub fn new() -> Self {
+        Self::with_config(None)
+    }
+
+    /// Starts a server as `pyrefly tsp --config <config>` would.
+    pub fn with_config(config: Option<PathBuf>) -> Self {
         init_test();
 
         let ((conn_server, server_reader), (conn_client, _client_reader)) = Connection::memory();
@@ -582,6 +587,7 @@ impl TspInteraction {
             indexing_mode: IndexingMode::LazyBlocking,
             workspace_indexing_limit: 0,
             transport: "stdio".to_owned(),
+            config,
         };
 
         let args = args.clone();
