@@ -887,7 +887,20 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def tolist(self) -> Any: ...
 
     # TODO(stroxler): Complete the shape rules for the remaining methods.
-    choose: Any
+    @overload
+    def choose(
+        self,
+        choices: ArrayLike,
+        out: None = None,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> ndarray[IntTuple]: ...
+    @overload
+    def choose[Out: ndarray](
+        self,
+        choices: ArrayLike,
+        out: Out,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> Out: ...
     @overload
     def compress(
         self, condition: Sequence[int] | ndarray, axis: None = None, out: None = None
@@ -987,7 +1000,71 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def swapaxes[First: Flag[int], Second: Flag[int]](
         self, axis1: First, axis2: Second, /
     ) -> ndarray[swapaxes_shape(Shape, First, Second), DType]: ...
-    take: Any
+    @overload
+    def take(
+        self,
+        indices: int | int32 | int64 | intp,
+        /,
+        axis: None = None,
+        out: None = None,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> generic: ...
+    @overload
+    def take(
+        self,
+        indices: int | int32 | int64 | intp,
+        /,
+        axis: int,
+        out: None = None,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> ndarray[IntTuple, DType]: ...
+    @overload
+    def take[Indices: IntTuple](
+        self,
+        indices: ndarray[Indices],
+        /,
+        axis: None = None,
+        out: None = None,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> ndarray[Indices, DType]: ...
+    @overload
+    def take(
+        self,
+        indices: Sequence[int],
+        /,
+        axis: None = None,
+        out: None = None,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> ndarray[[int], DType]: ...
+    @overload
+    def take(
+        self,
+        indices: Sequence[int] | ndarray,
+        /,
+        axis: int,
+        out: None = None,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> ndarray[IntTuple, DType]: ...
+    @overload
+    def take[Out: ndarray](
+        self,
+        indices: int | Sequence[int] | ndarray,
+        /,
+        axis: int | None,
+        out: Out,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> Out: ...
+    @overload
+    def take[Out: ndarray](
+        self,
+        indices: int | Sequence[int] | ndarray,
+        /,
+        axis: int | None = None,
+        *,
+        out: Out,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> Out: ...
+    # TODO(stroxler): Model insertion at `axis` and restrict index-array dtypes.
     trace: Any
     @overload
     def transpose(

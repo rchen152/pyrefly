@@ -129,6 +129,33 @@ def test_ndarray_compress_and_repeat() -> None:
         array.compress([1], axis="first")  # E: No matching overload
 
 
+def test_ndarray_choose_and_take() -> None:
+    indices = np.array([[0, 1], [1, 0]])
+    choices = (np.ones((2, 2)), np.zeros((2, 2)))
+    selected = indices.choose(choices)
+
+    assert_type(selected, np.ndarray[IntTuple])
+    assert selected.shape == (2, 2)
+    out = np.empty((2, 2))
+    assert_type(
+        indices.choose(choices, out=out), np.ndarray[[2, 2], np.dtype[np.float64]]
+    )
+    assert_shape(indices.take(np.array([[0, 1]])).shape, (1, 2))
+    assert_shape(indices.take([0, 1]).shape, (int,), runtime=(2,))
+    assert_type(indices.take(0), np.generic)
+    assert_type(
+        np.ones((2, 2), dtype=np.int32).take(0, axis=1).dtype, np.dtype[np.int32]
+    )
+    assert indices.take([0, 1], axis=0).shape == (2, 2)
+    assert_type(
+        indices.take([0, 1], axis=0, out=out), np.ndarray[[2, 2], np.dtype[np.float64]]
+    )
+
+    if TYPE_CHECKING:
+        indices.choose(choices, mode="invalid")  # E: No matching overload
+        indices.take([0], mode="invalid")  # E: No matching overload
+
+
 def test_ndarray_matrix_transpose_and_swapaxes() -> None:
     array = np.ones((2, 3, 4))
 
