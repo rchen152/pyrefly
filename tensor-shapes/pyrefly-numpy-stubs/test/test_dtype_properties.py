@@ -24,6 +24,17 @@ def check_floating_hierarchy_is_not_gradual() -> None:
     assert_type(np.floating, type[np.floating])
 
 
+def test_signed_scalar_hierarchy() -> None:
+    assert_shape(np.zeros((2,), dtype=np.int8).shape, (2,))
+    assert_type(np.signedinteger, type[np.signedinteger])
+    assert issubclass(np.int8, np.signedinteger)
+    assert issubclass(np.int32, np.integer)
+    assert issubclass(np.intp, np.number)
+    assert np.byte is np.int8
+    assert np.intc is np.int32
+    assert np.short is np.int16
+
+
 def test_ones_supports_other_ranks() -> None:
     assert_shape(np.ones(()).shape, ())
     assert_shape(np.ones((2, 3, 4)).shape, (2, 3, 4))

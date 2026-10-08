@@ -67,6 +67,15 @@ def test_paired_row_column_indexing_accepts_integer_dtypes() -> None:
     assert_shape(selected_int32.shape, (5,))
 
 
+def test_integer_scalar_indexing() -> None:
+    values = np.arange(3)
+
+    assert_shape(values[np.int8(1)].shape, IntTuple, runtime=())
+    assert values[np.int8(1)] == 1
+    assert values[np.int16(1)] == 1
+    assert values[np.longlong(1)] == 1
+
+
 def test_paired_row_column_indexing_uses_index_shape() -> None:
     logits = np.ones((5, 3))
     rows = np.arange(2)
