@@ -2377,8 +2377,45 @@ def gaussian_nll_loss[Input: IntTuple, Target: IntTuple, Reduction: Flag[str] = 
     eps: float = 1e-6,
     reduction: Reduction = "mean",
 ) -> Tensor[loss_shape(broadcast(Input, Target), Reduction, None, None)]: ...
+@overload
+def grouped_mm[G: IntVar, M: IntVar, K: IntVar, N: IntVar](
+    mat_a: Tensor[[G, M, K]],
+    mat_b: Tensor[[G, K, N]],
+    *,
+    offs: None = None,
+    bias: Tensor | None = None,
+    out_dtype: DType | None = None,
+) -> Tensor[[G, M, N]]: ...
+@overload
+def grouped_mm[G: IntVar, M: IntVar, K: IntVar, N: IntVar](
+    mat_a: Tensor[[M, K]],
+    mat_b: Tensor[[G, K, N]],
+    *,
+    offs: Tensor[[G]],
+    bias: Tensor | None = None,
+    out_dtype: DType | None = None,
+) -> Tensor[[M, N]]: ...
+@overload
+def grouped_mm[G: IntVar, M: IntVar, K: IntVar, N: IntVar](
+    mat_a: Tensor[[G, M, K]],
+    mat_b: Tensor[[K, N]],
+    *,
+    offs: Tensor[[G]],
+    bias: Tensor | None = None,
+    out_dtype: DType | None = None,
+) -> Tensor[[M, N]]: ...
 
-grouped_mm: Any
+# Both operands are partitioned by offs along their contraction dimensions.
+@overload
+def grouped_mm[G: IntVar, M: IntVar, K1: IntVar, K2: IntVar, N: IntVar](
+    mat_a: Tensor[[M, K1]],
+    mat_b: Tensor[[K2, N]],
+    *,
+    offs: Tensor[[G]],
+    bias: Tensor | None = None,
+    out_dtype: DType | None = None,
+) -> Tensor[[G, M, N]]: ...
+
 multi_head_attention_forward: Any
 
 @overload

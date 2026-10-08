@@ -389,6 +389,28 @@ def test_deprecated_upsample_shapes() -> None:
         )
 
 
+def test_grouped_mm_cpu_shapes() -> None:
+    mat_a_2d = torch.ones((16, 16), dtype=torch.bfloat16)
+    mat_b_2d = torch.ones((16, 16), dtype=torch.bfloat16)
+    mat_a_3d = torch.ones((2, 16, 16), dtype=torch.bfloat16)
+    mat_b_3d = torch.ones((2, 16, 16), dtype=torch.bfloat16)
+    offs = torch.tensor([8, 15], dtype=torch.int32)
+
+    assert_shape(F.grouped_mm(mat_a_3d, mat_b_3d).shape, (2, 16, 16))
+    assert_shape(
+        F.grouped_mm(mat_a_2d, mat_b_3d, offs=offs).shape,
+        (16, 16),
+    )
+    assert_shape(
+        F.grouped_mm(mat_a_3d, mat_b_2d, offs=offs).shape,
+        (16, 16),
+    )
+    assert_shape(
+        F.grouped_mm(mat_a_2d, mat_b_2d, offs=offs).shape,
+        (2, 16, 16),
+    )
+
+
 def test_scaled_mm_cpu_shapes() -> None:
     # The installed Torch exposes this dtype, but the top-level stub does not yet.
     float8_dtype = getattr(torch, "float8_e4m3fn")  # noqa: B009
@@ -856,6 +878,19 @@ if TYPE_CHECKING:  # noqa: C901
         F.upsample_nearest(  # E: interpolate size must match the spatial rank
             image, size=(2, 3, 4)
         )
+
+    def check_grouped_mm_shapes[G: IntVar, M: IntVar, K: IntVar, L: IntVar, N: IntVar](
+        mat_a_2d: Tensor[[M, K]],
+        mat_b_2d: Tensor[[K, N]],
+        mat_b_jagged: Tensor[[L, N]],
+        mat_a_3d: Tensor[[G, M, K]],
+        mat_b_3d: Tensor[[G, K, N]],
+        offs: Tensor[[G]],
+    ) -> None:
+        assert_type(F.grouped_mm(mat_a_3d, mat_b_3d), Tensor[[G, M, N]])
+        assert_type(F.grouped_mm(mat_a_2d, mat_b_3d, offs=offs), Tensor[[M, N]])
+        assert_type(F.grouped_mm(mat_a_3d, mat_b_2d, offs=offs), Tensor[[M, N]])
+        assert_type(F.grouped_mm(mat_a_2d, mat_b_jagged, offs=offs), Tensor[[G, M, N]])
 
     def check_scaled_mm_shapes[M: IntVar, K: IntVar, N: IntVar](
         mat_a: Tensor[[M, K]],
