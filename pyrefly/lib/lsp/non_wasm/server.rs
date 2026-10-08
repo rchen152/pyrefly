@@ -383,6 +383,9 @@ use crate::state::subscriber::PublishDiagnosticsSubscriber;
 use crate::state::subscriber::Subscriber;
 use crate::tsp::type_conversion::StdlibClasses;
 use crate::tsp::type_conversion::convert_type_with_resolvers;
+use crate::tsp::type_facts::TypeFact;
+use crate::tsp::type_facts::TypeFactsQuery;
+use crate::tsp::type_facts::type_fact;
 use crate::types::class::ClassDefIndex;
 use crate::types::class::ClassType;
 
@@ -560,6 +563,17 @@ pub trait TspInterface: Send + Sync + 'static {
         line: u32,
         character: u32,
     ) -> Option<tsp_types::Type>;
+
+    /// Answer every query in [`TypeFactsQuery`] order against one transaction.
+    /// `None` when `uri` is not a known file; a `None` entry when that query's
+    /// range has no type (or, for an expected-type query, no expectation).
+    fn type_facts<'a>(
+        &'a self,
+        ide_transaction_manager: &mut TransactionManager<'a>,
+        telemetry_event: &mut TelemetryEvent,
+        uri: &str,
+        queries: &[TypeFactsQuery],
+    ) -> Option<Vec<Option<TypeFact>>>;
 
     /// Resolve a URI to a filesystem path.
     ///
@@ -7600,6 +7614,43 @@ impl TspInterface for Server {
                     .get_expected_type_at(handle, position)
                     .or_else(|| transaction.get_type_at_preserving_declaration(handle, position))?;
                 Some(self.convert_type_in_transaction(transaction, handle, &ty))
+            },
+        )
+    }
+
+    fn type_facts<'a>(
+        &'a self,
+        ide_transaction_manager: &mut TransactionManager<'a>,
+        telemetry_event: &mut TelemetryEvent,
+        uri: &str,
+        queries: &[TypeFactsQuery],
+    ) -> Option<Vec<Option<TypeFact>>> {
+        self.with_query_transaction(
+            ide_transaction_manager,
+            telemetry_event,
+            uri,
+            |transaction, handle, notebook_cell| {
+                let module_info = transaction.get_module_info(handle)?;
+                let facts = queries
+                    .iter()
+                    .map(|query| {
+                        let start = module_info.from_lsp_position(query.range.start, notebook_cell);
+                        let ty = if query.expected {
+                            transaction.get_expected_type_at(handle, start)
+                        } else {
+                            let end = module_info.from_lsp_position(query.range.end, notebook_cell);
+                            // `TextRange::new` panics when `start > end`; an inverted
+                            // client range gets no fact instead of failing the batch.
+                            if start > end {
+                                return None;
+                            }
+                            transaction
+                                .get_computed_type_at_range(handle, TextRange::new(start, end))
+                        }?;
+                        Some(type_fact(transaction, handle, &ty))
+                    })
+                    .collect();
+                Some(facts)
             },
         )
     }

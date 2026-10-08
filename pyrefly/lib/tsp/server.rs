@@ -48,6 +48,8 @@ use crate::lsp::non_wasm::server::ServerCapabilitiesWithTypeHierarchy;
 use crate::lsp::non_wasm::server::TspInterface;
 use crate::lsp::non_wasm::server::capabilities;
 use crate::lsp::non_wasm::transaction_manager::TransactionManager;
+use crate::tsp::type_facts::TYPE_FACTS_METHOD;
+use crate::tsp::type_facts::TypeFactsParams;
 use crate::tsp::validation::internal_error;
 use crate::tsp::validation::invalid_params_error;
 use crate::tsp::validation::snapshot_outdated_error;
@@ -297,6 +299,31 @@ impl<T: TspInterface> TspServer<T> {
         }
     }
 
+    /// Answer a `pyrefly/typeFacts` request at the snapshot it names.
+    fn handle_type_facts<'a>(
+        &'a self,
+        ide_transaction_manager: &mut TransactionManager<'a>,
+        telemetry_event: &mut TelemetryEvent,
+        request: &Request,
+        reply: Reply,
+    ) {
+        let params = match serde_json::from_value::<TypeFactsParams>(request.params.clone()) {
+            Ok(params) => params,
+            Err(e) => {
+                reply.err(request.id.clone(), invalid_params_error(&e.to_string()));
+                return;
+            }
+        };
+        self.answer_at_snapshot(request.id.clone(), reply, params.snapshot, || {
+            Ok(self.inner().type_facts(
+                ide_transaction_manager,
+                telemetry_event,
+                &params.uri,
+                &params.queries,
+            ))
+        });
+    }
+
     /// Deserialize `serde_json::Value` params into [`GetTypeParams`], call the
     /// handler at the snapshot that the params name, and send the response.
     /// Shared by getDeclaredType, getComputedType, and getExpectedType.
@@ -344,6 +371,10 @@ impl<T: TspInterface> TspServer<T> {
             _ => None,
         };
         let result = if let Some(request) = tsp_request {
+            if request.method == TYPE_FACTS_METHOD {
+                self.handle_type_facts(ide_transaction_manager, telemetry_event, request, reply);
+                return Ok(ProcessEvent::Continue);
+            }
             match parse_tsp_request(request) {
                 Some(TSPRequests::ConnectionRequest { params, .. }) => {
                     self.handle_connection_request(request.id.clone(), params, reply);
