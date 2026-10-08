@@ -184,6 +184,7 @@ from numpy._core.shape_base import (
 from numpy._pytesttester import PytestTester
 from numpy._shapes import (
     diag_extent,
+    diag_matrix_shape,
     diagonal_shape,
     dot_shape,
     expand_dims_shape,
@@ -1627,17 +1628,16 @@ def fill_diagonal[N: IntVar, DType](
 def diag[N: IntVar, DType, K: Flag[int] = 0](
     v: ndarray[[N], DType], k: K = 0
 ) -> ndarray[[diag_extent(Int[N], K), diag_extent(Int[N], K)], DType]: ...
-
-# TODO(stroxler): Model the shape arithmetic here; we can do better than `int`.
 @overload
-def diag[M: IntVar, N: IntVar, DType](
-    v: ndarray[[M, N], DType], k: int = 0
-) -> ndarray[[int], DType]: ...
+def diag[M: IntVar, N: IntVar, DType, K: Flag[int] = 0](
+    v: ndarray[[M, N], DType], k: K = 0
+) -> ndarray[diag_matrix_shape(Int[M], Int[N], K), DType]: ...
 
 # Trailing fallback for ranks the precise overloads do not model, so their dtype survives
 # instead of degrading to `Any`. The parameter shape is a type variable rather than
 # `IntTuple`: a gradual parameter shape would also match known-rank arguments whose dtype is
 # gradual, and that ambiguity collapses their precise result to a gradual shape.
+# TODO(stroxler): Reject known-invalid ranks without losing unknown-rank dtype information.
 @overload
 def diag[S: _Shape, DType](
     v: ndarray[S, DType], k: int = 0

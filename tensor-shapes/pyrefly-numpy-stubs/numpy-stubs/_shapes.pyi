@@ -182,6 +182,14 @@ def diagonal_shape(
     return dsl.concat(outer, dsl.IntTuple((dsl.Int.gradual(),)))
 
 @type_shape_dsl_function
+def diag_matrix_shape(m: Int, n: Int, k: int) -> IntTuple:
+    shape = dsl.IntTuple((m, n))
+    axis1 = 0
+    axis2 = 1
+    keep_diagonal = True
+    return diagonal_shape(shape, axis1, axis2, keep_diagonal, k)
+
+@type_shape_dsl_function
 def matmul_shape(left: IntTuple, right: IntTuple) -> IntTuple:
     if len(left) == 0 or len(right) == 0:
         return dsl.Invalid("matmul expects at least 1-D arrays")
