@@ -2075,6 +2075,15 @@ def loss_shape(
         return unreduced_shape
     return dsl.IntTuple(())
 
+# CTC scores each example: `(T, N, C)` becomes `(N,)`, and `(T, C)` becomes a scalar.
+@type_shape_dsl_function
+def ctc_unreduced_shape(log_probs: IntTuple) -> IntTuple:
+    if len(log_probs) == 2:
+        return dsl.IntTuple(())
+    if len(log_probs) == 3:
+        return dsl.IntTuple((log_probs[1],))
+    return dsl.Invalid("ctc_loss requires 2D or 3D log probabilities")
+
 # NLL and cross-entropy score one class dimension away: `(N, C, *D)` becomes `(N, *D)`,
 # and an unbatched `(C,)` input becomes a scalar.
 @type_shape_dsl_function

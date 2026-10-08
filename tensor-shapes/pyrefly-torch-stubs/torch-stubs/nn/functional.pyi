@@ -12,7 +12,7 @@ import builtins
 import importlib as importlib
 import math as math
 import warnings as warnings
-from collections.abc import Callable as Callable
+from collections.abc import Callable as Callable, Sequence
 from typing import (
     Any,
     Literal,
@@ -25,6 +25,7 @@ import numpy as np
 import shape_extensions
 import torch as torch
 from shape_extensions import (
+    broadcast,
     Flag,
     gufunc_broadcast,
     Int as _Int,
@@ -72,6 +73,7 @@ from torch._shapes import (
     conv_transpose_shape,
     cosine_embedding_score_shape,
     cosine_similarity_shape,
+    ctc_unreduced_shape,
     fold_list_shape,
     fold_shape,
     fractional_pool_extent,
@@ -2284,8 +2286,25 @@ def unfold[C: IntVar, H: IntVar, W: IntVar](
 ) -> Tensor[[int, int]]: ...
 
 # TODO: Add precise types and signatures for the remaining public API.
-ctc_loss: Any
-gaussian_nll_loss: Any
+def ctc_loss[Shape: IntTuple, Reduction: Flag[str] = "mean"](
+    log_probs: Tensor[Shape],
+    targets: Tensor,
+    input_lengths: Tensor | Sequence[int],
+    target_lengths: Tensor | Sequence[int],
+    blank: int = 0,
+    reduction: Reduction = "mean",
+    zero_infinity: bool = False,
+) -> Tensor[loss_shape(ctc_unreduced_shape(Shape), Reduction, None, None)]: ...
+def gaussian_nll_loss[Input: IntTuple, Target: IntTuple, Reduction: Flag[str] = "mean"](
+    input: Tensor[Input],
+    target: Tensor[Target],
+    # TODO(stroxler): Check tensor variance geometry against the broadcast input.
+    var: Tensor | float,
+    full: bool = False,
+    eps: float = 1e-6,
+    reduction: Reduction = "mean",
+) -> Tensor[loss_shape(broadcast(Input, Target), Reduction, None, None)]: ...
+
 grouped_mm: Any
 multi_head_attention_forward: Any
 multilabel_soft_margin_loss: Any

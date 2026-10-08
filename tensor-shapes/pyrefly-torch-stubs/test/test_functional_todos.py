@@ -9,7 +9,7 @@ from typing import assert_type, TYPE_CHECKING
 
 import torch
 import torch.nn.functional as F
-from shape_extensions import assert_raises, assert_shape, Int, IntVar
+from shape_extensions import assert_raises, assert_shape, Int, IntTuple, IntVar
 from torch import Tensor
 
 
@@ -229,6 +229,56 @@ def test_unfold_channel_and_window_shapes() -> None:
     unbatched = F.unfold(image[0], 2, stride=2)
     assert_shape(unbatched.shape[:1], (12,))
     assert tuple(unbatched.shape) == (12, 20)
+
+
+def test_ctc_loss_reductions() -> None:
+    log_probs = F.log_softmax(torch.randn((4, 2, 3)), dim=-1)
+    targets = torch.tensor([[1, 2], [1, 1]])
+    input_lengths = [4, 4]
+    target_lengths = [2, 2]
+
+    assert_shape(
+        F.ctc_loss(
+            log_probs, targets, input_lengths, target_lengths, reduction="none"
+        ).shape,
+        (2,),
+    )
+    assert_shape(
+        F.ctc_loss(log_probs, targets, input_lengths, target_lengths).shape, ()
+    )
+    assert_shape(
+        F.ctc_loss(
+            log_probs, targets, input_lengths, target_lengths, reduction="sum"
+        ).shape,
+        (),
+    )
+    assert_shape(
+        F.ctc_loss(
+            log_probs[:, 0, :],
+            torch.tensor([1, 2]),
+            torch.tensor(4),
+            torch.tensor(2),
+            reduction="none",
+        ).shape,
+        (),
+    )
+
+
+def test_gaussian_nll_loss_reductions() -> None:
+    prediction = torch.ones((2, 1))
+    target = torch.zeros((1, 3))
+
+    assert_shape(
+        F.gaussian_nll_loss(prediction, target, 1.0, reduction="none").shape,
+        (2, 3),
+    )
+    assert_shape(F.gaussian_nll_loss(prediction, target, 1.0).shape, ())
+    assert_shape(
+        F.gaussian_nll_loss(
+            prediction, target, torch.ones((2, 1)), reduction="sum"
+        ).shape,
+        (),
+    )
 
 
 if TYPE_CHECKING:  # noqa: C901
@@ -498,3 +548,60 @@ if TYPE_CHECKING:  # noqa: C901
         assert_type(F.unfold(image, (2, 3), stride=(2, 3)), Tensor[[B, 18, int]])
         assert_type(F.unfold(image[0], 2, stride=2), Tensor[[12, int]])
         assert_type(F.unfold(image, kernel_size), Tensor[[B, int, int]])
+
+    def check_ctc_loss_reductions[B: IntVar, T: IntVar, C: IntVar](
+        log_probs: Tensor[[T, B, C]],
+        targets: Tensor,
+        input_lengths: Tensor[[B]],
+        target_lengths: Tensor[[B]],
+        reduction: str,
+    ) -> None:
+        assert_type(
+            F.ctc_loss(
+                log_probs, targets, input_lengths, target_lengths, reduction="none"
+            ),
+            Tensor[[B]],
+        )
+        assert_type(
+            F.ctc_loss(log_probs, targets, input_lengths, target_lengths), Tensor[[]]
+        )
+        assert_type(
+            F.ctc_loss(
+                log_probs, targets, input_lengths, target_lengths, reduction=reduction
+            ),
+            Tensor[IntTuple],
+        )
+        assert_type(
+            F.ctc_loss(
+                log_probs[:, 0, :],
+                targets,
+                input_lengths[0],
+                target_lengths[0],
+                reduction="none",
+            ),
+            Tensor[[]],
+        )
+        F.ctc_loss(  # E: loss reduction must be 'none', 'mean', or 'sum'
+            log_probs, targets, input_lengths, target_lengths, reduction="median"
+        )
+        F.ctc_loss(  # E: ctc_loss requires 2D or 3D log probabilities
+            torch.ones((2, 3, 4, 5)), targets, input_lengths, target_lengths
+        )
+
+    def check_gaussian_nll_loss_reductions[B: IntVar, C: IntVar](
+        prediction: Tensor[[B, 1]],
+        target: Tensor[[1, C]],
+        reduction: str,
+    ) -> None:
+        assert_type(
+            F.gaussian_nll_loss(prediction, target, 1.0, reduction="none"),
+            Tensor[[B, C]],
+        )
+        assert_type(F.gaussian_nll_loss(prediction, target, 1.0), Tensor[[]])
+        assert_type(
+            F.gaussian_nll_loss(prediction, target, 1.0, reduction=reduction),
+            Tensor[IntTuple],
+        )
+        F.gaussian_nll_loss(  # E: loss reduction must be 'none', 'mean', or 'sum'
+            prediction, target, 1.0, reduction="median"
+        )
