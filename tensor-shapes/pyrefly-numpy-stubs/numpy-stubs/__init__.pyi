@@ -1198,8 +1198,8 @@ class ufunc:
     def at(self, a: ndarray, indices: Any, b: Any = None, /) -> None: ...
 
 permute_dims = transpose
-# TODO(stroxler): Make this precise when `concatenate` accepts overlay ndarrays.
-concat: Any = concatenate
+# TODO(stroxler): Model concatenation of overlay ndarrays with a shape rule.
+concat = concatenate
 
 @overload
 def stack[Shapes: IntTuples, Axis: Flag[int]](
