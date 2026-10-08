@@ -930,7 +930,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     # TODO(stroxler): Compute the final extent from the axes and offset.
     def diagonal[First: Flag[int], Second: Flag[int]](
         self, offset: int = 0, axis1: First = 0, axis2: Second = 1
-    ) -> ndarray[diagonal_shape(Shape, First, Second), DType]: ...
+    ) -> ndarray[diagonal_shape(Shape, First, Second, True), DType]: ...
     dot: Any
     @property
     def flat(self) -> flatiter[ndarray[Shape, DType]]: ...
@@ -1069,7 +1069,35 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         mode: Literal["raise", "wrap", "clip"] = "raise",
     ) -> Out: ...
     # TODO(stroxler): Model insertion at `axis` and restrict index-array dtypes.
-    trace: Any
+    @overload
+    def trace[M: IntVar, N: IntVar](
+        self: ndarray[[M, N], DType],
+        offset: int = 0,
+        axis1: int = 0,
+        axis2: int = 1,
+        dtype: Any = None,
+        out: None = None,
+    ) -> generic: ...
+    @overload
+    def trace[First: Flag[int], Second: Flag[int]](
+        self,
+        offset: int = 0,
+        axis1: First = 0,
+        axis2: Second = 1,
+        dtype: Any = None,
+        out: None = None,
+    ) -> ndarray[diagonal_shape(Shape, First, Second, False)]: ...
+    @overload
+    def trace[Out: ndarray](
+        self,
+        offset: int = 0,
+        axis1: int = 0,
+        axis2: int = 1,
+        dtype: Any = None,
+        *,
+        out: Out,
+    ) -> Out: ...
+    # TODO(stroxler): Validate 2-D axes and infer scalar dtype promotion.
     @overload
     def transpose(
         self, axes: None = None, /

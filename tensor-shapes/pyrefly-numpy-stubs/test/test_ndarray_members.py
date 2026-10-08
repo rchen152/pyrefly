@@ -170,6 +170,19 @@ def test_ndarray_diagonal() -> None:
         array.diagonal(axis2=3)  # E: diagonal axis out of bounds
 
 
+def test_ndarray_trace() -> None:
+    array = np.ones((2, 3, 4))
+
+    assert_shape(array.trace().shape, (4,))
+    assert_shape(array.trace(axis1=1, axis2=-1).shape, (2,))
+    assert_type(np.ones((2, 3)).trace(), np.generic)
+    assert_type(array.trace(out=np.zeros((4,))), np.ndarray[[4], np.dtype[np.float64]])
+
+    if TYPE_CHECKING:
+        array.trace(axis1=0, axis2=0)  # E: diagonal axes must be distinct
+        np.ones((3,)).trace()  # E: diagonal requires at least two dimensions
+
+
 def test_ndarray_matrix_transpose_and_swapaxes() -> None:
     array = np.ones((2, 3, 4))
 

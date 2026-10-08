@@ -30,7 +30,9 @@ def diag_extent(n: Int, k: int) -> Int:
     return n + k
 
 @type_shape_dsl_function
-def diagonal_shape(shape: IntTuple, axis1: int, axis2: int) -> IntTuple:
+def diagonal_shape(
+    shape: IntTuple, axis1: int, axis2: int, keep_diagonal: bool
+) -> IntTuple:
     if len(shape) < 2:
         return dsl.Invalid("diagonal requires at least two dimensions")
     if (
@@ -57,7 +59,9 @@ def diagonal_shape(shape: IntTuple, axis1: int, axis2: int) -> IntTuple:
             if index != first and index != second
         )
     )
-    return dsl.concat(outer, dsl.IntTuple((dsl.Int.gradual(),)))
+    if keep_diagonal:
+        return dsl.concat(outer, dsl.IntTuple((dsl.Int.gradual(),)))
+    return outer
 
 @type_shape_dsl_function
 def matmul_shape(left: IntTuple, right: IntTuple) -> IntTuple:
