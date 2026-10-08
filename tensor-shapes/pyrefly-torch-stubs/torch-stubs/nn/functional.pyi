@@ -2414,8 +2414,21 @@ def multilabel_soft_margin_loss[
 ) -> Tensor[loss_shape(IntTuple, Reduction, SizeAverage, Reduce)]: ...
 
 scaled_grouped_mm: Any
-scaled_mm: Any
 
+def scaled_mm[M: IntVar, K: IntVar, N: IntVar](
+    mat_a: Tensor[[M, K]],
+    mat_b: Tensor[[K, N]],
+    scale_a: Tensor | list[Tensor],
+    scale_recipe_a: ScalingType | list[ScalingType],
+    scale_b: Tensor | list[Tensor],
+    scale_recipe_b: ScalingType | list[ScalingType],
+    swizzle_a: SwizzleType | list[SwizzleType] | None = None,
+    swizzle_b: SwizzleType | list[SwizzleType] | None = None,
+    bias: Tensor | None = None,
+    output_dtype: DType | None = torch.bfloat16,
+    contraction_dim: list[int] | tuple[int, ...] = (),
+    use_fast_accum: bool = False,
+) -> Tensor[[M, N]]: ...
 @overload
 def triplet_margin_with_distance_loss[
     Anchor: IntTuple,

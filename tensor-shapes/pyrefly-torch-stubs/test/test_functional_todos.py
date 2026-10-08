@@ -389,6 +389,45 @@ def test_deprecated_upsample_shapes() -> None:
         )
 
 
+def test_scaled_mm_cpu_shapes() -> None:
+    # The installed Torch exposes this dtype, but the top-level stub does not yet.
+    float8_dtype = getattr(torch, "float8_e4m3fn")  # noqa: B009
+    mat_a = torch.randn((2, 3)).to(float8_dtype)
+    mat_b = torch.randn((3, 4)).to(float8_dtype)
+    scale = torch.ones((), dtype=torch.float32)
+    recipe = F.ScalingType.TensorWise
+
+    assert_shape(
+        F.scaled_mm(
+            mat_a,
+            mat_b,
+            scale,
+            recipe,
+            scale,
+            recipe,
+            swizzle_a=None,
+            swizzle_b=None,
+            bias=torch.ones((4,)),
+            output_dtype=torch.float32,
+            contraction_dim=(),
+            use_fast_accum=False,
+        ).shape,
+        (2, 4),
+    )
+    assert_shape(
+        F.scaled_mm(
+            mat_a,
+            mat_b,
+            [scale],
+            [recipe],
+            [scale],
+            [recipe],
+            output_dtype=torch.float32,
+        ).shape,
+        (2, 4),
+    )
+
+
 if TYPE_CHECKING:  # noqa: C901
 
     def check_adaptive_max_pool_with_indices_shapes[B: IntVar](
@@ -816,4 +855,33 @@ if TYPE_CHECKING:  # noqa: C901
         )
         F.upsample_nearest(  # E: interpolate size must match the spatial rank
             image, size=(2, 3, 4)
+        )
+
+    def check_scaled_mm_shapes[M: IntVar, K: IntVar, N: IntVar](
+        mat_a: Tensor[[M, K]],
+        mat_b: Tensor[[K, N]],
+        scale: Tensor,
+        recipe: F.ScalingType,
+        bias: Tensor[[N]],
+    ) -> None:
+        assert_type(
+            F.scaled_mm(
+                mat_a,
+                mat_b,
+                scale,
+                recipe,
+                scale,
+                recipe,
+                swizzle_a=None,
+                swizzle_b=None,
+                bias=bias,
+                output_dtype=torch.float32,
+                contraction_dim=(),
+                use_fast_accum=False,
+            ),
+            Tensor[[M, N]],
+        )
+        assert_type(
+            F.scaled_mm(mat_a, mat_b, [scale], [recipe], [scale], [recipe]),
+            Tensor[[M, N]],
         )
