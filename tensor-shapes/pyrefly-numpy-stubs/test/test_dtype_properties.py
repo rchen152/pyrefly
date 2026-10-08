@@ -45,6 +45,18 @@ def test_unsigned_scalar_hierarchy() -> None:
     assert np.ushort is np.uint16
 
 
+def test_floating_and_complex_scalar_hierarchy() -> None:
+    assert_shape(np.ones((2,), dtype=np.complex64).shape, (2,))
+    assert_type(np.complexfloating, type[np.complexfloating])
+    assert issubclass(np.float16, np.floating)
+    assert issubclass(np.float64, np.inexact)
+    assert issubclass(np.complex128, np.complexfloating)
+    assert issubclass(np.complex64, np.number)
+    assert np.half is np.float16
+    assert np.single is np.float32
+    assert np.cdouble is np.complex128
+
+
 def test_ones_supports_other_ranks() -> None:
     assert_shape(np.ones(()).shape, ())
     assert_shape(np.ones((2, 3, 4)).shape, (2, 3, 4))
