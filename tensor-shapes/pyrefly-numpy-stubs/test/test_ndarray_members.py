@@ -119,13 +119,28 @@ def test_ndarray_compress_and_repeat() -> None:
 
     assert_shape(array.compress([True, False, True]).shape, (int,), runtime=(2,))
     assert_type(array.compress([True, False], axis=0).dtype, np.dtype[np.intp])
-    assert_shape(array.repeat(2).shape, (int,), runtime=(12,))
+    assert_shape(array.repeat(2).shape, (12,))
     assert_type(array.repeat(2, axis=1).dtype, np.dtype[np.intp])
     assert array.compress([True, False], axis=0).shape == (1, 3)
-    assert array.repeat(2, axis=1).shape == (2, 6)
+    assert_shape(array.repeat(2, axis=1).shape, (2, 6))
+    assert_shape(array.repeat(3, axis=-2).shape, (6, 3))
+    assert_shape(array.repeat([1, 2, 3], axis=1).shape, (2, 6))
+    assert_shape(array.repeat((1, 2, 3), axis=-1).shape, (2, 6))
+    assert_shape(array.repeat([2], axis=1).shape, (2, 6))
+    assert_shape(array.repeat([1, 2, 3, 4, 5, 6]).shape, (21,))
+    assert_shape(np.array(7).repeat(2, axis=0).shape, (2,))
+
+    def dynamic_counts(counts: list[int]) -> None:
+        assert_shape(array.repeat(counts, axis=1).shape, (2, int))
+        assert_shape(array.repeat(counts).shape, (int,))
+        assert_shape(array.repeat(np.array(counts), axis=1).shape, (2, int))
 
     if TYPE_CHECKING:
-        array.repeat("twice")  # E: Argument `Literal['twice']` is not assignable
+        array.repeat("twice")  # E: No matching overload
+        array.repeat(2, axis=2)  # E: axis is out of bounds
+        array.repeat(-1)  # E: repeats may not contain negative values
+        array.repeat([1, 2], axis=1)  # E: repeats must match the selected axis
+        array.repeat([1, -1, 1], axis=1)  # E: repeats may not contain negative values
         array.compress([1], axis="first")  # E: No matching overload
 
 
@@ -146,7 +161,9 @@ def test_ndarray_choose_and_take() -> None:
     assert_type(
         np.ones((2, 2), dtype=np.int32).take(0, axis=1).dtype, np.dtype[np.int32]
     )
-    assert indices.take([0, 1], axis=0).shape == (2, 2)
+    assert_shape(indices.take([0, 1], axis=0).shape, (int, 2), runtime=(2, 2))
+    assert_shape(indices.take(np.array([[0, 1]]), axis=-1).shape, (2, 1, 2))
+    assert_shape(indices.take(0, axis=1).shape, (2,))
     assert_type(
         indices.take([0, 1], axis=0, out=out), np.ndarray[[2, 2], np.dtype[np.float64]]
     )
@@ -154,6 +171,7 @@ def test_ndarray_choose_and_take() -> None:
     if TYPE_CHECKING:
         indices.choose(choices, mode="invalid")  # E: No matching overload
         indices.take([0], mode="invalid")  # E: No matching overload
+        indices.take([0], axis=2)  # E: axis out of bounds
 
 
 def test_ndarray_diagonal() -> None:

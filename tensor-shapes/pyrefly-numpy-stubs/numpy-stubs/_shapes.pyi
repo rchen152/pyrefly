@@ -30,6 +30,89 @@ def diag_extent(n: Int, k: int) -> Int:
     return n + k
 
 @type_shape_dsl_function
+def repeat_shape(shape: IntTuple, repeats: Int, axis: int | None) -> IntTuple:
+    if dsl.is_concrete_int(repeats) and repeats < 0:
+        return dsl.Invalid("repeats may not contain negative values")
+    if axis is None:
+        return dsl.IntTuple((dsl.prod(shape) * repeats,))
+    if dsl.is_int_value(axis):
+        if len(shape) == 0:
+            if axis == 0 or axis == -1:
+                return dsl.IntTuple((repeats,))
+            return dsl.Invalid("axis is out of bounds")
+        rank = len(shape)
+        if axis < 0 - rank or axis >= rank:
+            return dsl.Invalid("axis is out of bounds")
+        if axis < 0:
+            normalized_axis = axis + rank
+        else:
+            normalized_axis = axis + 0
+        return dsl.IntTuple(
+            (
+                shape[index] * repeats if index == normalized_axis else shape[index]
+                for index in range(rank)
+            )
+        )
+    return dsl.Invalid("axis must be an integer or None")
+
+@type_shape_dsl_function
+def repeat_sequence_shape(
+    shape: IntTuple, repeats: IntTuple, axis: int | None
+) -> IntTuple:
+    if axis is None:
+        source = dsl.IntTuple((dsl.prod(shape),))
+        normalized_axis = 0
+    elif dsl.is_int_value(axis):
+        if len(shape) == 0:
+            if axis != 0 and axis != -1:
+                return dsl.Invalid("axis is out of bounds")
+            source = dsl.IntTuple((1,))
+        else:
+            source = shape
+        rank = len(source)
+        if axis < 0 - rank or axis >= rank:
+            return dsl.Invalid("axis is out of bounds")
+        if axis < 0:
+            normalized_axis = axis + rank
+        else:
+            normalized_axis = axis + 0
+    else:
+        return dsl.Invalid("axis must be an integer or None")
+    extent = source[normalized_axis]
+    if any(dsl.is_concrete_int(value) and value < 0 for value in repeats):
+        return dsl.Invalid("repeats may not contain negative values")
+    if len(repeats) == 1:
+        repeated = extent * repeats[0]
+    else:
+        if dsl.is_concrete_int(extent) and len(repeats) != extent:
+            return dsl.Invalid("repeats must match the selected axis")
+        repeated = dsl.sum(repeats)
+    return dsl.IntTuple(
+        (
+            repeated if index == normalized_axis else source[index]
+            for index in range(len(source))
+        )
+    )
+
+@type_shape_dsl_function
+def take_shape(shape: IntTuple, indices: IntTuple, axis: int | None) -> IntTuple:
+    if axis is None:
+        return indices
+    if dsl.is_int_value(axis):
+        rank = len(shape)
+        if axis < 0 - rank or axis >= rank:
+            return dsl.Invalid("axis out of bounds")
+        if axis < 0:
+            normalized_axis = axis + rank
+        else:
+            normalized_axis = axis + 0
+        return dsl.concat(
+            dsl.concat(shape[:normalized_axis], indices),
+            shape[normalized_axis + 1 :],
+        )
+    return dsl.Invalid("axis must be an integer or None")
+
+@type_shape_dsl_function
 def diagonal_shape(
     shape: IntTuple, axis1: int, axis2: int, keep_diagonal: bool
 ) -> IntTuple:

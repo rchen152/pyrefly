@@ -191,12 +191,15 @@ from numpy._shapes import (
     matvec_shape,
     nonzero_shapes,
     reduce_shape,
+    repeat_sequence_shape,
+    repeat_shape,
     reshape_shape,
     reshape_varargs_shape,
     reverse_shape,
     squeeze_shape,
     stack_shape,
     swapaxes_shape,
+    take_shape,
     transpose_shape,
     vecdot_shape,
     vecmat_shape,
@@ -391,6 +394,7 @@ from shape_extensions import (
     Index,
     index_shape,
     Int,
+    IntListLiteral,
     IntTuple,
     IntTupleOrList,
     IntTuples,
@@ -997,14 +1001,17 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         self,
     ) -> MapIntTuples[lambda S: ndarray[S, dtype[intp]], nonzero_shapes(Shape)]: ...
     @overload
-    def repeat(
-        self, repeats: int | Sequence[int] | ndarray, /, axis: None = None
-    ) -> ndarray[[int], DType]: ...
+    def repeat[Repeats: Int, Axis: Flag[int | None]](
+        self, repeats: Repeats, /, axis: Axis = None
+    ) -> ndarray[repeat_shape(Shape, Repeats, Axis), DType]: ...
     @overload
-    def repeat(
-        self, repeats: int | Sequence[int] | ndarray, /, axis: int
-    ) -> ndarray[IntTuple, DType]: ...
-    # TODO(stroxler): Preserve non-repeated axes and calculate repeated extents.
+    def repeat[Repeats: IntTuple, Axis: Flag[int | None]](
+        self, repeats: Repeats | IntListLiteral[Repeats], /, axis: Axis = None
+    ) -> ndarray[repeat_sequence_shape(Shape, Repeats, Axis), DType]: ...
+    @overload
+    def repeat[Axis: Flag[int | None]](
+        self, repeats: Sequence[int] | ndarray, /, axis: Axis = None
+    ) -> ndarray[repeat_shape(Shape, Int, Axis), DType]: ...
     @overload
     def reshape(
         self,
@@ -1071,14 +1078,14 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         mode: Literal["raise", "wrap", "clip"] = "raise",
     ) -> generic: ...
     @overload
-    def take(
+    def take[Axis: Flag[int]](
         self,
         indices: int | int32 | int64 | intp,
         /,
-        axis: int,
+        axis: Axis,
         out: None = None,
         mode: Literal["raise", "wrap", "clip"] = "raise",
-    ) -> ndarray[IntTuple, DType]: ...
+    ) -> ndarray[take_shape(Shape, IntTuple[()], Axis), DType]: ...
     @overload
     def take[Indices: IntTuple](
         self,
@@ -1098,14 +1105,23 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         mode: Literal["raise", "wrap", "clip"] = "raise",
     ) -> ndarray[[int], DType]: ...
     @overload
-    def take(
+    def take[Axis: Flag[int]](
         self,
-        indices: Sequence[int] | ndarray,
+        indices: Sequence[int],
         /,
-        axis: int,
+        axis: Axis,
         out: None = None,
         mode: Literal["raise", "wrap", "clip"] = "raise",
-    ) -> ndarray[IntTuple, DType]: ...
+    ) -> ndarray[take_shape(Shape, IntTuple[int], Axis), DType]: ...
+    @overload
+    def take[Indices: IntTuple, Axis: Flag[int]](
+        self,
+        indices: ndarray[Indices],
+        /,
+        axis: Axis,
+        out: None = None,
+        mode: Literal["raise", "wrap", "clip"] = "raise",
+    ) -> ndarray[take_shape(Shape, Indices, Axis), DType]: ...
     @overload
     def take[Out: ndarray](
         self,
@@ -1125,7 +1141,7 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
         out: Out,
         mode: Literal["raise", "wrap", "clip"] = "raise",
     ) -> Out: ...
-    # TODO(stroxler): Model insertion at `axis` and restrict index-array dtypes.
+    # TODO(stroxler): Restrict index-array dtypes to valid index types.
     @overload
     def trace[M: IntVar, N: IntVar](
         self: ndarray[[M, N], DType],
