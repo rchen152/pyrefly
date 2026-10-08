@@ -183,6 +183,24 @@ def test_ndarray_trace() -> None:
         np.ones((3,)).trace()  # E: diagonal requires at least two dimensions
 
 
+def test_ndarray_dot() -> None:
+    vector = np.ones((3,))
+    matrix = np.ones((2, 3))
+    right = np.ones((3, 4))
+
+    assert_type(vector.dot(vector), np.generic)
+    assert_shape(vector.dot(right).shape, (4,))
+    assert_shape(matrix.dot(vector).shape, (2,))
+    assert_shape(matrix.dot(right).shape, (2, 4))
+    assert_shape(np.ones((2, 5, 3)).dot(np.ones((6, 3, 4))).shape, (2, 5, 6, 4))
+    assert_shape(matrix.dot(2).shape, (2, 3))
+    assert_shape(vector.dot(np.ones(())).shape, (3,))
+
+    if TYPE_CHECKING:
+        matrix.dot(np.ones((2, 4)))  # E: dot contraction dimensions must agree
+        vector.dot(np.ones((2,)))  # E: dot contraction dimensions must agree
+
+
 def test_ndarray_matrix_transpose_and_swapaxes() -> None:
     array = np.ones((2, 3, 4))
 

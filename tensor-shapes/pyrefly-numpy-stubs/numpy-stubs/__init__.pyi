@@ -185,6 +185,7 @@ from numpy._pytesttester import PytestTester
 from numpy._shapes import (
     diag_extent,
     diagonal_shape,
+    dot_shape,
     expand_dims_shape,
     matmul_shape,
     matvec_shape,
@@ -931,7 +932,30 @@ class ndarray[Shape: _Shape = _Shape, DType = Any]:
     def diagonal[First: Flag[int], Second: Flag[int]](
         self, offset: int = 0, axis1: First = 0, axis2: Second = 1
     ) -> ndarray[diagonal_shape(Shape, First, Second, True), DType]: ...
-    dot: Any
+    @overload
+    def dot[N: IntVar](
+        self: ndarray[[N], DType], b: ndarray[[N]], /, out: None = None
+    ) -> generic: ...
+    @overload
+    def dot(self: ndarray[[]], b: _ArrayScalar, /, out: None = None) -> generic: ...
+    @overload
+    def dot[Right: IntTuple](
+        self, b: ndarray[Right], /, out: None = None
+    ) -> ndarray[dot_shape(Shape, Right)]: ...
+    @overload
+    def dot[Right: IntTuple](
+        self,
+        b: RegularNestedList[Right, _ArrayScalar],
+        /,
+        out: None = None,
+    ) -> ndarray[dot_shape(Shape, Right)]: ...
+    @overload
+    def dot(
+        self, b: int | float | complex | generic, /, out: None = None
+    ) -> ndarray[Shape]: ...
+    @overload
+    def dot[Out: ndarray](self, b: ArrayLike, /, out: Out) -> Out: ...
+    # TODO(stroxler): Infer scalar dtype promotion for vector inner products.
     @property
     def flat(self) -> flatiter[ndarray[Shape, DType]]: ...
     @property

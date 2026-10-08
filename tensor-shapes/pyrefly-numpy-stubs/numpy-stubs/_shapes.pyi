@@ -78,6 +78,20 @@ def matmul_shape(left: IntTuple, right: IntTuple) -> IntTuple:
     return gufunc_broadcast(spec, operands)
 
 @type_shape_dsl_function
+def dot_shape(left: IntTuple, right: IntTuple) -> IntTuple:
+    if len(left) == 0:
+        return right
+    if len(right) == 0:
+        return left
+    if len(right) == 1:
+        if left[-1] != right[0]:
+            return dsl.Invalid("dot contraction dimensions must agree")
+        return left[:-1]
+    if left[-1] != right[-2]:
+        return dsl.Invalid("dot contraction dimensions must agree")
+    return dsl.concat(dsl.concat(left[:-1], right[:-2]), right[-1:])
+
+@type_shape_dsl_function
 def matvec_shape(left: IntTuple, right: IntTuple) -> IntTuple:
     spec = "(m,n),(n)->(m)"
     operands = dsl.IntTuples((left, right))
