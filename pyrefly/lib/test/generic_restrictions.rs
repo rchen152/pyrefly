@@ -1683,6 +1683,17 @@ def f[T: (int, str)](x: T, y: T) -> T:
 );
 
 testcase!(
+    test_assign_concrete_type_after_typevar_narrow,
+    r#"
+def f[T: (int, str)](x: T) -> T:
+    y: T = x
+    if isinstance(x, str):
+        y = ""
+    return y
+    "#,
+);
+
+testcase!(
     test_typevar_narrow_persists_after_early_return,
     r#"
 def f[T: (bytes, str)](x: T) -> T:
@@ -1751,6 +1762,9 @@ class GroupBy2:
     def agg(self) -> Frame2: ...
 def f[F: (Frame1, Frame2)](df: F) -> F:
     return df.group_by("a").agg()
+def g[F: (Frame1, Frame2)](df: F) -> F:
+    y: F = df.group_by("a").agg()
+    return y
     "#,
 );
 

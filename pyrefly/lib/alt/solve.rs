@@ -23,6 +23,7 @@ use pyrefly_types::function::BodyKind;
 use pyrefly_types::identity::IdentityIgnored;
 use pyrefly_types::shaped_array::IntTuple;
 use pyrefly_types::shaped_array::ShapedArrayType;
+use pyrefly_types::simplify::intersect;
 use pyrefly_types::type_alias::TypeAliasData;
 use pyrefly_types::type_alias::TypeAliasIndex;
 use pyrefly_types::type_alias::TypeAliasRef;
@@ -3080,6 +3081,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     expr,
                     None,
                     None,
+                    &[],
                     Some(TypeFormContext::TypeAlias),
                     errors,
                 );
@@ -4010,6 +4012,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     /// has ruled out. A value of type `N & T`, where `T` is a constrained type variable, is an
     /// instance of both `N` and the constraint that `T` was solved to, so that constraint must
     /// overlap `N`.
+    ///
+    /// Returns the inferred type and the combinations of solutions that the successful retries
+    /// used, if any.
     fn expr_check_per_constraint(
         &self,
         expr: &Expr,
@@ -4017,7 +4022,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         param_idxs: &[Idx<Key>],
         type_form_context: Option<TypeFormContext<'_>>,
         errors: &ErrorCollector,
-    ) -> Type {
+    ) -> (Type, Vec<SmallMap<Quantified, Type>>) {
         // Each retry re-infers `expr`.
         const MAX_CONSTRAINT_COMBINATIONS: usize = 16;
         let check = |want: Option<(&Type, &dyn Fn() -> TypeCheckContext)>,
@@ -4030,12 +4035,12 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 .into_ty()
         };
         if param_idxs.is_empty() {
-            return check(want, errors);
+            return (check(want, errors), Vec::new());
         }
         let first_errors = self.error_collector();
         let ty = check(want, &first_errors);
         if first_errors.is_empty() {
-            return ty;
+            return (ty, Vec::new());
         }
         let mut possible_solutions: SmallMap<Quantified, Vec<Type>> = SmallMap::new();
         for idx in param_idxs {
@@ -4081,7 +4086,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             || num_combinations > MAX_CONSTRAINT_COMBINATIONS
         {
             errors.extend(first_errors);
-            return ty;
+            return (ty, Vec::new());
         }
         let combinations = possible_solutions.iter().fold(
             vec![SmallMap::new()],
@@ -4114,11 +4119,11 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             });
             if !retry_errors.is_empty() {
                 errors.extend(first_errors);
-                return ty;
+                return (ty, Vec::new());
             }
             tys.push(retry_ty);
         }
-        self.unions(tys)
+        (self.unions(tys), combinations)
     }
 
     fn name_assign_infer(
@@ -4129,6 +4134,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         expr: &Expr,
         attrs_field_specifier: Option<AttrsSpecifier>,
         last_value_or_narrow: Option<Idx<Key>>,
+        param_idxs: &[Idx<Key>],
         type_form_context: Option<TypeFormContext<'_>>,
         errors: &ErrorCollector,
     ) -> (Option<&AnnotationWithTarget>, Type) {
@@ -4171,7 +4177,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 // `validator=` can widen) we check the value the field will hold: the
                 // `default=`/positional value or the `factory=` return. A converter (`converter=` or
                 // a `@<field>.converter` decorator) intercepts that value, so we skip the check then.
-                let expr_ty = if let Some(spec) = attrs_field_specifier
+                let (expr_ty, solution_combinations) = if let Some(spec) = attrs_field_specifier
                     && let Expr::Call(call) = expr
                 {
                     let got = self.expr_infer(expr, errors);
@@ -4211,17 +4217,15 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             }
                         }
                     }
-                    got
+                    (got, Vec::new())
                 } else {
-                    let hint = annot_ty.as_ref().map(|t| (t, tcc));
-                    let options = match hint {
-                        Some((want, context)) => {
-                            ExprOptions::check(want, errors, errors, context, None)
-                        }
-                        None => ExprOptions::infer(errors, None),
-                    };
-                    self.expr_with_options(expr, options.with_type_form_context(type_form_context))
-                        .into_ty()
+                    self.expr_check_per_constraint(
+                        expr,
+                        annot_ty.as_ref().map(|t| (t, tcc)),
+                        param_idxs,
+                        type_form_context,
+                        errors,
+                    )
                 };
                 let ty = match style {
                     AnnotationStyle::Direct => {
@@ -4239,15 +4243,32 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             Type::Union(u) => u.members.iter().any(Type::is_any),
                             _ => false,
                         };
-                        if let Some(annot) = annot_ty
+                        if let Some(annot) = &annot_ty
                         // Usually, if we reassign a name with an annotation, we use the type of the
                         // expression going forward. We have an exception to prevent an `Any`
                         // expression from overwriting an annotation it is less informative than: if
                         // the expression is `Any` and the annotation is not `Any` or a union containing `Any`,
                         // and the name's flow-sensitive type still matches the annotation, then we use the annotation.
-                        && expr_ty.is_any() && !contains_any(&annot)
-                        && last_value_or_narrow.is_none_or(|prev_idx| self.get_idx(prev_idx).ty() == &annot)
+                        && expr_ty.is_any() && !contains_any(annot)
+                        && last_value_or_narrow.is_none_or(|prev_idx| self.get_idx(prev_idx).ty() == annot)
                         {
+                            annot.clone()
+                        } else if let Some(mut annot) = annot_ty
+                            && !solution_combinations.is_empty()
+                        {
+                            // With one solution `C` per type variable `T`, use `C & T` so that the
+                            // name stays assignable to the annotation after the narrowing ends.
+                            if let [solutions] = solution_combinations.as_slice() {
+                                annot.subst_mut_fn(&mut |q| {
+                                    solutions.get(q).map(|c| {
+                                        intersect(
+                                            vec![q.clone().to_type(self.heap), c.clone()],
+                                            c.clone(),
+                                            self.heap,
+                                        )
+                                    })
+                                });
+                            }
                             annot
                         } else {
                             expr_ty
@@ -4295,6 +4316,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         is_class_body_assignment: bool,
         attrs_field_specifier: Option<AttrsSpecifier>,
         last_value_or_narrow: Option<Idx<Key>>,
+        param_idxs: &[Idx<Key>],
         errors: &ErrorCollector,
     ) -> Type {
         let (annot, ty) = self.name_assign_infer(
@@ -4304,6 +4326,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             expr,
             attrs_field_specifier,
             last_value_or_narrow,
+            param_idxs,
             None,
             errors,
         );
@@ -4533,7 +4556,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     .with_annotation(annot_range, "declared return type".to_owned())
             };
             if let Some(expr) = &x.expr {
-                let return_ty = self.expr_check_per_constraint(
+                let (return_ty, _) = self.expr_check_per_constraint(
                     expr,
                     hint.as_ref().map(|t| (t, tcc)),
                     &x.param_idxs,
@@ -4572,7 +4595,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     .with_annotation(annot_range, "declared return type".to_owned())
             };
             if let Some(expr) = &x.expr {
-                let return_ty = self.expr_check_per_constraint(
+                let (return_ty, _) = self.expr_check_per_constraint(
                     expr,
                     hint.as_ref().map(|t| (t, tcc)),
                     &x.param_idxs,
@@ -6725,6 +6748,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 x.is_class_body_assignment,
                 x.attrs_field_specifier,
                 x.last_value_or_narrow,
+                &x.param_idxs,
                 errors,
             ),
             Binding::TypeVar(x) => {

@@ -2310,6 +2310,9 @@ pub struct NameAssign {
     pub attrs_field_specifier: Option<AttrsSpecifier>,
     /// If this name was redefined or narrowed prior to this assignment, the previous definition or narrow.
     pub last_value_or_narrow: Option<Idx<Key>>,
+    /// The flow keys of the enclosing function's parameters with bare-name annotations. See
+    /// `expr_check_per_constraint`.
+    pub param_idxs: Box<[Idx<Key>]>,
 }
 
 impl NameAssign {
