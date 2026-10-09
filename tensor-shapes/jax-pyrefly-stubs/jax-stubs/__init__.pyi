@@ -174,7 +174,7 @@ from jax.version import (
 )
 from jaxlib._jax import Device as Device
 
-# Import local typestubs for submodules defined in pyrefly-jax-stubs
+# Import local typestubs for submodules defined in jax-pyrefly-stubs.
 from . import (
     lax as lax,
     nn as nn,

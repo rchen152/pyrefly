@@ -384,7 +384,7 @@ def test_dtypes_and_type_inspection() -> None:
 
 
 def test_device_and_out_sharding() -> None:
-    dev = getattr(jax, "devices")()[0]
+    dev = getattr(jax, "devices")()[0]  # noqa: B009
     assert_shape(jnp.zeros((2, 3), device=dev).shape, (2, 3))
     assert_shape(jnp.zeros((2, 3), device=None).shape, (2, 3))
     assert_shape(jnp.ones((2, 3), device=dev).shape, (2, 3))

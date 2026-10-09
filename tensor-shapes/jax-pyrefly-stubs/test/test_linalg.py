@@ -255,7 +255,6 @@ def generic_batched_cholesky[Batch: IntTuple, N: IntVar](
 def test_batched_linalg_operations() -> None:
     batch_eye = jnp.ones((2, 4, 4))
     batch_mat = jnp.ones((2, 4, 5))
-    batch_vec = jnp.ones((2, 4))
 
     assert_shape(jnp.linalg.cholesky(batch_eye).shape, (2, 4, 4))
     assert_shape(generic_batched_cholesky(batch_eye).shape, (2, 4, 4))

@@ -1,15 +1,9 @@
-# Deliberately not wired into `.github/workflows/ci_shape_stubs.yml`, and so
-# not published: the `pyrefly-jax-stubs` name on PyPI is already taken by
-# someone else, and that has to be resolved before this package can be
-# released. The metadata lives here so the package is ready when it is, and so
-# it stays in step with the NumPy and Torch stubs in the meantime.
-
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "pyrefly-jax-stubs"
+name = "jax-pyrefly-stubs"
 description = "JAX type stubs with array-shape tracking, maintained by Pyrefly"
 readme = "README.md"
 requires-python = ">=3.12"

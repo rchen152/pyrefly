@@ -29,7 +29,7 @@ PACKAGES: tuple[str, ...] = (
     "microtorch",
     "pyrefly-torch-stubs",
     "pyrefly-numpy-stubs",
-    "pyrefly-jax-stubs",
+    "jax-pyrefly-stubs",
     "pyrefly-einops-stubs",
 )
 
@@ -37,7 +37,7 @@ RUNTIME_PACKAGES: frozenset[str] = frozenset(
     {
         "pyrefly-torch-stubs",
         "pyrefly-numpy-stubs",
-        "pyrefly-jax-stubs",
+        "jax-pyrefly-stubs",
         "pyrefly-einops-stubs",
     }
 )

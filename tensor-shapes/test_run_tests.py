@@ -86,7 +86,7 @@ class ShapedArrayCorpusGuardTest(unittest.TestCase):
                         run_tests.sys.executable,
                         str(
                             run_tests.TENSOR_SHAPES_ROOT
-                            / "pyrefly-jax-stubs/run_pyrefly.py"
+                            / "jax-pyrefly-stubs/run_pyrefly.py"
                         ),
                         "--pyrefly",
                         "pyrefly",
@@ -178,7 +178,7 @@ class ShapedArrayCorpusGuardTest(unittest.TestCase):
                 for package in (
                     "pyrefly-torch-stubs",
                     "pyrefly-numpy-stubs",
-                    "pyrefly-jax-stubs",
+                    "jax-pyrefly-stubs",
                     "pyrefly-einops-stubs",
                 )
             ],

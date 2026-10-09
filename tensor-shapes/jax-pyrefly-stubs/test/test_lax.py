@@ -1244,7 +1244,7 @@ def test_compiler_and_misc() -> None:
     assert_shape(st.shape, (2, 3))
     sg = lax.stop_gradient(x)
     assert_shape(sg.shape, (2, 3))
-    shd = getattr(jax, "sharding").SingleDeviceSharding(getattr(jax, "devices")()[0])
+    shd = getattr(jax, "sharding").SingleDeviceSharding(getattr(jax, "devices")()[0])  # noqa: B009
     wsc = lax.with_sharding_constraint(x, shd)
     assert_shape(wsc.shape, (2, 3))
     comp_fn = lax.composite(lambda v: v * 2, "double")

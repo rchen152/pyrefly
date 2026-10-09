@@ -26,7 +26,7 @@ Before submitting a change, format this package with Ruff from the repository
 root:
 
 ```bash
-uv tool run --from ruff==0.16.5 ruff format tensor-shapes/pyrefly-jax-stubs
+uv tool run --from ruff==0.16.5 ruff format tensor-shapes/jax-pyrefly-stubs
 ```
 
 Anything not listed above is simply absent rather than modeled loosely, so it is
