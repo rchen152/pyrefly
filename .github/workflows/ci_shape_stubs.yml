@@ -34,13 +34,15 @@ jobs:
           SHAPE_EXT_BUILD_DIR="$RUNNER_TEMP/pyrefly-shape-extensions-build"
           TORCH_STUBS_BUILD_DIR="$RUNNER_TEMP/pyrefly-torch-stubs-build"
           NUMPY_STUBS_BUILD_DIR="$RUNNER_TEMP/pyrefly-numpy-stubs-build"
+          JAX_STUBS_BUILD_DIR="$RUNNER_TEMP/jax-pyrefly-stubs-build"
           EINOPS_STUBS_BUILD_DIR="$RUNNER_TEMP/pyrefly-einops-stubs-build"
-          rm -rf "$SHAPE_EXT_BUILD_DIR" "$TORCH_STUBS_BUILD_DIR" "$NUMPY_STUBS_BUILD_DIR" "$EINOPS_STUBS_BUILD_DIR" shape-stubs-dist
+          rm -rf "$SHAPE_EXT_BUILD_DIR" "$TORCH_STUBS_BUILD_DIR" "$NUMPY_STUBS_BUILD_DIR" "$JAX_STUBS_BUILD_DIR" "$EINOPS_STUBS_BUILD_DIR" shape-stubs-dist
           cp -R tensor-shapes/pyrefly-shape-extensions "$SHAPE_EXT_BUILD_DIR"
           cp -R tensor-shapes/pyrefly-torch-stubs "$TORCH_STUBS_BUILD_DIR"
           cp -R tensor-shapes/pyrefly-numpy-stubs "$NUMPY_STUBS_BUILD_DIR"
+          cp -R tensor-shapes/jax-pyrefly-stubs "$JAX_STUBS_BUILD_DIR"
           cp -R tensor-shapes/pyrefly-einops-stubs "$EINOPS_STUBS_BUILD_DIR"
-          PACKAGE_VERSION="$PACKAGE_VERSION" SHAPE_EXT_BUILD_DIR="$SHAPE_EXT_BUILD_DIR" TORCH_STUBS_BUILD_DIR="$TORCH_STUBS_BUILD_DIR" NUMPY_STUBS_BUILD_DIR="$NUMPY_STUBS_BUILD_DIR" EINOPS_STUBS_BUILD_DIR="$EINOPS_STUBS_BUILD_DIR" python3 - <<'PY'
+          PACKAGE_VERSION="$PACKAGE_VERSION" SHAPE_EXT_BUILD_DIR="$SHAPE_EXT_BUILD_DIR" TORCH_STUBS_BUILD_DIR="$TORCH_STUBS_BUILD_DIR" NUMPY_STUBS_BUILD_DIR="$NUMPY_STUBS_BUILD_DIR" JAX_STUBS_BUILD_DIR="$JAX_STUBS_BUILD_DIR" EINOPS_STUBS_BUILD_DIR="$EINOPS_STUBS_BUILD_DIR" python3 - <<'PY'
           from pathlib import Path
           import os
 
@@ -74,6 +76,7 @@ jobs:
           stamp("SHAPE_EXT_BUILD_DIR")
           stamp("TORCH_STUBS_BUILD_DIR", ("pyrefly-shape-extensions",))
           stamp("NUMPY_STUBS_BUILD_DIR", ("pyrefly-shape-extensions",))
+          stamp("JAX_STUBS_BUILD_DIR", ("pyrefly-shape-extensions",))
           stamp(
               "EINOPS_STUBS_BUILD_DIR",
               ("pyrefly-shape-extensions", "pyrefly-torch-stubs"),
@@ -84,6 +87,7 @@ jobs:
           python -m build --outdir shape-stubs-dist "$SHAPE_EXT_BUILD_DIR"
           python -m build --outdir shape-stubs-dist "$TORCH_STUBS_BUILD_DIR"
           python -m build --outdir shape-stubs-dist "$NUMPY_STUBS_BUILD_DIR"
+          python -m build --outdir shape-stubs-dist "$JAX_STUBS_BUILD_DIR"
           python -m build --outdir shape-stubs-dist "$EINOPS_STUBS_BUILD_DIR"
       - name: Smoke test shape extension wheel
         run: |
@@ -141,6 +145,28 @@ jobs:
           distribution("pyrefly-numpy-stubs")
           distribution("pyrefly-shape-extensions")
           PY
+      - name: Smoke test JAX stubs wheel
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/jax-stubs-wheel-venv"
+          "$RUNNER_TEMP/jax-stubs-wheel-venv/bin/pip" install --find-links shape-stubs-dist shape-stubs-dist/jax_pyrefly_stubs-*.whl
+          "$RUNNER_TEMP/jax-stubs-wheel-venv/bin/python" - <<'PY'
+          from importlib.metadata import distribution
+
+          distribution("jax-pyrefly-stubs")
+          distribution("pyrefly-shape-extensions")
+          PY
+      - name: Smoke test JAX stubs sdist
+        run: |
+          set -euo pipefail
+          python -m venv "$RUNNER_TEMP/jax-stubs-sdist-venv"
+          "$RUNNER_TEMP/jax-stubs-sdist-venv/bin/pip" install --find-links shape-stubs-dist shape-stubs-dist/jax_pyrefly_stubs-*.tar.gz
+          "$RUNNER_TEMP/jax-stubs-sdist-venv/bin/python" - <<'PY'
+          from importlib.metadata import distribution
+
+          distribution("jax-pyrefly-stubs")
+          distribution("pyrefly-shape-extensions")
+          PY
       - name: Smoke test einops stubs wheel
         run: |
           set -euo pipefail
@@ -179,6 +205,8 @@ jobs:
           torch_stubs_sdists = list(dist.glob("pyrefly_torch_stubs-*.tar.gz"))
           numpy_stubs_wheels = list(dist.glob("pyrefly_numpy_stubs-*.whl"))
           numpy_stubs_sdists = list(dist.glob("pyrefly_numpy_stubs-*.tar.gz"))
+          jax_stubs_wheels = list(dist.glob("jax_pyrefly_stubs-*.whl"))
+          jax_stubs_sdists = list(dist.glob("jax_pyrefly_stubs-*.tar.gz"))
           einops_stubs_wheels = list(dist.glob("pyrefly_einops_stubs-*.whl"))
           einops_stubs_sdists = list(dist.glob("pyrefly_einops_stubs-*.tar.gz"))
           assert len(shape_ext_wheels) == 1, shape_ext_wheels
@@ -187,6 +215,8 @@ jobs:
           assert len(torch_stubs_sdists) == 1, torch_stubs_sdists
           assert len(numpy_stubs_wheels) == 1, numpy_stubs_wheels
           assert len(numpy_stubs_sdists) == 1, numpy_stubs_sdists
+          assert len(jax_stubs_wheels) == 1, jax_stubs_wheels
+          assert len(jax_stubs_sdists) == 1, jax_stubs_sdists
           assert len(einops_stubs_wheels) == 1, einops_stubs_wheels
           assert len(einops_stubs_sdists) == 1, einops_stubs_sdists
 
@@ -254,6 +284,29 @@ jobs:
               assert any(name.endswith("/numpy-stubs/__init__.pyi") for name in names)
               assert any(name.endswith("/numpy-stubs/linalg/__init__.pyi") for name in names)
               assert any(name.endswith("/numpy-stubs/py.typed") for name in names)
+
+          with zipfile.ZipFile(jax_stubs_wheels[0]) as z:
+              names = set(z.namelist())
+              assert "jax-stubs/__init__.pyi" in names
+              assert "jax-stubs/numpy/__init__.pyi" in names
+              assert "jax-stubs/py.typed" in names
+              metadata_name = next(
+                  name
+                  for name in names
+                  if name.endswith(".dist-info/METADATA")
+              )
+              metadata = z.read(metadata_name).decode()
+              assert f"Version: {os.environ['PACKAGE_VERSION']}" in metadata
+              assert (
+                  f"Requires-Dist: pyrefly-shape-extensions=={os.environ['PACKAGE_VERSION']}"
+                  in metadata
+              )
+
+          with tarfile.open(jax_stubs_sdists[0]) as t:
+              names = set(t.getnames())
+              assert any(name.endswith("/jax-stubs/__init__.pyi") for name in names)
+              assert any(name.endswith("/jax-stubs/numpy/__init__.pyi") for name in names)
+              assert any(name.endswith("/jax-stubs/py.typed") for name in names)
 
           with zipfile.ZipFile(einops_stubs_wheels[0]) as z:
               names = set(z.namelist())
