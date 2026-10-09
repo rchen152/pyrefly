@@ -1650,6 +1650,64 @@ def f[T: (int, str)](x: T) -> T:
     "#,
 );
 
+// https://github.com/facebook/pyrefly/issues/3892
+testcase!(
+    test_constrained_typevar_method_chain,
+    r#"
+class Frame1:
+    def group_by(self, key: str) -> "GroupBy1": ...
+class Frame2:
+    def group_by(self, key: str) -> "GroupBy2": ...
+class GroupBy1:
+    def agg(self) -> Frame1: ...
+class GroupBy2:
+    def agg(self) -> Frame2: ...
+def f[F: (Frame1, Frame2)](df: F) -> F:
+    return df.group_by("a").agg()
+    "#,
+);
+
+// https://github.com/facebook/pyrefly/issues/3621
+testcase!(
+    test_constrained_typevar_argument_to_method,
+    r#"
+class Frame1:
+    def join(self, other: "Frame1") -> "Frame1": ...
+class Frame2:
+    def join(self, other: "Frame2") -> "Frame2": ...
+def f[F: (Frame1, Frame2)](df1: F, df2: F) -> F:
+    return df1.join(df2)
+    "#,
+);
+
+testcase!(
+    test_constrained_typevar_method_wrong_for_one_constraint,
+    r#"
+class C1:
+    def m(self) -> "C1": ...
+class C2:
+    def m(self) -> C1: ...
+def f[T: (C1, C2)](x: T) -> T:
+    return x.m()  # E: Returned type `C1` is not assignable to declared return type `T`
+    "#,
+);
+
+testcase!(
+    test_multiple_constrained_typevars,
+    r#"
+class Frame1:
+    def group_by(self, key: str) -> "GroupBy1": ...
+class Frame2:
+    def group_by(self, key: str) -> "GroupBy2": ...
+class GroupBy1:
+    def agg(self) -> Frame1: ...
+class GroupBy2:
+    def agg(self) -> Frame2: ...
+def f[F: (Frame1, Frame2), G: (Frame1, Frame2)](df1: F, df2: G) -> tuple[F, G]:
+    return (df1.group_by("a").agg(), df2.group_by("b").agg())
+    "#,
+);
+
 testcase!(
     test_binop_on_two_typevars_after_narrow_one,
     r#"

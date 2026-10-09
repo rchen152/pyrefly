@@ -2113,7 +2113,8 @@ pub struct ReturnExplicit {
     pub is_async: bool,
     pub range: TextRange,
     pub is_unreachable: bool,
-    /// The flow keys of the enclosing function's parameters with bare-name annotations.
+    /// The flow keys of the enclosing function's parameters with bare-name annotations. See
+    /// `expr_check_per_constraint`.
     pub param_idxs: Box<[Idx<Key>]>,
 }
 
