@@ -2113,6 +2113,8 @@ pub struct ReturnExplicit {
     pub is_async: bool,
     pub range: TextRange,
     pub is_unreachable: bool,
+    /// The flow keys of the enclosing function's parameters with bare-name annotations.
+    pub param_idxs: Box<[Idx<Key>]>,
 }
 
 #[derive(Clone, Debug)]
@@ -2535,7 +2537,7 @@ pub enum Binding {
     ParamSpec(Box<(Option<Idx<KeyAnnotation>>, Identifier, Box<ExprCall>)>),
     TypeVarTuple(Box<(Option<Idx<KeyAnnotation>>, Identifier, Box<ExprCall>)>),
     /// An expression returned from a function.
-    ReturnExplicit(ReturnExplicit),
+    ReturnExplicit(Box<ReturnExplicit>),
     /// The implicit return from a function.
     ReturnImplicit(ReturnImplicit),
     /// The return type of a function.
