@@ -10317,6 +10317,42 @@ def f(shapeless: Array[IntTuple, int], concrete: Array[[3], int]) -> None:
 "#,
 );
 testcase!(
+    test_type_shape_dsl_axis_reduction_with_symbolic_rank,
+    shape_extensions_env_with_torch(),
+    r#"
+import shape_extensions.dsl as dsl
+from shape_extensions import Flag, IntTuple, IntVar, type_shape_dsl_function
+from torch import Tensor
+from typing import assert_type
+
+@type_shape_dsl_function
+def reduce_shape(shape: IntTuple, axis: int | tuple[int, ...] | None,
+                 keepdims: bool, empty_means_all: bool, scalar_axis_ok: bool,
+                 scalar_tuple_axis_ok: bool) -> IntTuple:
+    return dsl.axis_reduce(shape, axis, keepdims, empty_means_all,
+                           scalar_axis_ok, scalar_tuple_axis_ok)
+
+def reduce[Shape: IntTuple, Axis: Flag[int | tuple[int, ...] | None],
+           Keep: Flag[bool]](x: Tensor[Shape], axis: Axis,
+                             keep: Keep = False) -> Tensor[reduce_shape(Shape, Axis, Keep, False, False, False)]: ...
+
+def test[D: IntVar, E: IntVar, S: IntTuple](leading: Tensor[[D, *S]],
+                                            trailing: Tensor[[*S, E]]) -> None:
+    assert_type(reduce(leading, 0), Tensor[[*S]])
+    assert_type(reduce(leading, 0, True), Tensor[[1, *S]])
+    assert_type(reduce(trailing, -1), Tensor[[*S]])
+    assert_type(reduce(trailing, -1, True), Tensor[[*S, 1]])
+    assert_type(reduce(leading, ()), Tensor[[D, *S]])
+    assert_type(reduce(leading, None), Tensor[[]])
+    assert_type(reduce(Tensor[[D, *S, E]](), (0, -1)), Tensor[[*S]])
+
+def concrete(x: Tensor[[2, 3]]) -> None:
+    assert_type(reduce(x, 0), Tensor[[3]])
+    assert_type(reduce(x, -1, True), Tensor[[2, 1]])
+"#,
+);
+
+testcase!(
     test_type_shape_dsl_reduction_flag_values,
     shape_extensions_env_with_torch(),
     r#"

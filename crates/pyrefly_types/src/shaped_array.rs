@@ -1181,6 +1181,130 @@ fn is_shapeless(shape: &IntTuple) -> bool {
     matches!(shape.view(), IntTupleView::Gradual)
 }
 
+/// Library-specific scalar and empty-axis conventions for reductions.
+pub struct AxisReductionPolicy {
+    pub empty_means_all: bool,
+    pub scalar_axis_ok: bool,
+    pub scalar_tuple_axis_ok: bool,
+    pub invalid_axis_message: &'static str,
+    pub duplicate_axis_message: &'static str,
+}
+
+/// Compute an axis reduction, retaining fixed dimensions around a symbolic-rank middle.
+pub fn reduce_axis_shape(
+    shape: &IntTuple,
+    axes: Option<&[i64]>,
+    keepdims: bool,
+    policy: AxisReductionPolicy,
+    axis_is_tuple: bool,
+) -> Result<IntTuple, ShapeError> {
+    let all = axes.is_none_or(|axes| axes.is_empty() && policy.empty_means_all);
+    if all && !keepdims {
+        return Ok(IntTuple::new(Vec::new()));
+    }
+    let Some(axes) = axes.filter(|_| !all) else {
+        return match shape.view() {
+            IntTupleView::Concrete(dimensions) => Ok(IntTuple::new(
+                dimensions.iter().map(|_| Int::Literal(1)).collect(),
+            )),
+            _ => Err(ShapeError::Unsupported {
+                message: "reduction over a symbolic number of axes".to_owned(),
+            }),
+        };
+    };
+    if axes.is_empty() {
+        return Ok(shape.clone());
+    }
+
+    let (prefix, middle, suffix) = match shape.view() {
+        IntTupleView::Concrete(dimensions) => (dimensions, None, &[][..]),
+        IntTupleView::Unpacked {
+            prefix,
+            middle,
+            suffix,
+        } => (prefix, Some(middle), suffix),
+        IntTupleView::Gradual => {
+            return Err(ShapeError::Unsupported {
+                message: "reduction over an unknown rank".to_owned(),
+            });
+        }
+    };
+    let mut selected_prefix = vec![false; prefix.len()];
+    let mut selected_suffix = vec![false; suffix.len()];
+    let mut selected_scalar = false;
+    for &axis in axes {
+        let selected = if prefix.is_empty()
+            && middle.is_none()
+            && policy.scalar_axis_ok
+            && (!axis_is_tuple || policy.scalar_tuple_axis_ok)
+        {
+            if axis == 0 || axis == -1 {
+                Some(&mut selected_scalar)
+            } else {
+                None
+            }
+        } else if axis >= 0 {
+            usize::try_from(axis)
+                .ok()
+                .and_then(|index| selected_prefix.get_mut(index))
+        } else {
+            axis.unsigned_abs()
+                .try_into()
+                .ok()
+                .and_then(|offset: usize| {
+                    if middle.is_some() {
+                        suffix
+                            .len()
+                            .checked_sub(offset)
+                            .and_then(|index| selected_suffix.get_mut(index))
+                    } else {
+                        prefix
+                            .len()
+                            .checked_sub(offset)
+                            .and_then(|index| selected_prefix.get_mut(index))
+                    }
+                })
+        };
+        let Some(selected) = selected else {
+            return Err(if middle.is_some() {
+                ShapeError::Unsupported {
+                    message: "reduction axis depends on a symbolic rank".to_owned(),
+                }
+            } else {
+                ShapeError::ShapeComputation {
+                    message: policy.invalid_axis_message.to_owned(),
+                }
+            });
+        };
+        if *selected {
+            return Err(ShapeError::ShapeComputation {
+                message: policy.duplicate_axis_message.to_owned(),
+            });
+        }
+        *selected = true;
+    }
+
+    let remaining = |dimensions: &[Int], selected: &[bool]| {
+        dimensions
+            .iter()
+            .zip(selected)
+            .filter_map(|(dimension, selected)| {
+                if *selected {
+                    keepdims.then_some(Int::Literal(1))
+                } else {
+                    Some(dimension.clone())
+                }
+            })
+            .collect::<Vec<_>>()
+    };
+    let prefix = remaining(prefix, &selected_prefix);
+    let suffix = remaining(suffix, &selected_suffix);
+    Ok(match middle {
+        Some(middle) => IntTuple::unpacked(prefix, middle.clone(), suffix),
+        None => IntTuple::new(prefix),
+    })
+}
+
 /// Compute the broadcasted shape of two tensor shapes following NumPy/PyTorch broadcasting rules:
 /// - Dimensions are aligned from right to left
 /// - Each dimension must either match or one of them must be 1

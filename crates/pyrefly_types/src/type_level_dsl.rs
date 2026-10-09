@@ -73,8 +73,10 @@ use crate::literal::Lit;
 use crate::map_int_tuples::MapIntTuples;
 use crate::quantified::Quantified;
 use crate::shape_index::index_shape_from_type;
+use crate::shaped_array::AxisReductionPolicy;
 use crate::shaped_array::IntTuple;
 use crate::shaped_array::IntTupleView;
+use crate::shaped_array::reduce_axis_shape;
 use crate::tuple::Tuple;
 use crate::type_var::FlagDomain;
 use crate::type_var::FlagMember;
@@ -1175,6 +1177,7 @@ pub enum TypeShapeDslIntrinsic {
     EinopsEinsum,
     Rearrange,
     Reduce,
+    AxisReduce,
     Repeat,
     GufuncBroadcast,
     Gradual(TypeShapeDslDomain),
@@ -1217,6 +1220,11 @@ pub enum TypeShapeDslExpressionKind {
     Reduce {
         axes: Option<usize>,
         parameter_origins: Box<[usize]>,
+    },
+    AxisReduce {
+        axis: usize,
+        axis_parameters: Option<Box<[TypeShapeDslParameterUse]>>,
+        parameter_origins: Option<Box<[usize]>>,
     },
     Repeat {
         axes: Option<usize>,
@@ -3757,6 +3765,52 @@ impl<'a, F: Fn(&Expr) -> Option<TypeShapeDslIntrinsic>> DslValidator<'a, F> {
         Ok(())
     }
 
+    fn validate_axis_reduce(
+        &mut self,
+        call: &ExprCall,
+        flow: &DslValidationFlow,
+    ) -> Result<Option<Box<[usize]>>, TypeShapeDslDefinitionError> {
+        if call.arguments.args.len() != 6 || !call.arguments.keywords.is_empty() {
+            return Err(TypeShapeDslDefinitionError {
+                range: call.arguments.range,
+                message: "`dsl.axis_reduce` requires six positional arguments",
+            });
+        }
+        let args = &call.arguments.args;
+        let parameter_origins = self.validate_int_tuple_expression(&args[0], flow)?;
+        let axis = self.slot(&args[1], flow)?;
+        let axis_parameters = match &flow.kinds[axis] {
+            kind if kind.unnarrowed_parameter_origins().is_some() => kind.parameter_uses(),
+            DslStaticKind::ValueSet { kinds, .. }
+                if *kinds & !(FLAG_INT | FLAG_SEQUENCE | FLAG_NONE) == 0 =>
+            {
+                flow.kinds[axis].parameter_uses()
+            }
+            _ => {
+                return Err(TypeShapeDslDefinitionError {
+                    range: args[1].range(),
+                    message: "`dsl.axis_reduce` axis must be a Flag integer, tuple, or None",
+                });
+            }
+        };
+        for argument in &args[2..] {
+            if matches!(argument, Expr::BooleanLiteral(_)) {
+                self.validate_assignment_value(argument, flow)?;
+            } else {
+                self.validate_condition(argument, flow)?;
+            }
+        }
+        self.expressions.push(TypeShapeDslExpression {
+            range: call.range(),
+            kind: TypeShapeDslExpressionKind::AxisReduce {
+                axis,
+                axis_parameters,
+                parameter_origins: parameter_origins.clone(),
+            },
+        });
+        Ok(parameter_origins)
+    }
+
     fn validate_gradual_call(call: &ExprCall) -> Result<(), TypeShapeDslDefinitionError> {
         if call.arguments.args.is_empty() && call.arguments.keywords.is_empty() {
             Ok(())
@@ -3977,10 +4031,15 @@ impl<'a, F: Fn(&Expr) -> Option<TypeShapeDslIntrinsic>> DslValidator<'a, F> {
                 self.validate_gufunc_broadcast(call, flow)?;
                 None
             }
+            Expr::Call(call)
+                if self.intrinsic(&call.func) == Some(TypeShapeDslIntrinsic::AxisReduce) =>
+            {
+                self.validate_axis_reduce(call, flow)?
+            }
             _ => {
                 return Err(TypeShapeDslDefinitionError {
                     range: expression.range(),
-                    message: "IntTuple shape expressions support parameters, immutable aliases, restricted slices, `dsl.IntTuple`, `dsl.concat`, `dsl.einsum`, `dsl.einops_einsum`, `dsl.rearrange`, `dsl.reduce`, `dsl.repeat`, and `dsl._gufunc_broadcast`",
+                    message: "IntTuple shape expressions support parameters, immutable aliases, restricted slices, `dsl.IntTuple`, `dsl.concat`, `dsl.axis_reduce`, `dsl.einsum`, `dsl.einops_einsum`, `dsl.rearrange`, `dsl.reduce`, `dsl.repeat`, and `dsl._gufunc_broadcast`",
                 });
             }
         };
@@ -4103,6 +4162,7 @@ impl<'a, F: Fn(&Expr) -> Option<TypeShapeDslIntrinsic>> DslValidator<'a, F> {
                             | TypeShapeDslIntrinsic::EinopsEinsum
                             | TypeShapeDslIntrinsic::Rearrange
                             | TypeShapeDslIntrinsic::Reduce
+                            | TypeShapeDslIntrinsic::AxisReduce
                             | TypeShapeDslIntrinsic::Repeat
                             | TypeShapeDslIntrinsic::GufuncBroadcast
                     )
@@ -5118,6 +5178,7 @@ impl<'a, F: Fn(&Expr) -> Option<TypeShapeDslIntrinsic>> DslValidator<'a, F> {
                     | TypeShapeDslIntrinsic::EinopsEinsum
                     | TypeShapeDslIntrinsic::Rearrange
                     | TypeShapeDslIntrinsic::Reduce
+                    | TypeShapeDslIntrinsic::AxisReduce
                     | TypeShapeDslIntrinsic::Repeat
                     | TypeShapeDslIntrinsic::GufuncBroadcast,
                 ) => {
@@ -7072,6 +7133,71 @@ impl StructurallyValidatedTypeShapeDslFunction {
                     None => &empty_axis_lengths,
                 };
                 match evaluate_einops_pattern(&pattern, &input, axis_lengths) {
+                    Ok(shape) => DslOutcome::Value(DslValue::Shape(shape)),
+                    Err(ShapeError::Unsupported { .. }) => DslOutcome::Value(DslValue::Unknown),
+                    Err(error) => DslOutcome::Invalid(error),
+                }
+            }
+            TypeShapeDslExpressionKind::AxisReduce { axis, .. } => {
+                let Expr::Call(call) = expression else {
+                    unreachable!("validated axis reduction expression is a call")
+                };
+                let args = &call.arguments.args;
+                let shape = match self.evaluate_expression(&args[0], environment, budget) {
+                    DslOutcome::Value(DslValue::Shape(shape)) => shape,
+                    DslOutcome::Value(DslValue::Unknown) => {
+                        return DslOutcome::Value(DslValue::Unknown);
+                    }
+                    invalid @ DslOutcome::Invalid(_) => return invalid,
+                    _ => unreachable!("validated reduction input is a shape"),
+                };
+                let axis_value = environment.value(axis);
+                let single_axis;
+                let axes = match axis_value {
+                    DslValue::FlagNone => None,
+                    DslValue::FlagInt(axis) => {
+                        single_axis = [*axis];
+                        Some(single_axis.as_slice())
+                    }
+                    DslValue::FlagSequence(DslFlagSequence::Values(axes)) => Some(axes.as_slice()),
+                    DslValue::Unknown
+                    | DslValue::GradualInt
+                    | DslValue::FlagSequence(DslFlagSequence::Range { .. }) => {
+                        return DslOutcome::Value(DslValue::Unknown);
+                    }
+                    _ => unreachable!("validated reduction axis is a Flag axis"),
+                };
+                let mut options = [false; 4];
+                for (option, argument) in options.iter_mut().zip(&args[2..]) {
+                    *option = match argument {
+                        Expr::BooleanLiteral(literal) => literal.value,
+                        _ => match self.evaluate_condition(argument, environment, budget) {
+                            Ok(DslCondition::True) => true,
+                            Ok(DslCondition::False) => false,
+                            Ok(DslCondition::Unknown | DslCondition::UnknownWithPossibleError) => {
+                                return DslOutcome::Value(DslValue::Unknown);
+                            }
+                            Err(error) => return DslOutcome::Invalid(error),
+                        },
+                    };
+                }
+                let policy = AxisReductionPolicy {
+                    empty_means_all: options[1],
+                    scalar_axis_ok: options[2],
+                    scalar_tuple_axis_ok: options[3],
+                    invalid_axis_message: if options[1] {
+                        "dimension out of range"
+                    } else {
+                        "axis out of bounds"
+                    },
+                    duplicate_axis_message: if options[1] {
+                        "duplicate dimension"
+                    } else {
+                        "duplicate axis"
+                    },
+                };
+                let axis_is_tuple = matches!(axis_value, DslValue::FlagSequence(_));
+                match reduce_axis_shape(&shape, axes, options[0], policy, axis_is_tuple) {
                     Ok(shape) => DslOutcome::Value(DslValue::Shape(shape)),
                     Err(ShapeError::Unsupported { .. }) => DslOutcome::Value(DslValue::Unknown),
                     Err(error) => DslOutcome::Invalid(error),
