@@ -1638,14 +1638,101 @@ def g[T: (int, str)](x: T) -> T:
     "#,
 );
 
+// https://github.com/facebook/pyrefly/issues/3783
 testcase!(
-    bug = "Return type T is narrowed to int, so returning 0 should be allowed",
     test_return_concrete_type_after_typevar_narrow,
     r#"
 def f[T: (int, str)](x: T) -> T:
     if isinstance(x, int):
-        return 0  # E: `Literal[0]` is not assignable to declared return type `T`
+        return 0
     else:
+        return x
+    "#,
+);
+
+testcase!(
+    test_return_concrete_type_after_legacy_typevar_narrow,
+    r#"
+from typing import TypeVar
+T = TypeVar("T", int, str)
+def f(x: T) -> T:
+    if isinstance(x, int):
+        return 0
+    return x
+    "#,
+);
+
+testcase!(
+    test_return_wrong_concrete_type_after_typevar_narrow,
+    r#"
+def f[T: (int, str)](x: T) -> T:
+    if isinstance(x, int):
+        return ""  # E: `Literal['']` is not assignable to declared return type `T`
+    return x
+    "#,
+);
+
+testcase!(
+    test_return_typevar_after_typevar_narrow,
+    r#"
+def f[T: (int, str)](x: T, y: T) -> T:
+    if isinstance(x, int):
+        return y
+    return x
+    "#,
+);
+
+testcase!(
+    test_typevar_narrow_persists_after_early_return,
+    r#"
+def f[T: (bytes, str)](x: T) -> T:
+    if not isinstance(x, str):
+        return b""
+    return ""
+    "#,
+);
+
+testcase!(
+    test_typevar_narrow_does_not_persist_after_merge,
+    r#"
+def f[T: (bytes, str)](x: T) -> T:
+    if isinstance(x, str):
+        pass
+    return ""  # E: `Literal['']` is not assignable to declared return type `T`
+    "#,
+);
+
+// A `bool` can only be an instance of the `int` constraint, so `T` must be `int`.
+testcase!(
+    test_typevar_narrow_to_subclass_of_constraint,
+    r#"
+def f[T: (int, str)](x: T) -> T:
+    if isinstance(x, bool):
+        return 0
+    return x
+    "#,
+);
+
+// `x` may be a `B` even when `T` is `A`, so narrowing does not determine `T`.
+testcase!(
+    test_typevar_narrow_with_overlapping_constraints,
+    r#"
+class A: ...
+class B(A): ...
+def f[T: (A, B)](x: T) -> T:
+    if isinstance(x, A):
+        return A()  # E: `A` is not assignable to declared return type `T`
+    return x
+    "#,
+);
+
+testcase!(
+    test_return_concrete_type_after_class_typevar_narrow,
+    r#"
+class C[T: (int, str)]:
+    def f(self, x: T) -> T:
+        if isinstance(x, int):
+            return 0
         return x
     "#,
 );

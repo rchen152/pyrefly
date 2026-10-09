@@ -4004,6 +4004,11 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     /// types, retry once for each combination of the type variables' possible solutions, with
     /// each type variable replaced by its solution in `want` and in the types of names in `expr`.
     /// If every retry succeeds, the errors are discarded.
+    ///
+    /// A type variable's possible solutions are its constraints, excluding those that narrowing
+    /// has ruled out. A value of type `N & T`, where `T` is a constrained type variable, is an
+    /// instance of both `N` and the constraint that `T` was solved to, so that constraint must
+    /// overlap `N`.
     fn expr_check_per_constraint(
         &self,
         expr: &Expr,
@@ -4033,14 +4038,30 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
         let mut possible_solutions: SmallMap<Quantified, Vec<Type>> = SmallMap::new();
         for idx in param_idxs {
-            if let Type::Quantified(q) = self.get_idx(*idx).ty()
-                && let Restriction::Constraints(constraints) = q.restriction()
-            {
-                possible_solutions.insert((**q).clone(), constraints.clone());
+            let param_ty = self.get_idx(*idx);
+            let Some((q, narrowed)) = param_ty.ty().as_quantified() else {
+                continue;
+            };
+            let Restriction::Constraints(constraints) = q.restriction() else {
+                continue;
+            };
+            let solutions: Vec<Type> = constraints
+                .iter()
+                .filter(|c| narrowed.is_none_or(|narrowed| !self.is_provably_disjoint(narrowed, c)))
+                .cloned()
+                .collect();
+            match possible_solutions.entry(q.clone()) {
+                Entry::Vacant(e) => {
+                    e.insert(solutions);
+                }
+                Entry::Occupied(mut e) => e.get_mut().retain(|c| solutions.contains(c)),
             }
         }
         let num_combinations: usize = possible_solutions.values().map(Vec::len).product();
-        if possible_solutions.is_empty() || num_combinations > MAX_CONSTRAINT_COMBINATIONS {
+        if possible_solutions.is_empty()
+            || num_combinations == 0
+            || num_combinations > MAX_CONSTRAINT_COMBINATIONS
+        {
             errors.extend(first_errors);
             return ty;
         }
