@@ -73,6 +73,10 @@ pub enum SuppressionMode {
     /// Remove unused ignore comments for UnusedIgnore and UnusedTypeIgnore errors.
     RemoveUnused,
     /// Both add suppression comments and remove unused ignore comments in one pass.
+    #[allow(
+        dead_code,
+        reason = "Intentionally unused, exists to be available for use in a patched pyrefly binary"
+    )]
     AddAndRemoveUnused,
 }
 
