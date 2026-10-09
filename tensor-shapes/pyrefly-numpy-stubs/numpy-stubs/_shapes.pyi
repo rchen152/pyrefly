@@ -251,25 +251,7 @@ def reduce_shape(
     axis: int | tuple[int, ...] | None,
     keepdims: bool,
 ) -> IntTuple:
-    if axis is None:
-        axes = range(len(shape))
-    elif dsl.is_int_value(axis):
-        axes = (axis,)
-    else:
-        axes = axis
-    # The DSL does not support unary negation of a Flag integer.
-    if any(item < 0 - len(shape) or item >= len(shape) for item in axes):
-        return dsl.Invalid("axis out of bounds")
-    normalized = tuple(item + len(shape) if item < 0 else item for item in axes)
-    if any(normalized.count(item) > 1 for item in normalized):
-        return dsl.Invalid("duplicate axis")
-    if keepdims:
-        return dsl.IntTuple(
-            (1 if index in normalized else shape[index] for index in range(len(shape)))
-        )
-    return dsl.IntTuple(
-        (shape[index] for index in range(len(shape)) if index not in normalized)
-    )
+    return dsl.axis_reduce(shape, axis, keepdims, False, True, False)
 
 @type_shape_dsl_function
 def stack_shape(shapes: IntTuples, axis: int) -> IntTuple:

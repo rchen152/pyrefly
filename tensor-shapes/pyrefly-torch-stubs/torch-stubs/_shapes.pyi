@@ -68,42 +68,7 @@ def reduce_shape(
     dim: int | tuple[int, ...] | None,
     keepdim: bool,
 ) -> IntTuple:
-    if dim is None:
-        dims = range(len(shape))
-    elif dsl.is_int_value(dim):
-        if dim == -1:
-            if len(shape) == 0:
-                return shape
-            if keepdim:
-                return dsl.concat(shape[:-1], dsl.IntTuple((1,)))
-            return shape[:-1]
-        dims = (dim,)
-    elif len(dim) == 0:
-        dims = range(len(shape))
-    else:
-        dims = dim
-    if len(shape) == 0:
-        # PyTorch lets either 0 or -1 name the scalar reduction axis. After
-        # normalization, using both is therefore a duplicate dimension.
-        if any(item != 0 and item != -1 for item in dims):
-            return dsl.Invalid("dimension out of range")
-    elif any(item < 0 - len(shape) or item >= len(shape) for item in dims):
-        return dsl.Invalid("dimension out of range")
-    normalized = tuple(
-        (
-            0 if len(shape) == 0 else (item + len(shape) if item < 0 else item)
-            for item in dims
-        )
-    )
-    if any(normalized.count(item) > 1 for item in normalized):
-        return dsl.Invalid("duplicate dimension")
-    if keepdim:
-        return dsl.IntTuple(
-            (1 if index in normalized else shape[index] for index in range(len(shape)))
-        )
-    return dsl.IntTuple(
-        (shape[index] for index in range(len(shape)) if index not in normalized)
-    )
+    return dsl.axis_reduce(shape, dim, keepdim, True, True, True)
 
 @type_shape_dsl_function
 def reduce_shape_no_keep(

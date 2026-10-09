@@ -5,7 +5,7 @@
 
 from __future__ import annotations
 
-from typing import assert_type
+from typing import assert_type, TYPE_CHECKING
 
 import jax
 import jax.numpy as jnp
@@ -13,6 +13,16 @@ from shape_extensions import assert_raises, assert_shape, IntTuple, IntVar
 
 N = IntVar("N")
 M = IntVar("M")
+
+if TYPE_CHECKING:
+
+    def check_symbolic_reductions[D: IntVar, S: IntTuple](
+        leading: jax.Array[[D, *S]], trailing: jax.Array[[*S, D]]
+    ) -> None:
+        assert_type(jnp.sum(leading, axis=0), jax.Array[[*S]])
+        assert_type(jnp.sum(leading, axis=0, keepdims=True), jax.Array[[1, *S]])
+        assert_type(jnp.mean(trailing, axis=-1, keepdims=True), jax.Array[[*S, 1]])
+        assert_type(jnp.var(trailing, axis=-1), jax.Array[[*S]])
 
 
 def reject_out_of_bounds_axis(x: jax.Array[[N, M]]) -> None:
@@ -23,6 +33,12 @@ def reject_out_of_bounds_axis(x: jax.Array[[N, M]]) -> None:
 def reject_duplicate_axis(x: jax.Array[[N, M]]) -> None:
     # E: Cannot evaluate type-level shape DSL call: duplicate axis
     jnp.sum(x, axis=(0, 0))
+
+
+def test_scalar_axis_is_invalid() -> None:
+    scalar = jnp.array(1)
+    with assert_raises(ValueError):
+        jnp.sum(scalar, axis=0)  # E: axis out of bounds
 
 
 def test_reductions_accept_their_other_keywords() -> None:

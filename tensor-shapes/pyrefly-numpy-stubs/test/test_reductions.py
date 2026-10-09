@@ -38,6 +38,8 @@ def test_reduce_scalar_and_empty_axis_tuple() -> None:
     matrix = np.ones((3, 4))
 
     assert_shape(np.sum(scalar).shape, ())
+    assert_shape(np.sum(scalar, axis=0).shape, ())
+    assert_shape(np.sum(scalar, axis=-1).shape, ())
     assert_shape(np.mean(scalar, keepdims=True).shape, ())
     assert_shape(np.sum(matrix, axis=()).shape, (3, 4))
     assert_shape(np.sum(matrix, axis=(), keepdims=True).shape, (3, 4))
@@ -50,10 +52,6 @@ def test_reduce_scalar_and_empty_axis_tuple() -> None:
     else:
         raise AssertionError("expected NumPy to reject an axis for a scalar")
 
-    if TYPE_CHECKING:
-        # The shared static rule rejects integer axes for rank-zero arrays.
-        np.sum(scalar, axis=0)  # E: axis out of bounds
-
     try:
         # `Flag` keeps bool and int separate, matching NumPy's rejection of boolean axes.
         np.sum(matrix, axis=True)  # E: not a valid `Flag[int | tuple[int, ...] | None]`
@@ -61,6 +59,16 @@ def test_reduce_scalar_and_empty_axis_tuple() -> None:
         pass
     else:
         raise AssertionError("expected NumPy to reject a boolean axis")
+
+
+if TYPE_CHECKING:
+
+    def check_symbolic_reductions[D: IntVar, S: IntTuple](
+        leading: np.ndarray[[D, *S], Any], trailing: np.ndarray[[*S, D], Any]
+    ) -> None:
+        assert_type(leading.sum(axis=0), np.ndarray[[*S], Any])
+        assert_type(leading.sum(axis=0, keepdims=True), np.ndarray[[1, *S], Any])
+        assert_type(trailing.mean(axis=-1), np.ndarray[[*S], Any])
 
 
 def test_reduce_matrix_axis_zero() -> None:
