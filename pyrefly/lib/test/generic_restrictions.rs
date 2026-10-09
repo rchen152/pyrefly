@@ -1779,6 +1779,33 @@ def f[T: (C1, C2)](x: T) -> T:
     "#,
 );
 
+// Narrowing rules out `Frame3`, the constraint for which the return would be wrong.
+testcase!(
+    test_constrained_typevar_method_chain_after_narrow,
+    r#"
+from typing import final
+@final
+class Frame1:
+    def group_by(self, key: str) -> "GroupBy1": ...
+@final
+class Frame2:
+    def group_by(self, key: str) -> "GroupBy2": ...
+@final
+class Frame3:
+    def group_by(self, key: str) -> "GroupBy1": ...
+class GroupBy1:
+    def agg(self) -> Frame1: ...
+class GroupBy2:
+    def agg(self) -> Frame2: ...
+def f[F: (Frame1, Frame2, Frame3)](df: F) -> F:
+    if isinstance(df, (Frame1, Frame2)):
+        return df.group_by("a").agg()
+    return df
+def g[F: (Frame1, Frame2, Frame3)](df: F) -> F:
+    return df.group_by("a").agg()  # E: Returned type `Frame1 | Frame2` is not assignable to declared return type `F`
+    "#,
+);
+
 testcase!(
     test_multiple_constrained_typevars,
     r#"

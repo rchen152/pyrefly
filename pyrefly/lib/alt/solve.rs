@@ -6,6 +6,7 @@
  */
 
 use std::iter;
+use std::slice;
 use std::sync::Arc;
 
 use dupe::Dupe;
@@ -4039,15 +4040,32 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         let mut possible_solutions: SmallMap<Quantified, Vec<Type>> = SmallMap::new();
         for idx in param_idxs {
             let param_ty = self.get_idx(*idx);
-            let Some((q, narrowed)) = param_ty.ty().as_quantified() else {
+            // Narrowing to several classes produces a union like `(N1 & T) | (N2 & T)`.
+            let members = match param_ty.ty() {
+                Type::Union(u) => u.members.as_slice(),
+                ty => slice::from_ref(ty),
+            };
+            let Some(quantifieds) = members
+                .iter()
+                .map(Type::as_quantified)
+                .collect::<Option<Vec<_>>>()
+            else {
                 continue;
             };
+            let (q, _) = quantifieds[0];
             let Restriction::Constraints(constraints) = q.restriction() else {
                 continue;
             };
+            if quantifieds.iter().any(|(other, _)| *other != q) {
+                continue;
+            }
             let solutions: Vec<Type> = constraints
                 .iter()
-                .filter(|c| narrowed.is_none_or(|narrowed| !self.is_provably_disjoint(narrowed, c)))
+                .filter(|c| {
+                    quantifieds.iter().any(|(_, narrowed)| {
+                        narrowed.is_none_or(|narrowed| !self.is_provably_disjoint(narrowed, c))
+                    })
+                })
                 .cloned()
                 .collect();
             match possible_solutions.entry(q.clone()) {
