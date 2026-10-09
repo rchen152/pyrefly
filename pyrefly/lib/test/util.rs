@@ -18,6 +18,7 @@ use anstream::ColorChoice;
 use anyhow::anyhow;
 use dupe::Dupe;
 use pyrefly_build::handle::Handle;
+use pyrefly_build::source_db::buck_check::BuckCheckSourceDatabase;
 use pyrefly_build::source_db::map_db::MapDatabase;
 use pyrefly_config::error::ErrorDisplayConfig;
 use pyrefly_config::error_kind::ErrorKind;
@@ -95,6 +96,34 @@ pub fn shape_extensions_env() -> TestEnv {
     let path = std::env::var("SHAPE_EXTENSIONS_TEST_PATH")
         .expect("SHAPE_EXTENSIONS_TEST_PATH must be set");
     TestEnv::new_with_site_package_paths(&[&path])
+}
+
+/// A source database built the way `pyrefly buck-check` builds one. The manifests list
+/// module-relative paths of the checked target's files under `root/src`, of dependency files
+/// under `root/deps`, and of toolchain typeshed files under `root/typeshed`.
+pub fn buck_check_source_db(
+    root: &Path,
+    sources: &[&str],
+    dependencies: &[&str],
+    typeshed: &[&str],
+    sys_info: SysInfo,
+) -> BuckCheckSourceDatabase {
+    let manifest = |dir: &str, files: &[&str]| {
+        let entries = files.map(|file| (*file, root.join(dir).join(file), "test"));
+        let path = root.join(format!("{dir}.json"));
+        fs_anyhow::write(&path, serde_json::to_vec(&entries).unwrap()).unwrap();
+        path
+    };
+    BuckCheckSourceDatabase::from_manifest_files(
+        &[manifest("src", sources)],
+        &[manifest("deps", dependencies)],
+        &[manifest("typeshed", typeshed)],
+        sys_info,
+        false,
+        Vec::new(),
+        &[],
+    )
+    .unwrap()
 }
 
 #[macro_export]

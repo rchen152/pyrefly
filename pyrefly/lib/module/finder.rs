@@ -849,12 +849,16 @@ mod tests {
     use pyrefly_config::environment::environment::PythonEnvironment;
     use pyrefly_config::environment::interpreters::Interpreters;
     use pyrefly_python::module_path::ModulePathDetails;
+    use pyrefly_python::sys_info::PythonPlatform;
     use pyrefly_python::sys_info::PythonVersion;
+    use pyrefly_python::sys_info::SysInfo;
+    use pyrefly_util::arc_id::ArcId;
     use pyrefly_util::test_path::TestPath;
 
     use super::*;
     use crate::module::typeshed::clear_custom_typeshed_versions;
     use crate::state::loader::Finding;
+    use crate::test::util::buck_check_source_db;
 
     #[test]
     fn test_find_module_simple() {
@@ -3123,6 +3127,242 @@ mod tests {
             find_in_custom_typeshed(&typeshed, "chunk", PythonVersion::new(3, 13, 0)),
             FindingOrError::Finding(_)
         ));
+    }
+
+    /// A config that resolves imports the way `pyrefly buck-check` does.
+    fn buck_check_config(
+        root: &Path,
+        sources: &[&str],
+        dependencies: &[&str],
+        typeshed: &[&str],
+        version: PythonVersion,
+    ) -> ConfigFile {
+        let mut config = get_config(ConfigSource::Synthetic(None));
+        config.python_environment.python_version = Some(version);
+        config.source_db = Some(ArcId::new(Box::new(buck_check_source_db(
+            root,
+            sources,
+            dependencies,
+            typeshed,
+            SysInfo::new(version, PythonPlatform::linux()),
+        ))));
+        config.configure();
+        config
+    }
+
+    /// Resolve `module` for an import in the checked target's `main.py`.
+    fn find_from_source(
+        config: &ConfigFile,
+        root: &Path,
+        module: &str,
+        lookup_mode: ImportLookupMode,
+    ) -> ModulePath {
+        let origin = ModulePath::filesystem(root.join("src/main.py"));
+        find_import_with_mode(
+            config,
+            ModuleName::from_str(module),
+            lookup_mode,
+            FindImportOptions {
+                origin: Some(&origin),
+                ..FindImportOptions::new(&DirEntryCache::new())
+            },
+        )
+        .finding()
+        .unwrap()
+    }
+
+    #[test]
+    fn test_buck_dependency_source_with_bundled_stub() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        let config = buck_check_config(
+            root,
+            &["main.py"],
+            &["typing_extensions.py"],
+            &[],
+            PythonVersion::new(3, 12, 0),
+        );
+        let dependency = ModulePath::filesystem(root.join("deps/typing_extensions.py"));
+
+        // The bundled stub should win. The implementation defines `Self` and `TypeAlias` at
+        // runtime, so the type checker cannot use them as types.
+        assert_eq!(
+            find_from_source(
+                &config,
+                root,
+                "typing_extensions",
+                ImportLookupMode::TypeChecking
+            ),
+            dependency
+        );
+        assert_eq!(
+            find_from_source(
+                &config,
+                root,
+                "typing_extensions",
+                ImportLookupMode::style(ModuleStyle::Executable)
+            ),
+            dependency
+        );
+    }
+
+    #[test]
+    fn test_buck_owner_source_or_buck_stub_with_bundled_stub() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        let version = PythonVersion::new(3, 12, 0);
+        let find = |config: &ConfigFile| {
+            find_from_source(
+                config,
+                root,
+                "typing_extensions",
+                ImportLookupMode::TypeChecking,
+            )
+        };
+
+        let owner = buck_check_config(
+            root,
+            &["main.py", "typing_extensions.py"],
+            &["typing_extensions.py"],
+            &[],
+            version,
+        );
+        // The bundled stub should win over the target's own implementation.
+        assert_eq!(
+            find(&owner),
+            ModulePath::filesystem(root.join("src/typing_extensions.py"))
+        );
+
+        let dependency_stub = buck_check_config(
+            root,
+            &["main.py"],
+            &["typing_extensions.py", "typing_extensions.pyi"],
+            &[],
+            version,
+        );
+        assert_eq!(
+            find(&dependency_stub),
+            ModulePath::filesystem(root.join("deps/typing_extensions.pyi"))
+        );
+
+        let toolchain_stub = buck_check_config(
+            root,
+            &["main.py"],
+            &["typing_extensions.py"],
+            &["typing_extensions.pyi"],
+            version,
+        );
+        assert_eq!(
+            find(&toolchain_stub),
+            ModulePath::filesystem(root.join("typeshed/typing_extensions.pyi"))
+        );
+    }
+
+    #[test]
+    fn test_buck_dependency_source_with_versioned_bundled_stub() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        let find = |version| {
+            let config =
+                buck_check_config(root, &["main.py"], &["asyncore/__init__.py"], &[], version);
+            find_from_source(&config, root, "asyncore", ImportLookupMode::TypeChecking)
+        };
+        let dependency = ModulePath::filesystem(root.join("deps/asyncore/__init__.py"));
+
+        // The bundled stub should win on 3.11, the last version with `asyncore` in the
+        // standard library.
+        assert_eq!(find(PythonVersion::new(3, 11, 0)), dependency);
+        assert_eq!(find(PythonVersion::new(3, 12, 0)), dependency);
+    }
+
+    /// A custom typeshed replaces the bundled one, so a module that the custom typeshed excludes
+    /// or omits never resolves to the bundled stub.
+    #[test]
+    fn test_buck_dependency_source_with_custom_typeshed_stub() {
+        let typeshed = custom_typeshed(Some("graphlib: 3.0-3.10\n"));
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        let mut config = buck_check_config(
+            root,
+            &["main.py"],
+            &["chunk.py", "graphlib.py", "asyncore/__init__.py"],
+            &[],
+            PythonVersion::new(3, 11, 0),
+        );
+        config.typeshed_path = Some(typeshed.path().to_path_buf());
+        config.configure();
+        let find = |module| find_from_source(&config, root, module, ImportLookupMode::TypeChecking);
+        let dependency = |file: &str| ModulePath::filesystem(root.join("deps").join(file));
+
+        // The custom typeshed's `chunk` stub should win.
+        assert_eq!(find("chunk"), dependency("chunk.py"));
+        assert_eq!(find("graphlib"), dependency("graphlib.py"));
+        assert_eq!(find("asyncore"), dependency("asyncore/__init__.py"));
+    }
+
+    #[test]
+    fn test_buck_dependency_source_with_bundled_third_party_stub() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        let config = buck_check_config(
+            root,
+            &["main.py"],
+            &[
+                "mypy_extensions.py",
+                "requests/__init__.py",
+                "pandas/__init__.py",
+                "google/protobuf/descriptor.py",
+            ],
+            &[],
+            PythonVersion::new(3, 12, 0),
+        );
+        for (module, path) in [
+            (
+                "mypy_extensions",
+                ModulePath::filesystem(root.join("deps/mypy_extensions.py")),
+            ),
+            (
+                "requests",
+                ModulePath::filesystem(root.join("deps/requests/__init__.py")),
+            ),
+            (
+                "pandas",
+                ModulePath::filesystem(root.join("deps/pandas/__init__.py")),
+            ),
+            ("google", ModulePath::namespace(root.join("deps/google"))),
+        ] {
+            assert_eq!(
+                find_from_source(&config, root, module, ImportLookupMode::TypeChecking),
+                path,
+                "{module}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_buck_dependency_namespace_with_bundled_stub() {
+        let find = |root: &Path| {
+            let config = buck_check_config(
+                root,
+                &["main.py"],
+                &["xml/sax/handler.py"],
+                &[],
+                PythonVersion::new(3, 12, 0),
+            );
+            find_from_source(&config, root, "xml", ImportLookupMode::TypeChecking)
+        };
+
+        let plain = tempfile::tempdir().unwrap();
+        assert_eq!(
+            find(plain.path()),
+            ModulePath::namespace(plain.path().join("deps/xml"))
+        );
+
+        let stubs = tempfile::Builder::new().suffix("-stubs").tempdir().unwrap();
+        assert_eq!(
+            find(stubs.path()),
+            ModulePath::namespace(stubs.path().join("deps/xml"))
+        );
     }
 
     #[test]
