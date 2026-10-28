@@ -1923,3 +1923,22 @@ def bad() -> None:
     x: Nested[list[Any]] = Nested([1])  # Should be an error
  "#,
 );
+
+// The bound `C[Any]` must keep its type argument when `C`'s own type parameter is restricted.
+// Otherwise, members accessed through `Self` leak `C`'s unsolved type parameter.
+testcase!(
+    test_bound_keeps_targs_of_class_with_restricted_tparams,
+    r#"
+from typing import Any, assert_type
+
+class N: ...
+
+class C[T: N]:
+    def get(self) -> T: ...
+
+class G[X: C[Any]]:
+    x: X
+    def f(self) -> None:
+        assert_type(self.x.get(), Any)
+ "#,
+);

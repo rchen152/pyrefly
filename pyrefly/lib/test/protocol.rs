@@ -2195,3 +2195,36 @@ pt: PT[int] = C()
 bad: P = D()  # E: `D` is not assignable to `P`
 "#,
 );
+
+// Regression test for https://github.com/facebook/pyrefly/issues/3285
+testcase!(
+    test_protocol_identity_method,
+    r#"
+from typing import Any, Callable, Protocol, TypeVar
+
+class NativeExpr: ...
+
+NativeExprT = TypeVar("NativeExprT", bound=NativeExpr)
+NativeExprT_co = TypeVar("NativeExprT_co", bound=NativeExpr, covariant=True)
+
+class SQLExpr(Protocol[NativeExprT]):
+    @classmethod
+    def from_elementwise(
+        cls, func: Callable[[NativeExprT], NativeExprT]
+    ) -> None:
+        return None
+
+SQLExprT = TypeVar("SQLExprT", bound=SQLExpr[Any], covariant=True)
+
+class SQLNamespace(Protocol[SQLExprT, NativeExprT_co]):
+    @property
+    def _expr(self) -> type[SQLExprT]: ...
+
+    def foo(self) -> None:
+        def _func(a: NativeExprT_co) -> NativeExprT_co:
+            return a
+
+        self._expr.from_elementwise(_func)
+        return None
+    "#,
+);

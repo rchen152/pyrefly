@@ -194,43 +194,41 @@ impl TParams {
     /// Each iteration embeds the previous iteration's TParams one level deeper
     /// through the chain: TParams → Restriction → ClassType → TArgs → TParams → ...
     ///
-    /// This method enforces a structural invariant: within a Quantified's restriction,
-    /// any ClassType whose TArgs embed TParams with their own non-trivial restrictions
-    /// (Bound or Constraints) has its TArgs stripped to empty. This prevents recursive
-    /// nesting while preserving TArgs for simple cases like `T: List[int]` where the
-    /// inner TParams have only unrestricted type variables.
-    pub fn truncate_recursive_targs(self) -> Self {
-        let quantifieds = self
-            .0
-            .into_iter()
-            .map(|q| {
-                let new_restriction = match q.restriction() {
-                    Restriction::Bound(ty) => {
-                        Restriction::Bound(Self::strip_recursive_class_targs(ty.clone()))
+    /// This method cuts the chain at the TParams embedded in the TArgs of each ClassType
+    /// in a Quantified's restriction or default. The ClassType keeps its type arguments,
+    /// which are needed to specialize the class (e.g. for attribute lookup on a TypeVar
+    /// bounded by `C[Any]`). Within the embedded TParams, any ClassType whose TArgs embed
+    /// TParams with their own non-trivial restrictions has its TArgs stripped to empty,
+    /// so nesting is at most two levels deep. Substitution is unaffected because a
+    /// Quantified's identity does not depend on its restriction or default.
+    pub fn truncate_recursive_targs(mut self) -> Self {
+        for q in &mut self.0 {
+            q.visit_mut(&mut |ty| {
+                ty.transform_mut(&mut |t| {
+                    if let Type::ClassType(ct) = t
+                        && Self::tparams_have_restrictions(ct.targs().tparams())
+                    {
+                        let mut tparams = ct.targs().tparams().clone();
+                        for q in &mut tparams.0 {
+                            q.visit_mut(&mut Self::strip_recursive_class_targs);
+                        }
+                        *t = Type::ClassType(ClassType::new(
+                            ct.class_object().dupe(),
+                            TArgs::new(Arc::new(tparams), ct.targs().as_slice().to_vec()),
+                        ));
                     }
-                    Restriction::Constraints(tys) => Restriction::Constraints(
-                        tys.iter()
-                            .map(|ty| Self::strip_recursive_class_targs(ty.clone()))
-                            .collect(),
-                    ),
-                    Restriction::ShapeExtension(extension) => {
-                        Restriction::ShapeExtension(extension.clone())
-                    }
-                    Restriction::Unrestricted => Restriction::Unrestricted,
-                };
-                q.with_restriction(new_restriction)
-            })
-            .collect();
-        Self(quantifieds)
+                })
+            });
+        }
+        self
     }
 
     /// Walk a type tree and strip TArgs from any ClassType whose TArgs' TParams
     /// have non-trivial restrictions (Bound or Constraints). Such TParams can
     /// participate in recursive nesting across fixpoint iterations.
-    fn strip_recursive_class_targs(ty: Type) -> Type {
-        ty.transform(&mut |t| {
+    fn strip_recursive_class_targs(ty: &mut Type) {
+        ty.transform_mut(&mut |t| {
             if let Type::ClassType(ct) = t
-                && !ct.targs().is_empty()
                 && Self::tparams_have_restrictions(ct.targs().tparams())
             {
                 *t = Type::ClassType(ClassType::new(ct.class_object().dupe(), TArgs::default()));
