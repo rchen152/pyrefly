@@ -1397,6 +1397,7 @@ impl Transaction<'_> {
                         self.add_endpoint_completions(
                             handle,
                             mod_module.as_ref(),
+                            &nodes,
                             position,
                             &mut result,
                         );

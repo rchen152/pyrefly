@@ -6,7 +6,10 @@
  */
 
 use lsp_types::CompletionItem;
+use lsp_types::CompletionItemTextEdit;
 use pyrefly_build::handle::Handle;
+use pyrefly_python::ast::Ast;
+use ruff_python_ast::Expr;
 use ruff_text_size::TextSize;
 
 use crate::state::lsp::ImportFormat;
@@ -89,6 +92,20 @@ fn endpoint_items(state: &State, handle: &Handle, position: TextSize) -> Vec<Com
         .collect()
 }
 
+fn apply_completion(state: &State, handle: &Handle, code: &str, item: &CompletionItem) -> String {
+    let Some(CompletionItemTextEdit::TextEdit(edit)) = &item.text_edit else {
+        panic!("Endpoint completion must have a replacement edit");
+    };
+    let module = state.transaction().get_module_info(handle).unwrap();
+    let range = module.from_lsp_range(edit.range, None);
+    let mut updated = code.to_owned();
+    updated.replace_range(
+        range.start().to_usize()..range.end().to_usize(),
+        &edit.new_text,
+    );
+    updated
+}
+
 fn definition_names(state: &State, handle: &Handle, position: TextSize) -> Vec<String> {
     state
         .transaction()
@@ -113,9 +130,9 @@ fn endpoint_partial_literal_edit() {
     let (state, handle) = state_for(&code);
     let items = endpoint_items(&state, &handle, position(&code, "/us\"", 3));
     let item = items.iter().find(|item| item.label == "/users").unwrap();
-    // Captures the current missing replacement range before the repair slice.
-    assert!(item.text_edit.is_none());
-    assert_eq!(item.insert_text.as_deref(), Some("/users"));
+    assert!(item.insert_text.is_none());
+    let updated = apply_completion(&state, &handle, &code, item);
+    assert!(updated.ends_with("client.get(\"/users\")\n"));
 }
 
 #[test]
@@ -125,9 +142,16 @@ fn endpoint_quoted_literal_edit() {
     let (state, handle) = state_for(&code);
     let items = endpoint_items(&state, &handle, position(&code, "client.get(\"", 12));
     let item = items.first().unwrap();
-    // The current insertion contains an unescaped delimiter.
-    assert!(item.text_edit.is_none());
-    assert_eq!(item.insert_text.as_deref(), Some("/say\"hello"));
+    let updated = apply_completion(&state, &handle, &code, item);
+    let Expr::Call(call) =
+        Ast::parse_expr(updated.lines().last().unwrap(), TextSize::new(0)).unwrap()
+    else {
+        panic!("Expected client call");
+    };
+    let Expr::StringLiteral(literal) = &call.arguments.args[0] else {
+        panic!("Expected URL literal");
+    };
+    assert_eq!(literal.value.to_string(), "/say\"hello");
 }
 
 #[test]
@@ -136,14 +160,9 @@ fn endpoint_definition_argument_boundary() {
         "{APP}\nclient = TestClient(app)\nclient.get(\"/users\", timeout=None)\ncontrol = None\n"
     );
     let (state, handle) = state_for(&code);
-    // Captures navigation incorrectly claiming a non-URL argument.
     assert_eq!(
         definition_names(&state, &handle, position(&code, "timeout=None", 10)),
-        vec!["handler"]
-    );
-    assert!(
-        !definition_names(&state, &handle, position(&code, "control = None", 12))
-            .contains(&"handler".to_owned())
+        definition_names(&state, &handle, position(&code, "control = None", 12)),
     );
 }
 

@@ -4762,16 +4762,16 @@ def create_user():
 
 client = TestClient(app)
 client.get("")
-#          ^
-client.post("")
 #           ^
+client.post("")
+#            ^
 "#;
     let report =
         get_batched_lsp_operations_report_allow_error(&[("main", code)], get_default_test_report());
     let trimmed = report.trim();
     for expected in [
-        "- (Value) /users: GET endpoint inserting `/users`",
-        "- (Value) /users: POST endpoint inserting `/users`",
+        "- (Value) /users: GET endpoint with text edit:",
+        "- (Value) /users: POST endpoint with text edit:",
     ] {
         assert!(
             trimmed.contains(expected),
@@ -4793,12 +4793,12 @@ def list_users():
 
 data = {}
 data.get("")
-#        ^
+#         ^
 "#;
     let report =
         get_batched_lsp_operations_report_allow_error(&[("main", code)], get_default_test_report());
     assert!(
-        !report.contains("endpoint inserting `/users`"),
+        !report.contains("GET endpoint"),
         "Expected non-HTTP get() call to avoid endpoint completions, got:\n{report}"
     );
 }

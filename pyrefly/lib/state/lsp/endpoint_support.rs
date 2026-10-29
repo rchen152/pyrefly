@@ -10,6 +10,8 @@ use std::collections::BTreeSet;
 
 use dupe::Dupe;
 use lsp_types::CompletionItemKind;
+use lsp_types::CompletionItemTextEdit;
+use lsp_types::TextEdit;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::ast::Ast;
 use pyrefly_python::docstring::Docstring;
@@ -130,7 +132,6 @@ struct EndpointDefinition {
 struct EndpointCallContext {
     literal: ExprStringLiteral,
     method: EndpointMethod,
-    in_string_literal: bool,
 }
 
 #[derive(Clone)]
@@ -439,54 +440,14 @@ fn literal_value(lit: &ExprStringLiteral) -> String {
     lit.value.to_string()
 }
 
-fn string_literal_priority(position: TextSize, range: TextRange) -> (u8, TextSize) {
-    if range.contains(position) {
-        (0, TextSize::from(0))
-    } else if position < range.start() {
-        (1, range.start() - position)
-    } else {
-        (2, position - range.end())
-    }
-}
-
-fn endpoint_literal_in_call(call: &ExprCall, position: TextSize) -> Option<ExprStringLiteral> {
-    let mut best: Option<(u8, TextSize, ExprStringLiteral)> = None;
-    let mut candidates = Vec::new();
-    if let Some(Expr::StringLiteral(lit)) = call.arguments.args.first() {
-        candidates.push(lit.clone());
-    }
-    for name in ["url", "path", "route"] {
-        if let Some(lit) = string_literal_kw_arg(call, &[name]) {
-            candidates.push(lit);
-        }
-    }
-    for literal in candidates {
-        let (priority, dist) = string_literal_priority(position, literal.range());
-        let should_update = match &best {
-            Some((best_prio, best_dist, _)) => {
-                priority < *best_prio || (priority == *best_prio && dist < *best_dist)
-            }
-            None => true,
-        };
-        if should_update {
-            best = Some((priority, dist, literal));
-            if priority == 0 && dist == TextSize::from(0) {
-                break;
-            }
-        }
-    }
-    best.map(|(_, _, literal)| literal)
-}
-
 fn endpoint_call_context(
     transaction: &Transaction,
     handle: &Handle,
     module: &ruff_python_ast::ModModule,
+    nodes: &[AnyNodeRef<'_>],
     position: TextSize,
 ) -> Option<EndpointCallContext> {
-    let client_index = EndpointClientIndex::from_module(module);
-    let nodes = Ast::locate_node(module, position);
-    let mut best: Option<(u8, TextSize, EndpointCallContext)> = None;
+    let mut client_index = None;
     for node in nodes {
         let AnyNodeRef::ExprCall(call) = node else {
             continue;
@@ -497,36 +458,47 @@ fn endpoint_call_context(
         let Some(method) = EndpointMethod::from_attr(attr.attr.as_str()) else {
             continue;
         };
-        if !transaction.is_endpoint_client_receiver(handle, attr.value.as_ref(), &client_index) {
+        let literal = match call.arguments.args.first() {
+            Some(Expr::StringLiteral(literal)) => literal.clone(),
+            _ => match string_literal_kw_arg(call, &["url"]) {
+                Some(literal) => literal,
+                None => continue,
+            },
+        };
+        let mut parts = literal.value.iter();
+        let Some(part) = parts.next() else {
+            continue;
+        };
+        if parts.next().is_some() || !part.content_range().contains_inclusive(position) {
             continue;
         }
-        let Some(literal) = endpoint_literal_in_call(call, position) else {
-            continue;
-        };
-        let range = literal.range();
-        let (priority, dist) = string_literal_priority(position, range);
-        let should_update = match &best {
-            Some((best_prio, best_dist, _)) => {
-                priority < *best_prio || (priority == *best_prio && dist < *best_dist)
-            }
-            None => true,
-        };
-        if should_update {
-            best = Some((
-                priority,
-                dist,
-                EndpointCallContext {
-                    literal,
-                    method,
-                    in_string_literal: range.contains(position),
-                },
-            ));
-            if priority == 0 && dist == TextSize::from(0) {
-                break;
-            }
+        let index = client_index.get_or_insert_with(|| EndpointClientIndex::from_module(module));
+        if transaction.is_endpoint_client_receiver(handle, attr.value.as_ref(), index) {
+            return Some(EndpointCallContext { literal, method });
         }
     }
-    best.map(|(_, _, ctx)| ctx)
+    None
+}
+
+/// Decode only the typed prefix; the edit replaces the complete literal.
+fn literal_prefix(
+    module: &Module,
+    literal: &ExprStringLiteral,
+    position: TextSize,
+) -> Option<String> {
+    let part = literal.value.iter().next()?;
+    let opener = module.code_at(TextRange::new(
+        part.range().start(),
+        part.content_range().start(),
+    ));
+    let quote = opener.find(['\'', '"'])?;
+    let prefix = module.code_at(TextRange::new(part.range().start(), position));
+    let closed_prefix = format!("{prefix}{}", &opener[quote..]);
+    let Expr::StringLiteral(prefix) = Ast::parse_expr(&closed_prefix, TextSize::new(0)).ok()?
+    else {
+        return None;
+    };
+    Some(literal_value(&prefix))
 }
 
 fn module_might_define_endpoints(module: &Module) -> bool {
@@ -637,22 +609,19 @@ impl<'a> Transaction<'a> {
         &self,
         handle: &Handle,
         module: &ruff_python_ast::ModModule,
+        nodes: &[AnyNodeRef<'_>],
         position: TextSize,
         completions: &mut Vec<RankedCompletion>,
     ) {
-        let Some(context) = endpoint_call_context(self, handle, module, position) else {
+        let Some(context) = endpoint_call_context(self, handle, module, nodes, position) else {
             return;
         };
-        let literal_range = context.literal.range();
-        let allowance = TextSize::from(4);
-        let lower_bound = literal_range
-            .start()
-            .checked_sub(allowance)
-            .unwrap_or_else(|| TextSize::new(0));
-        if position < lower_bound || position > literal_range.end() {
+        let Some(module_info) = self.get_module_info(handle) else {
             return;
-        }
-        let prefix = literal_value(&context.literal);
+        };
+        let Some(prefix) = literal_prefix(&module_info, &context.literal, position) else {
+            return;
+        };
         let mut suggestions: BTreeMap<String, String> = BTreeMap::new();
         for endpoint in self.collect_endpoint_definitions() {
             if !method_matches(&endpoint.methods, context.method) {
@@ -669,16 +638,16 @@ impl<'a> Transaction<'a> {
             return;
         }
         for (label, detail) in suggestions {
-            let insert_text = if context.in_string_literal {
-                label.clone()
-            } else {
-                format!("\"{}\"", label)
-            };
+            let new_text =
+                serde_json::to_string(&label).expect("Serializing an endpoint string cannot fail");
             completions.push(RankedCompletion::new(lsp_types::CompletionItem {
                 label,
                 detail: Some(detail),
                 kind: Some(CompletionItemKind::Value),
-                insert_text: Some(insert_text),
+                text_edit: Some(CompletionItemTextEdit::TextEdit(TextEdit {
+                    range: module_info.to_lsp_range(context.literal.range()),
+                    new_text,
+                })),
                 ..Default::default()
             }));
         }
@@ -687,10 +656,21 @@ impl<'a> Transaction<'a> {
     pub(crate) fn find_definition_for_endpoint_literal(
         &self,
         handle: &Handle,
+        module: &ruff_python_ast::ModModule,
+        nodes: &[AnyNodeRef<'_>],
         position: TextSize,
     ) -> Option<Vec1<FindDefinitionItemWithDocstring>> {
-        let module = self.get_ast(handle)?;
-        let context = endpoint_call_context(self, handle, module.as_ref(), position)?;
+        let context = endpoint_call_context(self, handle, module, nodes, position)?;
+        if !context
+            .literal
+            .value
+            .iter()
+            .next()?
+            .content_range()
+            .contains(position)
+        {
+            return None;
+        }
         let request_path = literal_value(&context.literal);
         let mut results = Vec::new();
         for endpoint in self.collect_endpoint_definitions() {

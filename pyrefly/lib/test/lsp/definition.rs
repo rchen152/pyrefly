@@ -127,7 +127,7 @@ def list_users():
 
 data = {}
 data.get("/users")
-#        ^
+#          ^
 "#;
     let report = get_batched_lsp_operations_report_allow_error(&[("main", code)], get_test_report);
     assert!(
