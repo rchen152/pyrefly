@@ -20,6 +20,8 @@ use crate::test::util::extract_cursors_for_test;
 
 #[path = "endpoint_association.rs"]
 mod association;
+#[path = "endpoint_review_regressions.rs"]
+mod review_regressions;
 
 pub(super) fn framework_env() -> TestEnv {
     let mut env = TestEnv::new();
