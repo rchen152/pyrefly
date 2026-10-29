@@ -1228,14 +1228,16 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     fn equality_compatibility_group(&self, ty: &Type) -> Option<EqualityCompatibilityGroup> {
         let class = self.equality_class(ty)?;
         match (class.qname().module_name().as_str(), class.name().as_str()) {
-            ("builtins", "bool" | "int" | "float" | "complex") | ("decimal", "Decimal") => {
-                Some(EqualityCompatibilityGroup::Numeric)
-            }
+            ("builtins", "bool" | "int" | "float" | "complex")
+            | ("decimal", "Decimal")
+            | ("fractions", "Fraction") => Some(EqualityCompatibilityGroup::Numeric),
             ("builtins", "bytes" | "bytearray" | "memoryview") => {
                 Some(EqualityCompatibilityGroup::BytesLike)
             }
             ("builtins", "set" | "frozenset") => Some(EqualityCompatibilityGroup::SetLike),
-            ("builtins", "str") => Some(EqualityCompatibilityGroup::Str),
+            ("builtins", "str") | ("collections", "UserString") => {
+                Some(EqualityCompatibilityGroup::Str)
+            }
             _ => None,
         }
     }
@@ -1245,9 +1247,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     /// the two classes.
     ///
     /// This is a heuristic. It assumes that a standard library `__eq__` returns `True` only for
-    /// an operand of an overlapping class or of a class in the same compatibility group. Most
-    /// standard library classes follow this rule, but some do not: `Fraction(1) == 1` and
-    /// `UserString("a") == "a"` are both true.
+    /// an operand of an overlapping class or of a class in the same compatibility group.
     pub(crate) fn equality_can_match_disjoint(&self, left: &Type, right: &Type) -> bool {
         let has_user_defined_eq = |ty: &Type| {
             self.equality_class(ty).is_some_and(|class| {

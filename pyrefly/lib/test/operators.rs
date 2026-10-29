@@ -171,7 +171,9 @@ testcase!(
     test_incompatible_equality_comparison,
     TestEnv::new().enable_incompatible_comparison_error(),
     r#"
+from collections import UserString
 from decimal import Decimal
+from fractions import Fraction
 
 def compare(
     x: int,
@@ -186,6 +188,8 @@ def compare(
     bo: bool,
     c: complex,
     mv: memoryview,
+    fr: Fraction,
+    us: UserString,
 ) -> None:
     x == y  # E: Comparison `==` between incompatible types `int` and `str`
     x != y  # E: Comparison `!=` between incompatible types `int` and `str`
@@ -199,6 +203,10 @@ def compare(
     b == mv
     bo == y  # E: Comparison `==` between incompatible types `bool` and `str`
     mv == y  # E: Comparison `==` between incompatible types `memoryview` and `str`
+    x == fr
+    us == y
+    fr == y  # E: Comparison `==` between incompatible types `Fraction` and `str`
+    us == x  # E: Comparison `==` between incompatible types `UserString` and `int`
 "#,
 );
 
