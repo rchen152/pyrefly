@@ -5,6 +5,8 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+use std::slice;
+
 use lsp_types::CompletionItem;
 use lsp_types::CompletionItemTextEdit;
 use pyrefly_build::handle::Handle;
@@ -18,11 +20,8 @@ use crate::state::state::State;
 use crate::test::util::TestEnv;
 use crate::test::util::extract_cursors_for_test;
 
-#[path = "endpoint_association.rs"]
 mod association;
-#[path = "endpoint_exports.rs"]
 mod exports;
-#[path = "endpoint_review_regressions.rs"]
 mod review_regressions;
 
 pub(super) fn framework_env() -> TestEnv {
@@ -241,11 +240,9 @@ fn endpoint_definition_without_retained_route_ast() {
     let app_handle = handles("app");
     let client_handle = handles("client");
     let mut transaction = state.new_committable_transaction(Require::Exports, None);
-    transaction.as_mut().run(
-        std::slice::from_ref(&client_handle),
-        Require::Everything,
-        None,
-    );
+    transaction
+        .as_mut()
+        .run(slice::from_ref(&client_handle), Require::Everything, None);
     state.commit_transaction(transaction, None);
     assert!(state.transaction().get_ast(&app_handle).is_none());
     assert_eq!(

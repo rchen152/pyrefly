@@ -108,9 +108,9 @@ use crate::types::type_var::Restriction;
 use crate::types::types::Type;
 
 mod dict_completions;
-mod endpoint_support;
-pub(crate) use endpoint_support::EndpointModuleCache;
 mod extra_extensions;
+mod fastapi_endpoint_support;
+pub(crate) use fastapi_endpoint_support::EndpointModuleCache;
 mod pytest;
 mod quick_fixes;
 

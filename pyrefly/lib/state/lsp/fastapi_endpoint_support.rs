@@ -5,6 +5,35 @@
  * LICENSE file in the root directory of this source tree.
  */
 
+//! FastAPI/Starlette TestClient URL completion and handler navigation.
+//!
+//! This is an LSP convenience for application tests, not additional FastAPI type checking.
+//! For a typed, directly constructed TestClient associated with one known application, URL
+//! literals receive method-specific path suggestions and go-to-definition finds the handler:
+//!
+//! ```python
+//! app = FastAPI()
+//! @app.get("/users")
+//! def users(): ...
+//! client = TestClient(app)
+//! client.get("/us")     # Completion offers /users.
+//! client.get("/users")  # Go-to-definition navigates to users.
+//! ```
+//!
+//! Resolved types establish framework provenance; feature-local binding summaries establish
+//! application identity and decorator ownership. Source-versioned summaries work even when
+//! the route module's AST is not retained. Completion replaces a complete single-line literal
+//! with properly escaped text, preserving the editor's filtering prefix.
+//!
+//! Only direct application decorators with literal paths and known HTTP methods are described.
+//! Router prefixes/mounts, TestClient factories or custom constructors, URL-scope overrides,
+//! ambiguous bindings/exports and dynamic method sets are omitted instead of guessed. Handler
+//! matching supports literal segments and whole-segment, untyped `{name}` parameters.
+//!
+//! Framework rules remain in this module and its submodules. Shared Pyrefly state only owns the
+//! cache; the core LSP adds completion/definition hooks. This feature executes no HTTP requests
+//! and changes neither inference nor diagnostics.
+
 use std::collections::BTreeMap;
 
 use dupe::Dupe;
