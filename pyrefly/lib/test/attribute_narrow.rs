@@ -748,3 +748,26 @@ def f(o: A) -> None:
         assert_type(o.x, int)
     "#,
 );
+
+testcase!(
+    bug = "`a.e == 1` can be true, so `a` should stay `A`",
+    test_eq_narrow_int_enum_attribute_keeps_parent,
+    r#"
+from enum import IntEnum
+from typing import Literal, Never, assert_type
+
+class E(IntEnum):
+    X = 1
+
+class A:
+    e: E
+    y: int | None
+
+def f(a: A) -> None:
+    if a.e == 1:
+        assert_type(a, Never)
+        assert_type(a.e, Literal[E.X])
+    if a.e == 1 or a.y is not None:
+        assert_type(a.y, int)
+    "#,
+);
