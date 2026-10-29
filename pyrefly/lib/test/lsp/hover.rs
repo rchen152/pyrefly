@@ -6,6 +6,7 @@
  */
 
 use std::path::PathBuf;
+use std::slice;
 
 use lsp_types::Contents;
 use lsp_types::Hover;
@@ -1871,6 +1872,106 @@ Widget docstring"#
             .trim(),
         report.trim(),
     );
+}
+
+/// Render hover while the library stays at the dependency require level.
+fn get_test_report_with_closed_library(lib: &str, main: &str) -> String {
+    let mut env = TestEnv::new().with_run_require(Require::Exports);
+    env.add("lib", lib);
+    env.add("main", main);
+    let (state, handles) = env.to_state();
+    let main_handle = handles("main");
+    let mut transaction = state.transaction();
+    transaction.run(slice::from_ref(&main_handle), Require::Everything, None);
+    assert!(
+        transaction.get_ast(&handles("lib")).is_none(),
+        "The library must not retain an AST when only the main file is open"
+    );
+    let report = match get_hover(
+        &transaction,
+        &main_handle,
+        extract_cursors_for_test(main)[0],
+        true,
+    ) {
+        Some(Hover {
+            contents: Contents::MarkupContent(markup),
+            ..
+        }) => markup.value,
+        _ => "None".to_owned(),
+    };
+    assert!(
+        transaction.get_ast(&handles("lib")).is_none(),
+        "Hover must not upgrade the library's AST retention"
+    );
+    report
+}
+
+// BUG: Class-object docstring fallback requires the closed library's evicted AST.
+#[test]
+fn hover_on_property_returning_class_in_closed_library() {
+    let lib = r#"
+class Target:
+    """Target class documentation."""
+class Factory:
+    @property
+    def target(self) -> type[Target]: ...
+"#;
+    let main = "from lib import Factory\nf = Factory()\nf.target\n#  ^\n";
+    let report = get_test_report_with_closed_library(lib, main);
+    assert_eq!(
+        "```python\n(class) target: type[lib.Target]\n```",
+        report.trim(),
+    );
+}
+
+// BUG: Nested class documentation is unavailable after the library AST is evicted.
+#[test]
+fn hover_on_property_returning_nested_class_in_closed_library() {
+    let lib = r#"
+class Target:
+    """Unrelated top-level documentation."""
+class Outer:
+    class Target:
+        """Nested target documentation."""
+class Factory:
+    @property
+    def target(self) -> type[Outer.Target]: ...
+"#;
+    let main = "from lib import Factory\nf = Factory()\nf.target\n#  ^\n";
+    let report = get_test_report_with_closed_library(lib, main);
+    assert_eq!(
+        "```python\n(class) target: type[lib.Outer.Target]\n```",
+        report.trim(),
+    );
+}
+
+// BUG: A class alias's fallback documentation requires the closed library's AST.
+#[test]
+fn hover_on_class_alias_in_closed_library() {
+    let lib = "class Target:\n    \"\"\"Target class documentation.\"\"\"\n";
+    let main = "from lib import Target\ncls = Target\n#^\n";
+    let report = get_test_report_with_closed_library(lib, main);
+    assert_eq!(
+        "```python\n(class) cls: def cls() -> Target: ...\n```",
+        report.trim(),
+    );
+}
+
+#[test]
+fn hover_property_docstring_precedes_class_docstring_in_closed_library() {
+    let lib = r#"
+class Target:
+    """Target class documentation."""
+class Factory:
+    @property
+    def target(self) -> type[Target]:
+        """Property documentation."""
+        return Target
+"#;
+    let main = "from lib import Factory\nf = Factory()\nf.target\n#  ^\n";
+    let report = get_test_report_with_closed_library(lib, main);
+    assert!(report.contains("Property documentation."), "{report}");
+    assert!(!report.contains("Target class documentation."), "{report}");
 }
 
 #[test]
