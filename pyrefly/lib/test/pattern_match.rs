@@ -2079,7 +2079,6 @@ def f(x: object) -> None:
 
 // Regression test for https://github.com/facebook/pyrefly/issues/5340.
 testcase!(
-    bug = "`case (name, None)` failed, so `changes` and `item[1]` should be `list[int]`",
     test_negated_sequence_pattern_narrows_element,
     r#"
 from typing import assert_type
@@ -2089,13 +2088,12 @@ def f(item: tuple[str, list[int] | None]) -> None:
         case (name, None):
             pass
         case (name, changes):
-            assert_type(changes, list[int] | None)
-            assert_type(item[1], list[int] | None)
+            assert_type(changes, list[int])
+            assert_type(item[1], list[int])
     "#,
 );
 
 testcase!(
-    bug = "`case (_, None, _)` failed, so `b` should be `int`",
     test_negated_sequence_pattern_narrows_element_before_star,
     r#"
 from typing import assert_type
@@ -2106,7 +2104,7 @@ def f(item: tuple[str, int | None, bytes]) -> None:
             pass
         case (a, b, *rest):
             assert_type(a, str)
-            assert_type(b, int | None)
+            assert_type(b, int)
             assert_type(rest, list[bytes])
     "#,
 );

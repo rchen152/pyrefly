@@ -736,7 +736,6 @@ def f(o: A):
 );
 
 testcase!(
-    bug = "The unreachable `not isinstance` branch should not erase the `o.x` narrow",
     test_or_with_unreachable_branch_keeps_attribute_narrow,
     r#"
 from typing import assert_type
@@ -746,6 +745,6 @@ class A:
 
 def f(o: A) -> None:
     if not isinstance(o, A) or o.x is not None:
-        assert_type(o.x, int | None)
+        assert_type(o.x, int)
     "#,
 );
