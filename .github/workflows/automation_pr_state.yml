@@ -1,11 +1,14 @@
 name: "Automation: PR state"
 
 # Runs automation based on the current PR state:
+# - Labels the PR's size.
 # - Updates "waiting-for-*" labels to indicate who should act next.
 
 on:
   pull_request_target:
     types:
+      - opened
+      - synchronize
       - reopened
       - closed
       - ready_for_review
@@ -44,9 +47,20 @@ env:
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
 
 jobs:
+  size:
+    if: >-
+      ${{ github.event_name == 'pull_request_target'
+          && contains(fromJSON('["opened", "synchronize", "reopened"]'), github.event.action) }}
+    # A called workflow can only narrow the permissions it inherits.
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    uses: ./.github/workflows/automation_label_pr_size.yml
+
   select-prs:
     if: >-
-      ${{ (!contains(fromJSON('["labeled", "unlabeled"]'), github.event.action)
+      ${{ (!contains(fromJSON('["opened", "synchronize", "labeled", "unlabeled"]'), github.event.action)
           || github.event.label.name == 'cla signed')
           && (github.event_name != 'issue_comment'
           || (github.event.issue.pull_request != null
