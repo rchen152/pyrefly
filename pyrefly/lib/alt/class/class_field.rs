@@ -1764,9 +1764,12 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 // Metaclass attributes are typically filled by subclass class bodies via
                 // `type.__new__`, so annotation-only declarations on a metaclass are not
                 // uninitialized instance vars in the ordinary sense (see #5278).
+                // Enum sets `_value_` and `_name_` on every member it creates, so annotating
+                // them in the enum body only declares their types.
                 // Reuse `is_special_class` so new special classes are excluded here too, then
                 // carve out the plain `@dataclass(init=False)` case, which it over-excludes.
                 let excluded_from_uninit_check = metadata.is_metaclass()
+                    || (metadata.is_enum() && matches!(name.as_str(), "_value_" | "_name_"))
                     || (is_special_class
                         && metadata.dataclass_metadata().is_none_or(|dc| {
                             !matches!(dc.kind, DataclassKind::Dataclass { .. }) || dc.kws.init
