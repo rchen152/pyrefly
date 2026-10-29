@@ -757,6 +757,41 @@ def without_finally(x: int | None, y: int | None):
 "#,
 );
 
+testcase!(
+    bug = "A while header write leaves stale None relations in its zero-iteration base.",
+    test_none_relations_while_header_writes,
+    r#"
+from typing import assert_type
+
+def assign_first(x: int | None, y: int | None):
+    if x is None and y is None:
+        raise ValueError()
+    while (x := None) is not None:
+        return 0
+    if x is None:
+        assert_type(y, int)
+        return y + 1
+
+def assign_second(x: int | None, y: int | None):
+    if x is None and y is None:
+        raise ValueError()
+    while (y := None) is not None:
+        raise ValueError()
+    if y is None:
+        assert_type(x, int)
+        return x + 1
+
+def tuple_header(x: int | None, y: int | None, flag: bool):
+    if x is None and y is None:
+        raise ValueError()
+    while ((x := None), flag)[1]:
+        return 0
+    if x is None:
+        assert_type(y, int)
+        return y + 1
+"#,
+);
+
 // Regression test to ensure we don't forget to create loop recursion
 // bindings when the loop has early termination.
 testcase!(
