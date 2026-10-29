@@ -824,6 +824,58 @@ def alias_before_try(x: int | None, y: int | None):
 "#,
 );
 
+testcase!(
+    bug = "An enclosing relation narrow can enter an eager class cleanup's saved exit.",
+    test_none_relations_eager_class_finally,
+    r#"
+from typing import assert_type
+
+def f(x: int | None, y: int | None):
+    if x is None and y is None:
+        raise ValueError()
+    assert x is None
+    class C:
+        z = y
+        while True:
+            try:
+                break
+            finally:
+                z = None
+        assert_type(z, int)
+        result = z + 1
+"#,
+);
+
+testcase!(
+    test_none_relations_enclosing_statement_boundaries,
+    r#"
+from typing import assert_type
+
+def containing_loop(x: int | None, y: int | None, items: list[int]):
+    for _ in items:
+        try:
+            pass
+        finally:
+            pass
+        if x is None and y is None:
+            raise ValueError()
+        if x is None:
+            assert_type(y, int)
+    if x is None and y is None:
+        raise ValueError()
+    if x is None:
+        assert_type(y, int)
+
+def after_class(x: int | None, y: int | None):
+    class C:
+        pass
+    if x is None and y is None:
+        raise ValueError()
+    if x is None:
+        assert_type(y, int)
+"#,
+);
+
 // Regression test to ensure we don't forget to create loop recursion
 // bindings when the loop has early termination.
 testcase!(
