@@ -2754,6 +2754,14 @@ impl Scopes {
             .last_mut()
             .expect("propagate_new_flow_entries_to_loop_base called outside of a loop");
         propagate_new_flow_entries(&scope.flow.info, &mut loop_.base.info);
+        // Header writes also affect the path that skips the body entirely.
+        loop_.base.excluded_none_pairs = ExcludedNonePairs::intersection(
+            [
+                &loop_.base.excluded_none_pairs,
+                &scope.flow.excluded_none_pairs,
+            ]
+            .into_iter(),
+        );
     }
 
     /// Return the current binding index and flow style for `name`, if it exists
