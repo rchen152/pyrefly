@@ -4916,3 +4916,27 @@ def f(x: int | type[A]):
         assert_type(x, int)
     "#,
 );
+
+testcase!(
+    bug = "`C.__eq__` can return `True` for any value, so `==` should not narrow `C`",
+    test_eq_narrow_user_defined_eq,
+    r#"
+from typing import Literal, Never, assert_type
+
+class C:
+    def __eq__(self, other: object) -> bool:
+        return True
+
+class A:
+    c: C
+    y: int | None
+
+def f(c: C, x: int | C, a: A) -> None:
+    if c == 3:
+        assert_type(c, Never)
+    if x == 3:
+        assert_type(x, Literal[3])
+    if a.c == 3 or a.y is not None:
+        assert_type(a.y, int)
+    "#,
+);
