@@ -18,6 +18,9 @@ use crate::state::state::State;
 use crate::test::util::TestEnv;
 use crate::test::util::extract_cursors_for_test;
 
+#[path = "endpoint_association.rs"]
+mod association;
+
 pub(super) fn framework_env() -> TestEnv {
     let mut env = TestEnv::new();
     for (module, path, code) in [
