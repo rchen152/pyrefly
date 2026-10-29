@@ -167,3 +167,25 @@ def read_label(cls: Metadata) -> str:
     return cls.label
 "#,
 );
+
+// https://github.com/facebook/pyrefly/issues/5277
+testcase!(
+    bug = "Enum sets `_value_` and `_name_` on every member it creates",
+    test_uninitialized_instance_variable_enum_value,
+    TestEnv::new().enable_uninitialized_instance_variable_error(),
+    r#"
+from enum import Enum
+
+class Format(Enum):
+    _value_: str  # E: Instance attribute `_value_` is declared but never initialized
+    _name_: str  # E: Instance attribute `_name_` is declared but never initialized
+    description: str  # E: Instance attribute `description` is declared but never initialized
+    TEXT = "text"
+
+    def render(self) -> str:
+        return self._value_
+
+class NotAnEnum:
+    _value_: str  # E: Instance attribute `_value_` is declared but never initialized
+"#,
+);
