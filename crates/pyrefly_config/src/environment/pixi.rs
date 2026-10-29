@@ -40,6 +40,10 @@ pub(crate) fn find_in_workspace(workspace: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+    #[cfg(unix)]
+    use std::os::unix::fs::symlink;
+
     use pyrefly_util::test_path::TestPath;
 
     use super::*;
@@ -137,5 +141,51 @@ mod tests {
         setup_workspace(tempdir.path(), vec![environment("default", false)]);
 
         assert_eq!(Interpreters::find_project_interpreter(tempdir.path()), None);
+    }
+
+    #[test]
+    fn test_find_does_not_require_manifest() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let interpreter = default_interpreter(tempdir.path());
+        fs::create_dir_all(interpreter.parent().unwrap()).unwrap();
+        fs::write(&interpreter, "").unwrap();
+
+        assert_eq!(find_in_workspace(tempdir.path()), Some(interpreter));
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn test_find_python_fallback() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let interpreter = tempdir.path().join(".pixi/envs/default/bin/python");
+        fs::create_dir_all(interpreter.parent().unwrap()).unwrap();
+        fs::write(&interpreter, "").unwrap();
+
+        assert_eq!(find_in_workspace(tempdir.path()), Some(interpreter));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_find_symlinked_environment() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let root = tempdir.path();
+        let environment = root.join("real-environment");
+        fs::create_dir_all(environment.join("bin")).unwrap();
+        fs::write(environment.join("bin/python3"), "").unwrap();
+        fs::create_dir_all(root.join(".pixi/envs")).unwrap();
+        symlink(&environment, root.join(".pixi/envs/default")).unwrap();
+
+        assert_eq!(find_in_workspace(root), Some(default_interpreter(root)));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_find_ignores_venv_layout() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let interpreter = tempdir.path().join(".pixi/envs/default/Scripts/python.exe");
+        fs::create_dir_all(interpreter.parent().unwrap()).unwrap();
+        fs::write(interpreter, "").unwrap();
+
+        assert_eq!(find_in_workspace(tempdir.path()), None);
     }
 }
