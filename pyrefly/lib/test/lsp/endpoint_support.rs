@@ -225,8 +225,7 @@ client.get("")
         .into_iter()
         .map(|item| item.label)
         .collect::<Vec<_>>();
-    // Both applications currently contribute to the same global pool.
-    assert_eq!(labels, vec!["/one", "/two"]);
+    assert_eq!(labels, vec!["/one"]);
 }
 
 #[test]

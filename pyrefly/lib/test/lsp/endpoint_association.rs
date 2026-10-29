@@ -27,8 +27,7 @@ client.get("")
         .into_iter()
         .map(|item| item.label)
         .collect::<Vec<_>>();
-    // Captures the current unscoped decorator pool before application association.
-    assert_eq!(labels, vec!["/not-http", "/users"]);
+    assert_eq!(labels, vec!["/users"]);
 }
 
 #[test]
@@ -63,8 +62,7 @@ client.get("")
         .into_iter()
         .map(|item| item.label)
         .collect::<Vec<_>>();
-    // The undecorated application currently inherits an incorrect router-local path.
-    assert_eq!(labels, vec!["/users"]);
+    assert!(labels.is_empty());
 }
 
 #[test]

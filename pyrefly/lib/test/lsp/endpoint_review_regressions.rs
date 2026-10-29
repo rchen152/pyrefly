@@ -23,8 +23,7 @@ def probe(flag: bool) -> None:
 "#
     );
     let (state, handle) = state_for(&code);
-    // Captures the current claim of routes when navigation hides an ambiguous join.
-    assert!(!endpoint_items(&state, &handle, position(&code, "client.get(\"", 12)).is_empty());
+    assert!(endpoint_items(&state, &handle, position(&code, "client.get(\"", 12)).is_empty());
 }
 
 #[test]
@@ -40,7 +39,7 @@ def probe(flags: list[bool]) -> None:
 "#
     );
     let (state, handle) = state_for(&code);
-    assert!(!endpoint_items(&state, &handle, position(&code, "client.get(\"", 12)).is_empty());
+    assert!(endpoint_items(&state, &handle, position(&code, "client.get(\"", 12)).is_empty());
 }
 
 #[test]
@@ -51,7 +50,7 @@ fn endpoint_unknown_methods_are_not_unrestricted() {
     ) + "\nclient = TestClient(app)\nclient.get(\"/users\")\n";
     let (state, handle) = state_for(&code);
     let cursor = position(&code, "/users\"", 2);
-    assert_eq!(definition_names(&state, &handle, cursor), vec!["handler"]);
+    assert!(definition_names(&state, &handle, cursor).is_empty());
 }
 
 #[test]
@@ -59,24 +58,21 @@ fn endpoint_angle_brackets_are_literal_path_text() {
     let code = APP.replace("/users", "/items/<name>")
         + "\nclient = TestClient(app)\nclient.get(\"/items/alice\")\n";
     let (state, handle) = state_for(&code);
-    assert_eq!(
-        definition_names(&state, &handle, position(&code, "/items/alice", 3)),
-        vec!["handler"]
-    );
+    assert!(definition_names(&state, &handle, position(&code, "/items/alice", 3)).is_empty());
 }
 
 #[test]
 fn endpoint_editor_filter_text_includes_literal_opener() {
-    for call in [
-        "client.get(\"/us\")\n",
-        "client.get('/us')\n",
-        "client.get(r\"/us\")\n",
+    for (call, typed) in [
+        ("client.get(\"/us\")\n", "\"/us"),
+        ("client.get('/us')\n", "'/us"),
+        ("client.get(r\"/us\")\n", "r\"/us"),
     ] {
         let code = format!("{APP}\nclient = TestClient(app)\n{call}");
         let (state, handle) = state_for(&code);
         let items = endpoint_items(&state, &handle, position(&code, "/us", 3));
         let item = items.iter().find(|item| item.label == "/users").unwrap();
-        assert!(item.filter_text.is_none());
+        assert!(item.filter_text.as_ref().unwrap().starts_with(typed));
     }
 }
 
@@ -84,7 +80,7 @@ fn endpoint_editor_filter_text_includes_literal_opener() {
 fn endpoint_multiline_literal_edit_is_not_single_line() {
     let code = format!("{APP}\nclient = TestClient(app)\nclient.get(\"\"\"/us\n\"\"\")\n");
     let (state, handle) = state_for(&code);
-    assert!(!endpoint_items(&state, &handle, position(&code, "/us", 3)).is_empty());
+    assert!(endpoint_items(&state, &handle, position(&code, "/us", 3)).is_empty());
 }
 
 #[test]
@@ -92,8 +88,5 @@ fn endpoint_internal_empty_path_segments_are_significant() {
     let code =
         APP.replace("/users", "/a//b") + "\nclient = TestClient(app)\nclient.get(\"/a/b\")\n";
     let (state, handle) = state_for(&code);
-    assert_eq!(
-        definition_names(&state, &handle, position(&code, "/a/b", 2)),
-        vec!["handler"]
-    );
+    assert!(definition_names(&state, &handle, position(&code, "/a/b", 2)).is_empty());
 }

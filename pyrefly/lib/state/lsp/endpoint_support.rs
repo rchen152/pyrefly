@@ -37,25 +37,12 @@ use super::FindDefinitionItemWithDocstring;
 use crate::lsp::wasm::completion::RankedCompletion;
 use crate::state::state::Transaction;
 
+mod association;
+mod association_summary;
 mod cache;
 mod provenance;
 
 pub(crate) use cache::EndpointModuleCache;
-
-const ENDPOINT_ROUTE_DECORATORS: [&str; 3] = ["route", "api_route", "websocket"];
-const ENDPOINT_ROUTE_NEEDLES: [&str; 11] = [
-    ".get(",
-    ".post(",
-    ".put(",
-    ".delete(",
-    ".patch(",
-    ".options(",
-    ".head(",
-    ".trace(",
-    ".route(",
-    ".api_route(",
-    ".websocket(",
-];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EndpointMethod {
@@ -107,93 +94,78 @@ impl EndpointMethod {
 
 struct EndpointDefinition {
     path: String,
-    methods: Option<Vec<EndpointMethod>>,
+    methods: Vec<EndpointMethod>,
     module: Module,
     definition_range: TextRange,
     docstring_range: Option<TextRange>,
 }
 
 struct EndpointCallContext {
+    receiver: Expr,
     literal: ExprStringLiteral,
     method: EndpointMethod,
 }
 
 struct EndpointDecoratorSpec {
     path: String,
-    methods: Option<Vec<EndpointMethod>>,
+    methods: Vec<EndpointMethod>,
 }
 
 fn endpoint_decorator_spec(expr: &Expr) -> Option<EndpointDecoratorSpec> {
     let Expr::Call(call) = expr else {
         return None;
     };
-    let callee = call_callee_name(call)?;
-    if let Some(method) = EndpointMethod::from_attr(callee) {
-        return Some(EndpointDecoratorSpec {
-            path: endpoint_path_from_call(call)?,
-            methods: Some(vec![method]),
-        });
+    let Expr::Attribute(attribute) = call.func.as_ref() else {
+        return None;
+    };
+    if call
+        .arguments
+        .keywords
+        .iter()
+        .any(|keyword| keyword.arg.is_none())
+    {
+        return None;
     }
-    if ENDPOINT_ROUTE_DECORATORS.contains(&callee) {
-        let path = endpoint_path_from_call(call)?;
-        let methods = endpoint_methods_from_call(call).or_else(|| {
-            if keyword_arg_expr(call, &["methods", "method"]).is_some() {
-                None
-            } else {
-                Some(vec![EndpointMethod::Get])
-            }
-        });
-        return Some(EndpointDecoratorSpec { path, methods });
-    }
-    None
-}
-
-fn call_callee_name(call: &ExprCall) -> Option<&str> {
-    match call.func.as_ref() {
-        Expr::Attribute(attr) => Some(attr.attr.as_str()),
-        Expr::Name(name) => Some(name.id.as_str()),
-        Expr::Call(call) => call_callee_name(call),
-        _ => None,
-    }
-}
-
-fn endpoint_path_from_call(call: &ExprCall) -> Option<String> {
-    if let Some(Expr::StringLiteral(lit)) = call.arguments.args.first() {
-        return Some(lit.value.to_string());
-    }
-    string_literal_kw_arg(call, &["path", "url", "route"]).map(|lit| lit.value.to_string())
-}
-
-fn endpoint_methods_from_call(call: &ExprCall) -> Option<Vec<EndpointMethod>> {
-    methods_from_expr(keyword_arg_expr(call, &["methods", "method"])?)
+    let path = match call.arguments.args.as_ref() {
+        [Expr::StringLiteral(literal)] if keyword_arg_expr(call, &["path"]).is_none() => {
+            literal.value.to_string()
+        }
+        [] => string_literal_kw_arg(call, &["path"])?.value.to_string(),
+        _ => return None,
+    };
+    let callee = attribute.attr.as_str();
+    let methods = if let Some(method) = EndpointMethod::from_attr(callee) {
+        vec![method]
+    } else if matches!(callee, "route" | "api_route") {
+        match keyword_arg_expr(call, &["methods"]) {
+            Some(expression) => methods_from_expr(expression)?,
+            None => vec![EndpointMethod::Get],
+        }
+    } else {
+        return None;
+    };
+    Some(EndpointDecoratorSpec { path, methods })
 }
 
 fn methods_from_expr(expr: &Expr) -> Option<Vec<EndpointMethod>> {
-    match expr {
-        Expr::StringLiteral(lit) => {
-            EndpointMethod::from_literal(&lit.value.to_string()).map(|method| vec![method])
-        }
+    let elements = match expr {
         Expr::List(ExprList { elts, .. })
         | Expr::Tuple(ExprTuple { elts, .. })
-        | Expr::Set(ExprSet { elts, .. }) => {
-            let methods = elts
-                .iter()
-                .filter_map(|elt| {
-                    if let Expr::StringLiteral(lit) = elt {
-                        EndpointMethod::from_literal(&lit.value.to_string())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            if methods.is_empty() {
-                None
-            } else {
-                Some(methods)
-            }
-        }
-        _ => None,
+        | Expr::Set(ExprSet { elts, .. }) => elts,
+        _ => return None,
+    };
+    if elements.is_empty() {
+        return None;
     }
+    elements
+        .iter()
+        .map(|element| {
+            let Expr::StringLiteral(literal) = element else {
+                return None;
+            };
+            EndpointMethod::from_literal(&literal.value.to_string())
+        })
+        .collect()
 }
 
 fn keyword_arg_expr<'a>(call: &'a ExprCall, names: &[&str]) -> Option<&'a Expr> {
@@ -245,7 +217,11 @@ fn endpoint_call_context(
             continue;
         }
         if provenance::is_test_client(transaction, handle, attr.value.range()) {
-            return Some(EndpointCallContext { literal, method });
+            return Some(EndpointCallContext {
+                receiver: (*attr.value).clone(),
+                literal,
+                method,
+            });
         }
     }
     None
@@ -272,27 +248,20 @@ fn literal_prefix(
     Some(prefix.value.to_string())
 }
 
-fn module_might_define_endpoints(module: &Module) -> bool {
-    ENDPOINT_ROUTE_NEEDLES
-        .iter()
-        .any(|needle| module.contents().contains(needle))
-}
-
 fn normalize_path(path: &str) -> &str {
     path.split('?').next().unwrap_or(path)
 }
 
 fn split_segments(path: &str) -> Vec<&str> {
-    normalize_path(path)
-        .trim_end_matches('/')
-        .split('/')
-        .filter(|segment| !segment.is_empty())
-        .collect()
+    let path = normalize_path(path);
+    path.strip_suffix('/').unwrap_or(path).split('/').collect()
 }
 
 fn is_param_segment(segment: &str) -> bool {
-    (segment.starts_with('{') && segment.ends_with('}'))
-        || (segment.starts_with('<') && segment.ends_with('>'))
+    segment
+        .strip_prefix('{')
+        .and_then(|segment| segment.strip_suffix('}'))
+        .is_some_and(|parameter| !parameter.is_empty() && !parameter.contains([':', '{', '}']))
 }
 
 fn path_matches(pattern: &str, candidate: &str) -> bool {
@@ -302,45 +271,50 @@ fn path_matches(pattern: &str, candidate: &str) -> bool {
         && pattern_segments
             .iter()
             .zip(candidate_segments)
-            .all(|(pattern, candidate)| is_param_segment(pattern) || *pattern == candidate)
+            .all(|(pattern, candidate)| {
+                if is_param_segment(pattern) {
+                    !candidate.is_empty()
+                } else {
+                    !pattern.contains(['{', '}']) && *pattern == candidate
+                }
+            })
 }
 
-fn method_matches(methods: &Option<Vec<EndpointMethod>>, request: EndpointMethod) -> bool {
-    methods
-        .as_ref()
-        .is_none_or(|methods| methods.contains(&request))
+fn method_matches(methods: &[EndpointMethod], request: EndpointMethod) -> bool {
+    methods.contains(&request)
 }
 
 impl Transaction<'_> {
-    fn collect_endpoint_definitions(&self) -> Vec<EndpointDefinition> {
-        let mut endpoints = Vec::new();
-        for handle in self.handles() {
-            let Some(module) = self.get_module_info(&handle) else {
-                continue;
-            };
-            if module.path().style() == ModuleStyle::Interface {
-                continue;
-            }
-            match module.path().details() {
-                ModulePathDetails::FileSystem(_)
-                | ModulePathDetails::Memory(_)
-                | ModulePathDetails::Namespace(_) => {}
-                _ => continue,
-            }
-            if !module_might_define_endpoints(&module) {
-                continue;
-            }
-            let ast = self.get_ast(&handle);
-            let summary = self.endpoint_module_cache().get(&module, ast.as_deref());
-            endpoints.extend(summary.routes.iter().map(|route| EndpointDefinition {
+    fn endpoints_for_application(
+        &self,
+        handle: &Handle,
+        receiver: &Expr,
+    ) -> Vec<EndpointDefinition> {
+        let Some((module, application)) =
+            association::application_for_client(self, handle, receiver)
+        else {
+            return Vec::new();
+        };
+        if module.path().style() == ModuleStyle::Interface {
+            return Vec::new();
+        }
+        match module.path().details() {
+            ModulePathDetails::FileSystem(_) | ModulePathDetails::Memory(_) => {}
+            _ => return Vec::new(),
+        }
+        let summary = self.endpoint_module_cache().get(&module, None);
+        summary
+            .routes
+            .iter()
+            .filter(|route| route.application == application)
+            .map(|route| EndpointDefinition {
                 path: route.spec.path.clone(),
                 methods: route.spec.methods.clone(),
                 module: module.dupe(),
                 definition_range: route.definition_range,
                 docstring_range: route.docstring_range,
-            }));
-        }
-        endpoints
+            })
+            .collect()
     }
 
     pub(crate) fn add_endpoint_completions(
@@ -356,11 +330,17 @@ impl Transaction<'_> {
         let Some(module_info) = self.get_module_info(handle) else {
             return;
         };
+        let edit_range = module_info.to_lsp_range(context.literal.range());
+        if edit_range.start.line != edit_range.end.line {
+            return;
+        }
         let Some(prefix) = literal_prefix(&module_info, &context.literal, position) else {
             return;
         };
+        let typed_text =
+            module_info.code_at(TextRange::new(context.literal.range().start(), position));
         let mut suggestions = BTreeMap::new();
-        for endpoint in self.collect_endpoint_definitions() {
+        for endpoint in self.endpoints_for_application(handle, &context.receiver) {
             if method_matches(&endpoint.methods, context.method)
                 && endpoint.path.starts_with(&prefix)
             {
@@ -371,12 +351,14 @@ impl Transaction<'_> {
         }
         for (label, detail) in suggestions {
             let new_text = to_string(&label).expect("Serializing an endpoint string cannot fail");
+            let filter_text = format!("{typed_text}{}", &label[prefix.len()..]);
             completions.push(RankedCompletion::new(CompletionItem {
                 label,
+                filter_text: Some(filter_text),
                 detail: Some(detail),
                 kind: Some(CompletionItemKind::Value),
                 text_edit: Some(CompletionItemTextEdit::TextEdit(TextEdit {
-                    range: module_info.to_lsp_range(context.literal.range()),
+                    range: edit_range,
                     new_text,
                 })),
                 ..Default::default()
@@ -403,7 +385,7 @@ impl Transaction<'_> {
         }
         let request_path = context.literal.value.to_string();
         Vec1::try_from_vec(
-            self.collect_endpoint_definitions()
+            self.endpoints_for_application(handle, &context.receiver)
                 .into_iter()
                 .filter(|endpoint| {
                     method_matches(&endpoint.methods, context.method)

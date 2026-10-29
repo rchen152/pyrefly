@@ -34,7 +34,6 @@ pub(super) fn is_test_client(
 
 /// Whether the expression at `receiver` is a known FastAPI or Starlette instance.
 /// This classifies its type, not the identity of a particular application object.
-#[cfg(test)]
 pub(super) fn is_application(
     transaction: &Transaction<'_>,
     handle: &Handle,

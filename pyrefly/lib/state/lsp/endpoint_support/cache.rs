@@ -5,7 +5,7 @@
  * LICENSE file in the root directory of this source tree.
  */
 
-//! Source-versioned route summaries without retaining whole-module ASTs.
+//! Source-versioned route and binding summaries without retaining whole-module ASTs.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -25,6 +25,7 @@ use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 
 use super::EndpointDecoratorSpec;
+use super::association_summary::SourceBindings;
 use super::endpoint_decorator_spec;
 
 #[derive(Default)]
@@ -37,12 +38,13 @@ struct CacheEntry {
     summary: Arc<ModuleSummary>,
 }
 
-#[derive(Default)]
 pub(super) struct ModuleSummary {
+    pub bindings: SourceBindings,
     pub routes: Vec<RouteSummary>,
 }
 
 pub(super) struct RouteSummary {
+    pub application: TextRange,
     pub spec: EndpointDecoratorSpec,
     pub definition_range: TextRange,
     pub docstring_range: Option<TextRange>,
@@ -58,15 +60,13 @@ impl EndpointModuleCache {
         {
             return entry.summary.clone();
         }
-        let mut summary = ModuleSummary::default();
-        match ast {
-            Some(ast) => summary.visit_body(&ast.body),
+        let summary = Arc::new(match ast {
+            Some(ast) => ModuleSummary::from_ast(ast),
             None => {
                 let (ast, _, _) = Ast::parse(module.contents(), PySourceType::Python);
-                summary.visit_body(&ast.body);
+                ModuleSummary::from_ast(&ast)
             }
-        }
-        let summary = Arc::new(summary);
+        });
         let mut entries = self.entries.lock();
         entries.retain(|_, entry| entry.source.strong_count() > 0);
         entries.insert(
@@ -80,12 +80,33 @@ impl EndpointModuleCache {
     }
 }
 
+impl ModuleSummary {
+    fn from_ast(ast: &ModModule) -> Self {
+        let mut summary = Self {
+            bindings: SourceBindings::from_ast(ast),
+            routes: Vec::new(),
+        };
+        summary.visit_body(&ast.body);
+        summary
+    }
+}
+
 impl<'a> Visitor<'a> for ModuleSummary {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
         if let Stmt::FunctionDef(function) = stmt {
             for decorator in &function.decorator_list {
-                if let Some(spec) = endpoint_decorator_spec(&decorator.expression) {
+                let Some(application) = self
+                    .bindings
+                    .route_owners
+                    .get(&decorator.expression.range())
+                else {
+                    continue;
+                };
+                if let Some(spec) = endpoint_decorator_spec(&decorator.expression)
+                    && spec.path.starts_with('/')
+                {
                     self.routes.push(RouteSummary {
+                        application: *application,
                         spec,
                         definition_range: function.name.range(),
                         docstring_range: Docstring::range_from_stmts(&function.body),
@@ -119,10 +140,16 @@ mod tests {
     #[test]
     fn source_version_reuses_and_replaces_summary() {
         let cache = EndpointModuleCache::default();
-        let old = module("app.py", "@app.get('/old')\ndef old(): pass\n");
+        let old = module(
+            "app.py",
+            "app = Factory()\n@app.get('/old')\ndef old(): pass\n",
+        );
         let first = cache.get(&old, None);
         assert!(Arc::ptr_eq(&first, &cache.get(&old, None)));
-        let new = module("app.py", "@app.get('/new')\ndef new(): pass\n");
+        let new = module(
+            "app.py",
+            "app = Factory()\n@app.get('/new')\ndef new(): pass\n",
+        );
         let second = cache.get(&new, None);
         assert!(!Arc::ptr_eq(&first, &second));
         assert_eq!(first.routes[0].spec.path, "/old");
@@ -133,13 +160,19 @@ mod tests {
     #[test]
     fn cache_does_not_keep_obsolete_source_alive() {
         let cache = EndpointModuleCache::default();
-        let old = module("old.py", "@app.get('/old')\ndef old(): pass\n");
+        let old = module(
+            "old.py",
+            "app = Factory()\n@app.get('/old')\ndef old(): pass\n",
+        );
         let source = Arc::downgrade(old.contents());
         let summary = cache.get(&old, None);
         drop(old);
         assert!(source.upgrade().is_none());
         assert_eq!(summary.routes[0].spec.path, "/old");
-        let new = module("new.py", "@app.get('/new')\ndef new(): pass\n");
+        let new = module(
+            "new.py",
+            "app = Factory()\n@app.get('/new')\ndef new(): pass\n",
+        );
         cache.get(&new, None);
         assert_eq!(cache.entries.lock().len(), 1);
     }

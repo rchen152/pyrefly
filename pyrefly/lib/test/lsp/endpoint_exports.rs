@@ -39,7 +39,7 @@ fn endpoint_imported_client_reassignment() {
     let source =
         format!("{APPLICATIONS}\nclient = TestClient(first)\nclient = TestClient(second)\n");
     let labels = imported_labels(&source, "from services import client\nclient.get(\"\")\n");
-    assert!(labels.contains(&"/old".to_owned()));
+    assert!(labels.is_empty());
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn endpoint_reexported_client_reassignment() {
     let source =
         format!("{APPLICATIONS}\nclient = TestClient(first)\nclient = TestClient(second)\n");
     let labels = imported_labels(&source, "from bridge import client\nclient.get(\"\")\n");
-    assert!(labels.contains(&"/old".to_owned()));
+    assert!(labels.is_empty());
 }
 
 #[test]
@@ -57,7 +57,7 @@ fn endpoint_imported_application_reassignment() {
         &source,
         "from services import app\nfrom fastapi.testclient import TestClient\nclient = TestClient(app)\nclient.get(\"\")\n",
     );
-    assert!(labels.contains(&"/old".to_owned()));
+    assert!(labels.is_empty());
 }
 
 #[test]
@@ -66,7 +66,7 @@ fn endpoint_imported_conditional_client() {
         "{APPLICATIONS}\nflag = bool(input())\nif flag:\n    client = TestClient(first)\nelse:\n    client = TestClient(second)\n"
     );
     let labels = imported_labels(&source, "from services import client\nclient.get(\"\")\n");
-    assert!(labels.contains(&"/old".to_owned()));
+    assert!(labels.is_empty());
 }
 
 #[test]
