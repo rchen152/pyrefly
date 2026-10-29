@@ -115,7 +115,7 @@ fn extend_facet_chain(resolved_chain: Option<&FacetChain>, facet: FacetKind) -> 
 const NARROW_ENUM_LIMIT: usize = 100;
 
 #[derive(Clone, Copy)]
-enum IntersectFallback {
+pub(crate) enum IntersectFallback {
     Never,
     Right,
 }
@@ -281,7 +281,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     ///
     /// If the intersection is empty - which does not necessarily indicate
     /// an actual empty set because of multiple inheritance - use `fallback`
-    fn intersect_with_fallback(
+    pub(crate) fn intersect_with_fallback(
         &self,
         left: &Type,
         right: &Type,
