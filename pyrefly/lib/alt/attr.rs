@@ -15,7 +15,6 @@ use pyrefly_types::literal::LitEnum;
 use pyrefly_types::shaped_array::ShapedArrayType;
 use pyrefly_types::shaped_array::shape_to_tuple_carrier;
 use pyrefly_types::shaped_array::shape_to_tuple_carrier_arg;
-use pyrefly_types::simplify::intersect;
 use pyrefly_types::special_form::SpecialForm;
 use pyrefly_types::typed_dict::TypedDictInner;
 use pyrefly_types::types::Forallable;
@@ -1761,7 +1760,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             types.push(ty.clone());
         }
         let combined = match combine {
-            Combine::Intersect => intersect(types, Type::any_implicit(), self.heap),
+            Combine::Intersect => self.intersect_guarantees(&types),
             Combine::Overloaded => Type::combine_overload_results(types, self.heap)?,
         };
         let attribute = if is_class_attribute {

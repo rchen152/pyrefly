@@ -1024,6 +1024,11 @@ def invoke(value: A):
                 (
                     "8:9-8:17",
                     regular_call_callees(vec![
+                        create_call_target("test.A.__call__", TargetType::Overrides)
+                            .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
+                            .with_implicit_dunder_call(true)
+                            .with_receiver_class_for_test("test.A", context)
+                            .with_return_type(ScalarTypeProperties::int()),
                         create_call_target("test.B.__call__", TargetType::Overrides)
                             .with_implicit_receiver(ImplicitReceiver::TrueWithObjectReceiver)
                             .with_implicit_dunder_call(true)

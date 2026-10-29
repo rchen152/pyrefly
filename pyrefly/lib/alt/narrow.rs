@@ -391,6 +391,162 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
     }
 
+    /// Refine corresponding gradual slots without combining distinct static type arguments.
+    fn refine_gradual_intersection(&self, left: &Type, right: &Type) -> Option<Type> {
+        if left == right || right.is_any() {
+            return Some(left.clone());
+        }
+        if left.is_any() {
+            return Some(right.clone());
+        }
+        match (left, right) {
+            (Type::ClassType(left), Type::ClassType(right))
+                if left.class_object() == right.class_object() =>
+            {
+                let mut cls = left.clone();
+                for ((slot, left), right) in cls
+                    .targs_mut()
+                    .as_mut()
+                    .iter_mut()
+                    .zip(left.targs().as_slice())
+                    .zip(right.targs().as_slice())
+                {
+                    *slot = self.refine_gradual_intersection(left, right)?;
+                }
+                Some(self.heap.mk_class_type(cls))
+            }
+            (Type::Tuple(Tuple::Concrete(left)), Type::Tuple(Tuple::Concrete(right)))
+                if left.len() == right.len() =>
+            {
+                let elements = left
+                    .iter()
+                    .zip(right)
+                    .map(|(left, right)| self.refine_gradual_intersection(left, right))
+                    .collect::<Option<Vec<_>>>()?;
+                Some(self.heap.mk_concrete_tuple(elements))
+            }
+            (Type::Tuple(Tuple::Unbounded(left)), Type::Tuple(Tuple::Unbounded(right))) => Some(
+                Type::unbounded_tuple(self.refine_gradual_intersection(left, right)?),
+            ),
+            (Type::Type(left), Type::Type(right)) => Some(
+                self.heap
+                    .mk_type_of(self.refine_gradual_intersection(left, right)?),
+            ),
+            _ => None,
+        }
+    }
+
+    fn has_callable_guarantee(ty: &Type) -> bool {
+        match ty {
+            Type::Intersect(intersection) => {
+                intersection.0.iter().any(Self::has_callable_guarantee)
+            }
+            ty => ty.is_toplevel_callable(),
+        }
+    }
+
+    fn has_nominal_guarantee(ty: &Type) -> bool {
+        match ty {
+            Type::ClassType(_) | Type::SelfType(_) => true,
+            Type::Intersect(intersection) => intersection.0.iter().any(Self::has_nominal_guarantee),
+            _ => false,
+        }
+    }
+
+    /// Intersect known type guarantees without erasing concrete information or callable metadata.
+    pub fn intersect_guarantees(&self, ts: &[Type]) -> Type {
+        fn flatten<'a>(ty: &'a Type, members: &mut Vec<&'a Type>) {
+            match ty {
+                Type::Intersect(intersection) => {
+                    for member in &intersection.0 {
+                        flatten(member, members);
+                    }
+                }
+                ty => members.push(ty),
+            }
+        }
+
+        assert!(
+            !ts.is_empty(),
+            "a type guarantee intersection must be nonempty"
+        );
+        let mut members = Vec::new();
+        for ty in ts {
+            flatten(ty, &mut members);
+        }
+        members.sort();
+        members.dedup();
+        let gradual = self.unions(
+            members
+                .iter()
+                .filter(|ty| ty.is_any())
+                .map(|ty| (*ty).clone())
+                .collect(),
+        );
+        let mut concrete = members.into_iter().filter(|ty| !ty.is_any());
+        let Some(first) = concrete.next() else {
+            return gradual;
+        };
+        let is_mapping_member = |ty: &Type| {
+            matches!(ty, Type::TypedDict(_) | Type::PartialTypedDict(_))
+                || matches!(ty, Type::ClassType(class) if class.class_object() == self.stdlib.dict_object() || class.class_object() == self.stdlib.mapping_object())
+        };
+        let is_mapping_view = |ty: &Type| match ty {
+            Type::Intersect(intersection) => intersection.0.iter().all(&is_mapping_member),
+            ty => is_mapping_member(ty),
+        };
+        let result = concrete.fold(first.clone(), |left, right| {
+            self.distribute_over_union(&left, |left| {
+                self.distribute_over_union(right, |right| {
+                    if matches!(left, Type::Intersect(intersection) if intersection.0.iter().any(Type::is_any))
+                        || matches!(right, Type::Intersect(intersection) if intersection.0.iter().any(Type::is_any))
+                    {
+                        self.intersect_guarantees(&[left.clone(), right.clone()])
+                    } else if left.is_any() && right.is_any() {
+                        self.unions(vec![left.clone(), right.clone()])
+                    } else if left.is_any() || right.is_any() {
+                        let fallback = if left.is_any() { right } else { left };
+                        intersect(vec![left.clone(), right.clone()], fallback.clone(), self.heap)
+                    } else if (Self::has_callable_guarantee(left)
+                        && (Self::has_callable_guarantee(right)
+                            || Self::has_nominal_guarantee(right)))
+                        || (Self::has_callable_guarantee(right)
+                            && Self::has_nominal_guarantee(left))
+                    {
+                        // Signature compatibility preserves neither callable identity nor nominal attributes.
+                        intersect(vec![left.clone(), right.clone()], right.clone(), self.heap)
+                    } else if let Some(refined) = self.refine_gradual_intersection(left, right) {
+                        refined
+                    } else if matches!((left, right), (Type::TypedDict(_), Type::ClassType(cls)) | (Type::ClassType(cls), Type::TypedDict(_)) if cls.class_object() == self.stdlib.dict_object() || cls.class_object() == self.stdlib.mapping_object())
+                        || ((matches!(left, Type::Intersect(_))
+                            || matches!(right, Type::Intersect(_)))
+                            && is_mapping_view(left)
+                            && is_mapping_view(right))
+                    {
+                        // Mutation-safe assignability does not establish disjoint dictionary values.
+                        intersect(vec![left.clone(), right.clone()], right.clone(), self.heap)
+                    } else if (left.any(|ty| ty.is_any()) || right.any(|ty| ty.is_any()))
+                        && self.is_subset_eq(left, right)
+                        && self.is_subset_eq(right, left)
+                    {
+                        // Gradual assignability in both directions is not type equivalence.
+                        intersect(vec![left.clone(), right.clone()], right.clone(), self.heap)
+                    } else {
+                        self.intersect_with_fallback(left, right, IntersectFallback::Right)
+                    }
+                })
+            })
+        });
+        if gradual.is_never() {
+            result
+        } else {
+            // Meet concrete contracts before gradual evidence can affect assignability.
+            self.distribute_over_union(&result, |ty| {
+                intersect(vec![ty.clone(), gradual.clone()], ty.clone(), self.heap)
+            })
+        }
+    }
+
     /// Whether two types have no possible runtime value in common for the `invalid-cast` check.
     ///
     /// This is intentionally incomplete: uncertain type forms return `false` to avoid noisy

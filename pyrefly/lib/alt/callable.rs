@@ -91,15 +91,21 @@ fn is_non_empty_container_literal(x: &Expr) -> bool {
 
 /// Does `x` nest `depth` repetitions of a call taking a *non-empty* dict/list/set literal argument.
 fn nests_calls_to_depth(x: &Expr, depth: u32) -> bool {
+    nests_calls_to_depth_with(x, depth, is_non_empty_container_literal)
+}
+
+fn nests_calls_to_depth_with(x: &Expr, depth: u32, container: fn(&Expr) -> bool) -> bool {
     if depth == 0 {
         return true;
     }
     let mut found = matches!(x, Expr::Call(c)
         if c.arguments.iter_source_order().any(|a|
-            is_non_empty_container_literal(a.value())
-                && nests_calls_to_depth(a.value(), depth - 1)));
+            container(a.value())
+                && nests_calls_to_depth_with(a.value(), depth - 1, container)));
     if !found {
-        x.recurse(&mut |child: &Expr| found = found || nests_calls_to_depth(child, depth));
+        x.recurse(&mut |child: &Expr| {
+            found = found || nests_calls_to_depth_with(child, depth, container)
+        });
     }
     found
 }
@@ -123,6 +129,18 @@ impl CallWithTypes {
     ) -> TypeOrExpr<'a> {
         match x {
             TypeOrExpr::Expr(e @ Expr::Lambda(_)) => TypeOrExpr::Expr(e),
+            TypeOrExpr::Expr(e @ (Expr::ListComp(_) | Expr::SetComp(_) | Expr::DictComp(_)))
+                if solver.preserves_contextual_comprehensions()
+                    && !nests_calls_to_depth_with(e, MIN_FLATTEN_CALL_DEPTH, |arg| {
+                        is_non_empty_container_literal(arg)
+                            || matches!(
+                                arg,
+                                Expr::ListComp(_) | Expr::SetComp(_) | Expr::DictComp(_)
+                            )
+                    }) =>
+            {
+                TypeOrExpr::Expr(e)
+            }
             TypeOrExpr::Expr(e @ (Expr::Dict(_) | Expr::List(_) | Expr::Set(_)))
                 if !nests_calls_to_depth(e, MIN_FLATTEN_CALL_DEPTH) =>
             {

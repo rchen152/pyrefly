@@ -8,7 +8,6 @@
 use crate::testcase;
 
 testcase!(
-    bug = "Intersection calls lose nested gradual return guarantees",
     test_intersection_call_nested_gradual_results,
     r#"
 from typing import Any, assert_type
@@ -22,14 +21,13 @@ class D:
     def method(self) -> list[Any]: ...
 def f(a: A, c: C):
     if isinstance(a, B):
-        assert_type(a.method(), Any)
+        assert_type(a.method(), list[int])
     if isinstance(c, D):
-        assert_type(c.method(), Any)
+        assert_type(c.method(), list[int])
 "#,
 );
 
 testcase!(
-    bug = "Intersection calls lose complementary gradual return guarantees",
     test_intersection_call_complementary_gradual_results,
     r#"
 from typing import Any, assert_type
@@ -44,10 +42,10 @@ class D:
 def f(a: A, c: C):
     if isinstance(a, B):
         result = a.method()
-        assert_type(result["key"], Any)
+        assert_type(result["key"], int)
     if isinstance(c, D):
         result = c.method()
-        assert_type(result[1], Any)
+        assert_type(result[1], int)
 "#,
 );
 
@@ -69,7 +67,6 @@ def invoke(value: Marker):
 );
 
 testcase!(
-    bug = "Intersection calls report only the fallback's deprecation",
     test_intersection_call_multiple_callable_deprecations,
     r#"
 from warnings import deprecated
@@ -83,7 +80,7 @@ class B:
 
 def invoke(value: A):
     if isinstance(value, B):
-        value(1)  # E: `B.__call__` is deprecated
+        value(1)  # E: `A.__call__` is deprecated  # E: `B.__call__` is deprecated
 "#,
 );
 
@@ -91,7 +88,7 @@ def invoke(value: A):
 testcase!(
     test_intersection_call_type_any_return_preserves_union_fields,
     r#"
-from typing import Any, assert_type
+from typing import Any, reveal_type
 
 class StrawberryType: ...
 class StrawberryUnion(StrawberryType):
@@ -109,17 +106,16 @@ def names(value: StrawberryType | type):
     if isinstance(value, LazyType):
         value = value.resolve_type()
     if isinstance(value, StrawberryUnion):
-        assert_type(value.graphql_name, str | None)
+        reveal_type(value.graphql_name)  # E: revealed type: (str & Any) | (str & Unknown) | (Any & None) | (Unknown & None)
     elif isinstance(value, StrawberryList):
-        assert_type(value.of_type, StrawberryType | type[Any])
+        reveal_type(value.of_type)  # E: revealed type: (StrawberryType & Unknown) | (type[Any] & Unknown)
 "#,
 );
 
 testcase!(
-    bug = "Gradual intersection fields discard known union annotations",
     test_intersection_type_any_union_field_fold,
     r#"
-from typing import Any, assert_type
+from typing import Any, reveal_type
 
 class StrawberryType: ...
 class StrawberryUnion(StrawberryType):
@@ -131,14 +127,13 @@ class StrawberryList(StrawberryType):
 
 def names(value: type[Any]):
     if isinstance(value, StrawberryUnion):
-        assert_type(value.graphql_name, Any)
+        reveal_type(value.graphql_name)  # E: revealed type: (str & Any) | (Any & None)
     elif isinstance(value, StrawberryList):
-        assert_type(value.of_type, Any)
+        reveal_type(value.of_type)  # E: revealed type: (StrawberryType & Any) | (type[Any] & Any)
 "#,
 );
 
 testcase!(
-    bug = "Intersection calls lose shared-method deprecation metadata",
     test_intersection_call_three_callable_deprecations,
     r#"
 from warnings import deprecated
@@ -155,7 +150,7 @@ class C:
 
 def invoke(value: A):
     if isinstance(value, B) and isinstance(value, C):
-        value.method()
+        value.method()  # E: `A.method` is deprecated  # E: `B.method` is deprecated  # E: `C.method` is deprecated
 "#,
 );
 
@@ -210,7 +205,6 @@ def nominal_first(value: NominalOwner):
 
 // A real gradual return must not be confused with the representation's fallback.
 testcase!(
-    bug = "Intersection calls erase concrete guarantees alongside real Any returns",
     test_intersection_call_real_gradual_return,
     r#"
 from typing import Any, reveal_type
@@ -225,15 +219,15 @@ class Gradual:
 def precise_first(value: Precise):
     if isinstance(value, Gradual):
         result = value.make()
-        reveal_type(result)  # E: revealed type: Unknown
-        reveal_type(result.value)  # E: revealed type: Unknown
+        reveal_type(result)  # E: revealed type: Result & Any
+        reveal_type(result.value)  # E: revealed type: int & Any
         result.dynamic_only
 
 def gradual_first(value: Gradual):
     if isinstance(value, Precise):
         result = value.make()
-        reveal_type(result)  # E: revealed type: Unknown
-        reveal_type(result.value)  # E: revealed type: Unknown
+        reveal_type(result)  # E: revealed type: Result & Any
+        reveal_type(result.value)  # E: revealed type: int & Any
         result.dynamic_only
 "#,
 );
@@ -259,7 +253,6 @@ def invoke(value: Precise):
 );
 
 testcase!(
-    bug = "Intersection calls erase the concrete part of gradual final returns",
     test_intersection_call_gradual_final_return,
     r#"
 from typing import Any, final, reveal_type
@@ -274,17 +267,16 @@ class Gradual:
 def invoke(value: Precise):
     if isinstance(value, Gradual):
         result = value.make()
-        reveal_type(result)  # E: revealed type: Unknown
+        reveal_type(result)  # E: revealed type: FinalResult & Any
         result.missing
 "#,
 );
 
 // These scenarios cross-check constituent-wise calls against ty's intersection tests.
 testcase!(
-    bug = "Intersection calls discard the successful constituents' return contracts",
     test_intersection_call_three_way_partial_success,
     r#"
-from typing import reveal_type
+from typing import assert_type, reveal_type
 
 class RetA:
     left: int
@@ -299,15 +291,14 @@ class Reject:
 
 def invoke(value: AcceptA):
     if isinstance(value, AcceptB) and isinstance(value, Reject):
-        result = value()  # E: Missing argument `required` in function `Reject.__call__`
-        reveal_type(result)  # E: revealed type: int
-        reveal_type(result.left)  # E: revealed type: Unknown  # E: Object of class `int` has no attribute `left`
-        reveal_type(result.right)  # E: revealed type: Unknown  # E: Object of class `int` has no attribute `right`
+        result = value()
+        reveal_type(result)  # E: revealed type: RetA & RetB
+        assert_type(result.left, int)
+        assert_type(result.right, str)
 "#,
 );
 
 testcase!(
-    bug = "A union preserves the fallback instead of intersection return guarantees",
     test_union_of_intersections_call,
     r#"
 from typing import reveal_type
@@ -327,7 +318,7 @@ class StrC:
 def accepts(value: IntA, other: IntC, choose: bool):
     if isinstance(value, IntB):
         selected = value if choose else other
-        reveal_type(selected(1))  # E: revealed type: RetB | RetC
+        reveal_type(selected(1))  # E: revealed type: (RetA & RetB) | RetC
 
 def rejects(value: IntA, other: StrC, choose: bool):
     if isinstance(value, IntB):
@@ -337,10 +328,9 @@ def rejects(value: IntA, other: StrC, choose: bool):
 );
 
 testcase!(
-    bug = "Wrapped intersection constructors use only their fallback class",
     test_intersection_class_constructors,
     r#"
-from typing import reveal_type
+from typing import assert_type, reveal_type
 
 class A:
     left: int
@@ -351,9 +341,9 @@ def construct(cls: type[A]):
     if issubclass(cls, B):
         result = cls()
         reveal_type(cls)  # E: revealed type: type[A & B]
-        reveal_type(result)  # E: revealed type: B
-        reveal_type(result.left)  # E: revealed type: Unknown  # E: Object of class `B` has no attribute `left`
-        reveal_type(result.right)  # E: revealed type: str
+        reveal_type(result)  # E: revealed type: A & B
+        assert_type(result.left, int)
+        assert_type(result.right, str)
 "#,
 );
 
@@ -371,7 +361,7 @@ T = TypeVar("T", A, B)
 
 def constrained(cls: type[T]) -> T:
     if issubclass(cls, A):
-        return cls("wrong")  # E: Argument `Literal['wrong']` is not assignable  # E: Returned type `A` is not assignable to declared return type `T`
+        return cls("wrong")  # E: No intersection member accepts this call
     return cls(1)
 
 def constrained_positive(cls: type[T]) -> T:
@@ -387,7 +377,7 @@ U = TypeVar("U", bound=Base)
 
 def bounded(cls: type[U]) -> U:
     if issubclass(cls, Child):
-        return cls()  # E: Missing argument `required`  # E: Returned type `Child` is not assignable to declared return type `U`
+        return cls()  # E: No intersection member accepts this call
     return cls()
 
 def bounded_positive(cls: type[U]) -> U:
@@ -397,7 +387,6 @@ assert_type(bounded_positive(Base), Base)
 );
 
 testcase!(
-    bug = "Intersection calls discard disjoint return contracts",
     test_intersection_call_gradual_return_order,
     r#"
 from typing import Any, reveal_type
@@ -415,15 +404,14 @@ class F:
     def make(self) -> Any: ...
 def gradual_middle(x: A):
     if isinstance(x, B) and isinstance(x, C):
-        reveal_type(x.make())  # E: revealed type: Unknown
+        reveal_type(x.make())  # E: revealed type: Never
 def gradual_last(x: D):
     if isinstance(x, E) and isinstance(x, F):
-        reveal_type(x.make())  # E: revealed type: Unknown
+        reveal_type(x.make())  # E: revealed type: Never
 "#,
 );
 
 testcase!(
-    bug = "Calls lose return guarantees for overlapping dictionary views",
     test_intersection_call_typed_dict_and_dict_overlap,
     r#"
 from typing import TypedDict, reveal_type
@@ -444,11 +432,11 @@ class D:
 
 def td_first(x: A):
     if isinstance(x, B):
-        reveal_type(x.make())  # E: revealed type: Unknown
+        reveal_type(x.make())  # E: revealed type: dict[str, int] & TD
         reveal_type(x.field)  # E: revealed type: dict[str, int] & TD
 def dict_first(x: C):
     if isinstance(x, D):
-        reveal_type(x.make())  # E: revealed type: Unknown
+        reveal_type(x.make())  # E: revealed type: dict[str, int] & TD
         reveal_type(x.field)  # E: revealed type: dict[str, int] & TD
 
 witness: TD = {"key": 1}
@@ -526,7 +514,6 @@ assert_type(Child(), int)
 );
 
 testcase!(
-    bug = "Fallback calls hide first-use inference for deferred container arguments",
     test_intersection_call_deferred_partial_state,
     r#"
 from typing import reveal_type
@@ -543,21 +530,20 @@ def failed_int_first(a: A):
     if isinstance(a, B):
         empty = []
         result = a.method([empty], 1)
-        reveal_type(result)  # E: revealed type: Unknown
+        reveal_type(result)  # E: revealed type: str
         empty.append("ok")
-        reveal_type(empty)  # E: revealed type: list[Unknown]
+        reveal_type(empty)  # E: revealed type: list[str]
 def successful_str_first(c: C):
     if isinstance(c, D):
         empty = []
         result = c.method([empty], 1)
-        reveal_type(result)  # E: revealed type: Unknown
+        reveal_type(result)  # E: revealed type: str
         empty.append("ok")
-        reveal_type(empty)  # E: revealed type: list[Unknown]
+        reveal_type(empty)  # E: revealed type: list[str]
 "#,
 );
 
 testcase!(
-    bug = "Fallback hides indexing of intersection attribute contracts",
     test_intersection_attribute_indexing_contracts,
     r#"
 from typing import reveal_type
@@ -573,17 +559,16 @@ class D:
 def list_first(a: A):
     if isinstance(a, B):
         reveal_type(a.data)  # E: revealed type: Marker & list[int]
-        reveal_type(a.data[0])  # E: revealed type: Unknown
-        reveal_type(a.data["bad"])  # E: revealed type: Unknown
+        reveal_type(a.data[0])  # E: revealed type: int
+        reveal_type(a.data["bad"])  # E: No matching overload  # E: revealed type: Unknown
 def marker_first(c: C):
     if isinstance(c, D):
         reveal_type(c.data)  # E: revealed type: Marker & list[int]
-        reveal_type(c.data[0])  # E: revealed type: Unknown
+        reveal_type(c.data[0])  # E: revealed type: int
 "#,
 );
 
 testcase!(
-    bug = "Fallback hides contextual comprehension inference in intersection calls",
     test_intersection_call_contextual_comprehensions,
     r#"
 from typing import assert_type, overload, reveal_type
@@ -605,21 +590,20 @@ class D:
     def method(self, xs) -> int | str: ...
 def first(a: A):
     if isinstance(a, B):
-        reveal_type(a.method([i for i in range(3)]))  # E: revealed type: Unknown
-        reveal_type(a.method(xs=[i for i in range(3)]))  # E: revealed type: Unknown
+        reveal_type(a.method([i for i in range(3)]))  # E: revealed type: int
+        reveal_type(a.method(xs=[i for i in range(3)]))  # E: revealed type: int
 def reverse(b: B):
     if isinstance(b, A):
-        reveal_type(b.method([i for i in range(3)]))  # E: revealed type: Unknown
+        reveal_type(b.method([i for i in range(3)]))  # E: revealed type: int
 def overloaded(c: C):
     if isinstance(c, D):
-        reveal_type(c.method([i for i in range(3)]))  # E: revealed type: Unknown
+        reveal_type(c.method([i for i in range(3)]))  # E: revealed type: int
 def ordinary(a: A):
     assert_type(a.method([i for i in range(3)]), int)
 "#,
 );
 
 testcase!(
-    bug = "Fallback loses results and argument context for intersected callbacks",
     test_intersection_call_representative_lambda_context,
     r#"
 from typing import Callable, assert_type, reveal_type
@@ -635,12 +619,12 @@ class D:
     def method(self, callback: Callable[[int], int]) -> RetA: ...
 def int_first(a: A):
     if isinstance(a, B):
-        reveal_type(a.method(lambda v: v + 1))  # E: revealed type: Unknown
+        reveal_type(a.method(lambda v: v + 1))  # E: revealed type: RetA & RetB
         typed: Callable[[int], int] = lambda v: v + 1
-        reveal_type(a.method(typed))  # E: revealed type: Unknown
+        reveal_type(a.method(typed))  # E: revealed type: RetA
 def str_first(c: C):
     if isinstance(c, D):
-        reveal_type(c.method(lambda v: v + 1))  # E: revealed type: Unknown
+        reveal_type(c.method(lambda v: v + 1))  # E: revealed type: RetA & RetB
 def ordinary(a: A):
     assert_type(a.method(lambda v: v + 1), RetA)
 def intrinsic_errors(a: A):
@@ -651,7 +635,6 @@ def intrinsic_errors(a: A):
 );
 
 testcase!(
-    bug = "Narrowed generic Self constructors lose identity and argument checks",
     test_intersection_constructor_generic_self_required_argument,
     r#"
 from typing import Generic, Self, TypeVar, assert_type
@@ -660,7 +643,7 @@ class Parent[T]:
     @classmethod
     def make(cls) -> Self:
         if issubclass(cls, Child):
-            return cls()  # E: Missing argument `required`  # E: Returned type
+            return cls()  # E: No intersection member accepts this call
         return cls()
 class Child(Parent[int]):
     def __init__(self, required: int) -> None: ...
@@ -670,7 +653,7 @@ class LegacyParent(Generic[T]):
     @classmethod
     def make(cls) -> Self:
         if issubclass(cls, LegacyChild):
-            return cls()  # E: Missing argument `required`  # E: Returned type
+            return cls()  # E: No intersection member accepts this call
         return cls()
 class LegacyChild(LegacyParent[int]):
     def __init__(self, required: int) -> None: ...
@@ -680,7 +663,6 @@ assert_type(LegacyChild(1), LegacyChild)
 );
 
 testcase!(
-    bug = "Fallback conflates selected subclass and independent constructor views",
     test_intersection_constructor_unrestricted_and_mixin_boundaries,
     r#"
 from typing import TypeVar, assert_type
@@ -689,7 +671,7 @@ class A:
     def __init__(self, required: int) -> None: ...
 def unrestricted(cls: type[U]) -> U:
     if issubclass(cls, A):
-        return cls()  # E: Missing argument `required`  # E: Returned type
+        return cls()  # E: No intersection member accepts this call
     return cls()
 class Base:
     def __init__(self) -> None: ...
@@ -698,7 +680,7 @@ class Mixin:
 V = TypeVar("V", bound=Base)
 def unrelated_mixin(cls: type[V]) -> V:
     if issubclass(cls, Mixin):
-        return cls()  # E: Missing argument `required`  # E: Returned type
+        return cls()
     return cls()
 class Combined(Base, Mixin): ...
 assert_type(Combined(), Combined)
@@ -707,7 +689,6 @@ assert_type(A(1), A)
 );
 
 testcase!(
-    bug = "Fallback loses static fields around a real gradual return contract",
     test_intersection_call_gradual_three_way_fields,
     r#"
 from typing import Any, reveal_type
@@ -730,18 +711,17 @@ class F:
 def gradual_middle(a: A):
     if isinstance(a, B) and isinstance(a, C):
         result = a.make()
-        reveal_type(result.a)  # E: revealed type: Unknown
-        reveal_type(result.c)  # E: revealed type: Unknown
+        reveal_type(result.a)  # E: revealed type: int & Any
+        reveal_type(result.c)  # E: revealed type: str & Any
 def gradual_last(d: D):
     if isinstance(d, E) and isinstance(d, F):
         result = d.make()
-        reveal_type(result.a)  # E: revealed type: Unknown
-        reveal_type(result.c)  # E: revealed type: Unknown
+        reveal_type(result.a)  # E: revealed type: int & Any
+        reveal_type(result.c)  # E: revealed type: str & Any
 "#,
 );
 
 testcase!(
-    bug = "Narrowed protocol-bound constructors lose generic result identity",
     test_intersection_constructor_structural_protocol_bound,
     r#"
 from typing import Protocol, TypeVar, reveal_type
@@ -753,13 +733,13 @@ class Child:
 T = TypeVar("T", bound=P)
 def bad(cls: type[T]) -> T:
     if issubclass(cls, Child):
-        return cls()  # E: Missing argument `required`  # E: Returned type
+        return cls()  # E: No intersection member accepts this call
     return cls()
 def good(cls: type[T]) -> T:
     if issubclass(cls, Child):
         result = cls(1)
-        reveal_type(result)  # E: revealed type: Child
-        return result  # E: Returned type
+        reveal_type(result)  # E: revealed type: Child & T
+        return result
     return cls()
 class GenericP[S](Protocol):
     def value(self) -> S: ...
@@ -768,13 +748,12 @@ class IntChild:
     def value(self) -> int: ...
 def generic_good[U: GenericP[int]](cls: type[U]) -> U:
     if issubclass(cls, IntChild):
-        return cls(1)  # E: Returned type
+        return cls(1)
     return cls()
 "#,
 );
 
 testcase!(
-    bug = "Fallback loses call guarantees from three overlapping dictionaries",
     test_intersection_call_three_dictionary_guarantees,
     r#"
 from typing import TypedDict, reveal_type
@@ -798,11 +777,11 @@ class D:
     def make(self) -> dict[str, object]: ...
 def typed_dicts(a: A):
     if isinstance(a, B) and isinstance(a, C):
-        reveal_type(a.make())  # E: revealed type: Unknown
+        reveal_type(a.make())  # E: revealed type: Flag & Left & Right
         reveal_type(a.field)  # E: revealed type: Flag & Left & Right
 def dictionary(d: D):
     if isinstance(d, A) and isinstance(d, B):
-        reveal_type(d.make())  # E: revealed type: Unknown
+        reveal_type(d.make())  # E: revealed type: dict[str, object] & Left & Right
         reveal_type(d.field)  # E: revealed type: dict[str, object] & Left & Right
 witness = {"left": 1, "right": "ok", "flag": True}
 assert witness["left"] == 1 and witness["right"] == "ok" and witness["flag"] is True
@@ -834,7 +813,6 @@ def use_earlier(a: A):
 );
 
 testcase!(
-    bug = "Fallback loses specialized subscription information in intersections",
     test_intersection_specialized_subscription_views,
     r#"
 from typing import TypedDict, reveal_type
@@ -853,19 +831,18 @@ class D:
     data: Marker
 def dictionaries(a: A):
     if isinstance(a, B):
-        reveal_type(a.data["left"])  # E: revealed type: Unknown
-        reveal_type(a.data["right"])  # E: revealed type: Unknown
-        reveal_type(a.data["absent"])  # E: revealed type: Unknown
+        reveal_type(a.data["left"])  # E: revealed type: int
+        reveal_type(a.data["right"])  # E: revealed type: str
+        reveal_type(a.data["absent"])  # E: key  # E: key  # E: revealed type: Unknown
 def tuples(c: C):
     if isinstance(c, D):
-        reveal_type(c.data[0])  # E: revealed type: Unknown
-        reveal_type(c.data[1])  # E: revealed type: Unknown
-        reveal_type(c.data[8])  # E: revealed type: Unknown
+        reveal_type(c.data[0])  # E: revealed type: int
+        reveal_type(c.data[1])  # E: revealed type: str
+        reveal_type(c.data[8])  # E: out of range  # E: revealed type: Unknown
 "#,
 );
 
 testcase!(
-    bug = "Fallback loses overlapping TypedDict and Mapping call guarantees",
     test_intersection_call_typed_dict_mapping_overlap,
     r#"
 from typing import Mapping, NotRequired, TypedDict, reveal_type
@@ -880,7 +857,7 @@ class B:
     def make(self) -> Mapping[str, int]: ...
 def overlap(a: A):
     if isinstance(a, B):
-        reveal_type(a.make())  # E: revealed type: Unknown
+        reveal_type(a.make())  # E: revealed type: Mapping[str, int] & TD
         reveal_type(a.field)  # E: revealed type: Mapping[str, int] & TD
 witness: TD = {"key": 1}
 assert witness["key"] == 1 and "optional" not in witness
@@ -900,8 +877,8 @@ def list_first(xs: list[int]):
         reveal_type(xs["start":"stop"])  # E: revealed type: list[int]
 def custom_first(xs: Custom):
     if isinstance(xs, list):
-        xs[::0]  # E: step
-        xs["start":"stop"]  # E: Slice indices must be integers
+        reveal_type(xs[::0])  # E: revealed type: list[int]
+        reveal_type(xs["start":"stop"])  # E: revealed type: list[int]
 
 def builtin_only(xs: list[int]):
     xs[::0]  # E: step
@@ -909,7 +886,6 @@ def builtin_only(xs: list[int]):
 );
 
 testcase!(
-    bug = "Fallback hides bounded contextual inference for nested comprehensions",
     test_intersection_nested_comprehension_deferral,
     r#"
 from typing import reveal_type
@@ -920,6 +896,6 @@ class B:
 def nested(a: A):
     if isinstance(a, B):
         result = a.method([a.method([a.method([1]) for _ in (0,)]) for _ in (0,)])
-        reveal_type(result)  # E: revealed type: Unknown
+        reveal_type(result)  # E: revealed type: float
 "#,
 );
