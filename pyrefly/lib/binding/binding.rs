@@ -2246,9 +2246,12 @@ pub enum LastStmt {
     /// The last statement is a `with`, with the following context,
     /// which might (if exit is true) catch an exception
     With(IsAsync),
-    /// The last statement is a match or if/elif chain that may be type-exhaustive.
+    /// The last statement is a `match` that may be type-exhaustive.
     /// Contains the statement range to look up exhaustiveness at solve time.
-    Exhaustive(ExhaustivenessKind, TextRange),
+    Exhaustive(TextRange),
+    /// The last statement is an `if` chain, and one of its suites, or its fall-through, may
+    /// reach the end. Contains the range that keys the suite's `Binding::BranchEnd`.
+    BranchEnd(TextRange),
 }
 
 #[derive(Clone, Debug)]
@@ -2260,8 +2263,20 @@ pub struct ReturnImplicit {
     ///   clause fully diverges (each clause is an AND of endings; an empty clause means
     ///   that alternative never falls through). A single flat list of endings is one
     ///   clause. `try`/`finally` uses two clauses because fall-through requires both the
-    ///   `try` path and the `finally` path to fall through.
-    pub last_exprs: Option<Box<[Box<[(LastStmt, Idx<Key>)]>]>>,
+    ///   `try` path and the `finally` path to fall through. An ending diverges if it ends in
+    ///   `Never` or lies inside a suite that its test makes dead.
+    pub last_exprs: Option<Box<[Box<[LastPath]>]>>,
+}
+
+/// A path that may fall off the end of a body.
+#[derive(Clone, Debug)]
+pub struct LastPath {
+    pub last: LastStmt,
+    /// The binding that `last` describes.
+    pub key: Idx<Key>,
+    /// The `Binding::BranchEnd`s of the `if` suites enclosing the path. The path never reaches
+    /// the end if any of those suites is dead by its test.
+    pub guards: Box<[Idx<Key>]>,
 }
 
 #[derive(Clone, Debug)]
@@ -2481,9 +2496,7 @@ pub enum GateCondition {
     /// A compound statement whose fall-through is a DNF of path endings (same shape as
     /// `ReturnImplicit`). Control continues past it only if every clause can fall through, so
     /// the code after is dead when any clause fully diverges.
-    SomePathReturns {
-        last_exprs: Box<[Box<[(LastStmt, Idx<Key>)]>]>,
-    },
+    SomePathReturns { last_exprs: Box<[Box<[LastPath]>]> },
 }
 
 /// Data for the reachability of the code following a `with` statement whose body

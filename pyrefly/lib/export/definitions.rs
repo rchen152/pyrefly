@@ -984,7 +984,7 @@ impl DefinitionsBuilder {
             Stmt::If(x) => {
                 self.named_in_expr(&x.test);
                 let sys_info = self.sys_info;
-                for (test, body) in sys_info.pruned_if_branches(x) {
+                for (_, test, body) in sys_info.pruned_if_branches(x) {
                     let outer = self.in_main_guard;
                     self.in_main_guard = outer || test.is_some_and(Ast::is_main_guard);
                     self.stmts(body);

@@ -50,7 +50,6 @@ use crate::binding::binding::BindingUndecoratedFunction;
 use crate::binding::binding::BindingUndecoratedFunctionRange;
 use crate::binding::binding::BindingYield;
 use crate::binding::binding::BindingYieldFrom;
-use crate::binding::binding::ExhaustivenessKind;
 use crate::binding::binding::ExprOrBinding;
 use crate::binding::binding::FunctionDefData;
 use crate::binding::binding::IsAsync;
@@ -489,12 +488,7 @@ impl<'a> BindingsBuilder<'a> {
             x.clauses
                 .into_map(|clause| {
                     clause
-                        .into_map(|(last, x)| {
-                            (
-                                last.clone(),
-                                self.last_statement_idx_for_implicit_return(last, x),
-                            )
-                        })
+                        .into_map(|path| self.last_path(path))
                         .into_boxed_slice()
                 })
                 .into_boxed_slice()
@@ -982,11 +976,20 @@ impl<'a> BindingsBuilder<'a> {
     }
 }
 
+/// A path that may fall off the end of a body: its last statement, the expression that keys
+/// it, and the ranges of the `if` suites enclosing it whose test may make it dead.
+#[derive(Clone)]
+pub(crate) struct LastPathExpr<'a> {
+    pub last: LastStmt,
+    pub expr: &'a Expr,
+    pub guards: Box<[TextRange]>,
+}
+
 /// Path endings as a DNF: the region diverges if any clause fully diverges.
 /// Each clause is an AND of endings (every path in that alternative must be Never /
 /// non-fallthrough). An empty clause means that alternative never falls through.
 pub(crate) struct LastExpressions<'a> {
-    pub clauses: Vec<Vec<(LastStmt, &'a Expr)>>,
+    pub clauses: Vec<Vec<LastPathExpr<'a>>>,
     /// Set when the configured environment decided which paths exist, by pruning a branch or
     /// settling an assertion. The answer then holds for that configuration only, which suits
     /// inferring a return type but not reporting code as dead.
@@ -994,9 +997,9 @@ pub(crate) struct LastExpressions<'a> {
 }
 
 fn or_dnf<'a>(
-    a: Option<Vec<Vec<(LastStmt, &'a Expr)>>>,
-    b: Option<Vec<Vec<(LastStmt, &'a Expr)>>>,
-) -> Option<Vec<Vec<(LastStmt, &'a Expr)>>> {
+    a: Option<Vec<Vec<LastPathExpr<'a>>>>,
+    b: Option<Vec<Vec<LastPathExpr<'a>>>>,
+) -> Option<Vec<Vec<LastPathExpr<'a>>>> {
     match (a, b) {
         (None, None) => None,
         (Some(x), None) | (None, Some(x)) => Some(x),
@@ -1008,9 +1011,9 @@ fn or_dnf<'a>(
 }
 
 fn and_dnf<'a>(
-    a: Option<Vec<Vec<(LastStmt, &'a Expr)>>>,
-    b: Option<Vec<Vec<(LastStmt, &'a Expr)>>>,
-) -> Option<Vec<Vec<(LastStmt, &'a Expr)>>> {
+    a: Option<Vec<Vec<LastPathExpr<'a>>>>,
+    b: Option<Vec<Vec<LastPathExpr<'a>>>>,
+) -> Option<Vec<Vec<LastPathExpr<'a>>>> {
     match (a, b) {
         (None, _) | (_, None) => None,
         (Some(a), Some(b)) => {
@@ -1040,8 +1043,9 @@ pub(crate) fn function_last_expressions<'a>(
     fn f<'a>(
         sys_info: SysInfo,
         x: &'a [Stmt],
+        guards: &mut Vec<TextRange>,
         environment: &mut bool,
-    ) -> Option<Vec<Vec<(LastStmt, &'a Expr)>>> {
+    ) -> Option<Vec<Vec<LastPathExpr<'a>>>> {
         fn loop_body_has_break_statement(statement: &Stmt, has_break: &mut bool) {
             match statement {
                 Stmt::Break(_) => {
@@ -1054,7 +1058,11 @@ pub(crate) fn function_last_expressions<'a>(
         }
 
         match x.last()? {
-            Stmt::Expr(x) => Some(vec![vec![(LastStmt::Expr, &x.value)]]),
+            Stmt::Expr(x) => Some(vec![vec![LastPathExpr {
+                last: LastStmt::Expr,
+                expr: &x.value,
+                guards: guards.as_slice().into(),
+            }]]),
             Stmt::Return(_) | Stmt::Raise(_) => Some(vec![vec![]]),
             Stmt::Assert(x) if sys_info.evaluate_bool(&x.test) == Some(false) => {
                 *environment |= SysInfo::depends_on_sys_info(&x.test);
@@ -1064,9 +1072,13 @@ pub(crate) fn function_last_expressions<'a>(
                 let kind = IsAsync::new(x.is_async);
                 let mut with_clause = Vec::new();
                 for y in &x.items {
-                    with_clause.push((LastStmt::With(kind), &y.context_expr));
+                    with_clause.push(LastPathExpr {
+                        last: LastStmt::With(kind),
+                        expr: &y.context_expr,
+                        guards: guards.as_slice().into(),
+                    });
                 }
-                let body = f(sys_info, &x.body, environment)?;
+                let body = f(sys_info, &x.body, guards, environment)?;
                 and_dnf(Some(vec![with_clause]), Some(body))
             }
             Stmt::While(x) => {
@@ -1082,7 +1094,7 @@ pub(crate) fn function_last_expressions<'a>(
                 } else if has_break || x.orelse.is_empty() {
                     None
                 } else {
-                    f(sys_info, &x.orelse, environment)
+                    f(sys_info, &x.orelse, guards, environment)
                 }
             }
             Stmt::For(x) => {
@@ -1092,7 +1104,7 @@ pub(crate) fn function_last_expressions<'a>(
                 if has_break || x.orelse.is_empty() {
                     None
                 } else {
-                    f(sys_info, &x.orelse, environment)
+                    f(sys_info, &x.orelse, guards, environment)
                 }
             }
             Stmt::If(x) => {
@@ -1102,22 +1114,48 @@ pub(crate) fn function_last_expressions<'a>(
                 let mut last_test = None;
                 let mut any_branch_processed = false;
                 // AND-identity for diverge formulas: always diverges.
-                let mut acc: Option<Vec<Vec<(LastStmt, &'a Expr)>>> = Some(vec![vec![]]);
-                for (test, body) in sys_info.pruned_if_branches(x) {
+                let mut acc: Option<Vec<Vec<LastPathExpr<'a>>>> = Some(vec![vec![]]);
+                for (index, (range, test, body)) in sys_info.pruned_if_branches(x).enumerate() {
                     any_branch_processed = true;
                     last_test = test;
-                    let branch = f(sys_info, body, environment)?;
+                    // A suite whose test makes it dead never reaches its end, whichever paths it
+                    // has, so its `BranchEnd` guards them, and stands for the suite when it falls
+                    // off its end. The binder gives one to every suite with a test of its own or
+                    // a test above it. In this pruned view, that is every suite but a first one
+                    // without a test: a clause whose test `SysInfo` evaluates as true, which runs
+                    // whenever the statement does, or an `else` after clauses whose tests it
+                    // evaluates as false.
+                    // Neither can be dead by its test, so it needs no guard.
+                    let branch = if index == 0 && test.is_none() {
+                        f(sys_info, body, guards, environment)?
+                    } else {
+                        guards.push(range);
+                        let branch = f(sys_info, body, guards, environment);
+                        guards.pop();
+                        branch.unwrap_or_else(|| {
+                            vec![vec![LastPathExpr {
+                                last: LastStmt::BranchEnd(range),
+                                expr: &x.test,
+                                guards: guards.as_slice().into(),
+                            }]]
+                        })
+                    };
                     acc = and_dnf(acc, Some(branch));
                 }
                 if !any_branch_processed {
                     return None;
                 }
                 if last_test.is_some() {
-                    let exhaustive = vec![(
-                        LastStmt::Exhaustive(ExhaustivenessKind::IfElif, x.range),
-                        x.test.as_ref(),
-                    )];
-                    acc = and_dnf(acc, Some(vec![exhaustive]));
+                    // The chain has no `else`, so control may fall through it. The fall-through's
+                    // `BranchEnd` decides whether it is dead, either because its test settles it
+                    // or because the chain is type-exhaustive. We use the test expression as a
+                    // placeholder; the key is found by the range.
+                    let fall_through = vec![LastPathExpr {
+                        last: LastStmt::BranchEnd(TextRange::empty(x.range.start())),
+                        expr: &x.test,
+                        guards: guards.as_slice().into(),
+                    }];
+                    acc = and_dnf(acc, Some(vec![fall_through]));
                 }
                 acc
             }
@@ -1125,13 +1163,13 @@ pub(crate) fn function_last_expressions<'a>(
                 // Fall-through after try/finally requires both the try path and the finally
                 // path to fall through, so the try diverges if either side diverges (OR).
                 let body_paths = {
-                    let mut body_acc: Option<Vec<Vec<(LastStmt, &'a Expr)>>> = Some(vec![vec![]]);
+                    let mut body_acc: Option<Vec<Vec<LastPathExpr<'a>>>> = Some(vec![vec![]]);
                     let body_suite = if x.orelse.is_empty() {
                         &x.body
                     } else {
                         &x.orelse
                     };
-                    match f(sys_info, body_suite, environment) {
+                    match f(sys_info, body_suite, guards, environment) {
                         None => body_acc = None,
                         Some(p) => body_acc = and_dnf(body_acc, Some(p)),
                     }
@@ -1139,7 +1177,7 @@ pub(crate) fn function_last_expressions<'a>(
                         for handler in &x.handlers {
                             match handler {
                                 ExceptHandler::ExceptHandler(h) => {
-                                    match f(sys_info, &h.body, environment) {
+                                    match f(sys_info, &h.body, guards, environment) {
                                         None => {
                                             body_acc = None;
                                             break;
@@ -1155,15 +1193,15 @@ pub(crate) fn function_last_expressions<'a>(
                 if x.finalbody.is_empty() {
                     body_paths
                 } else {
-                    let finally_paths = f(sys_info, &x.finalbody, environment);
+                    let finally_paths = f(sys_info, &x.finalbody, guards, environment);
                     or_dnf(finally_paths, body_paths)
                 }
             }
             Stmt::Match(x) => {
                 let mut syntactically_exhaustive = false;
-                let mut acc: Option<Vec<Vec<(LastStmt, &'a Expr)>>> = Some(vec![vec![]]);
+                let mut acc: Option<Vec<Vec<LastPathExpr<'a>>>> = Some(vec![vec![]]);
                 for case in x.cases.iter() {
-                    let branch = f(sys_info, &case.body, environment)?;
+                    let branch = f(sys_info, &case.body, guards, environment)?;
                     acc = and_dnf(acc, Some(branch));
                     if match_case_always_matches(&case.pattern, &x.subject, case.guard.as_deref()) {
                         syntactically_exhaustive = true;
@@ -1171,10 +1209,11 @@ pub(crate) fn function_last_expressions<'a>(
                     }
                 }
                 if !syntactically_exhaustive {
-                    let exhaustive = vec![(
-                        LastStmt::Exhaustive(ExhaustivenessKind::Match, x.range),
-                        x.subject.as_ref(),
-                    )];
+                    let exhaustive = vec![LastPathExpr {
+                        last: LastStmt::Exhaustive(x.range),
+                        expr: x.subject.as_ref(),
+                        guards: guards.as_slice().into(),
+                    }];
                     acc = and_dnf(acc, Some(vec![exhaustive]));
                 }
                 acc
@@ -1184,7 +1223,7 @@ pub(crate) fn function_last_expressions<'a>(
     }
 
     let mut environment = false;
-    let clauses = f(sys_info, x, &mut environment)?;
+    let clauses = f(sys_info, x, &mut Vec::new(), &mut environment)?;
     Some(LastExpressions {
         clauses,
         decided_by_environment: environment,

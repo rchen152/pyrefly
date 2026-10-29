@@ -4133,25 +4133,44 @@ def dead_elif(other: bool) -> None:
 
 // Control cannot fall off the end of a function through a suite that never runs.
 testcase!(
-    bug = "A suite settled dead by declarations still falls off the end of the function",
     test_implicit_return_ignores_suite_settled_dead_by_declarations,
     r#"
+import sys
 from typing import Final
 
 FLAG: Final = False
 ON: Final = True
 
-def dead_if() -> int:  # E: Function declared to return `int`, but one or more paths are missing an explicit `return`
+def dead_if() -> int:
     if FLAG:
         pass  # E: This code is unreachable
     else:
         return 1
 
-def dead_elif(other: bool) -> int:  # E: Function declared to return `int`, but one or more paths are missing an explicit `return`
+def dead_elif(other: bool) -> int:
     if ON:
         return 1
     elif other:
         pass  # E: This code is unreachable
+
+# The environment removes the first clause, so the `elif` is the first suite left, and it has a
+# test of its own. It may run, so control can fall off the end.
+def after_pruned_clause(other: bool) -> int:  # E: Function declared to return `int`, but one or more paths are missing an explicit `return`
+    if sys.version_info < (3, 0):
+        return 0
+    elif other:
+        pass
+    else:
+        return 1
+
+# The environment chooses the `elif`, but the test above it still decides whether it runs.
+def chosen_by_environment(other: bool) -> int:  # E: Function declared to return `int`, but one or more paths are missing an explicit `return`
+    if other:
+        return 1
+    elif sys.version_info >= (3, 0):
+        pass
+    else:
+        return 2
 "#,
 );
 
@@ -4473,6 +4492,100 @@ def reads(c: C, u: Cfg | OtherCfg, h: Holder, pick: bool) -> None:
 "#,
 );
 
+// The paths inside a suite that declarations settle as dead never reach the end, whether the
+// suite ends in an expression or in a nested `if`.
+testcase!(
+    test_paths_inside_suite_settled_dead_by_declarations,
+    r#"
+import sys
+from typing import Final
+
+FLAG: Final = False
+ON: Final = True
+
+# A test that is always true leaves the suites below it dead, whatever their own paths.
+def preempted(other: bool) -> int:
+    if ON:
+        return 1
+    elif other:
+        print("x")  # E: This code is unreachable
+    else:
+        print("y")  # E: This code is unreachable
+
+def ends_in_expression() -> int:
+    if FLAG:
+        print("debug")  # E: This code is unreachable
+    else:
+        return 1
+
+def nested(c: bool) -> int:
+    if FLAG:
+        if c:  # E: This code is unreachable
+            pass
+        else:
+            return 0
+    else:
+        return 1
+
+def dead_after() -> None:
+    if FLAG:
+        print("debug")  # E: This code is unreachable
+    else:
+        sys.exit(1)
+    print(1)  # E: This code is unreachable
+
+# A chain with no `else` falls through only if its last test can be false.
+def after_settled_return() -> None:
+    if ON:
+        return
+    print(1)  # E: This code is unreachable
+
+def through_with(path: str) -> int:
+    if FLAG:
+        with open(path):  # E: This code is unreachable
+            print("debug")
+    else:
+        return 1
+
+def through_try() -> int:
+    if FLAG:
+        try:  # E: This code is unreachable
+            print("debug")
+        except ValueError:
+            print("error")
+    else:
+        return 1
+
+def through_match(x: int) -> int:
+    if FLAG:
+        match x:  # E: This code is unreachable
+            case 0:
+                print("zero")
+            case _:
+                print("other")
+    else:
+        return 1
+"#,
+);
+
+// The walker looks for a `break` anywhere in a `while True` body, including suites that
+// declarations settle as dead, so a dead `break` still lets control leave the loop.
+testcase!(
+    bug = "A `break` in a suite settled dead by declarations still ends the loop",
+    test_implicit_return_break_in_suite_settled_dead,
+    r#"
+from typing import Final
+
+FLAG: Final = False
+
+def f() -> int:  # E: Function declared to return `int`, but one or more paths are missing an explicit `return`
+    while True:
+        if FLAG:
+            break  # E: This code is unreachable
+        return 1
+"#,
+);
+
 // A call that never returns leaves the rest of its suite dead. The flow does not terminate
 // syntactically, and whether the call diverges is known only once its return type is solved,
 // so the diagnostic is deferred.
@@ -4572,8 +4685,8 @@ def mixed_with_return() -> None:
 "#,
 );
 
-// Two kinds of path the compound gate refuses. A branch the environment pruned decides the
-// statement under this configuration only. An exhaustive chain is dead by narrowing, which
+// Two kinds of path the compound gate never reports. A branch the environment pruned decides the
+// statement under this configuration only. An exhaustive chain is dead only by narrowing, which
 // `assert_never` deliberately relies on, so reporting it would condemn the idiom.
 testcase!(
     test_no_compound_gate_for_environment_or_exhaustiveness,

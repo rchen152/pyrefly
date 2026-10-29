@@ -124,6 +124,7 @@ use crate::binding::binding::KeyLegacyTypeParam;
 use crate::binding::binding::KeyTypeAlias;
 use crate::binding::binding::KeyUndecoratedFunction;
 use crate::binding::binding::Keyed;
+use crate::binding::binding::LastPath;
 use crate::binding::binding::LastStmt;
 use crate::binding::binding::LinkedKey;
 use crate::binding::binding::ModuleDiagnostic;
@@ -434,8 +435,8 @@ struct ContextExit {
 /// answers for the same expression, so they must say which they want.
 #[derive(Clone, Copy)]
 enum DivergenceQuestion {
-    /// Typing a function's implicit return. The resolved implementation's type is the whole
-    /// answer: if its last expression is `Never`, control does not fall off the end.
+    /// Typing a function's implicit return. A path does not fall off the end if a suite enclosing
+    /// it is dead by its test, or if its last expression is `Never`, whatever made it `Never`.
     ImplicitReturn,
     /// Reporting the code after the statement as dead. A `Never` is not enough on its own,
     /// because it may come from a narrowed-away receiver or from a method that a subclass
@@ -5026,19 +5027,23 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     /// past them. `Binding::ReturnImplicit` asks this of a whole function body, and a
     /// `GateCondition::SomePathReturns` asks it of a single compound statement. They want
     /// different answers for the same expression, so `question` says which is asking.
-    fn all_paths_diverge(
-        &self,
-        last_exprs: &[(LastStmt, Idx<Key>)],
-        question: DivergenceQuestion,
-    ) -> bool {
-        last_exprs.iter().all(|(last, k)| {
-            let e = self.get_idx(*k);
-            match last {
+    fn all_paths_diverge(&self, last_exprs: &[LastPath], question: DivergenceQuestion) -> bool {
+        let dead_by_test = |end: Idx<Key>| match self.bindings().get(end) {
+            Binding::BranchEnd(end) => self.suite_dead_by_test(end.test, end.runs_when),
+            binding => unreachable!("a suite end is bound as {binding:?}"),
+        };
+        last_exprs.iter().all(|path| {
+            if path.guards.iter().any(|guard| dead_by_test(*guard)) {
+                return true;
+            }
+            let k = path.key;
+            let e = self.get_idx(k);
+            match &path.last {
                 LastStmt::Expr => {
                     e.ty().is_never()
                         && match question {
                             DivergenceQuestion::ImplicitReturn => true,
-                            DivergenceQuestion::DeadCode => self.statement_is_a_diverging_call(*k),
+                            DivergenceQuestion::DeadCode => self.statement_is_a_diverging_call(k),
                         }
                 }
                 LastStmt::With(kind) => match question {
@@ -5049,7 +5054,13 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         self.context_manager_definitely_does_not_suppress(e.ty(), *kind)
                     }
                 },
-                LastStmt::Exhaustive(_, _) => e.ty().is_never(),
+                LastStmt::Exhaustive(_) => e.ty().is_never(),
+                // Code is reported dead only by the suite's test, never by the narrowing that
+                // also makes a fall-through dead, since that would condemn `assert_never`.
+                LastStmt::BranchEnd(_) => match question {
+                    DivergenceQuestion::ImplicitReturn => e.ty().is_never(),
+                    DivergenceQuestion::DeadCode => dead_by_test(k),
+                },
             }
         })
     }
