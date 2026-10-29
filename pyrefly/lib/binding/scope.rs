@@ -1472,6 +1472,9 @@ pub struct Scope {
     variables: SmallMap<Name, VariableUsage>,
     /// Depth of finally blocks we're in. Resets in new function scopes (PEP 765).
     finally_depth: usize,
+    /// Pending finally suites can observe exceptional values and change saved exits.
+    /// Relation-derived narrows are disabled throughout these try statements.
+    excluded_none_pair_barrier_depth: usize,
     /// Stack of active `with` bodies, recording whether each has encountered a live
     /// statement that may raise. Resets in new function scopes.
     with_may_raise: Vec<bool>,
@@ -1509,6 +1512,7 @@ impl Scope {
             has_future_annotations: false,
             variables: SmallMap::new(),
             finally_depth: 0,
+            excluded_none_pair_barrier_depth: 0,
             with_may_raise: Vec::new(),
             try_fallbacks: Vec::new(),
             implicit_captures: SmallSet::new(),
@@ -2533,9 +2537,26 @@ impl Scopes {
         }
     }
 
-    /// Return the relationships that hold in the current flow.
-    pub fn excluded_none_pairs(&self) -> &ExcludedNonePairs {
-        &self.current().flow.excluded_none_pairs
+    /// Build relation-derived narrows only when no pending finally can change their values.
+    pub fn implied_none_narrows(&self, narrow_ops: &NarrowOps) -> NarrowOps {
+        if self.current().excluded_none_pair_barrier_depth != 0 {
+            NarrowOps::new()
+        } else {
+            self.current()
+                .flow
+                .excluded_none_pairs
+                .implied_narrows(narrow_ops)
+        }
+    }
+
+    /// Disable relations throughout a try statement with a finally suite.
+    pub fn enter_excluded_none_pair_barrier(&mut self) {
+        self.current_mut().excluded_none_pair_barrier_depth += 1;
+    }
+
+    /// Restore relation tracking after the matching try statement.
+    pub fn exit_excluded_none_pair_barrier(&mut self) {
+        self.current_mut().excluded_none_pair_barrier_depth -= 1;
     }
 
     /// Discard sequential relationships across paths with unknown intervening writes.
@@ -2545,6 +2566,9 @@ impl Scopes {
 
     /// Record a false test's relationship for subsequent clauses and implicit fall-through.
     pub fn exclude_none_pair_in_fork_base(&mut self, pair: ExcludedNonePair) {
+        if self.current().excluded_none_pair_barrier_depth != 0 {
+            return;
+        }
         self.current_mut()
             .forks
             .last_mut()

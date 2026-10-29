@@ -806,8 +806,8 @@ impl ExcludedNonePair {
 }
 
 /// Relations apply to the current sequential values of their names. Writes invalidate
-/// affected pairs, merges intersect all incoming paths, and loop entry and exception
-/// boundaries discard relationships that can become stale.
+/// affected pairs, and merges intersect incoming paths. The scope discards or disables
+/// relations at loop and exception boundaries where those sequential values can differ.
 #[derive(Clone, Debug, Default)]
 pub struct ExcludedNonePairs(Vec<ExcludedNonePair>);
 

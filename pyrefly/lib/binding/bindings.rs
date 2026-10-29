@@ -2571,10 +2571,7 @@ impl<'a> BindingsBuilder<'a> {
         use_location: NarrowUseLocation,
         usage: &Usage,
     ) {
-        let implied = self
-            .scopes
-            .excluded_none_pairs()
-            .implied_narrows(narrow_ops);
+        let implied = self.scopes.implied_none_narrows(narrow_ops);
         for (name, (op, op_range)) in narrow_ops.0.iter_hashed().chain(implied.0.iter_hashed()) {
             // Narrowing operations should not pin partial types, but they also
             // should not permanently block pinning. Leave the first-use state

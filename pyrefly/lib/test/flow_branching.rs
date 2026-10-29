@@ -648,7 +648,6 @@ def exceptional_write(x: int | None, y: int | None):
 );
 
 testcase!(
-    bug = "Finally uses relations from normal completion or before exit writes.",
     test_none_relations_finally_paths,
     r#"
 from typing import assert_type
@@ -659,8 +658,8 @@ def guard_raises(x: int | None, y: int | None):
             raise ValueError()
     finally:
         if x is None:
-            assert_type(y, int)
-            return y + 1
+            assert_type(y, int | None)
+            return y + 1  # E: `+` is not supported between `None` and `Literal[1]`
 
 def earlier_exception(x: int | None, y: int | None):
     try:
@@ -669,8 +668,8 @@ def earlier_exception(x: int | None, y: int | None):
             raise ValueError()
     finally:
         if x is None:
-            assert_type(y, int)
-            return y + 1
+            assert_type(y, int | None)
+            return y + 1  # E: `+` is not supported between `None` and `Literal[1]`
 
 def materialized_narrow(x: int | None, y: int | None):
     try:
@@ -678,8 +677,8 @@ def materialized_narrow(x: int | None, y: int | None):
             raise ValueError()
         assert x is None
     finally:
-        assert_type(y, int)
-        return y + 1
+        assert_type(y, int | None)
+        return y + 1  # E: `+` is not supported between `None` and `Literal[1]`
 
 def break_write(x: int | None, y: int | None):
     while True:
@@ -690,8 +689,8 @@ def break_write(x: int | None, y: int | None):
         finally:
             x = None
     if x is None:
-        assert_type(y, int)
-        return y + 1
+        assert_type(y, int | None)
+        return y + 1  # E: `+` is not supported between `None` and `Literal[1]`
 
 def break_materialized_narrow(x: int | None, y: int | None):
     while True:
@@ -703,8 +702,8 @@ def break_materialized_narrow(x: int | None, y: int | None):
         finally:
             y = None
     if x is None:
-        assert_type(y, int)
-        return y + 1
+        assert_type(y, int | None)
+        return y + 1  # E: `+` is not supported between `None` and `Literal[1]`
 
 def continue_write(x: int | None, y: int | None):
     for _ in [0]:
@@ -715,8 +714,8 @@ def continue_write(x: int | None, y: int | None):
         finally:
             x = None
     if x is None:
-        assert_type(y, int)
-        return y + 1
+        assert_type(y, int | None)
+        return y + 1  # E: `+` is not supported between `None` and `Literal[1]`
 "#,
 );
 

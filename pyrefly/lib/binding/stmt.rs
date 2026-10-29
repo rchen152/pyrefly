@@ -1940,6 +1940,10 @@ impl<'a> BindingsBuilder<'a> {
                 self.scopes.mark_flow_termination(TerminationKind::Raise);
             }
             Stmt::Try(x) => {
+                let has_finally = !x.finalbody.is_empty();
+                if has_finally {
+                    self.scopes.enter_excluded_none_pair_barrier();
+                }
                 // Handlers can observe writes made before an exception, not just entry values.
                 self.scopes.clear_excluded_none_pairs();
                 self.start_fork_and_branch(x.range);
@@ -2082,6 +2086,9 @@ impl<'a> BindingsBuilder<'a> {
                     self.scopes.restore_termination(termination);
                 }
                 self.scopes.exit_finally();
+                if has_finally {
+                    self.scopes.exit_excluded_none_pair_barrier();
+                }
             }
             Stmt::Assert(x) => {
                 self.assert(x.range(), *x.test, x.msg.map(|m| *m));
