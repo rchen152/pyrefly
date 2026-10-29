@@ -2509,6 +2509,9 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 for arg in self_arg.iter().chain(args.iter()) {
                     arg.pre_eval(self, arg_errors).post_infer(self, arg_errors)
                 }
+                for keyword in keywords {
+                    keyword.value.infer(self, arg_errors);
+                }
                 ArgMap::new()
             }
             Params::ParamSpec(concatenate, p) => {

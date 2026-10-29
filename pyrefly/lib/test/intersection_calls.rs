@@ -457,13 +457,12 @@ assert isinstance(witness, dict) and witness["key"] == 1
 );
 
 testcase!(
-    bug = "Ellipsis callables skip keyword expression diagnostics",
     test_ellipsis_keyword_expression_errors,
     r#"
 from typing import Callable
 def invoke(callback: Callable[..., int]):
-    callback(x=[(1).missing])
-    callback(**{"x": (1).missing})
+    callback(x=[(1).missing])  # E: Object of class `int` has no attribute `missing`
+    callback(**{"x": (1).missing})  # E: Object of class `int` has no attribute `missing`
     callback(x=[unknown])  # E: Could not find name `unknown`
     callback([(1).missing])  # E: Object of class `int` has no attribute `missing`
 "#,
