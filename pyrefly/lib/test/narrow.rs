@@ -4918,10 +4918,9 @@ def f(x: int | type[A]):
 );
 
 testcase!(
-    bug = "`C.__eq__` can return `True` for any value, so `==` should not narrow `C`",
     test_eq_narrow_user_defined_eq,
     r#"
-from typing import Literal, Never, assert_type
+from typing import Literal, assert_type
 
 class C:
     def __eq__(self, other: object) -> bool:
@@ -4933,10 +4932,10 @@ class A:
 
 def f(c: C, x: int | C, a: A) -> None:
     if c == 3:
-        assert_type(c, Never)
+        assert_type(c, C)
     if x == 3:
-        assert_type(x, Literal[3])
+        assert_type(x, Literal[3] | C)
     if a.c == 3 or a.y is not None:
-        assert_type(a.y, int)
+        assert_type(a.y, int | None)
     "#,
 );

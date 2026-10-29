@@ -43,6 +43,7 @@ use crate::error::collector::ErrorCollector;
 use crate::error::context::ErrorContext;
 use crate::error::context::TypeCheckContext;
 use crate::error::context::TypeCheckKind;
+use crate::module::typeshed::typeshed;
 use crate::types::class::Class;
 use crate::types::literal::Lit;
 use crate::types::tuple::Tuple;
@@ -1239,8 +1240,26 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         }
     }
 
-    /// Returns whether builtin equality may succeed without nominal type overlap.
+    /// Returns whether `left == right` may succeed without nominal type overlap: either side
+    /// gets `__eq__` from a module outside the standard library, or builtin equality relates
+    /// the two classes.
+    ///
+    /// This is a heuristic. It assumes that a standard library `__eq__` returns `True` only for
+    /// an operand of an overlapping class or of a class in the same compatibility group. Most
+    /// standard library classes follow this rule, but some do not: `Fraction(1) == 1` and
+    /// `UserString("a") == "a"` are both true.
     pub(crate) fn equality_can_match_disjoint(&self, left: &Type, right: &Type) -> bool {
+        let has_user_defined_eq = |ty: &Type| {
+            self.equality_class(ty).is_some_and(|class| {
+                self.get_class_member_with_defining_class(class, &dunder::EQ)
+                    .is_some_and(|eq| {
+                        !typeshed().is_ok_and(|ts| ts.has_module(eq.defining_class.module_name()))
+                    })
+            })
+        };
+        if has_user_defined_eq(left) || has_user_defined_eq(right) {
+            return true;
+        }
         let compatibility_group = |ty: &Type| {
             self.equality_compatibility_group(ty).or_else(|| {
                 let class = self.equality_class(ty)?;
