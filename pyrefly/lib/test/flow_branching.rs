@@ -874,6 +874,57 @@ def after_class(x: int | None, y: int | None):
 "#,
 );
 
+testcase!(
+    bug = "Exception paths can lose writes to ordinary and relation-derived narrows.",
+    test_none_relations_shared_exception_flow_limit,
+    r#"
+from contextlib import suppress
+from typing import assert_type
+
+def ordinary_except(y: int | None, flag: bool):
+    assert y is not None
+    try:
+        if flag:
+            y = None
+            raise ValueError()
+    except ValueError:
+        assert_type(y, int)
+        return y + 1
+
+def related_except(x: int | None, y: int | None, flag: bool):
+    if x is None and y is None:
+        raise ValueError()
+    assert x is None
+    try:
+        if flag:
+            y = None
+            raise ValueError()
+    except ValueError:
+        assert_type(y, int)
+        return y + 1
+
+def ordinary_with(y: int | None, flag: bool):
+    assert y is not None
+    with suppress(ValueError):
+        if flag:
+            y = None
+            raise ValueError()
+    assert_type(y, int)
+    return y + 1
+
+def related_with(x: int | None, y: int | None, flag: bool):
+    if x is None and y is None:
+        raise ValueError()
+    assert x is None
+    with suppress(ValueError):
+        if flag:
+            y = None
+            raise ValueError()
+    assert_type(y, int)
+    return y + 1
+"#,
+);
+
 // Regression test to ensure we don't forget to create loop recursion
 // bindings when the loop has early termination.
 testcase!(
