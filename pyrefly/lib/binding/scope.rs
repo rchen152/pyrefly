@@ -513,7 +513,7 @@ impl Static {
     /// Populate static definitions from a list of statements.
     /// Returns the set of implicit captures (names read but not locally defined),
     /// the fallback builtins shadowed by module definitions, the set of all Final
-    /// names, and a map of Final variable string values.
+    /// names, Final string values, and the last statement containing finally or a class scope.
     fn stmts(
         &mut self,
         x: &[Stmt],
@@ -528,6 +528,7 @@ impl Static {
         SmallMap<Name, ModuleName>,
         SmallSet<Name>,
         SmallMap<Name, String>,
+        Option<TextRange>,
     ) {
         let mut d = Definitions::new(
             x,
@@ -605,6 +606,7 @@ impl Static {
             shadowed_implicit_builtins,
             final_names,
             final_string_values,
+            d.last_finally_or_class,
         )
     }
 
@@ -2083,16 +2085,21 @@ impl Scopes {
         get_annotation_idx: &mut impl FnMut(ShortIdentifier) -> Idx<KeyAnnotation>,
     ) {
         let mut initialize = |scope: &mut Scope, myself: Option<&Self>| {
-            let (implicit_captures, shadowed_implicit_builtins, final_names, final_string_values) =
-                scope.stat.stmts(
-                    x,
-                    module_info,
-                    top_level,
-                    lookup,
-                    sys_info,
-                    get_annotation_idx,
-                    myself,
-                );
+            let (
+                implicit_captures,
+                shadowed_implicit_builtins,
+                final_names,
+                final_string_values,
+                _last_finally_or_class,
+            ) = scope.stat.stmts(
+                x,
+                module_info,
+                top_level,
+                lookup,
+                sys_info,
+                get_annotation_idx,
+                myself,
+            );
             scope.implicit_captures = implicit_captures;
             scope.shadowed_implicit_builtins = shadowed_implicit_builtins;
             scope.final_names = final_names;

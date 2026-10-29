@@ -207,6 +207,9 @@ pub struct Definitions {
     /// Names that are read (not just defined) in this scope.
     /// Used to compute implicit captures when entering nested function scopes.
     pub name_reads: SmallSet<Name>,
+    /// The last outermost statement containing a finally suite or an eager class scope.
+    /// Nested function scopes are excluded.
+    pub last_finally_or_class: Option<TextRange>,
 }
 
 /// Whether `__all__` was explicitly defined by the user or synthesized from module definitions.
@@ -479,7 +482,12 @@ impl Definitions {
 impl DefinitionsBuilder {
     fn stmts(&mut self, xs: &[Stmt]) {
         for x in xs {
+            let previous = self.inner.last_finally_or_class;
             self.stmt(x);
+            if self.inner.last_finally_or_class != previous {
+                // Include the enclosing statement: loops can revisit an earlier cleanup.
+                self.inner.last_finally_or_class = Some(x.range());
+            }
         }
     }
 
@@ -682,6 +690,7 @@ impl DefinitionsBuilder {
                 decorator_list,
                 ..
             }) => {
+                self.inner.last_finally_or_class = Some(x.range());
                 let mut deprecated_decoration = None;
                 for d in decorator_list {
                     self.named_in_expr(&d.expression);
@@ -968,6 +977,9 @@ impl DefinitionsBuilder {
                 }
             }
             Stmt::Try(x) => {
+                if !x.finalbody.is_empty() {
+                    self.inner.last_finally_or_class = Some(x.range());
+                }
                 for x in &x.handlers {
                     match x {
                         ExceptHandler::ExceptHandler(x) => {
