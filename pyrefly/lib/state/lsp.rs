@@ -3275,12 +3275,9 @@ impl<'a> Transaction<'a> {
                 }])
             }
             None => {
-                if let Some(res) = self.find_definition_for_endpoint_literal(
-                    handle,
-                    mod_module.as_ref(),
-                    &covering_nodes,
-                    position,
-                ) {
+                if let Some(res) =
+                    self.find_definition_for_endpoint_literal(handle, &covering_nodes, position)
+                {
                     return Ok(res);
                 }
                 // Check if this is a None literal, if so, resolve to NoneType class

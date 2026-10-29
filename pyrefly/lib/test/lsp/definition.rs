@@ -93,7 +93,7 @@ client = TestClient(app)
 client.get("/users")
 #           ^
 "#;
-    let report = get_batched_lsp_operations_report_allow_error(&[("main", code)], get_test_report);
+    let report = super::endpoint_support::report_with_framework(code, get_test_report);
     let def_start = code
         .find("list_users")
         .expect("expected list_users definition");
@@ -129,7 +129,7 @@ data = {}
 data.get("/users")
 #          ^
 "#;
-    let report = get_batched_lsp_operations_report_allow_error(&[("main", code)], get_test_report);
+    let report = super::endpoint_support::report_with_framework(code, get_test_report);
     assert!(
         report.contains("Definition Result: None"),
         "expected no endpoint definition for dict.get(), got:\n{report}"

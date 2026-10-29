@@ -4766,8 +4766,7 @@ client.get("")
 client.post("")
 #            ^
 "#;
-    let report =
-        get_batched_lsp_operations_report_allow_error(&[("main", code)], get_default_test_report());
+    let report = super::endpoint_support::report_with_framework(code, get_default_test_report());
     let trimmed = report.trim();
     for expected in [
         "- (Value) /users: GET endpoint with text edit:",
@@ -4795,8 +4794,7 @@ data = {}
 data.get("")
 #         ^
 "#;
-    let report =
-        get_batched_lsp_operations_report_allow_error(&[("main", code)], get_default_test_report());
+    let report = super::endpoint_support::report_with_framework(code, get_default_test_report());
     assert!(
         !report.contains("GET endpoint"),
         "Expected non-HTTP get() call to avoid endpoint completions, got:\n{report}"

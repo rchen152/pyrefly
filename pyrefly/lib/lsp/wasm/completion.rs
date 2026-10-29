@@ -1394,13 +1394,7 @@ impl Transaction<'_> {
                                 in_string_literal,
                             );
                         }
-                        self.add_endpoint_completions(
-                            handle,
-                            mod_module.as_ref(),
-                            &nodes,
-                            position,
-                            &mut result,
-                        );
+                        self.add_endpoint_completions(handle, &nodes, position, &mut result);
                         // in foo(x=<>, y=2<>), the first containing node is AnyNodeRef::Arguments(_)
                         // in foo(<>), the first containing node is AnyNodeRef::ExprCall
                         if let Some(first) = nodes.first()

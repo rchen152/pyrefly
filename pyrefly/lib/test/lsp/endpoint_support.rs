@@ -16,6 +16,7 @@ use crate::state::lsp::ImportFormat;
 use crate::state::require::Require;
 use crate::state::state::State;
 use crate::test::util::TestEnv;
+use crate::test::util::extract_cursors_for_test;
 
 pub(super) fn framework_env() -> TestEnv {
     let mut env = TestEnv::new();
@@ -73,6 +74,18 @@ fn state_for(code: &str) -> (State, Handle) {
     env.add("main", code);
     let (state, handles) = env.to_state();
     (state, handles("main"))
+}
+
+pub(super) fn report_with_framework(
+    code: &str,
+    report: impl Fn(&State, &Handle, TextSize) -> String,
+) -> String {
+    let (state, handle) = state_for(code);
+    extract_cursors_for_test(code)
+        .into_iter()
+        .map(|position| report(&state, &handle, position))
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn position(code: &str, marker: &str, offset: usize) -> TextSize {
@@ -173,15 +186,8 @@ fn endpoint_receiver_scope_collision() {
     );
     let (state, handle) = state_for(&code);
     let cursor = position(&code, "/users\"", 2);
-    // The current file-wide name index leaks into the unrelated parameter's scope.
-    assert_eq!(
-        endpoint_items(&state, &handle, cursor)
-            .iter()
-            .map(|item| item.label.as_str())
-            .collect::<Vec<_>>(),
-        vec!["/users"]
-    );
-    assert_eq!(definition_names(&state, &handle, cursor), vec!["handler"]);
+    assert!(endpoint_items(&state, &handle, cursor).is_empty());
+    assert!(definition_names(&state, &handle, cursor).is_empty());
 }
 
 #[test]
@@ -189,8 +195,8 @@ fn endpoint_receiver_reassigned_to_dictionary() {
     let code = format!("{APP}\nclient = TestClient(app)\nclient = {{}}\nclient.get(\"/users\")\n");
     let (state, handle) = state_for(&code);
     let cursor = position(&code, "/users\"", 2);
-    assert_eq!(endpoint_items(&state, &handle, cursor).len(), 1);
-    assert_eq!(definition_names(&state, &handle, cursor), vec!["handler"]);
+    assert!(endpoint_items(&state, &handle, cursor).is_empty());
+    assert!(definition_names(&state, &handle, cursor).is_empty());
 }
 
 #[test]

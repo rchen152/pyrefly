@@ -6,9 +6,9 @@
  */
 
 use std::collections::BTreeMap;
-use std::collections::BTreeSet;
 
 use dupe::Dupe;
+use lsp_types::CompletionItem;
 use lsp_types::CompletionItemKind;
 use lsp_types::CompletionItemTextEdit;
 use lsp_types::TextEdit;
@@ -19,34 +19,30 @@ use pyrefly_python::module::Module;
 use pyrefly_python::module_path::ModulePathDetails;
 use pyrefly_python::module_path::ModuleStyle;
 use pyrefly_python::symbol_kind::SymbolKind;
-use ruff_python_ast::Alias;
 use ruff_python_ast::AnyNodeRef;
 use ruff_python_ast::Expr;
-use ruff_python_ast::ExprAttribute;
 use ruff_python_ast::ExprCall;
 use ruff_python_ast::ExprList;
-use ruff_python_ast::ExprName;
 use ruff_python_ast::ExprSet;
 use ruff_python_ast::ExprStringLiteral;
 use ruff_python_ast::ExprTuple;
 use ruff_python_ast::Keyword;
 use ruff_python_ast::Stmt;
-use ruff_python_ast::StmtAnnAssign;
-use ruff_python_ast::StmtAssign;
 use ruff_python_ast::StmtFunctionDef;
-use ruff_python_ast::StmtImport;
-use ruff_python_ast::StmtImportFrom;
 use ruff_python_ast::visitor::Visitor;
 use ruff_python_ast::visitor::walk_stmt;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
+use serde_json::to_string;
 use vec1::Vec1;
 
 use super::DefinitionMetadata;
 use super::FindDefinitionItemWithDocstring;
 use crate::lsp::wasm::completion::RankedCompletion;
 use crate::state::state::Transaction;
+
+mod provenance;
 
 const ENDPOINT_ROUTE_DECORATORS: [&str; 3] = ["route", "api_route", "websocket"];
 const ENDPOINT_ROUTE_NEEDLES: [&str; 11] = [
@@ -62,15 +58,6 @@ const ENDPOINT_ROUTE_NEEDLES: [&str; 11] = [
     ".api_route(",
     ".websocket(",
 ];
-const HTTP_CLIENT_CONSTRUCTOR_NAMES: [&str; 5] = [
-    "TestClient",
-    "Client",
-    "AsyncClient",
-    "Session",
-    "AsyncSession",
-];
-const HTTPX_CONSTRUCTOR_NAMES: [&str; 2] = ["Client", "AsyncClient"];
-const REQUESTS_CONSTRUCTOR_NAMES: [&str; 2] = ["Session", "AsyncSession"];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EndpointMethod {
@@ -87,7 +74,7 @@ enum EndpointMethod {
 
 impl EndpointMethod {
     fn from_attr(attr: &str) -> Option<Self> {
-        match attr.to_ascii_lowercase().as_str() {
+        match attr {
             "get" => Some(Self::Get),
             "post" => Some(Self::Post),
             "put" => Some(Self::Put),
@@ -102,7 +89,7 @@ impl EndpointMethod {
     }
 
     fn from_literal(value: &str) -> Option<Self> {
-        Self::from_attr(value)
+        Self::from_attr(&value.to_ascii_lowercase())
     }
 
     fn as_str(self) -> &'static str {
@@ -120,7 +107,6 @@ impl EndpointMethod {
     }
 }
 
-#[derive(Clone)]
 struct EndpointDefinition {
     path: String,
     methods: Option<Vec<EndpointMethod>>,
@@ -134,7 +120,6 @@ struct EndpointCallContext {
     method: EndpointMethod,
 }
 
-#[derive(Clone)]
 struct EndpointDecoratorSpec {
     path: String,
     methods: Option<Vec<EndpointMethod>>,
@@ -143,13 +128,6 @@ struct EndpointDecoratorSpec {
 struct EndpointCollector {
     module: Module,
     endpoints: Vec<EndpointDefinition>,
-}
-
-struct EndpointClientIndex {
-    client_instances: BTreeSet<String>,
-    client_constructors: BTreeSet<String>,
-    http_client_modules: BTreeSet<String>,
-    test_client_modules: BTreeSet<String>,
 }
 
 impl EndpointCollector {
@@ -169,167 +147,16 @@ impl EndpointCollector {
             docstring_range: Docstring::range_from_stmts(&func.body),
         });
     }
-
-    fn collect_from_function(&mut self, func: &StmtFunctionDef) {
-        for decorator in &func.decorator_list {
-            if let Some(spec) = endpoint_decorator_spec(&decorator.expression) {
-                self.push_endpoint(func, spec);
-            }
-        }
-    }
-}
-
-impl Default for EndpointClientIndex {
-    fn default() -> Self {
-        Self {
-            client_instances: BTreeSet::new(),
-            client_constructors: HTTP_CLIENT_CONSTRUCTOR_NAMES
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            http_client_modules: ["httpx", "requests"]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-            test_client_modules: ["fastapi.testclient", "starlette.testclient"]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
-        }
-    }
-}
-
-impl EndpointClientIndex {
-    fn from_module(module: &ruff_python_ast::ModModule) -> Self {
-        let mut index = Self::default();
-        for stmt in &module.body {
-            index.visit_stmt(stmt);
-        }
-        index
-    }
-
-    fn insert_local_name(target: &mut BTreeSet<String>, alias: &Alias) {
-        let local_name = alias
-            .asname
-            .as_ref()
-            .map(|name| name.id.as_str())
-            .unwrap_or(alias.name.id.as_str());
-        target.insert(local_name.to_owned());
-    }
-
-    fn import_binding_name(alias: &Alias) -> &str {
-        alias
-            .asname
-            .as_ref()
-            .map(|name| name.id.as_str())
-            .unwrap_or_else(|| {
-                alias
-                    .name
-                    .id
-                    .split('.')
-                    .next()
-                    .unwrap_or(alias.name.id.as_str())
-            })
-    }
-
-    fn is_constructor_call(&self, call: &ExprCall) -> bool {
-        match call.func.as_ref() {
-            Expr::Name(ExprName { id, .. }) => self.client_constructors.contains(id.as_str()),
-            Expr::Attribute(attr) => self.is_module_constructor(attr),
-            _ => false,
-        }
-    }
-
-    fn is_module_constructor(&self, attr: &ExprAttribute) -> bool {
-        let Expr::Name(ExprName { id, .. }) = attr.value.as_ref() else {
-            return false;
-        };
-        let module_name = id.as_str();
-        (self.test_client_modules.contains(module_name) && attr.attr.as_str() == "TestClient")
-            || (self.http_client_modules.contains(module_name)
-                && (HTTPX_CONSTRUCTOR_NAMES.contains(&attr.attr.as_str())
-                    || REQUESTS_CONSTRUCTOR_NAMES.contains(&attr.attr.as_str())))
-    }
 }
 
 impl<'a> Visitor<'a> for EndpointCollector {
     fn visit_stmt(&mut self, stmt: &'a Stmt) {
         if let Stmt::FunctionDef(func) = stmt {
-            self.collect_from_function(func);
-        }
-        walk_stmt(self, stmt);
-    }
-}
-
-impl<'a> Visitor<'a> for EndpointClientIndex {
-    fn visit_stmt(&mut self, stmt: &'a Stmt) {
-        match stmt {
-            Stmt::Import(StmtImport { names, .. }) => {
-                for alias in names {
-                    match alias.name.id.as_str() {
-                        "httpx" | "requests" => {
-                            self.http_client_modules
-                                .insert(Self::import_binding_name(alias).to_owned());
-                        }
-                        "fastapi.testclient" | "starlette.testclient" => {
-                            self.test_client_modules
-                                .insert(Self::import_binding_name(alias).to_owned());
-                        }
-                        _ => {}
-                    }
+            for decorator in &func.decorator_list {
+                if let Some(spec) = endpoint_decorator_spec(&decorator.expression) {
+                    self.push_endpoint(func, spec);
                 }
             }
-            Stmt::ImportFrom(StmtImportFrom { module, names, .. }) => {
-                let Some(module_name) = module.as_ref().map(|module| module.as_str()) else {
-                    walk_stmt(self, stmt);
-                    return;
-                };
-                match module_name {
-                    "fastapi.testclient" | "starlette.testclient" => {
-                        for alias in names {
-                            if alias.name.id.as_str() == "TestClient" {
-                                Self::insert_local_name(&mut self.client_constructors, alias);
-                            }
-                        }
-                    }
-                    "httpx" => {
-                        for alias in names {
-                            if HTTPX_CONSTRUCTOR_NAMES.contains(&alias.name.id.as_str()) {
-                                Self::insert_local_name(&mut self.client_constructors, alias);
-                            }
-                        }
-                    }
-                    "requests" => {
-                        for alias in names {
-                            if REQUESTS_CONSTRUCTOR_NAMES.contains(&alias.name.id.as_str()) {
-                                Self::insert_local_name(&mut self.client_constructors, alias);
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Stmt::Assign(StmtAssign { targets, value, .. }) => {
-                if let Expr::Call(call) = value.as_ref()
-                    && self.is_constructor_call(call)
-                {
-                    for target in targets {
-                        if let Expr::Name(ExprName { id, .. }) = target {
-                            self.client_instances.insert(id.as_str().to_owned());
-                        }
-                    }
-                }
-            }
-            Stmt::AnnAssign(StmtAnnAssign { target, value, .. }) => {
-                if let Some(value) = value.as_ref()
-                    && let Expr::Call(call) = value.as_ref()
-                    && self.is_constructor_call(call)
-                    && let Expr::Name(ExprName { id, .. }) = target.as_ref()
-                {
-                    self.client_instances.insert(id.as_str().to_owned());
-                }
-            }
-            _ => {}
         }
         walk_stmt(self, stmt);
     }
@@ -341,16 +168,12 @@ fn endpoint_decorator_spec(expr: &Expr) -> Option<EndpointDecoratorSpec> {
     };
     let callee = call_callee_name(call)?;
     if let Some(method) = EndpointMethod::from_attr(callee) {
-        let path = endpoint_path_from_call(call)?;
         return Some(EndpointDecoratorSpec {
-            path,
+            path: endpoint_path_from_call(call)?,
             methods: Some(vec![method]),
         });
     }
-    if ENDPOINT_ROUTE_DECORATORS
-        .iter()
-        .any(|name| name.eq_ignore_ascii_case(callee))
-    {
+    if ENDPOINT_ROUTE_DECORATORS.contains(&callee) {
         let path = endpoint_path_from_call(call)?;
         let methods = endpoint_methods_from_call(call).or_else(|| {
             if keyword_arg_expr(call, &["methods", "method"]).is_some() {
@@ -375,14 +198,13 @@ fn call_callee_name(call: &ExprCall) -> Option<&str> {
 
 fn endpoint_path_from_call(call: &ExprCall) -> Option<String> {
     if let Some(Expr::StringLiteral(lit)) = call.arguments.args.first() {
-        return Some(literal_value(lit));
+        return Some(lit.value.to_string());
     }
-    string_literal_kw_arg(call, &["path", "url", "route"]).map(|lit| literal_value(&lit))
+    string_literal_kw_arg(call, &["path", "url", "route"]).map(|lit| lit.value.to_string())
 }
 
 fn endpoint_methods_from_call(call: &ExprCall) -> Option<Vec<EndpointMethod>> {
-    let expr = keyword_arg_expr(call, &["methods", "method"])?;
-    methods_from_expr(expr)
+    methods_from_expr(keyword_arg_expr(call, &["methods", "method"])?)
 }
 
 fn methods_from_expr(expr: &Expr) -> Option<Vec<EndpointMethod>> {
@@ -393,15 +215,16 @@ fn methods_from_expr(expr: &Expr) -> Option<Vec<EndpointMethod>> {
         Expr::List(ExprList { elts, .. })
         | Expr::Tuple(ExprTuple { elts, .. })
         | Expr::Set(ExprSet { elts, .. }) => {
-            let mut methods = Vec::new();
-            for elt in elts {
-                let Expr::StringLiteral(lit) = elt else {
-                    continue;
-                };
-                if let Some(method) = EndpointMethod::from_literal(&lit.value.to_string()) {
-                    methods.push(method);
-                }
-            }
+            let methods = elts
+                .iter()
+                .filter_map(|elt| {
+                    if let Expr::StringLiteral(lit) = elt {
+                        EndpointMethod::from_literal(&lit.value.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>();
             if methods.is_empty() {
                 None
             } else {
@@ -413,41 +236,29 @@ fn methods_from_expr(expr: &Expr) -> Option<Vec<EndpointMethod>> {
 }
 
 fn keyword_arg_expr<'a>(call: &'a ExprCall, names: &[&str]) -> Option<&'a Expr> {
-    for Keyword { arg, value, .. } in &call.arguments.keywords {
-        let Some(identifier) = arg else {
-            continue;
-        };
-        if !names
-            .iter()
-            .any(|name| identifier.id.as_str().eq_ignore_ascii_case(name))
-        {
-            continue;
-        }
-        return Some(value);
-    }
-    None
+    call.arguments
+        .keywords
+        .iter()
+        .find_map(|Keyword { arg, value, .. }| {
+            arg.as_ref()
+                .filter(|identifier| names.contains(&identifier.id.as_str()))
+                .map(|_| value)
+        })
 }
 
 fn string_literal_kw_arg(call: &ExprCall, names: &[&str]) -> Option<ExprStringLiteral> {
-    let expr = keyword_arg_expr(call, names)?;
-    if let Expr::StringLiteral(lit) = expr {
-        return Some(lit.clone());
+    match keyword_arg_expr(call, names)? {
+        Expr::StringLiteral(lit) => Some(lit.clone()),
+        _ => None,
     }
-    None
-}
-
-fn literal_value(lit: &ExprStringLiteral) -> String {
-    lit.value.to_string()
 }
 
 fn endpoint_call_context(
     transaction: &Transaction,
     handle: &Handle,
-    module: &ruff_python_ast::ModModule,
     nodes: &[AnyNodeRef<'_>],
     position: TextSize,
 ) -> Option<EndpointCallContext> {
-    let mut client_index = None;
     for node in nodes {
         let AnyNodeRef::ExprCall(call) = node else {
             continue;
@@ -472,8 +283,7 @@ fn endpoint_call_context(
         if parts.next().is_some() || !part.content_range().contains_inclusive(position) {
             continue;
         }
-        let index = client_index.get_or_insert_with(|| EndpointClientIndex::from_module(module));
-        if transaction.is_endpoint_client_receiver(handle, attr.value.as_ref(), index) {
+        if provenance::is_test_client(transaction, handle, attr.value.range()) {
             return Some(EndpointCallContext { literal, method });
         }
     }
@@ -498,14 +308,13 @@ fn literal_prefix(
     else {
         return None;
     };
-    Some(literal_value(&prefix))
+    Some(prefix.value.to_string())
 }
 
 fn module_might_define_endpoints(module: &Module) -> bool {
-    let contents = module.contents().as_str();
     ENDPOINT_ROUTE_NEEDLES
         .iter()
-        .any(|needle| contents.contains(needle))
+        .any(|needle| module.contents().contains(needle))
 }
 
 fn normalize_path(path: &str) -> &str {
@@ -513,11 +322,8 @@ fn normalize_path(path: &str) -> &str {
 }
 
 fn split_segments(path: &str) -> Vec<&str> {
-    let trimmed = normalize_path(path).trim_end_matches('/');
-    if trimmed.is_empty() {
-        return Vec::new();
-    }
-    trimmed
+    normalize_path(path)
+        .trim_end_matches('/')
         .split('/')
         .filter(|segment| !segment.is_empty())
         .collect()
@@ -531,50 +337,20 @@ fn is_param_segment(segment: &str) -> bool {
 fn path_matches(pattern: &str, candidate: &str) -> bool {
     let pattern_segments = split_segments(pattern);
     let candidate_segments = split_segments(candidate);
-    if pattern_segments.len() != candidate_segments.len() {
-        return false;
-    }
-    for (pattern_segment, candidate_segment) in pattern_segments.iter().zip(candidate_segments) {
-        if is_param_segment(pattern_segment) {
-            continue;
-        }
-        if pattern_segment != &candidate_segment {
-            return false;
-        }
-    }
-    true
+    pattern_segments.len() == candidate_segments.len()
+        && pattern_segments
+            .iter()
+            .zip(candidate_segments)
+            .all(|(pattern, candidate)| is_param_segment(pattern) || *pattern == candidate)
 }
 
 fn method_matches(methods: &Option<Vec<EndpointMethod>>, request: EndpointMethod) -> bool {
-    match methods {
-        Some(methods) => methods.contains(&request),
-        None => true,
-    }
+    methods
+        .as_ref()
+        .is_none_or(|methods| methods.contains(&request))
 }
 
-impl<'a> Transaction<'a> {
-    fn is_endpoint_client_receiver(
-        &self,
-        handle: &Handle,
-        expr: &Expr,
-        client_index: &EndpointClientIndex,
-    ) -> bool {
-        let is_syntactic_match = match expr {
-            Expr::Name(ExprName { id, .. }) => {
-                client_index.client_instances.contains(id.as_str())
-                    || client_index.http_client_modules.contains(id.as_str())
-            }
-            Expr::Call(call) => client_index.is_constructor_call(call),
-            _ => false,
-        };
-        if is_syntactic_match {
-            return true;
-        }
-        self.get_type_trace(handle, expr.range())
-            .and_then(|ty| ty.qname().map(|qname| qname.id().as_str().to_owned()))
-            .is_some_and(|name| HTTP_CLIENT_CONSTRUCTOR_NAMES.contains(&name.as_str()))
-    }
-
+impl Transaction<'_> {
     fn collect_endpoint_definitions(&self) -> Vec<EndpointDefinition> {
         let mut endpoints = Vec::new();
         for handle in self.handles() {
@@ -597,9 +373,7 @@ impl<'a> Transaction<'a> {
                 continue;
             };
             let mut collector = EndpointCollector::new(module);
-            for stmt in &ast.body {
-                collector.visit_stmt(stmt);
-            }
+            collector.visit_body(&ast.body);
             endpoints.extend(collector.endpoints);
         }
         endpoints
@@ -608,12 +382,11 @@ impl<'a> Transaction<'a> {
     pub(crate) fn add_endpoint_completions(
         &self,
         handle: &Handle,
-        module: &ruff_python_ast::ModModule,
         nodes: &[AnyNodeRef<'_>],
         position: TextSize,
         completions: &mut Vec<RankedCompletion>,
     ) {
-        let Some(context) = endpoint_call_context(self, handle, module, nodes, position) else {
+        let Some(context) = endpoint_call_context(self, handle, nodes, position) else {
             return;
         };
         let Some(module_info) = self.get_module_info(handle) else {
@@ -622,25 +395,19 @@ impl<'a> Transaction<'a> {
         let Some(prefix) = literal_prefix(&module_info, &context.literal, position) else {
             return;
         };
-        let mut suggestions: BTreeMap<String, String> = BTreeMap::new();
+        let mut suggestions = BTreeMap::new();
         for endpoint in self.collect_endpoint_definitions() {
-            if !method_matches(&endpoint.methods, context.method) {
-                continue;
+            if method_matches(&endpoint.methods, context.method)
+                && endpoint.path.starts_with(&prefix)
+            {
+                suggestions
+                    .entry(endpoint.path)
+                    .or_insert_with(|| format!("{} endpoint", context.method.as_str()));
             }
-            if !prefix.is_empty() && !endpoint.path.starts_with(&prefix) {
-                continue;
-            }
-            suggestions
-                .entry(endpoint.path)
-                .or_insert_with(|| format!("{} endpoint", context.method.as_str()));
-        }
-        if suggestions.is_empty() {
-            return;
         }
         for (label, detail) in suggestions {
-            let new_text =
-                serde_json::to_string(&label).expect("Serializing an endpoint string cannot fail");
-            completions.push(RankedCompletion::new(lsp_types::CompletionItem {
+            let new_text = to_string(&label).expect("Serializing an endpoint string cannot fail");
+            completions.push(RankedCompletion::new(CompletionItem {
                 label,
                 detail: Some(detail),
                 kind: Some(CompletionItemKind::Value),
@@ -656,11 +423,10 @@ impl<'a> Transaction<'a> {
     pub(crate) fn find_definition_for_endpoint_literal(
         &self,
         handle: &Handle,
-        module: &ruff_python_ast::ModModule,
         nodes: &[AnyNodeRef<'_>],
         position: TextSize,
     ) -> Option<Vec1<FindDefinitionItemWithDocstring>> {
-        let context = endpoint_call_context(self, handle, module, nodes, position)?;
+        let context = endpoint_call_context(self, handle, nodes, position)?;
         if !context
             .literal
             .value
@@ -671,23 +437,23 @@ impl<'a> Transaction<'a> {
         {
             return None;
         }
-        let request_path = literal_value(&context.literal);
-        let mut results = Vec::new();
-        for endpoint in self.collect_endpoint_definitions() {
-            if !method_matches(&endpoint.methods, context.method) {
-                continue;
-            }
-            if !path_matches(&endpoint.path, &request_path) {
-                continue;
-            }
-            results.push(FindDefinitionItemWithDocstring {
-                metadata: DefinitionMetadata::VariableOrAttribute(Some(SymbolKind::Function)),
-                module: endpoint.module,
-                definition_range: endpoint.definition_range,
-                docstring_range: endpoint.docstring_range,
-                display_name: None,
-            });
-        }
-        Vec1::try_from_vec(results).ok()
+        let request_path = context.literal.value.to_string();
+        Vec1::try_from_vec(
+            self.collect_endpoint_definitions()
+                .into_iter()
+                .filter(|endpoint| {
+                    method_matches(&endpoint.methods, context.method)
+                        && path_matches(&endpoint.path, &request_path)
+                })
+                .map(|endpoint| FindDefinitionItemWithDocstring {
+                    metadata: DefinitionMetadata::VariableOrAttribute(Some(SymbolKind::Function)),
+                    module: endpoint.module,
+                    definition_range: endpoint.definition_range,
+                    docstring_range: endpoint.docstring_range,
+                    display_name: None,
+                })
+                .collect(),
+        )
+        .ok()
     }
 }
