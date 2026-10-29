@@ -1772,6 +1772,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         arguments_range: TextRange,
         callee_range: Option<TextRange>,
         errors: &ErrorCollector,
+        call_errors: &ErrorCollector,
         return_errors: &ErrorCollector,
         context: Option<&dyn Fn() -> ErrorContext>,
         hint: Option<HintRef>,
@@ -1816,7 +1817,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             CallTarget::Class(cls, constructor_kind, as_quantified_bound) => {
                 if cls.has_qname("typing", "Any") {
                     return CallOutcome::of_ty(self.error_with_context(
-                        errors,
+                        call_errors,
                         arguments_range,
                         ErrorKind::BadInstantiation,
                         format!("`{}` cannot be instantiated", cls.name()),
@@ -1826,7 +1827,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 let metadata = self.get_metadata_for_class(cls.class_object());
                 if metadata.is_protocol() && constructor_kind == ConstructorKind::BareClassName {
                     self.error_with_context(
-                        errors,
+                        call_errors,
                         arguments_range,
                         ErrorKind::BadInstantiation,
                         format!(
@@ -1843,7 +1844,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         && !unimplemented_abstract_methods.is_empty()
                     {
                         self.error_with_context(
-                            errors,
+                            call_errors,
                             arguments_range,
                             ErrorKind::BadInstantiation,
                             format!(
@@ -1861,7 +1862,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         && metadata.is_explicitly_abstract()
                     {
                         self.error_with_context(
-                            errors,
+                            call_errors,
                             arguments_range,
                             ErrorKind::DirectAbstractBaseInstantiation,
                             format!(
@@ -1889,7 +1890,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     keywords,
                     arguments_range,
                     callee_range,
-                    errors,
+                    call_errors,
                     context,
                     hint,
                 );
@@ -1911,7 +1912,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 args,
                 keywords,
                 arguments_range,
-                errors,
+                call_errors,
                 context,
                 hint,
             )),
@@ -1934,7 +1935,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 keywords,
                 arguments_range,
                 errors,
-                errors,
+                call_errors,
                 return_errors,
                 context,
                 hint,
@@ -1950,7 +1951,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 keywords,
                 arguments_range,
                 errors,
-                errors,
+                call_errors,
                 return_errors,
                 context,
                 hint,
@@ -1972,7 +1973,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 keywords,
                 arguments_range,
                 errors,
-                errors,
+                call_errors,
                 return_errors,
                 context,
                 hint,
@@ -1988,6 +1989,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     keywords,
                     arguments_range,
                     errors,
+                    call_errors,
                     return_errors,
                     context,
                     hint,
@@ -2005,6 +2007,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     keywords,
                     arguments_range,
                     errors,
+                    call_errors,
                     return_errors,
                     context,
                     hint,
@@ -2025,6 +2028,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                         arguments_range,
                         callee_range,
                         errors,
+                        call_errors,
                         return_errors,
                         context,
                         hint,
@@ -2228,6 +2232,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             None,
             errors,
             errors,
+            errors,
             context,
             hint,
             ctor_targs,
@@ -2252,6 +2257,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             keywords,
             arguments_range,
             None,
+            errors,
             errors,
             return_errors,
             context,
@@ -2959,6 +2965,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             kws,
             arg_range,
             Some(callee_range),
+            errors,
             errors,
             errors,
             None,
