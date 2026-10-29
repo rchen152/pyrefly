@@ -1310,27 +1310,26 @@ def h(x: Oops | UnknownType, y: UnknownType | Oops):  # E:  # E:
 // The operands share a constraint choice, not a value. Each of these calls can
 // produce a nonzero result when the other operand is a nonzero int.
 testcase!(
-    bug = "One operand's literal refinement leaks to the other operand",
     test_constrained_typevar_independent_truthiness_narrow,
     r#"
 from typing import Literal, reveal_type
 
 def left[T: (int, str)](x: T, y: T) -> Literal[0]:
     if isinstance(x, int) and not x:
-        reveal_type(x + y)  # E: revealed type: Literal[0] & T
-        return x + y
+        reveal_type(x + y)  # E: revealed type: int
+        return x + y  # E: Returned type `int` is not assignable to declared return type `Literal[0]`
     return 0
 
 def right[T: (int, str)](x: T, y: T) -> Literal[0]:
     if isinstance(y, int) and not y:
-        reveal_type(x + y)  # E: revealed type: Literal[0] & T
-        return x + y
+        reveal_type(x + y)  # E: revealed type: int
+        return x + y  # E: Returned type `int` is not assignable to declared return type `Literal[0]`
     return 0
 
 def both[T: (int, str)](x: T, y: T) -> Literal[0]:
     if isinstance(x, int) and isinstance(y, int) and not x:
-        reveal_type(x + y)  # E: revealed type: Literal[0] & T
-        return x + y
+        reveal_type(x + y)  # E: revealed type: int
+        return x + y  # E: Returned type `int` is not assignable to declared return type `Literal[0]`
     return 0
 
 left(0, 1)
@@ -1409,20 +1408,19 @@ def uncertain[T: (Addable, Base)](x: T, y: T) -> int:
 
 // One shared union-valued constraint still permits different members per value.
 testcase!(
-    bug = "Sharing a union constraint incorrectly shares one operand's value",
     test_constrained_typevar_shared_union_choice,
     r#"
 from typing import Literal
 
 def mixed[T: (int | str, bytes)](x: T, y: T) -> None:
     if isinstance(x, int) and not x:
-        x + y
+        x + y  # E: not supported
 
 mixed(0, "not an int")
 
 def literal_union[T: (Literal[0, 1], Literal[2])](x: T, y: T) -> Literal[0]:
     if not x:
-        return x + y
+        return x + y  # E: is not assignable to declared return type `Literal[0]`
     return 0
 "#,
 );

@@ -35,6 +35,7 @@ use crate::alt::answers_solver::AnswersSolver;
 use crate::alt::call::CallStyle;
 use crate::alt::callable::CallArg;
 use crate::alt::expr::MAX_TUPLE_LENGTH;
+use crate::alt::narrow::IntersectFallback;
 use crate::alt::solve::TypeFormContext;
 use crate::alt::unwrap::HintRef;
 use crate::binding::binding::KeyAnnotation;
@@ -519,15 +520,63 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         f: &dyn Fn(&Type, &Type) -> Type,
     ) -> Option<Type> {
         match (left.as_quantified(), right.as_quantified()) {
-            (Some((left_q, left_narrow)), Some((right_q, right_narrow)))
-                if matches!(left_q.restriction(), Restriction::Constraints(_))
-                    && left_q == right_q =>
-            {
-                Some(
-                    self.on_quantified(left_q, left_narrow.or(right_narrow), &|constraint| {
-                        f(constraint, constraint)
-                    }),
-                )
+            (
+                Some((
+                    left_q @ Quantified {
+                        restriction: Restriction::Constraints(constraints),
+                        ..
+                    },
+                    left_narrow,
+                )),
+                Some((right_q, right_narrow)),
+            ) if left_q == right_q => {
+                if left_narrow.is_none() && right_narrow.is_none() {
+                    return Some(
+                        self.on_quantified(left_q, None, &|constraint| f(constraint, constraint)),
+                    );
+                }
+                let result = self.unions(
+                    constraints
+                        .iter()
+                        .map(|constraint| {
+                            let narrow_operand = |narrowed: Option<&Type>| {
+                                narrowed.map_or_else(
+                                    || constraint.clone(),
+                                    |narrowed| {
+                                        self.intersect_with_fallback(
+                                            constraint,
+                                            narrowed,
+                                            IntersectFallback::Right,
+                                        )
+                                    },
+                                )
+                            };
+                            // The constraint choice is shared; each operand's value facts are not.
+                            let left = narrow_operand(left_narrow);
+                            let right = narrow_operand(right_narrow);
+                            if left.is_never() || right.is_never() {
+                                self.heap.mk_never()
+                            } else {
+                                f(&left, &right)
+                            }
+                        })
+                        .collect(),
+                );
+                let value_refined = [left_narrow, right_narrow]
+                    .into_iter()
+                    .flatten()
+                    .any(|narrowed| matches!(narrowed, Type::Literal(_)));
+                if value_refined {
+                    // Literal input facts do not provide a result-TypeVar guarantee.
+                    Some(result)
+                } else {
+                    // Retain the existing class-level preservation check after inference.
+                    Some(
+                        self.on_quantified(left_q, left_narrow.or(right_narrow), &|_| {
+                            result.clone()
+                        }),
+                    )
+                }
             }
             // We skip non-union bounds to avoid accidentally erasing `Self` typevars.
             (Some((left_q, left_narrow)), _)
