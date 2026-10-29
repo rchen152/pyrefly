@@ -3209,13 +3209,18 @@ impl Scopes {
     ///   coming from self-assignment in methods. If both occur, only the class body
     ///   definition is tracked.
     /// - Panics if the current scope is not a class body.
+    ///
+    /// The final map contains possibly uninitialized class-body fields. Its optional
+    /// keys can prove that every path without an assignment terminates.
     pub fn finish_class_and_get_field_definitions(
         &mut self,
     ) -> (
         SmallMap<Name, (ClassFieldDefinition, TextRange)>,
         NNModuleRegistrations,
+        SmallMap<Name, Option<Vec<Idx<Key>>>>,
     ) {
         let mut field_definitions = SmallMap::new();
+        let mut uninitialized_fields = SmallMap::new();
         let class_body = self.pop();
         let mut class_scope = {
             if let ScopeKind::Class(class_scope) = class_body.kind {
@@ -3325,6 +3330,15 @@ impl Scopes {
                             definition: value.idx,
                         },
                     };
+                    match &value.style {
+                        FlowStyle::PossiblyUninitialized => {
+                            uninitialized_fields.insert_hashed(name.owned(), None);
+                        }
+                        FlowStyle::MaybeInitialized(keys) => {
+                            uninitialized_fields.insert_hashed(name.owned(), Some(keys.clone()));
+                        }
+                        _ => {}
+                    }
                     field_definitions.insert_hashed(name.owned(), (definition, static_info.range));
                 }
             });
@@ -3385,7 +3399,11 @@ impl Scopes {
                 }
             },
         );
-        (field_definitions, nn_module_registrations)
+        (
+            field_definitions,
+            nn_module_registrations,
+            uninitialized_fields,
+        )
     }
 
     /// Return a pair Some((method_name, class_key)) if we are currently in a method
