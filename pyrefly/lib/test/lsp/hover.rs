@@ -1906,7 +1906,6 @@ fn get_test_report_with_closed_library(lib: &str, main: &str) -> String {
     report
 }
 
-// BUG: Class-object docstring fallback requires the closed library's evicted AST.
 #[test]
 fn hover_on_property_returning_class_in_closed_library() {
     let lib = r#"
@@ -1919,12 +1918,11 @@ class Factory:
     let main = "from lib import Factory\nf = Factory()\nf.target\n#  ^\n";
     let report = get_test_report_with_closed_library(lib, main);
     assert_eq!(
-        "```python\n(class) target: type[lib.Target]\n```",
+        "```python\n(class) target: type[lib.Target]\n```\n---\nTarget class documentation.",
         report.trim(),
     );
 }
 
-// BUG: Nested class documentation is unavailable after the library AST is evicted.
 #[test]
 fn hover_on_property_returning_nested_class_in_closed_library() {
     let lib = r#"
@@ -1940,19 +1938,18 @@ class Factory:
     let main = "from lib import Factory\nf = Factory()\nf.target\n#  ^\n";
     let report = get_test_report_with_closed_library(lib, main);
     assert_eq!(
-        "```python\n(class) target: type[lib.Outer.Target]\n```",
+        "```python\n(class) target: type[lib.Outer.Target]\n```\n---\nNested target documentation.",
         report.trim(),
     );
 }
 
-// BUG: A class alias's fallback documentation requires the closed library's AST.
 #[test]
 fn hover_on_class_alias_in_closed_library() {
     let lib = "class Target:\n    \"\"\"Target class documentation.\"\"\"\n";
     let main = "from lib import Target\ncls = Target\n#^\n";
     let report = get_test_report_with_closed_library(lib, main);
     assert_eq!(
-        "```python\n(class) cls: def cls() -> Target: ...\n```",
+        "```python\n(class) cls: def cls() -> Target: ...\n```\n---\nTarget class documentation.",
         report.trim(),
     );
 }

@@ -2854,7 +2854,11 @@ impl<'a> Transaction<'a> {
 
     /// Return the cached AST for a module, parsing its contents if unavailable.
     /// Files that Pyrefly has not explicitly opened may have module information but no cached AST.
-    fn get_ast_or_parse_module(&self, handle: &Handle, module: &ModuleInfo) -> Arc<ModModule> {
+    pub(crate) fn get_ast_or_parse_module(
+        &self,
+        handle: &Handle,
+        module: &ModuleInfo,
+    ) -> Arc<ModModule> {
         let module_handle = Handle::new(
             module.name(),
             module.path().dupe(),

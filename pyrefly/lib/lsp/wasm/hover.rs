@@ -59,6 +59,7 @@ use vec1::Vec1;
 use crate::alt::answers_solver::AnswersSolver;
 use crate::binding::binding::Key;
 use crate::error::error::Error;
+use crate::export::exports::ExportLocation;
 use crate::lsp::module_helpers::collect_symbol_def_paths;
 use crate::lsp::module_helpers::to_real_path;
 use crate::lsp::wasm::signature_help::CallInfo;
@@ -513,6 +514,7 @@ fn identifier_text_at(
         .map(|id| id.identifier.id.to_string())
 }
 
+/// Find documentation for a class object, including classes in closed modules.
 fn docstring_for_class_object_type(
     transaction: &Transaction<'_>,
     handle: &Handle,
@@ -531,19 +533,24 @@ fn docstring_for_class_object_type(
         qname.module_path().dupe(),
         handle.sys_info().dupe(),
     );
-    let definition = transaction
-        .find_definition(
-            &definition_handle,
-            qname.range().start(),
-            FindPreference {
-                resolve_call_dunders: false,
-                ..Default::default()
-            },
-        )
-        .ok()?
+    let module = transaction.get_module_info(&definition_handle)?;
+    // Exported classes retain their docstring range after their AST is evicted.
+    if let Some(ExportLocation::ThisModule(export)) =
+        transaction.get_exports(&definition_handle).get(qname.id())
+        && export.location == qname.range()
+    {
+        return export.docstring_range.map(|range| Docstring(range, module));
+    }
+    let ast = transaction.get_ast_or_parse_module(handle, &module);
+    let range = Ast::locate_node(&ast, qname.range().start())
         .into_iter()
-        .find(|item| item.definition_range == qname.range())?;
-    Some(Docstring(definition.docstring_range?, definition.module))
+        .find_map(|node| match node {
+            AnyNodeRef::StmtClassDef(class) if class.name.range() == qname.range() => {
+                Docstring::range_from_stmts(&class.body)
+            }
+            _ => None,
+        })?;
+    Some(Docstring(range, module))
 }
 
 fn collect_typed_dict_fields_for_hover<'a>(
