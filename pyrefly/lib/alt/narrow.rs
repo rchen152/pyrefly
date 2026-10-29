@@ -1281,22 +1281,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 let right = self.expr_infer(v, errors);
                 Some(self.narrow_facet_is_not(base, &right, facet, range))
             }
-            AtomicNarrowOp::Eq(v) => {
-                let right = self.expr_infer(v, errors);
-                Some(self.distribute_over_facet_members(base, &|t| {
-                    let base_info = TypeInfo::of_ty(t.clone());
-                    let facet_ty = self.get_facet_chain_type(
-                        &base_info,
-                        &FacetChain::new(Vec1::new(facet.clone())),
-                        range,
-                    );
-                    if Self::is_literal(&right) && !self.is_subset_eq(&right, &facet_ty) {
-                        self.heap.mk_never()
-                    } else {
-                        t.clone()
-                    }
-                }))
-            }
+            AtomicNarrowOp::Eq(_) => Some(drop_members_with_never_facet(errors)),
             AtomicNarrowOp::NotEq(v) => {
                 let right = self.expr_infer(v, errors);
                 Some(self.distribute_over_facet_members(base, &|t| {
