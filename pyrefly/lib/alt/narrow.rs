@@ -1257,6 +1257,21 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                 _ => {}
             }
         }
+        // Removes the members of `base` whose facet type `op` narrows to `Never`.
+        let drop_members_with_never_facet = |errors: &ErrorCollector| {
+            self.distribute_over_facet_members(base, &|t| {
+                let facet_ty = self.get_facet_chain_type(
+                    &TypeInfo::of_ty(t.clone()),
+                    &FacetChain::new(Vec1::new(facet.clone())),
+                    range,
+                );
+                if self.atomic_narrow(&facet_ty, op, range, errors).is_never() {
+                    self.heap.mk_never()
+                } else {
+                    t.clone()
+                }
+            })
+        };
         match op {
             AtomicNarrowOp::Is(v) => {
                 let right = self.expr_infer(v, errors);
@@ -1304,20 +1319,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
             AtomicNarrowOp::In(v) | AtomicNarrowOp::NotIn(v)
                 if self.literal_membership_exprs(v, errors).is_some() =>
             {
-                Some(self.distribute_over_facet_members(base, &|t| {
-                    let base_info = TypeInfo::of_ty(t.clone());
-                    let facet_ty = self.get_facet_chain_type(
-                        &base_info,
-                        &FacetChain::new(Vec1::new(facet.clone())),
-                        range,
-                    );
-                    let narrowed_facet = self.atomic_narrow(&facet_ty, op, range, errors);
-                    if narrowed_facet.is_never() {
-                        self.heap.mk_never()
-                    } else {
-                        t.clone()
-                    }
-                }))
+                Some(drop_members_with_never_facet(errors))
             }
             // If `allow_never_collapse` is not set, we only filter union or overload members
             // to avoid inferring `Never` excessively
@@ -1326,21 +1328,7 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                     || matches!(base, Type::Overloaded(_))
                     || allow_never_collapse =>
             {
-                let suppress_errors = self.error_swallower();
-                Some(self.distribute_over_facet_members(base, &|t| {
-                    let base_info = TypeInfo::of_ty(t.clone());
-                    let facet_ty = self.get_facet_chain_type(
-                        &base_info,
-                        &FacetChain::new(Vec1::new(facet.clone())),
-                        range,
-                    );
-                    let narrowed_facet = self.atomic_narrow(&facet_ty, op, range, &suppress_errors);
-                    if narrowed_facet.is_never() {
-                        self.heap.mk_never()
-                    } else {
-                        t.clone()
-                    }
-                }))
+                Some(drop_members_with_never_facet(&self.error_swallower()))
             }
             _ => None,
         }
