@@ -4853,6 +4853,58 @@ def chained[T: int | str | None](value: T) -> int:
 "#,
 );
 
+// Primitive truthiness narrowing assumes builtin boolean behavior. Overrides on
+// primitive subclasses are outside that model, including through TypeVar bounds.
+testcase!(
+    test_truthiness_primitive_override_out_of_scope,
+    r#"
+from typing import Literal, Never, assert_type
+
+class FalsyInt(int):
+    def __bool__(self) -> bool:
+        return False
+
+class FalsyStr(str):
+    def __bool__(self) -> bool:
+        return False
+
+class FalsyBytes(bytes):
+    def __bool__(self) -> bool:
+        return False
+
+def zero[T: int](value: T) -> Literal[0]:
+    if not value:
+        return value
+    return 0
+
+def empty_str[T: str](value: T) -> Literal[""]:
+    if not value:
+        return value
+    return ""
+
+def empty_bytes[T: bytes](value: T) -> Literal[b""]:
+    if not value:
+        return value
+    return b""
+
+# These calls can return nonzero or nonempty values at runtime. The static types
+# record the supported primitive-truthiness model, not the custom overrides.
+assert_type(zero(FalsyInt(1)), Literal[0])
+assert_type(empty_str(FalsyStr("nonempty")), Literal[""])
+assert_type(empty_bytes(FalsyBytes(b"nonempty")), Literal[b""])
+
+# Custom boolean behavior on nonprimitive classes remains supported.
+class Falsy:
+    def __bool__(self) -> Literal[False]:
+        return False
+
+def custom[T: Falsy](value: T) -> T:
+    if value:
+        assert_type(value, Never)  # E: This code is unreachable
+    return value
+"#,
+);
+
 // https://github.com/facebook/pyrefly/issues/5255
 testcase!(
     test_narrow_or_placeholder_gradual,

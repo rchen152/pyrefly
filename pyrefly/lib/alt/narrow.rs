@@ -1844,6 +1844,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
                             return Lit::Bool(boolval).to_implicit_type();
                         }
                         if !boolval {
+                            // Primitive truthiness assumes builtin behavior; overrides in
+                            // subclasses are outside this narrowing model.
                             if cls.is_builtin("int") {
                                 return LitInt::new(0).to_implicit_type();
                             } else if cls.is_builtin("str") {
