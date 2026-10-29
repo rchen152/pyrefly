@@ -286,9 +286,11 @@ jobs:
                   && ((approved && !changesRequested) || !latestFeedback)
                   ? []
                   : await listTimeline();
+                // Review requests from bots, such as the nightly assignment
+                // sweep, are not the author handing the PR back.
                 const lastRerequest = Math.max(
                   authorMention ? Date.parse(context.payload.comment.created_at) : -Infinity,
-                  ...timeline.filter(e => e.event === 'review_requested'
+                  ...timeline.filter(e => (e.event === 'review_requested' && e.actor?.type !== 'Bot')
                   || (e.event === 'commented' && e.user?.login.toLowerCase() === author
                     && [...(e.body || '').matchAll(/(?<![\w@])@([a-z0-9-]+)(?![\w/-])/gi)]
                       .some(([, login]) => mentionTargets.has(login.toLowerCase()))))
