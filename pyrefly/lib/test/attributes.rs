@@ -66,11 +66,11 @@ def callback() -> int: ...
 class C:
     if coin():
         value = 1  # E: Attribute `value` may be uninitialized
-        def method(self) -> int: ...  # E: Attribute `method` may be uninitialized
+        def method(self) -> int: ...
         @staticmethod
-        def static() -> int: ...  # E: Attribute `static` may be uninitialized
+        def static() -> int: ...
         @property
-        def prop(self) -> int: ...  # E: Attribute `prop` may be uninitialized
+        def prop(self) -> int: ...
 
     def __init__(self) -> None:
         self.value = 2
@@ -3675,5 +3675,26 @@ def use(obj, a: Any, c: C) -> None:
     c.missing  # E: Object of class `C` has no attribute `missing`
     obj.attr = 1  # Assignment targets are not accesses.
     c.x
+"#,
+);
+
+// The exemption for conditional methods requires every binding of the name in the class body
+// to be a `def`, even when a later `def` replaces the other binding.
+testcase!(
+    test_conditional_method_with_other_binding,
+    TestEnv::new().enable_possibly_uninitialized_attribute_error(),
+    r#"
+def coin() -> bool: ...
+
+class AssignedThenDefined:
+    if coin():
+        value = 1  # E: Attribute `value` may be uninitialized
+        def value(self) -> int: ...
+
+class DeletedThenDefined:
+    if coin():
+        def value(self) -> int: ...  # E: Attribute `value` may be uninitialized
+        del value
+        def value(self) -> int: ...
 "#,
 );

@@ -1885,8 +1885,8 @@ class C:
 
 Pyrefly reports the error at the definition, even if the attribute is never read.
 A later `hasattr` guard does not suppress it. An assignment in `__init__` does not
-initialize a class attribute. Inherited attributes and stub (`.pyi`) files are
-exempt.
+initialize a class attribute. Inherited attributes, conditional method definitions,
+and stub (`.pyi`) files are exempt.
 
 To disable this check while retaining other strict checks, use:
 

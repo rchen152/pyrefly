@@ -247,6 +247,9 @@ struct StaticInfo {
     /// Both fit in padding `StaticInfo` already had, so they cost nothing.
     char_len: u32,
     char_mask: u32,
+    /// True while every definition site is a `def`. A conditionally defined method is not
+    /// reported as a possibly uninitialized class attribute.
+    function_def_only: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -449,6 +452,7 @@ impl Static {
         range: TextRange,
         style: StaticStyle,
         last_range: TextRange,
+        function_def_only: bool,
     ) {
         // Parse recovery produces empty names, such as a nameless type parameter. The
         // static scope never holds them, because `bind_name` never binds them.
@@ -464,6 +468,7 @@ impl Static {
                     last_range,
                     char_len,
                     char_mask,
+                    function_def_only,
                 });
             }
             Entry::Occupied(mut e) => {
@@ -472,6 +477,7 @@ impl Static {
                 if last_range.start() > found.last_range.start() {
                     found.last_range = last_range;
                 }
+                found.function_def_only &= function_def_only;
                 if matches!(style, StaticStyle::PossibleLegacyTParam) {
                     // Static scopes are keyed by name, so `foo.T` and `foo.P` must share the
                     // `foo` entry. The caller links their bindings before each upsert, making
@@ -557,6 +563,7 @@ impl Static {
             // same name in this scope.
             let range = definition.range;
             let last_range = definition.last_range;
+            let function_def_only = definition.function_def_only;
             let style = StaticStyle::of_definition(
                 name.as_ref(),
                 definition,
@@ -565,7 +572,7 @@ impl Static {
                 module_info.name(),
                 get_annotation_idx,
             );
-            self.upsert(name, range, style, last_range);
+            self.upsert(name, range, style, last_range, function_def_only);
         }
         for (module, range, wildcard) in all_wildcards {
             // Builtins are a fallback, so they should never shadow an existing definition.
@@ -576,7 +583,13 @@ impl Static {
                 if skip_existing && self.0.get_hashed(name).is_some() {
                     continue;
                 }
-                self.upsert(name.cloned(), range, StaticStyle::MergeableImport, range)
+                self.upsert(
+                    name.cloned(),
+                    range,
+                    StaticStyle::MergeableImport,
+                    range,
+                    false,
+                )
             }
         }
         let final_names = d.final_names.keys().cloned().collect();
@@ -600,6 +613,7 @@ impl Static {
                 name.range,
                 StaticStyle::SingleDef(None),
                 name.range,
+                false,
             )
         };
         Ast::expr_lvalue(x, &mut add);
@@ -2543,6 +2557,7 @@ impl Scopes {
             range,
             StaticStyle::ImplicitBuiltinImport(module),
             range,
+            false,
         );
         Key::Import(Box::new((name.into_key().clone(), range)))
     }
@@ -2772,9 +2787,13 @@ impl Scopes {
     }
 
     fn add_to_current_static(&mut self, name: &Identifier, style: StaticStyle) {
-        self.current_mut()
-            .stat
-            .upsert(Hashed::new(name.id.clone()), name.range, style, name.range)
+        self.current_mut().stat.upsert(
+            Hashed::new(name.id.clone()),
+            name.range,
+            style,
+            name.range,
+            false,
+        )
     }
 
     /// Add a parameter to the current static.
@@ -3331,6 +3350,7 @@ impl Scopes {
                         },
                     };
                     match &value.style {
+                        _ if static_info.function_def_only => {}
                         FlowStyle::PossiblyUninitialized => {
                             uninitialized_fields.insert_hashed(name.owned(), None);
                         }
@@ -3756,6 +3776,7 @@ impl Scopes {
                                 last_range: TextRange::default(),
                                 char_len,
                                 char_mask,
+                                function_def_only: false,
                             }))
                         })
                     },
