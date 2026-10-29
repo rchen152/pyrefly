@@ -2910,6 +2910,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
     }
 
     /// The binding that a read of `name` starts from, before any forwarding or flow narrowing.
+    /// A merge in which every branch only narrowed the name, as after an earlier `if name:`,
+    /// starts from the binding it narrowed.
     pub(crate) fn binding_before_narrowing(&self, name: &ExprName) -> Idx<Key> {
         let mut idx = self
             .bindings()
@@ -2917,7 +2919,8 @@ impl<'ctx, 'answer, Ans: LookupAnswer> AnswersSolver<'ctx, 'answer, Ans> {
         while let Binding::Forward(next)
         | Binding::ForwardToFirstUse(next)
         | Binding::PromoteForward(next)
-        | Binding::Narrow(next, ..) = self.bindings().get(idx)
+        | Binding::Narrow(next, ..)
+        | Binding::Phi(JoinStyle::NarrowOf(next), _) = self.bindings().get(idx)
         {
             idx = *next;
         }

@@ -1663,6 +1663,14 @@ def narrowed_by_type_is_in_capture(x: str | None) -> None:
                 print("unreachable")
         inner()
 
+# The inner `if` narrows `x` in both branches, so the read after it is a merge of narrows.
+def narrowed_again(x: str | None) -> None:
+    if x is None:
+        if x is None:
+            print("missing")
+        if x:  # E: `None` used as condition. It's equivalent to `False`
+            print("unreachable")
+
 def optional(x: str | None) -> None:
     if x:
         print(x)
@@ -1701,6 +1709,14 @@ def read_lazy() -> None:
     if _lazy:
         print(_lazy)
     if _lazy is None:
+        if _lazy:
+            pass
+
+# Reading through a merge of narrows still finds the unannotated assignment.
+def read_lazy_after_narrowing_merge() -> None:
+    if _lazy is None:
+        if _lazy is None:
+            print("missing")
         if _lazy:
             pass
 
@@ -4142,7 +4158,6 @@ def dead_elif(other: bool) -> int:  # E: Function declared to return `int`, but 
 // An earlier test of the same name narrows it in each branch, and the merge of those narrows
 // is what a later test reads. The narrowing does not change the declaration that settles it.
 testcase!(
-    bug = "A test is not settled when an earlier test narrowed the same name",
     test_test_settled_after_earlier_narrowing,
     r#"
 from typing import Final, Literal, assert_type
@@ -4152,19 +4167,19 @@ FLAG: Final = False
 if FLAG:
     print(0)  # E: This code is unreachable
 if FLAG:
-    x = 1
+    x = 1  # E: This code is unreachable
 else:
     x = 2
-assert_type(x, Literal[2])  # E: assert_type(Literal[1, 2], Literal[2]) failed
+assert_type(x, Literal[2])
 
 def in_function() -> None:
     if FLAG:
         print(0)  # E: This code is unreachable
     if FLAG:
-        y = 1
+        y = 1  # E: This code is unreachable
     else:
         y = 2
-    assert_type(y, Literal[2])  # E: assert_type(Literal[1, 2], Literal[2]) failed
+    assert_type(y, Literal[2])
 "#,
 );
 
