@@ -47,7 +47,6 @@ mod tests {
     use pyrefly_util::test_path::TestPath;
 
     use super::*;
-    use crate::environment::interpreters::Interpreters;
 
     fn interpreter_name() -> &'static str {
         if cfg!(windows) {
@@ -103,27 +102,8 @@ mod tests {
         setup_workspace(tempdir.path(), vec![environment("default", true)]);
 
         assert_eq!(
-            Interpreters::find_project_interpreter(tempdir.path()),
+            find_in_workspace(tempdir.path()),
             Some(default_interpreter(tempdir.path()))
-        );
-    }
-
-    #[test]
-    fn test_find_default_environment_from_descendant() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let root = tempdir.path();
-        setup_workspace(root, vec![environment("default", true)]);
-        TestPath::setup_test_directory(
-            root,
-            vec![TestPath::dir(
-                "project",
-                vec![TestPath::dir("src", vec![TestPath::file("main.py")])],
-            )],
-        );
-
-        assert_eq!(
-            Interpreters::find_project_interpreter(&root.join("project/src")),
-            Some(default_interpreter(root))
         );
     }
 
@@ -132,7 +112,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         setup_workspace(tempdir.path(), vec![environment("dev", true)]);
 
-        assert_eq!(Interpreters::find_project_interpreter(tempdir.path()), None);
+        assert_eq!(find_in_workspace(tempdir.path()), None);
     }
 
     #[test]
@@ -140,7 +120,7 @@ mod tests {
         let tempdir = tempfile::tempdir().unwrap();
         setup_workspace(tempdir.path(), vec![environment("default", false)]);
 
-        assert_eq!(Interpreters::find_project_interpreter(tempdir.path()), None);
+        assert_eq!(find_in_workspace(tempdir.path()), None);
     }
 
     #[test]

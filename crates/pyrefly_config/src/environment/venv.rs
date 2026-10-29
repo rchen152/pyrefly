@@ -59,7 +59,6 @@ mod tests {
     use pyrefly_util::test_path::TestPath;
 
     use super::*;
-    use crate::environment::interpreters::Interpreters;
 
     fn interp_name() -> &'static str {
         if cfg!(windows) {
@@ -89,7 +88,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(Interpreters::find_project_interpreter(root), None);
+        assert_eq!(find_in_root(root), None);
     }
 
     #[test]
@@ -113,10 +112,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(
-            Interpreters::find_project_interpreter(root),
-            Some(interp_path(&root.join(".venv")))
-        );
+        assert_eq!(find_in_root(root), Some(interp_path(&root.join(".venv"))));
     }
 
     #[test]
@@ -134,10 +130,7 @@ mod tests {
             )],
         );
 
-        assert_eq!(
-            Interpreters::find_project_interpreter(root),
-            Some(interp_path(&root.join("env")))
-        );
+        assert_eq!(find_in_root(root), Some(interp_path(&root.join("env"))));
     }
 
     #[cfg(unix)]
@@ -165,7 +158,7 @@ mod tests {
         symlink(&real_venv, project_root.join(".venv")).unwrap();
 
         assert_eq!(
-            Interpreters::find_project_interpreter(&project_root),
+            find_in_root(&project_root),
             Some(interp_path(&project_root.join(".venv"))),
         );
     }
@@ -189,7 +182,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(Interpreters::find_project_interpreter(root), None);
+        assert_eq!(find_in_root(root), None);
     }
 
     #[test]
@@ -216,7 +209,7 @@ mod tests {
             )],
         );
 
-        assert_eq!(Interpreters::find_project_interpreter(root), None);
+        assert_eq!(find_in_root(root), None);
     }
 
     #[test]
@@ -238,75 +231,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(Interpreters::find_project_interpreter(root), None);
-    }
-
-    #[test]
-    fn test_find_searches_ancestor_roots() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let root = tempdir.path();
-        let project_root = root.join("project");
-        TestPath::setup_test_directory(
-            root,
-            vec![
-                TestPath::dir(
-                    ".venv",
-                    vec![
-                        TestPath::file(CONFIG_FILE),
-                        TestPath::dir(interp_dir(), vec![TestPath::file(interp_name())]),
-                    ],
-                ),
-                TestPath::dir(
-                    "project",
-                    vec![TestPath::dir("src", vec![TestPath::file("main.py")])],
-                ),
-            ],
-        );
-
-        assert_eq!(
-            Interpreters::find_project_interpreter(&project_root),
-            Some(interp_path(&root.join(".venv"))),
-        );
-    }
-
-    #[test]
-    fn test_find_prefers_nearest_ancestor_root() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let root = tempdir.path();
-        let project_root = root.join("project");
-        let start_path = project_root.join("src");
-        TestPath::setup_test_directory(
-            root,
-            vec![
-                TestPath::dir(
-                    ".venv",
-                    vec![
-                        TestPath::file(CONFIG_FILE),
-                        TestPath::dir(interp_dir(), vec![TestPath::file(interp_name())]),
-                    ],
-                ),
-                TestPath::dir(
-                    "project",
-                    vec![
-                        TestPath::dir(
-                            ".venv",
-                            vec![
-                                TestPath::file(CONFIG_FILE),
-                                TestPath::dir(interp_dir(), vec![TestPath::file(interp_name())]),
-                            ],
-                        ),
-                        TestPath::dir("src", vec![TestPath::file("main.py")]),
-                    ],
-                ),
-            ],
-        );
-
-        // Start from project/src so the search considers both ancestor environments.
-        // The nearest ancestor with .venv is project/, not root/.
-        assert_eq!(
-            Interpreters::find_project_interpreter(&start_path),
-            Some(interp_path(&project_root.join(".venv"))),
-        );
+        assert_eq!(find_in_root(root), None);
     }
 
     #[test]
@@ -338,7 +263,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(Interpreters::find_project_interpreter(&project_root), None);
+        assert_eq!(find_in_root(&project_root), None);
     }
 
     #[test]
@@ -359,29 +284,7 @@ mod tests {
             ],
         );
 
-        assert_eq!(Interpreters::find_project_interpreter(root), None);
-    }
-
-    #[test]
-    fn test_find_does_not_search_nonstandard_venv_names_in_ancestors() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let root = tempdir.path();
-        let project_root = root.join("project");
-        TestPath::setup_test_directory(
-            root,
-            vec![
-                TestPath::dir(
-                    "custom-venv",
-                    vec![
-                        TestPath::file(CONFIG_FILE),
-                        TestPath::dir(interp_dir(), vec![TestPath::file(interp_name())]),
-                    ],
-                ),
-                TestPath::dir("project", vec![TestPath::file("pyrefly.toml")]),
-            ],
-        );
-
-        assert_eq!(Interpreters::find_project_interpreter(&project_root), None);
+        assert_eq!(find_in_root(root), None);
     }
 
     #[test]
@@ -404,7 +307,7 @@ mod tests {
                 ),
             ],
         );
-        assert_eq!(Interpreters::find_project_interpreter(root), None);
+        assert_eq!(find_in_root(root), None);
     }
 
     #[test]
@@ -431,6 +334,6 @@ mod tests {
                 ),
             ],
         );
-        assert_eq!(Interpreters::find_project_interpreter(root), None);
+        assert_eq!(find_in_root(root), None);
     }
 }
