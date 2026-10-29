@@ -791,6 +791,39 @@ def tuple_header(x: int | None, y: int | None, flag: bool):
 "#,
 );
 
+testcase!(
+    bug = "A relation narrow created before try survives writes in finally on saved exits.",
+    test_none_relations_materialized_before_finally,
+    r#"
+from typing import assert_type
+
+def before_try(x: int | None, y: int | None):
+    if x is None and y is None:
+        raise ValueError()
+    assert x is None
+    while True:
+        try:
+            break
+        finally:
+            y = None
+    assert_type(y, int)
+    return y + 1
+
+def alias_before_try(x: int | None, y: int | None):
+    if x is None and y is None:
+        raise ValueError()
+    assert x is None
+    z = y
+    while True:
+        try:
+            break
+        finally:
+            z = None
+    assert_type(z, int)
+    return z + 1
+"#,
+);
+
 // Regression test to ensure we don't forget to create loop recursion
 // bindings when the loop has early termination.
 testcase!(
