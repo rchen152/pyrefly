@@ -1474,9 +1474,8 @@ pub struct Scope {
     variables: SmallMap<Name, VariableUsage>,
     /// Depth of finally blocks we're in. Resets in new function scopes (PEP 765).
     finally_depth: usize,
-    /// Pending finally suites can observe exceptional values and change saved exits.
-    /// Relation-derived narrows are disabled throughout these try statements.
-    excluded_none_pair_barrier_depth: usize,
+    /// The first source position where relations cannot feed future cleanup or eager scopes.
+    excluded_none_pairs_start: TextSize,
     /// Stack of active `with` bodies, recording whether each has encountered a live
     /// statement that may raise. Resets in new function scopes.
     with_may_raise: Vec<bool>,
@@ -1514,7 +1513,7 @@ impl Scope {
             has_future_annotations: false,
             variables: SmallMap::new(),
             finally_depth: 0,
-            excluded_none_pair_barrier_depth: 0,
+            excluded_none_pairs_start: TextSize::new(0),
             with_may_raise: Vec::new(),
             try_fallbacks: Vec::new(),
             implicit_captures: SmallSet::new(),
@@ -2090,7 +2089,7 @@ impl Scopes {
                 shadowed_implicit_builtins,
                 final_names,
                 final_string_values,
-                _last_finally_or_class,
+                last_finally_or_class,
             ) = scope.stat.stmts(
                 x,
                 module_info,
@@ -2104,6 +2103,8 @@ impl Scopes {
             scope.shadowed_implicit_builtins = shadowed_implicit_builtins;
             scope.final_names = final_names;
             scope.final_string_values = final_string_values;
+            scope.excluded_none_pairs_start =
+                last_finally_or_class.map_or(TextSize::new(0), |range| range.end());
             // Presize the flow, as its likely to need as much space as static.
             scope.flow.info.reserve(scope.stat.0.len());
         };
@@ -2544,26 +2545,12 @@ impl Scopes {
         }
     }
 
-    /// Build relation-derived narrows only when no pending finally can change their values.
+    /// Build additional operations from relationships valid at their creation sites.
     pub fn implied_none_narrows(&self, narrow_ops: &NarrowOps) -> NarrowOps {
-        if self.current().excluded_none_pair_barrier_depth != 0 {
-            NarrowOps::new()
-        } else {
-            self.current()
-                .flow
-                .excluded_none_pairs
-                .implied_narrows(narrow_ops)
-        }
-    }
-
-    /// Disable relations throughout a try statement with a finally suite.
-    pub fn enter_excluded_none_pair_barrier(&mut self) {
-        self.current_mut().excluded_none_pair_barrier_depth += 1;
-    }
-
-    /// Restore relation tracking after the matching try statement.
-    pub fn exit_excluded_none_pair_barrier(&mut self) {
-        self.current_mut().excluded_none_pair_barrier_depth -= 1;
+        self.current()
+            .flow
+            .excluded_none_pairs
+            .implied_narrows(narrow_ops)
     }
 
     /// Discard sequential relationships across paths with unknown intervening writes.
@@ -2572,8 +2559,10 @@ impl Scopes {
     }
 
     /// Record a false test's relationship for subsequent clauses and implicit fall-through.
-    pub fn exclude_none_pair_in_fork_base(&mut self, pair: ExcludedNonePair) {
-        if self.current().excluded_none_pair_barrier_depth != 0 {
+    pub fn exclude_none_pair_in_fork_base(&mut self, pair: ExcludedNonePair, start: TextSize) {
+        // Prevent materialized narrows from entering cleanup or eager nested scopes.
+        // Blocking the enclosing statement also covers loop backedges.
+        if start < self.current().excluded_none_pairs_start {
             return;
         }
         self.current_mut()

@@ -792,7 +792,6 @@ def tuple_header(x: int | None, y: int | None, flag: bool):
 );
 
 testcase!(
-    bug = "A relation narrow created before try survives writes in finally on saved exits.",
     test_none_relations_materialized_before_finally,
     r#"
 from typing import assert_type
@@ -806,8 +805,8 @@ def before_try(x: int | None, y: int | None):
             break
         finally:
             y = None
-    assert_type(y, int)
-    return y + 1
+    assert_type(y, int | None)
+    return y + 1  # E: `+` is not supported between `None` and `Literal[1]`
 
 def alias_before_try(x: int | None, y: int | None):
     if x is None and y is None:
@@ -819,13 +818,12 @@ def alias_before_try(x: int | None, y: int | None):
             break
         finally:
             z = None
-    assert_type(z, int)
-    return z + 1
+    assert_type(z, int | None)
+    return z + 1  # E: `+` is not supported between `None` and `Literal[1]`
 "#,
 );
 
 testcase!(
-    bug = "An enclosing relation narrow can enter an eager class cleanup's saved exit.",
     test_none_relations_eager_class_finally,
     r#"
 from typing import assert_type
@@ -841,8 +839,8 @@ def f(x: int | None, y: int | None):
                 break
             finally:
                 z = None
-        assert_type(z, int)
-        result = z + 1
+        assert_type(z, int | None)
+        result = z + 1  # E: `+` is not supported between `None` and `Literal[1]`
 "#,
 );
 
@@ -860,7 +858,7 @@ def containing_loop(x: int | None, y: int | None, items: list[int]):
         if x is None and y is None:
             raise ValueError()
         if x is None:
-            assert_type(y, int)
+            assert_type(y, int | None)
     if x is None and y is None:
         raise ValueError()
     if x is None:

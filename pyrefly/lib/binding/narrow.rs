@@ -806,8 +806,9 @@ impl ExcludedNonePair {
 }
 
 /// Relations apply to the current sequential values of their names. Writes invalidate
-/// affected pairs, and merges intersect incoming paths. The scope discards or disables
-/// relations at loop and exception boundaries where those sequential values can differ.
+/// affected pairs, and merges intersect incoming paths. The scope delays creation until
+/// enclosing finally suites and eager class scopes have completed, and discards pairs at
+/// loop and exception boundaries. Materialized narrows share ordinary exception-flow limits.
 #[derive(Clone, Debug, Default)]
 pub struct ExcludedNonePairs(Vec<ExcludedNonePair>);
 
