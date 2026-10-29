@@ -429,11 +429,11 @@ version is `3.5`.
 The name of the Conda environment to query when attempting to autoconfigure
 Python environment values (`site-packages-path`, `python-platform`, `python-version`).
 See the [Environment Autoconfiguration section](#environment-autoconfiguration) for more
-information. We query Conda with `conda info --envs`, then find the environment's interpreter in Environment Autoconfirugration.
+information. We query Conda with `conda info --envs`, then find the environment's interpreter.
 
 We will query Conda for information about this environment, even when it's not sourced,
-unless a Python environment (venv, Conda) is activated or `--python-interpreter-path` or
-`--conda-environment` are passed in through the CLI.
+unless `--python-interpreter-path`, `--fallback-python-interpreter-name`, or
+`--conda-environment` is passed on the command line.
 
 **`conda-environment`, `python-interpreter-path`, `python-interpreter-find-command`,
 `fallback-python-interpreter-name`, and `skip-interpreter-query` are mutually exclusive.**
@@ -1522,26 +1522,34 @@ We look for an interpreter with the following logic:
    [`fallback-python-interpreter-name`](#fallback-python-interpreter-name), or
    [`conda-environment`](#conda-environment) if any are set by a flag.
    More than one cannot be set in flags at the same time.
-2. Determine if there's an active `venv` or `conda` environment. If both are active at
-   the same time, we take `venv` over `conda`.
-3. Use [`python-interpreter-path`](#python-interpreter-path),
+2. Use [`python-interpreter-path`](#python-interpreter-path),
    [`python-interpreter-find-command`](#python-interpreter-find-command),
    [`fallback-python-interpreter-name`](#fallback-python-interpreter-name), or
    [`conda-environment`](#conda-environment) if any are set in a config file.
    Only one of these options can be set in a configuration.
-4. Starting from the project root, look for `pyvenv.cfg` in a `.venv`, `venv`, or `env`
-   directory. If none is found, repeat the search in each ancestor directory up to the
-   filesystem root, preferring the nearest match. Pyrefly infers a project root from the
-   files being checked when there is no config file or other root marker. After finding
-   `pyvenv.cfg`, Pyrefly uses the interpreter every
-   environment builder creates: `bin/python` on macOS and Linux, or
-   `Scripts/python.exe` on Windows. Environments in other directories, or that no longer
-   have that interpreter and keep only a name such as `python3` or `python3.12`, must be
-   activated or set explicitly with
-   [`python-interpreter-path`](#python-interpreter-path).
-5. Query `$(which python3)` and `$(which python)` (platform independent) to use
+3. Use the interpreter supplied by the IDE, if any.
+4. Determine if there's an active `venv` or `conda` environment, including an activated
+   Pixi environment. If both are active at the same time, we take `venv` over `conda`.
+5. Starting from the project root, look for a venv in `.venv`, `venv`, or `env`, or an
+   installed Pixi default environment in `.pixi/envs/default`. Repeat the search in
+   each ancestor directory up to the filesystem root. The nearest environment wins;
+   within the same directory, venv takes precedence over Pixi. Pyrefly infers a project
+   root from the files being checked when there is no config file or other root marker.
+
+   A venv must have `pyvenv.cfg` and its canonical interpreter: `bin/python` on macOS
+   and Linux, or `Scripts/python.exe` on Windows. A Pixi default environment must have
+   `bin/python3` or `bin/python` on macOS and Linux, or `python.exe` on Windows.
+   Pixi discovery checks only the installed environment, not `pixi.toml` or
+   `pyproject.toml`.
+
+   Named Pixi environments, detached Pixi environments stored outside the workspace,
+   and venvs in other directories must be activated or set explicitly with
+   [`python-interpreter-path`](#python-interpreter-path). The same applies to venvs
+   that no longer have their canonical interpreter and keep only a name such as
+   `python3` or `python3.12`.
+6. Query `$(which python3)` and `$(which python)` (platform independent) to use
    a system-installed interpreter.
-6. Fall back to Pyrefly's default values for any unspecified config options.
+7. Fall back to Pyrefly's default values for any unspecified config options.
 
 The config options we query the interpreter for are:
 
