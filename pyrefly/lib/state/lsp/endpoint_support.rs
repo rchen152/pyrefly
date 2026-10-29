@@ -677,7 +677,7 @@ impl<'a> Transaction<'a> {
             completions.push(RankedCompletion::new(lsp_types::CompletionItem {
                 label,
                 detail: Some(detail),
-                kind: Some(CompletionItemKind::VALUE),
+                kind: Some(CompletionItemKind::Value),
                 insert_text: Some(insert_text),
                 ..Default::default()
             }));
