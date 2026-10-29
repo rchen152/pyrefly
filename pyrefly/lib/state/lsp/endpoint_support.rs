@@ -14,7 +14,6 @@ use lsp_types::CompletionItemTextEdit;
 use lsp_types::TextEdit;
 use pyrefly_build::handle::Handle;
 use pyrefly_python::ast::Ast;
-use pyrefly_python::docstring::Docstring;
 use pyrefly_python::module::Module;
 use pyrefly_python::module_path::ModulePathDetails;
 use pyrefly_python::module_path::ModuleStyle;
@@ -27,10 +26,6 @@ use ruff_python_ast::ExprSet;
 use ruff_python_ast::ExprStringLiteral;
 use ruff_python_ast::ExprTuple;
 use ruff_python_ast::Keyword;
-use ruff_python_ast::Stmt;
-use ruff_python_ast::StmtFunctionDef;
-use ruff_python_ast::visitor::Visitor;
-use ruff_python_ast::visitor::walk_stmt;
 use ruff_text_size::Ranged;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
@@ -42,7 +37,10 @@ use super::FindDefinitionItemWithDocstring;
 use crate::lsp::wasm::completion::RankedCompletion;
 use crate::state::state::Transaction;
 
+mod cache;
 mod provenance;
+
+pub(crate) use cache::EndpointModuleCache;
 
 const ENDPOINT_ROUTE_DECORATORS: [&str; 3] = ["route", "api_route", "websocket"];
 const ENDPOINT_ROUTE_NEEDLES: [&str; 11] = [
@@ -123,43 +121,6 @@ struct EndpointCallContext {
 struct EndpointDecoratorSpec {
     path: String,
     methods: Option<Vec<EndpointMethod>>,
-}
-
-struct EndpointCollector {
-    module: Module,
-    endpoints: Vec<EndpointDefinition>,
-}
-
-impl EndpointCollector {
-    fn new(module: Module) -> Self {
-        Self {
-            module,
-            endpoints: Vec::new(),
-        }
-    }
-
-    fn push_endpoint(&mut self, func: &StmtFunctionDef, spec: EndpointDecoratorSpec) {
-        self.endpoints.push(EndpointDefinition {
-            path: spec.path,
-            methods: spec.methods,
-            module: self.module.dupe(),
-            definition_range: func.name.range(),
-            docstring_range: Docstring::range_from_stmts(&func.body),
-        });
-    }
-}
-
-impl<'a> Visitor<'a> for EndpointCollector {
-    fn visit_stmt(&mut self, stmt: &'a Stmt) {
-        if let Stmt::FunctionDef(func) = stmt {
-            for decorator in &func.decorator_list {
-                if let Some(spec) = endpoint_decorator_spec(&decorator.expression) {
-                    self.push_endpoint(func, spec);
-                }
-            }
-        }
-        walk_stmt(self, stmt);
-    }
 }
 
 fn endpoint_decorator_spec(expr: &Expr) -> Option<EndpointDecoratorSpec> {
@@ -369,12 +330,15 @@ impl Transaction<'_> {
             if !module_might_define_endpoints(&module) {
                 continue;
             }
-            let Some(ast) = self.get_ast(&handle) else {
-                continue;
-            };
-            let mut collector = EndpointCollector::new(module);
-            collector.visit_body(&ast.body);
-            endpoints.extend(collector.endpoints);
+            let ast = self.get_ast(&handle);
+            let summary = self.endpoint_module_cache().get(&module, ast.as_deref());
+            endpoints.extend(summary.routes.iter().map(|route| EndpointDefinition {
+                path: route.spec.path.clone(),
+                methods: route.spec.methods.clone(),
+                module: module.dupe(),
+                definition_range: route.definition_range,
+                docstring_range: route.docstring_range,
+            }));
         }
         endpoints
     }

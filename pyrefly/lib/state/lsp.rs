@@ -109,6 +109,7 @@ use crate::types::types::Type;
 
 mod dict_completions;
 mod endpoint_support;
+pub(crate) use endpoint_support::EndpointModuleCache;
 mod extra_extensions;
 mod pytest;
 mod quick_fixes;

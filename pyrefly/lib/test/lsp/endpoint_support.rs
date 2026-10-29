@@ -242,8 +242,10 @@ fn endpoint_definition_without_retained_route_ast() {
     );
     state.commit_transaction(transaction, None);
     assert!(state.transaction().get_ast(&app_handle).is_none());
-    // The current collector silently loses a route whose AST was discarded.
-    assert!(definition_names(&state, &client_handle, position(client, "/users\"", 2)).is_empty());
+    assert_eq!(
+        definition_names(&state, &client_handle, position(client, "/users\"", 2)),
+        vec!["handler"],
+    );
 }
 
 #[test]
