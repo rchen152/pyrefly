@@ -647,6 +647,117 @@ def exceptional_write(x: int | None, y: int | None):
 "#,
 );
 
+testcase!(
+    bug = "Finally uses relations from normal completion or before exit writes.",
+    test_none_relations_finally_paths,
+    r#"
+from typing import assert_type
+
+def guard_raises(x: int | None, y: int | None):
+    try:
+        if x is None and y is None:
+            raise ValueError()
+    finally:
+        if x is None:
+            assert_type(y, int)
+            return y + 1
+
+def earlier_exception(x: int | None, y: int | None):
+    try:
+        int("invalid")
+        if x is None and y is None:
+            raise ValueError()
+    finally:
+        if x is None:
+            assert_type(y, int)
+            return y + 1
+
+def materialized_narrow(x: int | None, y: int | None):
+    try:
+        if x is None and y is None:
+            raise ValueError()
+        assert x is None
+    finally:
+        assert_type(y, int)
+        return y + 1
+
+def break_write(x: int | None, y: int | None):
+    while True:
+        try:
+            if x is None and y is None:
+                raise ValueError()
+            break
+        finally:
+            x = None
+    if x is None:
+        assert_type(y, int)
+        return y + 1
+
+def break_materialized_narrow(x: int | None, y: int | None):
+    while True:
+        try:
+            if x is None and y is None:
+                raise ValueError()
+            assert x is None
+            break
+        finally:
+            y = None
+    if x is None:
+        assert_type(y, int)
+        return y + 1
+
+def continue_write(x: int | None, y: int | None):
+    for _ in [0]:
+        try:
+            if x is None and y is None:
+                raise ValueError()
+            continue
+        finally:
+            x = None
+    if x is None:
+        assert_type(y, int)
+        return y + 1
+"#,
+);
+
+testcase!(
+    test_none_relations_finally_scope_boundaries,
+    r#"
+from typing import assert_type
+
+def nested_function(x: int | None, y: int | None):
+    try:
+        def inner(a: int | None, b: int | None):
+            if a is None and b is None:
+                raise ValueError()
+            if a is None:
+                assert_type(b, int)
+    finally:
+        pass
+    if x is None and y is None:
+        raise ValueError()
+    if x is None:
+        assert_type(y, int)
+
+def without_finally(x: int | None, y: int | None):
+    try:
+        if x is None and y is None:
+            raise ValueError()
+        if x is None:
+            assert_type(y, int)
+    except ValueError:
+        pass
+
+    try:
+        raise ValueError()
+    except ValueError:
+        if x is None and y is None:
+            raise ValueError()
+        if x is None:
+            assert_type(y, int)
+"#,
+);
+
 // Regression test to ensure we don't forget to create loop recursion
 // bindings when the loop has early termination.
 testcase!(
