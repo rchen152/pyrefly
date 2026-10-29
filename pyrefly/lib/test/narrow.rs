@@ -4939,3 +4939,19 @@ def f(c: C, x: int | C, a: A) -> None:
         assert_type(a.y, int | None)
     "#,
 );
+
+testcase!(
+    bug = "`Fraction(1) == 1` and `UserString(\"x\") == \"x\"` are true, so `==` should keep them",
+    test_eq_narrow_stdlib_cross_class_equality,
+    r#"
+from collections import UserString
+from fractions import Fraction
+from typing import Never, assert_type
+
+def f(a: Fraction | str, b: UserString | int) -> None:
+    if a == 1:
+        assert_type(a, Never)
+    if b == "x":
+        assert_type(b, Never)
+    "#,
+);
