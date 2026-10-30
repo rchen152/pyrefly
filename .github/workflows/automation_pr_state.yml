@@ -30,7 +30,6 @@ on:
         description: 'Operation'
         type: choice
         options:
-          - Backfill state labels on all unlabeled PRs
           - Update state label on one PR
           - Reconcile PRs updated since last sweep
       pr_number:
@@ -108,7 +107,7 @@ jobs:
                 if (!pr_number) throw new Error('pr_number is required to update one PR');
                 return [Number(pr_number)];
               }
-              if (scenario !== 'Backfill state labels on all unlabeled PRs' && !sweep) {
+              if (!sweep) {
                 throw new Error(`Unknown scenario: ${scenario}`);
               }
               if (pr_number) throw new Error('pr_number is only used to update one PR');
@@ -130,13 +129,11 @@ jobs:
               if (page.length < response.data.length) done();
               return page;
             });
-            if (context.eventName !== 'workflow_run') {
-              const stateLabels = ['waiting-for-author', 'waiting-for-reviewer', 'waiting-for-merge'];
+            if (sweep) {
               // An update during pagination can list a PR on two pages.
               return [...new Set(prs.filter(pr => pr.user.type !== 'Bot'
                 && !pr.head.ref.startsWith('export-D')
-                && !owners.includes(pr.user.login.toLowerCase())
-                && (sweep || (!pr.draft && !pr.labels.some(l => stateLabels.includes(l.name)))))
+                && !owners.includes(pr.user.login.toLowerCase()))
                 .map(pr => pr.number))];
             }
             // GitHub supplies the head SHA. Nothing produced by the completed
@@ -187,12 +184,6 @@ jobs:
               owner, repo, issue_number, per_page: 100,
             })).map(l => l.name);
             const current = STATE_LABELS.filter(name => labels.includes(name));
-            if (context.eventName === 'workflow_dispatch'
-              && context.payload.inputs.scenario === 'Backfill state labels on all unlabeled PRs'
-              && current.length > 0) {
-              console.log(`#${pull_number}: already labeled, leaving as-is`);
-              return;
-            }
             const sweep = context.eventName === 'schedule'
               || context.payload.inputs?.scenario === 'Reconcile PRs updated since last sweep';
             const manual = context.eventName === 'workflow_dispatch' && !sweep;
