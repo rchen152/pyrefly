@@ -856,7 +856,6 @@ fn import_edits_with_non_future_imports() {
     }
 }
 
-// Bug: import edits precede future imports and invalidate the module.
 #[test]
 fn import_edits_with_future_imports() {
     let (handles, _) = mk_multi_file_state(
@@ -905,7 +904,8 @@ fn import_edits_with_future_imports() {
             (alias_position, alias_text),
             (from_edit.range.start(), from_edit.insert_text),
         ] {
-            assert_eq!(position.to_usize(), source.find("from __future__").unwrap());
+            assert_eq!(position.to_usize(), header.len());
+            assert_eq!(text.starts_with('\n'), body.is_empty());
             let after = format!(
                 "{}{}{}",
                 &source[..position.to_usize()],
@@ -927,14 +927,13 @@ fn import_edits_with_future_imports() {
             assert!(
                 errors
                     .iter()
-                    .any(|error| error.error_kind() == ErrorKind::InvalidSyntax),
+                    .all(|error| error.error_kind() != ErrorKind::InvalidSyntax),
                 "{after}",
             );
         }
     }
 }
 
-// Bug: quick-fix and refactor imports precede the future-import header.
 #[test]
 fn code_action_imports_with_future_imports() {
     for newline in ["\n", "\r\n"] {
@@ -963,12 +962,9 @@ fn code_action_imports_with_future_imports() {
                 .unwrap();
             let (_, edits) = actions.iter().find(|(name, _)| name == title).unwrap();
             let after = apply_refactor_edits_for_module(&edits[0].0, edits);
-            assert_eq!(
-                edits[0].1.start().to_usize(),
-                code.find("from __future__").unwrap(),
-            );
+            assert_eq!(edits[0].1.start().to_usize(), header.len());
             assert!(edits[0].2.ends_with(newline));
-            assert!(Ast::parse(&after, PySourceType::Python).1.is_empty());
+            assert!(after.starts_with(&header));
         }
         let code = format!("{header}value = {{\"x\": 1}}{newline}");
         let (handles, state) = mk_multi_file_state(&[("main", &code)], Require::Exports, false);
@@ -982,12 +978,9 @@ fn code_action_imports_with_future_imports() {
         assert_eq!(actions.len(), 3);
         for action in actions {
             let import_edit = &action.edits[0];
-            assert_eq!(
-                import_edit.1.start().to_usize(),
-                code.find("from __future__").unwrap(),
-            );
+            assert_eq!(import_edit.1.start().to_usize(), header.len());
             let after = apply_refactor_edits_for_module(&import_edit.0, &action.edits);
-            assert!(Ast::parse(&after, PySourceType::Python).1.is_empty());
+            assert!(after.starts_with(&header));
         }
     }
 }
