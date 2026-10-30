@@ -9,11 +9,16 @@ use std::fs;
 
 use pretty_assertions::assert_eq;
 use pyrefly_build::handle::Handle;
+use pyrefly_python::ast::Ast;
 use pyrefly_python::module::Module;
+use ruff_python_ast::PySourceType;
 use ruff_text_size::TextRange;
 use ruff_text_size::TextSize;
 
+use crate::config::error_kind::ErrorKind;
 use crate::module::module_info::ModuleInfo;
+use crate::state::ide::import_regular_import_edit;
+use crate::state::ide::insert_import_edit_with_forced_import_format;
 use crate::state::lsp::ImportFormat;
 use crate::state::lsp::LocalRefactorCodeAction;
 use crate::state::require::Require;
@@ -816,6 +821,175 @@ BytesIO
         .trim(),
         report.trim(),
     );
+}
+
+#[test]
+fn import_edits_with_non_future_imports() {
+    let (handles, _) = mk_multi_file_state(
+        &[("main", ""), ("my_module", "x = 1\n")],
+        Require::Exports,
+        false,
+    );
+    for (docstring, body) in [
+        ("", "from .__future__ import annotations\n"),
+        (
+            "\"\"\"Módulo.\"\"\"\n",
+            "from .__future__ import annotations\n",
+        ),
+        ("", "import __future__\n"),
+        ("", "value = 0\n"),
+        ("\"\"\"Módulo.\"\"\"\n", "value = 0\n"),
+    ] {
+        let source = format!("{docstring}{body}");
+        let (ast, errors, _) = Ast::parse(&source, PySourceType::Python);
+        assert!(errors.is_empty(), "{source}: {errors:?}");
+        let (position, _, _) = import_regular_import_edit(&ast, handles["my_module"].clone(), None);
+        let from_edit = insert_import_edit_with_forced_import_format(
+            &ast,
+            handles["main"].clone(),
+            handles["my_module"].clone(),
+            "x",
+            true,
+        );
+        assert_eq!(position.to_usize(), docstring.len());
+        assert_eq!(from_edit.range.start().to_usize(), docstring.len());
+    }
+}
+
+// Bug: import edits precede future imports and invalidate the module.
+#[test]
+fn import_edits_with_future_imports() {
+    let (handles, _) = mk_multi_file_state(
+        &[("main", ""), ("my_module", "x = 1\n")],
+        Require::Exports,
+        false,
+    );
+    for (header, body) in [
+        ("from __future__ import annotations\n", "value = 0\n"),
+        (
+            "\"\"\"Module docstring.\"\"\"\nfrom __future__ import annotations\n",
+            "value = 0\n",
+        ),
+        (
+            "# Header comment\nfrom __future__ import annotations  # Keep this comment\n\n",
+            "value = 0\n",
+        ),
+        (
+            "from __future__ import annotations\nfrom __future__ import division\n",
+            "value = 0\n",
+        ),
+        (
+            "from __future__ import (\n    annotations,\n)\n",
+            "value = 0\n",
+        ),
+        ("from __future__ import annotations\n", ""),
+        ("from __future__ import annotations", ""),
+        ("from __future__ import annotations  # Final comment", ""),
+    ] {
+        let source = format!("{header}{body}");
+        let (ast, errors, _) = Ast::parse(&source, PySourceType::Python);
+        assert!(errors.is_empty(), "{source}: {errors:?}");
+        let (position, text, _) =
+            import_regular_import_edit(&ast, handles["my_module"].clone(), None);
+        let (alias_position, alias_text, _) =
+            import_regular_import_edit(&ast, handles["my_module"].clone(), Some("m"));
+        let from_edit = insert_import_edit_with_forced_import_format(
+            &ast,
+            handles["main"].clone(),
+            handles["my_module"].clone(),
+            "x",
+            true,
+        );
+        for (position, text) in [
+            (position, text),
+            (alias_position, alias_text),
+            (from_edit.range.start(), from_edit.insert_text),
+        ] {
+            assert_eq!(position.to_usize(), source.find("from __future__").unwrap());
+            let after = format!(
+                "{}{}{}",
+                &source[..position.to_usize()],
+                text,
+                &source[position.to_usize()..],
+            );
+            let (_, errors, _) = Ast::parse(&after, PySourceType::Python);
+            assert!(errors.is_empty(), "{after}: {errors:?}");
+            let (fixed_handles, fixed_state) = mk_multi_file_state(
+                &[("main", &after), ("my_module", "x = 1\n")],
+                Require::Exports,
+                false,
+            );
+            let errors = fixed_state
+                .transaction()
+                .get_errors(vec![&fixed_handles["main"]])
+                .collect_errors()
+                .ordinary;
+            assert!(
+                errors
+                    .iter()
+                    .any(|error| error.error_kind() == ErrorKind::InvalidSyntax),
+                "{after}",
+            );
+        }
+    }
+}
+
+// Bug: quick-fix and refactor imports precede the future-import header.
+#[test]
+fn code_action_imports_with_future_imports() {
+    for newline in ["\n", "\r\n"] {
+        let header = format!(
+            "\"\"\"Module docstring.\"\"\"{newline}from __future__ import annotations{newline}"
+        );
+        for (name, title) in [
+            ("my_module", "Insert import: `import my_module`"),
+            ("x", "Insert import: `from my_module import x`"),
+            ("np", "Use common alias: `import numpy as np`"),
+        ] {
+            let code = format!("{header}{name}{newline}");
+            let (handles, state) = mk_multi_file_state(
+                &[("main", &code), ("my_module", "x = 1\n"), ("numpy", "")],
+                Require::Exports,
+                false,
+            );
+            let transaction = state.transaction();
+            let actions = transaction
+                .local_quickfix_code_actions_sorted(
+                    &handles["main"],
+                    TextRange::empty(TextSize::try_from(header.len()).unwrap()),
+                    ImportFormat::Absolute,
+                    None,
+                )
+                .unwrap();
+            let (_, edits) = actions.iter().find(|(name, _)| name == title).unwrap();
+            let after = apply_refactor_edits_for_module(&edits[0].0, edits);
+            assert_eq!(
+                edits[0].1.start().to_usize(),
+                code.find("from __future__").unwrap(),
+            );
+            assert!(edits[0].2.ends_with(newline));
+            assert!(Ast::parse(&after, PySourceType::Python).1.is_empty());
+        }
+        let code = format!("{header}value = {{\"x\": 1}}{newline}");
+        let (handles, state) = mk_multi_file_state(&[("main", &code)], Require::Exports, false);
+        let actions = state
+            .transaction()
+            .convert_dict_code_actions(
+                &handles["main"],
+                TextRange::empty(TextSize::try_from(code.find('{').unwrap()).unwrap()),
+            )
+            .unwrap();
+        assert_eq!(actions.len(), 3);
+        for action in actions {
+            let import_edit = &action.edits[0];
+            assert_eq!(
+                import_edit.1.start().to_usize(),
+                code.find("from __future__").unwrap(),
+            );
+            let after = apply_refactor_edits_for_module(&import_edit.0, &action.edits);
+            assert!(Ast::parse(&after, PySourceType::Python).1.is_empty());
+        }
+    }
 }
 
 #[test]
