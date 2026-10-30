@@ -123,7 +123,7 @@ jobs:
             if (sweep) {
               const { data: { workflow_runs: [last] } } = await github.rest.actions.listWorkflowRuns({
                 owner, repo, workflow_id: 'automation_pr_state.yml',
-                event: 'schedule', status: 'success', per_page: 1,
+                event: 'workflow_dispatch', status: 'success', per_page: 1,
               });
               // A run is created before it selects PRs, even when it is re-run,
               // so every update after the previous sweep's selection is covered.
