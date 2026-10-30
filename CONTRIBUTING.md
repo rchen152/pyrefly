@@ -1,4 +1,4 @@
-# Contributing to Pyrefly
+# Contributing to Pyrefly - now with 200% more cats!
 
 Welcome! We’re excited that you’re interested in contributing to Pyrefly. Whether you’re reporting an issue, fixing a bug, adding a feature, or improving documentation, your help makes Pyrefly better for everyone.
 
